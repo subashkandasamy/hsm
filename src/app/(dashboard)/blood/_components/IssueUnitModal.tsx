@@ -1,0 +1,154 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Modal from '@/components/ui/Modal'
+import FormField from '@/components/ui/FormField'
+import Input from '@/components/ui/Input'
+import DateText from '@/components/ui/DateText'
+import { issueUnit, listAvailableUnitsForRequest } from '@/app/actions/blood'
+import type { BloodRequest, BloodUnit } from '@/lib/types'
+
+const COMPONENT_LABELS: Record<string, string> = {
+  whole: 'Whole Blood', prbc: 'PRBC', plasma: 'Plasma', platelets: 'Platelets',
+}
+
+interface Props {
+  open: boolean
+  request: BloodRequest
+  onClose: () => void
+  onSuccess: () => void
+}
+
+export default function IssueUnitModal({ open, request, onClose, onSuccess }: Props) {
+  const [units, setUnits] = useState<BloodUnit[]>([])
+  const [selectedUnit, setSelectedUnit] = useState<BloodUnit | null>(null)
+  const [price, setPrice] = useState('500')
+  const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setFetching(true)
+    listAvailableUnitsForRequest(request.id).then((u) => {
+      setUnits(u); setSelectedUnit(null); setFetching(false)
+    })
+  }, [open, request.id])
+
+  async function handleIssue(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedUnit) { setError('Select a blood unit to issue'); return }
+    setLoading(true); setError(null)
+    const result = await issueUnit({
+      requestId:     request.id,
+      bloodUnitId:   selectedUnit.id,
+      priceSnapshot: parseFloat(price) || 0,
+    })
+    setLoading(false)
+    if (!result.success) { setError(result.error); return }
+    onSuccess()
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+
+  return (
+    <Modal open={open} onClose={onClose}
+      title={`Issue Blood — ${request.blood_group} ${COMPONENT_LABELS[request.component] ?? request.component}`}
+      maxWidth="36rem">
+      <form onSubmit={handleIssue} className="space-y-4">
+        {/* Request summary */}
+        <div className="p-3 rounded-xl" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>Request</p>
+          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+            {request.patient?.full_name}
+            <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>{request.patient?.uhid}</span>
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+            {request.blood_group} · {COMPONENT_LABELS[request.component] ?? request.component} · {request.units_required} unit(s) required
+          </p>
+        </div>
+
+        {/* Unit selector */}
+        <div>
+          <p className="text-sm font-semibold mb-2" style={{ color: '#0F172A' }}>
+            Select Available Unit
+            <span className="ml-1 text-xs font-normal" style={{ color: '#94A3B8' }}>
+              (only matching, available, non-expired units shown)
+            </span>
+          </p>
+          {fetching ? (
+            <p className="text-sm text-center py-4" style={{ color: '#94A3B8' }}>Loading…</p>
+          ) : units.length === 0 ? (
+            <div className="py-6 text-center rounded-xl" style={{ border: '1px solid #E2E8F0', background: 'rgba(248,250,252,0.6)' }}>
+              <p className="text-sm font-medium" style={{ color: '#64748B' }}>No matching units available</p>
+              <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Add {request.blood_group} {request.component} units via the Blood Bank inventory.</p>
+            </div>
+          ) : (
+            <div style={{ border: '1px solid #E2E8F0', borderRadius: '0.75rem', overflow: 'hidden', maxHeight: '14rem', overflowY: 'auto' }}>
+              {units.map((u, i) => {
+                const nearExpiry = u.expiry <= new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+                return (
+                  <button key={u.id} type="button" onClick={() => setSelectedUnit(u)}
+                    className="w-full flex items-center justify-between px-4 py-3"
+                    style={{
+                      borderBottom: i < units.length - 1 ? '1px solid #F1F5F9' : 'none',
+                      background: selectedUnit?.id === u.id ? 'rgba(13,148,136,0.07)' : 'transparent',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs px-2 py-0.5 rounded"
+                          style={{ background: '#FEE2E2', color: '#DC2626' }}>{u.blood_group}</span>
+                        <span className="text-sm font-medium" style={{ color: '#0F172A' }}>
+                          {COMPONENT_LABELS[u.component]}
+                        </span>
+                        {u.donor?.name && (
+                          <span className="text-xs" style={{ color: '#64748B' }}>Donor: {u.donor.name}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: '#64748B' }}>
+                        <span>Expires: <DateText date={u.expiry} /></span>
+                        {nearExpiry && (
+                          <span className="px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: '#FEF3C7', color: '#B45309' }}>Near Expiry</span>
+                        )}
+                      </div>
+                    </div>
+                    {selectedUnit?.id === u.id && (
+                      <span className="text-xs px-2 py-1 rounded-lg font-semibold"
+                        style={{ background: '#0D9488', color: '#fff' }}>Selected</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <FormField label="Processing Fee (₹) per unit">
+          <Input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
+        </FormField>
+
+        {error && (
+          <div className="text-sm rounded-xl px-3 py-2" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end pt-1">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium"
+            style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>Cancel</button>
+          <button type="submit" disabled={loading || !selectedUnit || units.length === 0}
+            className="px-5 py-2 rounded-xl text-sm font-semibold"
+            style={{
+              background: (loading || !selectedUnit || units.length === 0) ? '#94A3B8' : '#DC2626',
+              color: '#fff', border: 'none',
+              cursor: (loading || !selectedUnit || units.length === 0) ? 'not-allowed' : 'pointer',
+            }}>
+            {loading ? 'Issuing…' : 'Issue Unit'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}

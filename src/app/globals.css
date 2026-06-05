@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #F8FAFC;
+  --color-foreground: #0F172A;
+
+  /* Teal accent palette */
+  --color-teal-50: #f0fdfa;
+  --color-teal-100: #ccfbf1;
+  --color-teal-200: #99f6e4;
+  --color-teal-300: #5eead4;
+  --color-teal-400: #2dd4bf;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+  --color-teal-800: #115e59;
+  --color-teal-900: #134e4a;
+
+  /* Slate text */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+
+  /* Status colors (600 shades for light-bg readability) */
+  --color-green-600: #16a34a;
+  --color-amber-600: #d97706;
+  --color-red-600: #dc2626;
+  --color-blue-600: #2563eb;
+  --color-green-100: #dcfce7;
+  --color-amber-100: #fef3c7;
+  --color-red-100: #fee2e2;
+  --color-blue-100: #dbeafe;
+  --color-green-700: #15803d;
+  --color-amber-700: #b45309;
+  --color-red-700: #b91c1c;
+  --color-blue-700: #1d4ed8;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(135deg, #F8FAFC 0%, #ECFEFF 50%, #F0FDFA 100%);
+  background-attachment: fixed;
+  color: #0F172A;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glass card utility */
+.glass-card {
+  background: rgba(255, 255, 255, 0.70);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #E2E8F0;
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 3px 0 rgba(0, 0, 0, 0.06),
+    0 4px 16px 0 rgba(14, 165, 233, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.glass-sidebar {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid #E2E8F0;
+  box-shadow: 2px 0 16px 0 rgba(14, 165, 233, 0.06);
+}
+
+.glass-topbar {
+  background: rgba(255, 255, 255, 0.80);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #E2E8F0;
+  box-shadow: 0 1px 8px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Focus ring using teal */
+*:focus-visible {
+  outline: 2px solid #0D9488;
+  outline-offset: 2px;
+}
+
+/* Bottom tab bar glass */
+.glass-bottom-bar {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid #E2E8F0;
+  box-shadow: 0 -1px 12px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Drawer transition */
+.drawer-enter  { transform: translateX(-100%); }
+.drawer-active { transform: translateX(0); transition: transform 0.25s ease; }

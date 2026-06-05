@@ -1,0 +1,129 @@
+import type { Role, Permission, NavGroup } from './types'
+
+export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
+  admin: [
+    'admin:all',
+    'patients:read', 'patients:write',
+    'appointments:read', 'appointments:write',
+    'opd:read', 'opd:write', 'opd:vitals',
+    'wards:manage',
+    'ipd:read', 'ipd:write', 'ipd:notes',
+    'emergency:read', 'emergency:register', 'emergency:triage',
+    'lab:read', 'lab:order', 'lab:process', 'lab:manage',
+    'radiology:read', 'radiology:order', 'radiology:process', 'radiology:manage',
+    'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage',
+    'ot:read', 'ot:schedule', 'ot:record', 'ot:manage',
+    'bloodbank:read', 'bloodbank:manage', 'bloodbank:request', 'bloodbank:issue',
+    'billing:read', 'billing:write', 'billing:manage',
+    'insurance:read', 'insurance:write',
+    'hr:read', 'hr:write',
+    'audit:read',
+    'settings:read', 'settings:write',
+    'dashboard:read',
+  ],
+  doctor: [
+    'patients:read', 'patients:write',
+    'appointments:read', 'appointments:write',
+    'opd:read', 'opd:write', 'opd:vitals',
+    'ipd:read', 'ipd:write', 'ipd:notes',
+    'emergency:read', 'emergency:register', 'emergency:triage',
+    'lab:read', 'lab:order',
+    'radiology:read', 'radiology:order',
+    'pharmacy:read',
+    'ot:read', 'ot:schedule', 'ot:record',
+    'bloodbank:read', 'bloodbank:request',
+    'billing:read',
+    'insurance:read',
+    'dashboard:read',
+  ],
+  nurse: [
+    'patients:read', 'patients:write',
+    'appointments:read',
+    'opd:read', 'opd:vitals',
+    'ipd:read', 'ipd:notes',
+    'emergency:read', 'emergency:register', 'emergency:triage',
+    'lab:read',
+    'radiology:read',
+    'pharmacy:read',
+    'ot:read', 'ot:record',
+    'bloodbank:read', 'bloodbank:request',
+    'dashboard:read',
+  ],
+  receptionist: [
+    'patients:read', 'patients:write',
+    'appointments:read', 'appointments:write',
+    'emergency:read', 'emergency:register',
+    'billing:read', 'billing:write',
+    'insurance:read',
+    'dashboard:read',
+  ],
+  lab_tech: [
+    'patients:read',
+    'lab:read', 'lab:process',
+    'radiology:read', 'radiology:process',
+    'bloodbank:read', 'bloodbank:manage', 'bloodbank:issue',
+    'dashboard:read',
+  ],
+  pharmacist: [
+    'patients:read',
+    'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage',
+    'dashboard:read',
+  ],
+  accountant: [
+    'billing:read', 'billing:write', 'billing:manage',
+    'insurance:read', 'insurance:write',
+    'dashboard:read',
+  ],
+}
+
+export function hasPermission(role: Role, permission: Permission): boolean {
+  const perms = PERMISSION_MATRIX[role] ?? []
+  return perms.includes('admin:all') || perms.includes(permission)
+}
+
+export async function requirePermission(
+  role: Role | null | undefined,
+  permission: Permission
+): Promise<void> {
+  if (!role || !hasPermission(role, permission)) throw new Error('FORBIDDEN')
+}
+
+export const NAV_CONFIG: NavGroup[] = [
+  {
+    label: 'Clinical',
+    items: [
+      { label: 'Dashboard',    href: '/dashboard',    icon: 'LayoutDashboard', requiredPermission: 'dashboard:read' },
+      { label: 'Patients',     href: '/patients',     icon: 'Users',           requiredPermission: 'patients:read' },
+      { label: 'Appointments', href: '/appointments', icon: 'CalendarDays',    requiredPermission: 'appointments:read' },
+      { label: 'OPD',          href: '/opd',          icon: 'Stethoscope',     requiredPermission: 'opd:read' },
+      { label: 'Ward Board',   href: '/wards',        icon: 'LayoutGrid',      requiredPermission: 'ipd:read' },
+      { label: 'IPD',          href: '/ipd',          icon: 'BedDouble',       requiredPermission: 'ipd:read' },
+      { label: 'Emergency',    href: '/emergency',    icon: 'Siren',           requiredPermission: 'emergency:read' },
+    ],
+  },
+  {
+    label: 'Diagnostics & Treatment',
+    items: [
+      { label: 'Laboratory',        href: '/lab',       icon: 'FlaskConical', requiredPermission: 'lab:read' },
+      { label: 'Radiology',         href: '/radiology', icon: 'Scan',         requiredPermission: 'radiology:read' },
+      { label: 'Pharmacy',          href: '/pharmacy',  icon: 'Pill',         requiredPermission: 'pharmacy:read' },
+      { label: 'Operation Theatre', href: '/ot',        icon: 'Scissors',     requiredPermission: 'ot:read' },
+      { label: 'Blood Bank',        href: '/blood',     icon: 'Droplets',     requiredPermission: 'bloodbank:read' },
+    ],
+  },
+  {
+    label: 'Administrative & Financial',
+    items: [
+      { label: 'Billing',    href: '/billing',   icon: 'Receipt',   requiredPermission: 'billing:read' },
+      { label: 'Insurance',  href: '/insurance', icon: 'ShieldPlus', requiredPermission: 'insurance:read' },
+      { label: 'HR & Staff', href: '/hr',        icon: 'UserCog',   requiredPermission: 'hr:read' },
+    ],
+  },
+  {
+    label: 'Platform',
+    items: [
+      { label: 'Audit Log', href: '/audit',    icon: 'ClipboardList', requiredPermission: 'audit:read' },
+      { label: 'Settings',  href: '/settings', icon: 'Settings',      requiredPermission: 'settings:read' },
+    ],
+  },
+]
