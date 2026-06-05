@@ -2,12 +2,19 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, AlertTriangle, Droplet, User, Phone, Mail, MapPin, Clock, Stethoscope } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  ArrowLeft, AlertTriangle, Droplet, User, Phone, Mail, Clock,
+  Stethoscope, Pencil, Receipt, BadgeIndianRupee,
+} from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import type { Patient, Visit, Appointment } from '@/lib/types'
+import Money from '@/components/ui/Money'
+import EditPatientModal from './EditPatientModal'
+import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
+import type { Patient, Visit, Appointment, Bill } from '@/lib/types'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -21,26 +28,44 @@ function computeAge(dob: string | null): string {
   return `${age} years`
 }
 
-type Tab = 'visits' | 'appointments' | 'info'
+const BILL_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  draft:     { bg: '#F8FAFC', color: '#64748B', label: 'Draft' },
+  unpaid:    { bg: '#FEF2F2', color: '#DC2626', label: 'Unpaid' },
+  partial:   { bg: '#FEF3C7', color: '#B45309', label: 'Partial' },
+  paid:      { bg: '#F0FDF4', color: '#15803D', label: 'Paid' },
+  cancelled: { bg: '#F8FAFC', color: '#94A3B8', label: 'Cancelled' },
+}
+
+type Tab = 'visits' | 'appointments' | 'info' | 'bills'
 
 interface Props {
   patient: Patient
   visits: Visit[]
   appointments: Appointment[]
+  bills: Bill[]
 }
 
-export default function PatientProfile({ patient, visits, appointments }: Props) {
+export default function PatientProfile({ patient, visits, appointments, bills }: Props) {
   const [tab, setTab] = useState<Tab>('visits')
+  const [showEdit, setShowEdit] = useState(false)
+  const [showBillBuilder, setShowBillBuilder] = useState(false)
+  const router = useRouter()
+
+  const outstanding = bills
+    .filter((b) => !['paid', 'cancelled'].includes(b.status))
+    .reduce((s, b) => s + (b.total - b.paid), 0)
+
+  const unbilledVisits = visits.filter((v) => v.billing_status === 'unbilled' && v.status === 'closed')
 
   const TABS = [
     { key: 'visits' as Tab, label: 'Visits', count: visits.length },
     { key: 'appointments' as Tab, label: 'Appointments', count: appointments.length },
+    { key: 'bills' as Tab, label: 'Bills', count: bills.length },
     { key: 'info' as Tab, label: 'Info', count: null },
   ]
 
   return (
     <div>
-      {/* Back link */}
       <Link href="/patients" className="inline-flex items-center gap-1.5 text-sm mb-4"
         style={{ color: '#64748B' }}
         onMouseEnter={(e) => { e.currentTarget.style.color = '#0D9488' }}
@@ -79,11 +104,43 @@ export default function PatientProfile({ patient, visits, appointments }: Props)
                   </span>
                 )}
               </div>
+
+              {/* Outstanding balance */}
+              {outstanding > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 text-sm font-semibold"
+                  style={{ color: '#DC2626' }}>
+                  <BadgeIndianRupee className="w-4 h-4" />
+                  Outstanding: <Money amount={outstanding} />
+                </div>
+              )}
+              {unbilledVisits.length > 0 && (
+                <p className="text-xs mt-1" style={{ color: '#B45309' }}>
+                  {unbilledVisits.length} closed visit{unbilledVisits.length > 1 ? 's' : ''} pending billing
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Blood group + allergies badges */}
+          {/* Actions + badges */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all"
+              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+            <button
+              onClick={() => setShowBillBuilder(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all"
+              style={{ background: '#0D9488', color: '#fff', border: 'none' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}
+            >
+              <Receipt className="w-3.5 h-3.5" /> Generate Bill
+            </button>
             {patient.blood_group && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold"
                 style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
@@ -101,7 +158,6 @@ export default function PatientProfile({ patient, visits, appointments }: Props)
           </div>
         </div>
 
-        {/* Allergies detail */}
         {patient.allergies && (
           <div className="mt-4 p-3 rounded-xl text-sm"
             style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
@@ -133,10 +189,29 @@ export default function PatientProfile({ patient, visits, appointments }: Props)
         ))}
       </div>
 
-      {/* Tab content */}
-      {tab === 'visits' && <VisitsTab visits={visits} />}
+      {tab === 'visits'       && <VisitsTab visits={visits} />}
       {tab === 'appointments' && <AppointmentsTab appointments={appointments} />}
-      {tab === 'info' && <InfoTab patient={patient} />}
+      {tab === 'bills'        && <BillsTab bills={bills} outstanding={outstanding} />}
+      {tab === 'info'         && <InfoTab patient={patient} />}
+
+      {showEdit && (
+        <EditPatientModal
+          patient={patient}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => { setShowEdit(false); router.refresh() }}
+        />
+      )}
+
+      {showBillBuilder && (
+        <BillBuilderModal
+          preselectedPatient={patient}
+          onClose={() => setShowBillBuilder(false)}
+          onGenerated={(billId) => {
+            setShowBillBuilder(false)
+            router.push(`/billing/${billId}`)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -162,6 +237,18 @@ function VisitsTab({ visits }: { visits: Visit[] }) {
                     {v.diagnosis || 'No diagnosis recorded'}
                   </p>
                   <StatusBadge status={v.status} label={v.status === 'open' ? 'Open' : 'Closed'} />
+                  {/* Billing status badge (B) */}
+                  {v.status === 'closed' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={v.billing_status === 'billed'
+                        ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }
+                        : v.billing_status === 'waived'
+                        ? { background: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }
+                        : { background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }
+                      }>
+                      {v.billing_status === 'billed' ? 'Billed' : v.billing_status === 'waived' ? 'Waived' : 'Unbilled'}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
                   {v.doctor?.full_name ?? 'Unknown doctor'} · <DateText date={v.visit_date} />
@@ -228,6 +315,86 @@ function AppointmentsTab({ appointments }: { appointments: Appointment[] }) {
           </div>
         </GlassCard>
       ))}
+    </div>
+  )
+}
+
+function BillsTab({ bills, outstanding }: { bills: Bill[]; outstanding: number }) {
+  if (bills.length === 0) {
+    return <EmptyState title="No bills yet" description="Bills will appear here once generated." />
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Summary row */}
+      <div className="grid grid-cols-3 gap-3 mb-2">
+        <GlassCard className="p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Total Bills</p>
+          <p className="text-xl font-bold" style={{ color: '#0F172A' }}>{bills.length}</p>
+        </GlassCard>
+        <GlassCard className="p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Outstanding</p>
+          <p className="text-xl font-bold" style={{ color: outstanding > 0 ? '#DC2626' : '#15803D' }}>
+            <Money amount={outstanding} />
+          </p>
+        </GlassCard>
+        <GlassCard className="p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Total Paid</p>
+          <p className="text-xl font-bold" style={{ color: '#15803D' }}>
+            <Money amount={bills.reduce((s, b) => s + b.paid, 0)} />
+          </p>
+        </GlassCard>
+      </div>
+
+      {bills.map((b) => {
+        const style = BILL_STATUS_STYLE[b.status] ?? BILL_STATUS_STYLE.draft
+        const balance = b.total - b.paid
+        return (
+          <Link key={b.id} href={`/billing/${b.id}`} className="block"
+            onMouseEnter={(e) => { const c = e.currentTarget.firstElementChild as HTMLElement; if (c) c.style.background = 'rgba(13,148,136,0.04)' }}
+            onMouseLeave={(e) => { const c = e.currentTarget.firstElementChild as HTMLElement; if (c) c.style.background = '' }}
+          >
+            <GlassCard className="p-4 cursor-pointer transition-all">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)' }}>
+                    <Receipt className="w-4 h-4" style={{ color: '#0D9488' }} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold font-mono" style={{ color: '#0F172A' }}>{b.bill_no}</p>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: style.bg, color: style.color, border: `1px solid ${style.bg}` }}>
+                        {style.label}
+                      </span>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                      <DateText date={b.created_at} />
+                      {b.items && <> · {b.items.length} item{b.items.length !== 1 ? 's' : ''}</>}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-bold" style={{ color: '#0F172A' }}>
+                    <Money amount={b.total} />
+                  </p>
+                  {balance > 0 && b.status !== 'cancelled' && (
+                    <p className="text-xs font-medium" style={{ color: '#DC2626' }}>
+                      Due: <Money amount={balance} />
+                    </p>
+                  )}
+                  {b.paid > 0 && (
+                    <p className="text-xs" style={{ color: '#64748B' }}>
+                      Paid: <Money amount={b.paid} />
+                    </p>
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+          </Link>
+        )
+      })}
     </div>
   )
 }

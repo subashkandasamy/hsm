@@ -141,13 +141,30 @@ export async function resolveEmergency(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
-  const status = outcome === 'discharge' ? 'discharged' : 'referred'
   const supabase = await createClient()
+  const status = outcome === 'discharge' ? 'discharged' : 'referred'
+
   const { error } = await supabase
     .from('emergency_cases')
     .update({ status, outcome: outcomeNote })
     .eq('id', caseId)
   if (error) return { success: false, error: error.message }
+
+  // On discharge: close any open emergency visits and mark them for billing
+  if (outcome === 'discharge') {
+    const { data: ec } = await supabase
+      .from('emergency_cases').select('patient_id').eq('id', caseId).single()
+    if (ec?.patient_id) {
+      const { data: tariff } = await supabase
+        .from('tariffs').select('amount').eq('key', 'default_consultation_fee').maybeSingle()
+      const fee = (tariff?.amount as number | undefined) ?? 0
+      await supabase.from('visits')
+        .update({ status: 'closed', consultation_fee: fee, billing_status: 'unbilled' })
+        .eq('patient_id', ec.patient_id)
+        .eq('type', 'emergency')
+        .eq('status', 'open')
+    }
+  }
 
   await logAudit(actor.id, outcome, 'emergency_case', caseId, { outcome: outcomeNote })
   return { success: true }

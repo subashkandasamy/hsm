@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
-  Plus, ArrowRightLeft, LogOut, Activity, Lock,
+  Plus, ArrowRightLeft, LogOut, Activity, Lock, Receipt,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -19,6 +19,7 @@ import Modal from '@/components/ui/Modal'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ipd'
+import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import type { Admission, IpdProgressNote, Vitals } from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
@@ -65,6 +66,8 @@ export default function AdmissionDetail({ admission, initialNotes, availableWard
   const [summary, setSummary] = useState('')
   const [discharging, setDischarging] = useState(false)
   const [dischargeError, setDischargeError] = useState<string | null>(null)
+  const [showBillingPrompt, setShowBillingPrompt] = useState(false)
+  const [showBillBuilder, setShowBillBuilder] = useState(false)
 
   async function handleAddNote(e: React.FormEvent) {
     e.preventDefault()
@@ -113,6 +116,7 @@ export default function AdmissionDetail({ admission, initialNotes, availableWard
     if (!result.success) { setDischargeError(result.error); return }
     setAdm((a) => ({ ...a, status: 'discharged', discharged_at: new Date().toISOString(), discharge_summary: summary }))
     setShowDischarge(false)
+    setShowBillingPrompt(true)
   }
 
   const isClosed = adm.status !== 'admitted'
@@ -361,6 +365,38 @@ export default function AdmissionDetail({ admission, initialNotes, availableWard
         </div>
       </Modal>
 
+      {/* Post-discharge billing prompt */}
+      {showBillingPrompt && (
+        <div className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap"
+          style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+          <div className="flex items-center gap-3">
+            <Receipt className="w-5 h-5 flex-shrink-0" style={{ color: '#15803D' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Patient discharged</p>
+              <p className="text-xs mt-0.5" style={{ color: '#16A34A' }}>
+                This admission may have unbilled charges. Generate a bill now?
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowBillBuilder(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: '#15803D', color: '#fff', border: 'none' }}
+            >
+              <Receipt className="w-4 h-4" /> Generate Bill
+            </button>
+            <button
+              onClick={() => setShowBillingPrompt(false)}
+              className="px-3 py-2 rounded-xl text-sm font-medium"
+              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}
+            >
+              Later
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Discharge modal */}
       <Modal open={showDischarge} onClose={() => setShowDischarge(false)} title="Discharge Patient" maxWidth="30rem">
         <div className="space-y-4">
@@ -388,6 +424,18 @@ export default function AdmissionDetail({ admission, initialNotes, availableWard
           </div>
         </div>
       </Modal>
+
+      {showBillBuilder && adm.patient && (
+        <BillBuilderModal
+          preselectedPatient={adm.patient}
+          onClose={() => setShowBillBuilder(false)}
+          onGenerated={(billId) => {
+            setShowBillBuilder(false)
+            setShowBillingPrompt(false)
+            router.push(`/billing/${billId}`)
+          }}
+        />
+      )}
     </div>
   )
 }

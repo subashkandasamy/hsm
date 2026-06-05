@@ -64,11 +64,14 @@ export interface Prescription {
   frequency: string | null; duration: string | null; instructions: string | null
 }
 
+export type VisitBillingStatus = 'unbilled' | 'billed' | 'waived'
+
 export interface Visit {
   id: string; patient_id: string; doctor_id: string; appointment_id: string | null
   type: string; visit_date: string; vitals: Vitals | null; complaint: string | null
   diagnosis: string | null; icd_code: string | null; notes: string | null
-  status: VisitStatus; created_at: string
+  status: VisitStatus; consultation_fee: number; billing_status: VisitBillingStatus
+  created_at: string
   doctor?: Pick<Profile, 'id' | 'full_name'>
   prescriptions?: Prescription[]
 }

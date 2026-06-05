@@ -25,13 +25,14 @@ interface ManualItem { description: string; qty: number; unit_price: number }
 interface Props {
   onClose: () => void
   onGenerated: (billId: string) => void
+  preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
 }
 
-export default function BillBuilderModal({ onClose, onGenerated }: Props) {
-  const [step, setStep] = useState<'patient' | 'charges'>('patient')
+export default function BillBuilderModal({ onClose, onGenerated, preselectedPatient }: Props) {
+  const [step, setStep] = useState<'patient' | 'charges'>(preselectedPatient ? 'charges' : 'patient')
   const [patientSearch, setPatientSearch] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(preselectedPatient as Patient ?? null)
   const [searching, setSearching] = useState(false)
 
   const [charges, setCharges] = useState<ChargePreviewLine[]>([])
@@ -43,6 +44,18 @@ export default function BillBuilderModal({ onClose, onGenerated }: Props) {
 
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Auto-load charges when patient is preselected
+  useEffect(() => {
+    if (!preselectedPatient) return
+    setLoadingCharges(true)
+    getUnbilledCharges({ patientId: preselectedPatient.id }).then((lines) => {
+      setCharges(lines)
+      setSelectedRefs(new Set(lines.map((l) => l.ref_id)))
+      setLoadingCharges(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectedPatient?.id])
 
   // Search patients with debounce
   useEffect(() => {
