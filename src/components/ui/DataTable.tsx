@@ -141,9 +141,9 @@ export default function DataTable<T extends Record<string, unknown>>({
             {paginated.map((row, i) => (
               <div key={i} className="px-4 py-3.5">
                 {/* Primary headline */}
-                <p className="font-semibold text-sm min-w-0 truncate mb-2" style={{ color: '#0F172A' }}>
+                <div className="font-semibold text-sm min-w-0 truncate mb-2" style={{ color: '#0F172A' }}>
                   {primaryCol.render ? primaryCol.render(row) : String(row[primaryCol.key as keyof T] ?? '—')}
-                </p>
+                </div>
                 {/* Secondary fields */}
                 <dl className="space-y-1.5">
                   {displayCols.map((col) => {
