@@ -16,7 +16,8 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:request', 'bloodbank:issue',
     'billing:read', 'billing:write', 'billing:manage',
     'insurance:read', 'insurance:write',
-    'hr:read', 'hr:write',
+    'inventory:read', 'inventory:manage',
+    'hr:read', 'hr:manage', 'hr:attendance',
     'audit:read',
     'settings:read', 'settings:write',
     'dashboard:read',
@@ -47,6 +48,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'pharmacy:read',
     'ot:read', 'ot:record',
     'bloodbank:read', 'bloodbank:request',
+    'inventory:read',
     'dashboard:read',
   ],
   receptionist: [
@@ -72,6 +74,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   accountant: [
     'billing:read', 'billing:write', 'billing:manage',
     'insurance:read', 'insurance:write',
+    'inventory:read', 'inventory:manage',
     'dashboard:read',
   ],
 }
@@ -114,16 +117,17 @@ export const NAV_CONFIG: NavGroup[] = [
   {
     label: 'Administrative & Financial',
     items: [
-      { label: 'Billing',    href: '/billing',   icon: 'Receipt',   requiredPermission: 'billing:read' },
-      { label: 'Insurance',  href: '/insurance', icon: 'ShieldPlus', requiredPermission: 'insurance:read' },
-      { label: 'HR & Staff', href: '/hr',        icon: 'UserCog',   requiredPermission: 'hr:read' },
+      { label: 'Billing',    href: '/billing',    icon: 'Receipt',   requiredPermission: 'billing:read' },
+      { label: 'Insurance',  href: '/insurance',  icon: 'ShieldPlus', requiredPermission: 'insurance:read' },
+      { label: 'Inventory',  href: '/inventory',  icon: 'Warehouse', requiredPermission: 'inventory:read' },
     ],
   },
   {
     label: 'Platform',
     items: [
-      { label: 'Audit Log', href: '/audit',    icon: 'ClipboardList', requiredPermission: 'audit:read' },
-      { label: 'Settings',  href: '/settings', icon: 'Settings',      requiredPermission: 'settings:read' },
+      { label: 'Staff & HR', href: '/staff',    icon: 'UserCog',       requiredPermission: 'hr:read' },
+      { label: 'Audit Log',  href: '/audit',    icon: 'ClipboardList', requiredPermission: 'audit:read' },
+      { label: 'Settings',   href: '/settings', icon: 'Settings',      requiredPermission: 'settings:read' },
     ],
   },
 ]

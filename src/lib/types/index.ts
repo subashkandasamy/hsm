@@ -303,6 +303,68 @@ export interface InsuranceClaim {
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
 }
 
+// ---- Phase 6: Inventory ----
+
+export interface Supplier {
+  id: string; name: string; contact_person: string | null; phone: string | null
+  email: string | null; created_at: string
+}
+
+export interface InventoryItem {
+  id: string; name: string; category: string | null; unit: string | null
+  qty_in_stock: number; reorder_level: number; is_active: boolean; created_at: string
+}
+
+export type POStatus = 'draft' | 'ordered' | 'received' | 'partially_received' | 'cancelled'
+
+export interface PoItem {
+  id: string; po_id: string; item_id: string; qty: number
+  unit_price: number; received_qty: number
+  item?: Pick<InventoryItem, 'id' | 'name' | 'unit'>
+}
+
+export interface PurchaseOrder {
+  id: string; po_no: string; supplier_id: string | null; status: POStatus
+  total: number; created_by: string | null; created_at: string; received_at: string | null
+  supplier?: Pick<Supplier, 'id' | 'name'>
+  items?: PoItem[]
+}
+
+export type MovementReason = 'purchase' | 'issue' | 'adjustment'
+
+export interface StockMovement {
+  id: string; item_id: string; change: number; reason: MovementReason
+  ref_id: string | null; note: string | null; created_by: string | null; created_at: string
+  item?: Pick<InventoryItem, 'id' | 'name' | 'unit'>
+  creator?: Pick<Profile, 'id' | 'full_name'>
+}
+
+// ---- Phase 6: HR ----
+
+export interface StaffProfileRecord {
+  profile_id: string; designation: string | null; joining_date: string | null
+  address: string | null; emergency_contact: string | null
+}
+
+export interface StaffMember extends Profile {
+  staff?: StaffProfileRecord | null
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'half_day'
+export type Shift = 'morning' | 'evening' | 'night'
+
+export interface StaffAttendance {
+  id: string; profile_id: string; date: string; status: AttendanceStatus
+  shift: Shift | null; check_in: string | null; check_out: string | null
+  profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
+}
+
+export interface DutyRoster {
+  id: string; profile_id: string; date: string; shift: Shift | null; ward_id: string | null
+  profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
+  ward?: Pick<Ward, 'id' | 'name'>
+}
+
 // ---- Permissions ----
 
 export type Permission =
@@ -320,7 +382,8 @@ export type Permission =
   | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue'
   | 'billing:read' | 'billing:write' | 'billing:manage'
   | 'insurance:read' | 'insurance:write'
-  | 'hr:read' | 'hr:write'
+  | 'inventory:read' | 'inventory:manage'
+  | 'hr:read' | 'hr:manage' | 'hr:attendance'
   | 'audit:read'
   | 'settings:read' | 'settings:write'
   | 'dashboard:read'

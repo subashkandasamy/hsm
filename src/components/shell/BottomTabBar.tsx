@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, Stethoscope, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
+  Warehouse, UserCog,
 } from 'lucide-react'
 import { hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
@@ -23,11 +24,13 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Scissors:        <Scissors className="w-5 h-5" />,
   Droplets:        <Droplets className="w-5 h-5" />,
   ShieldPlus:      <ShieldPlus className="w-5 h-5" />,
+  Warehouse:       <Warehouse className="w-5 h-5" />,
+  UserCog:         <UserCog className="w-5 h-5" />,
 }
 
 // Priority order of destinations per role (pick first 5 that pass permission check)
 const ROLE_PRIORITY: Record<Role, string[]> = {
-  admin:        ['/dashboard', '/patients', '/appointments', '/opd', '/billing'],
+  admin:        ['/dashboard', '/patients', '/staff', '/inventory', '/billing'],
   doctor:       ['/appointments', '/opd', '/patients', '/lab', '/wards'],
   nurse:        ['/opd', '/patients', '/emergency', '/wards', '/lab'],
   receptionist: ['/patients', '/appointments', '/billing', '/dashboard', '/emergency'],
@@ -55,7 +58,9 @@ export default function BottomTabBar({ role }: BottomTabBarProps) {
     { href: '/blood',        label: 'Blood',    icon: 'Droplets',        requiredPermission: 'bloodbank:read' as Permission },
     { href: '/ot',           label: 'OT',       icon: 'Scissors',        requiredPermission: 'ot:read' as Permission },
     { href: '/billing',      label: 'Billing',  icon: 'Receipt',         requiredPermission: 'billing:read' as Permission },
-    { href: '/insurance',    label: 'Insurance',icon: 'ShieldPlus',      requiredPermission: 'insurance:read' as Permission },
+    { href: '/insurance',  label: 'Insurance', icon: 'ShieldPlus', requiredPermission: 'insurance:read' as Permission },
+    { href: '/inventory',  label: 'Inventory', icon: 'Warehouse',  requiredPermission: 'inventory:read' as Permission },
+    { href: '/staff',      label: 'Staff',     icon: 'UserCog',    requiredPermission: 'hr:read' as Permission },
   ]
 
   const priority = ROLE_PRIORITY[role] ?? ['/dashboard']

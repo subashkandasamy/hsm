@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
-  LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
+  LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
@@ -29,6 +29,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Scissors:        <Scissors className="w-4 h-4" />,
   Droplets:        <Droplets className="w-4 h-4" />,
   ShieldPlus:      <ShieldPlus className="w-4 h-4" />,
+  Warehouse:       <Warehouse className="w-4 h-4" />,
 }
 
 interface SidebarProps {

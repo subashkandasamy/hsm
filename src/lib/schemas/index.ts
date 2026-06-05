@@ -305,3 +305,90 @@ export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>
 export type InsurancePolicyInput = z.infer<typeof InsurancePolicySchema>
 export type InsuranceClaimInput = z.infer<typeof InsuranceClaimSchema>
 export type AdvanceClaimInput = z.infer<typeof AdvanceClaimSchema>
+
+// ---- Phase 6: Inventory ----
+export const SupplierSchema = z.object({
+  name: z.string().min(1, 'Supplier name required').max(200),
+  contact_person: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+})
+export const InventoryItemSchema = z.object({
+  name: z.string().min(1, 'Item name required').max(200),
+  category: z.string().nullable().optional(),
+  unit: z.string().nullable().optional(),
+  reorder_level: z.coerce.number().int().min(0).default(0),
+})
+export const PoLineSchema = z.object({
+  item_id: z.string().uuid('Select an item'),
+  qty: z.coerce.number().int().min(1, 'Qty must be ≥ 1'),
+  unit_price: z.coerce.number().min(0),
+})
+export const CreatePOSchema = z.object({
+  supplier_id: z.string().uuid().nullable().optional(),
+  lines: z.array(PoLineSchema).min(1, 'Add at least one item'),
+})
+export const ReceivePOSchema = z.object({
+  po_id: z.string().uuid(),
+  receipts: z.array(z.object({
+    po_item_id: z.string().uuid(),
+    received_qty: z.coerce.number().int().min(0),
+  })),
+})
+export const StockIssueSchema = z.object({
+  item_id: z.string().uuid(),
+  qty: z.coerce.number().int().min(1, 'Qty must be ≥ 1'),
+  note: z.string().nullable().optional(),
+})
+export const StockAdjustSchema = z.object({
+  item_id: z.string().uuid(),
+  change: z.coerce.number().int().refine((n) => n !== 0, 'Change cannot be zero'),
+  note: z.string().min(1, 'Note required for adjustment'),
+})
+
+// ---- Phase 6: HR ----
+export const CreateStaffSchema = z.object({
+  full_name: z.string().min(1, 'Full name required').max(200),
+  email: z.string().email('Valid email required'),
+  temp_password: z.string().min(8, 'Password must be ≥ 8 characters'),
+  role: z.enum(['admin','doctor','nurse','receptionist','lab_tech','pharmacist','accountant']),
+  department_id: z.string().uuid().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  joining_date: z.string().nullable().optional(),
+})
+export const UpdateStaffSchema = z.object({
+  full_name: z.string().min(1).max(200).optional(),
+  role: z.enum(['admin','doctor','nurse','receptionist','lab_tech','pharmacist','accountant']).optional(),
+  department_id: z.string().uuid().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  joining_date: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  emergency_contact: z.string().nullable().optional(),
+})
+export const MarkAttendanceSchema = z.object({
+  profile_id: z.string().uuid(),
+  date: z.string().min(1, 'Date required'),
+  status: z.enum(['present','absent','leave','half_day']),
+  shift: z.enum(['morning','evening','night']).nullable().optional(),
+  check_in: z.string().nullable().optional(),
+  check_out: z.string().nullable().optional(),
+})
+export const SetRosterSchema = z.object({
+  profile_id: z.string().uuid(),
+  date: z.string().min(1, 'Date required'),
+  shift: z.enum(['morning','evening','night']).nullable().optional(),
+  ward_id: z.string().uuid().nullable().optional(),
+})
+
+export type SupplierInput = z.infer<typeof SupplierSchema>
+export type InventoryItemInput = z.infer<typeof InventoryItemSchema>
+export type CreatePOInput = z.infer<typeof CreatePOSchema>
+export type ReceivePOInput = z.infer<typeof ReceivePOSchema>
+export type StockIssueInput = z.infer<typeof StockIssueSchema>
+export type StockAdjustInput = z.infer<typeof StockAdjustSchema>
+export type CreateStaffInput = z.infer<typeof CreateStaffSchema>
+export type UpdateStaffInput = z.infer<typeof UpdateStaffSchema>
+export type MarkAttendanceInput = z.infer<typeof MarkAttendanceSchema>
+export type SetRosterInput = z.infer<typeof SetRosterSchema>
