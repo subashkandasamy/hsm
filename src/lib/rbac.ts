@@ -19,6 +19,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'inventory:read', 'inventory:manage',
     'hr:read', 'hr:manage', 'hr:attendance',
     'notifications:send', 'notifications:manage',
+    'emr:read', 'emr:allergy:write', 'emr:document:upload', 'emr:document:delete',
     'audit:read',
     'settings:read', 'settings:write',
     'dashboard:read',
@@ -37,6 +38,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'billing:read',
     'insurance:read',
     'notifications:send',
+    'emr:read', 'emr:allergy:write', 'emr:document:upload',
     'dashboard:read',
   ],
   nurse: [
@@ -51,6 +53,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'ot:read', 'ot:record',
     'bloodbank:read', 'bloodbank:request',
     'inventory:read',
+    'emr:read', 'emr:allergy:write', 'emr:document:upload',
     'dashboard:read',
   ],
   receptionist: [
@@ -60,6 +63,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'billing:read', 'billing:write',
     'insurance:read',
     'notifications:send',
+    'emr:document:upload',
     'dashboard:read',
   ],
   lab_tech: [
@@ -67,11 +71,13 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'lab:read', 'lab:process',
     'radiology:read', 'radiology:process',
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:issue',
+    'emr:read',
     'dashboard:read',
   ],
   pharmacist: [
     'patients:read',
     'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage',
+    'emr:read',
     'dashboard:read',
   ],
   accountant: [

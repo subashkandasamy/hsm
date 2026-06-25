@@ -19,9 +19,10 @@ import { useAuth } from '@/context/AuthContext'
 import {
   saveVitals, saveConsultation, addPrescription, removePrescription, closeVisit,
 } from '@/app/actions/opd'
-import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug } from '@/lib/types'
+import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug, PatientAllergy } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
+import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
 import InstructionsPicker from './InstructionsPicker'
 
@@ -32,6 +33,7 @@ interface Props {
   labCatalog: LabTestCatalog[]
   radiologyCatalog: RadiologyCatalog[]
   drugs: Drug[]
+  allergies: PatientAllergy[]
 }
 
 function computeAge(dob: string | null) {
@@ -43,7 +45,7 @@ function computeAge(dob: string | null) {
   return a
 }
 
-export default function ConsultationWorkspace({ visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs }: Props) {
+export default function ConsultationWorkspace({ visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const isDoctor = profile?.role === 'doctor' || profile?.role === 'admin'
@@ -186,6 +188,11 @@ export default function ConsultationWorkspace({ visit: initialVisit, patient, hi
         <ArrowLeft className="w-4 h-4" /> Back to OPD
       </Link>
 
+      {/* Allergy banner — always visible above consultation area */}
+      {allergies.length > 0 && (
+        <AllergyBanner allergies={allergies} className="mb-4" />
+      )}
+
       {isClosed && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold"
           style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
@@ -239,18 +246,13 @@ export default function ConsultationWorkspace({ visit: initialVisit, patient, hi
                   <Droplet className="w-3 h-3" />{patient.blood_group}
                 </span>
               )}
-              {patient.allergies && (
+              {allergies.length > 0 && (
                 <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-xl font-semibold"
                   style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                  <AlertTriangle className="w-3 h-3" />Allergies
+                  <AlertTriangle className="w-3 h-3" />{allergies.length} Allerg{allergies.length === 1 ? 'y' : 'ies'}
                 </span>
               )}
             </div>
-            {patient.allergies && (
-              <p className="mt-2 text-xs p-2 rounded-lg" style={{ background: '#FFFBEB', color: '#92400E' }}>
-                {patient.allergies}
-              </p>
-            )}
           </GlassCard>
 
           {/* Past visits accordion */}

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, AlertTriangle, Droplet, User, Phone, Mail, Clock,
+  ArrowLeft, Droplet, User, Phone, Mail, Clock,
   Stethoscope, Pencil, Receipt, BadgeIndianRupee,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
@@ -12,9 +12,17 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import Money from '@/components/ui/Money'
+import AllergyBanner from '@/components/ui/AllergyBanner'
 import EditPatientModal from './EditPatientModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
-import type { Patient, Visit, Appointment, Bill } from '@/lib/types'
+import AllergiesTab from './AllergiesTab'
+import TimelineTab from './TimelineTab'
+import DocumentsTab from './DocumentsTab'
+import type {
+  Patient, Visit, Appointment, Bill,
+  PatientAllergy, PatientDocument, TimelineEvent, DiagnosisSummary, Role,
+} from '@/lib/types'
+import { hasPermission } from '@/lib/rbac'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -36,17 +44,25 @@ const BILL_STATUS_STYLE: Record<string, { bg: string; color: string; label: stri
   cancelled: { bg: '#F8FAFC', color: '#94A3B8', label: 'Cancelled' },
 }
 
-type Tab = 'visits' | 'appointments' | 'info' | 'bills'
+type Tab = 'timeline' | 'visits' | 'allergies' | 'documents' | 'appointments' | 'bills' | 'info'
 
 interface Props {
   patient: Patient
   visits: Visit[]
   appointments: Appointment[]
   bills: Bill[]
+  allergies: PatientAllergy[]
+  documents: PatientDocument[]
+  timeline: TimelineEvent[]
+  diagnoses: DiagnosisSummary[]
+  role: Role
 }
 
-export default function PatientProfile({ patient, visits, appointments, bills }: Props) {
-  const [tab, setTab] = useState<Tab>('visits')
+export default function PatientProfile({
+  patient, visits, appointments, bills,
+  allergies, documents, timeline, diagnoses, role,
+}: Props) {
+  const [tab, setTab] = useState<Tab>('timeline')
   const [showEdit, setShowEdit] = useState(false)
   const [showBillBuilder, setShowBillBuilder] = useState(false)
   const router = useRouter()
@@ -57,12 +73,23 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
 
   const unbilledVisits = visits.filter((v) => v.billing_status === 'unbilled' && v.status === 'closed')
 
-  const TABS = [
-    { key: 'visits' as Tab, label: 'Visits', count: visits.length },
-    { key: 'appointments' as Tab, label: 'Appointments', count: appointments.length },
-    { key: 'bills' as Tab, label: 'Bills', count: bills.length },
-    { key: 'info' as Tab, label: 'Info', count: null },
+  const canReadEMR       = hasPermission(role, 'emr:read')
+  const canWriteAllergy  = hasPermission(role, 'emr:allergy:write')
+  const canUploadDoc     = hasPermission(role, 'emr:document:upload')
+  const canDeleteDoc     = hasPermission(role, 'emr:document:delete')
+
+  const ALL_TABS: { key: Tab; label: string; count?: number; hidden?: boolean }[] = [
+    { key: 'timeline',      label: 'Timeline',      count: timeline.length,     hidden: !canReadEMR },
+    { key: 'visits',        label: 'Visits',        count: visits.length },
+    { key: 'appointments',  label: 'Appointments',  count: appointments.length },
+    { key: 'bills',         label: 'Bills',         count: bills.length },
+    { key: 'allergies',     label: 'Allergies',     count: allergies.length },
+    { key: 'documents',     label: 'Documents',     count: documents.length,    hidden: !canUploadDoc && !canReadEMR },
+    { key: 'info',          label: 'Info' },
   ]
+  const TABS = ALL_TABS.filter((t) => !t.hidden) as { key: Tab; label: string; count?: number }[]
+
+  const severeAllergies = allergies.filter((a) => a.severity === 'severe')
 
   return (
     <div>
@@ -73,6 +100,11 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
       >
         <ArrowLeft className="w-4 h-4" /> Back to Patients
       </Link>
+
+      {/* Allergy banner — always visible, above the header card */}
+      {allergies.length > 0 && (
+        <AllergyBanner allergies={allergies} className="mb-4" />
+      )}
 
       {/* Header card */}
       <GlassCard className="p-6 mb-5">
@@ -105,10 +137,8 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
                 )}
               </div>
 
-              {/* Outstanding balance */}
               {outstanding > 0 && (
-                <div className="flex items-center gap-1.5 mt-2 text-sm font-semibold"
-                  style={{ color: '#DC2626' }}>
+                <div className="flex items-center gap-1.5 mt-2 text-sm font-semibold" style={{ color: '#DC2626' }}>
                   <BadgeIndianRupee className="w-4 h-4" />
                   Outstanding: <Money amount={outstanding} />
                 </div>
@@ -121,11 +151,10 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
             </div>
           </div>
 
-          {/* Actions + badges */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setShowEdit(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[36px]"
               style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
@@ -134,7 +163,7 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
             </button>
             <button
               onClick={() => setShowBillBuilder(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[36px]"
               style={{ background: '#0D9488', color: '#fff', border: 'none' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}
@@ -148,51 +177,59 @@ export default function PatientProfile({ patient, visits, appointments, bills }:
                 {patient.blood_group}
               </div>
             )}
-            {patient.allergies && (
+            {severeAllergies.length > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold"
-                style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                <AlertTriangle className="w-4 h-4" />
-                Allergies
+                style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                ⚠ Severe Allergy
               </div>
             )}
           </div>
         </div>
-
-        {patient.allergies && (
-          <div className="mt-4 p-3 rounded-xl text-sm"
-            style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
-            <span className="font-semibold">Allergies: </span>{patient.allergies}
-          </div>
-        )}
       </GlassCard>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
-        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-        {TABS.map(({ key, label, count }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
-            style={tab === key
-              ? { background: '#0D9488', color: '#fff' }
-              : { color: '#64748B', background: 'transparent' }
-            }
-          >
-            {label}
-            {count !== null && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full"
-                style={tab === key
-                  ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
-                  : { background: '#F1F5F9', color: '#64748B' }
-                }>{count}</span>
-            )}
-          </button>
-        ))}
+      {/* Tabs — scrollable on mobile */}
+      <div className="overflow-x-auto mb-4">
+        <div className="flex gap-1 p-1 rounded-xl w-fit min-w-full sm:min-w-0"
+          style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
+          {TABS.map(({ key, label, count }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
+              style={tab === key
+                ? { background: '#0D9488', color: '#fff' }
+                : { color: '#64748B', background: 'transparent' }
+              }
+            >
+              {label}
+              {count !== undefined && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full"
+                  style={tab === key
+                    ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
+                    : { background: '#F1F5F9', color: '#64748B' }
+                  }>{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {tab === 'timeline' && canReadEMR && (
+        <TimelineTab patientId={patient.id} initialEvents={timeline} diagnoses={diagnoses} />
+      )}
       {tab === 'visits'       && <VisitsTab visits={visits} />}
       {tab === 'appointments' && <AppointmentsTab appointments={appointments} />}
       {tab === 'bills'        && <BillsTab bills={bills} outstanding={outstanding} />}
-      {tab === 'info'         && <InfoTab patient={patient} />}
+      {tab === 'allergies'    && (
+        <AllergiesTab patientId={patient.id} initialAllergies={allergies} canWrite={canWriteAllergy} />
+      )}
+      {tab === 'documents' && (
+        <DocumentsTab
+          patientId={patient.id}
+          initialDocuments={documents}
+          canUpload={canUploadDoc}
+          canDelete={canDeleteDoc}
+        />
+      )}
+      {tab === 'info' && <InfoTab patient={patient} />}
 
       {showEdit && (
         <EditPatientModal
@@ -237,7 +274,6 @@ function VisitsTab({ visits }: { visits: Visit[] }) {
                     {v.diagnosis || 'No diagnosis recorded'}
                   </p>
                   <StatusBadge status={v.status} label={v.status === 'open' ? 'Open' : 'Closed'} />
-                  {/* Billing status badge (B) */}
                   {v.status === 'closed' && (
                     <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                       style={v.billing_status === 'billed'
@@ -326,7 +362,6 @@ function BillsTab({ bills, outstanding }: { bills: Bill[]; outstanding: number }
 
   return (
     <div className="space-y-3">
-      {/* Summary row */}
       <div className="grid grid-cols-3 gap-3 mb-2">
         <GlassCard className="p-4 text-center">
           <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Total Bills</p>
@@ -409,14 +444,14 @@ function InfoTab({ patient }: { patient: Patient }) {
     { label: 'Email', value: patient.email },
     { label: 'Blood Group', value: patient.blood_group },
     { label: 'Address', value: patient.address },
-    { label: 'Allergies', value: patient.allergies },
+    { label: 'Allergies (free text)', value: patient.allergies },
     { label: 'Emergency Contact', value: patient.emergency_contact_name },
     { label: 'Emergency Phone', value: patient.emergency_contact_phone },
   ]
 
   return (
     <GlassCard className="p-6">
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
         {fields.map(({ label, value }) => (
           <div key={label}>
             <dt className="text-xs font-semibold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>

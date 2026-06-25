@@ -366,6 +366,46 @@ export interface DutyRoster {
   ward?: Pick<Ward, 'id' | 'name'>
 }
 
+// ---- Phase 8: EMR ----
+
+export type AllergySeverity = 'mild' | 'moderate' | 'severe'
+
+export interface PatientAllergy {
+  id: string; patient_id: string; allergen: string; reaction: string | null
+  severity: AllergySeverity; recorded_by: string | null; created_at: string
+  recorder?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+export type DocumentCategory = 'external_report' | 'referral' | 'consent_form' | 'identity' | 'insurance' | 'other'
+
+export interface PatientDocument {
+  id: string; patient_id: string; title: string; category: DocumentCategory
+  file_path: string; uploaded_by: string | null; uploaded_at: string
+  uploader?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+export type TimelineEventType =
+  | 'opd_visit' | 'emergency_visit' | 'admission'
+  | 'lab_order' | 'radiology_order'
+  | 'ot_schedule' | 'blood_issue' | 'document'
+
+export interface TimelineEvent {
+  id: string
+  type: TimelineEventType
+  date: string
+  title: string
+  summary: string | null
+  refTable: string
+  refId: string
+  meta?: Record<string, unknown>
+}
+
+export interface DiagnosisSummary {
+  diagnosis: string
+  icd_code: string | null
+  last_seen: string
+}
+
 // ---- Phase 7: Notifications ----
 
 export type NotificationChannel  = 'whatsapp' | 'sms'
@@ -426,6 +466,7 @@ export type Permission =
   | 'inventory:read' | 'inventory:manage'
   | 'hr:read' | 'hr:manage' | 'hr:attendance'
   | 'notifications:send' | 'notifications:manage'
+  | 'emr:read' | 'emr:allergy:write' | 'emr:document:upload' | 'emr:document:delete'
   | 'audit:read'
   | 'settings:read' | 'settings:write'
   | 'dashboard:read'
