@@ -41,6 +41,7 @@ export interface Patient {
   gender: 'male' | 'female' | 'other' | null; phone: string; email: string | null
   address: string | null; blood_group: string | null; allergies: string | null
   emergency_contact_name: string | null; emergency_contact_phone: string | null
+  notify_whatsapp_consent: boolean; notify_sms_consent: boolean
   created_by: string | null; created_at: string
 }
 
@@ -365,6 +366,46 @@ export interface DutyRoster {
   ward?: Pick<Ward, 'id' | 'name'>
 }
 
+// ---- Phase 7: Notifications ----
+
+export type NotificationChannel  = 'whatsapp' | 'sms'
+export type NotificationStatus   = 'queued' | 'sent' | 'delivered' | 'failed'
+export type NotificationRefType  = 'bill' | 'prescription' | 'appointment' | 'lab_order' | 'radiology_order'
+
+export interface NotificationTemplate {
+  id: string; key: string; channel: NotificationChannel
+  provider_template_name: string | null; body_preview: string | null; is_active: boolean
+}
+
+export interface Notification {
+  id: string; patient_id: string | null; channel: NotificationChannel
+  template_key: string | null; recipient_phone: string; ref_type: NotificationRefType
+  ref_id: string | null; status: NotificationStatus; provider_message_id: string | null
+  error: string | null; sent_by: string | null; created_at: string
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  sender?: Pick<Profile, 'id' | 'full_name'>
+}
+
+// ---- Phase 7: Dashboard KPIs ----
+
+export interface AdminKPIs {
+  todayRevenue: number; bedOccupancy: number; totalBeds: number; occupiedBeds: number
+  todayFootfall: number; pendingBillsCount: number; pendingBillsTotal: number
+  lowStockCount: number
+}
+
+export interface DoctorKPIs {
+  todayTotal: number; todayCompleted: number; todayPending: number
+}
+
+export interface ReceptionistKPIs {
+  todayAppointments: number; todayCheckedIn: number; todayRegistrations: number
+}
+
+export interface PharmacistKPIs {
+  pendingPrescriptions: number; lowStockCount: number; nearExpiryCount: number
+}
+
 // ---- Permissions ----
 
 export type Permission =
@@ -384,6 +425,7 @@ export type Permission =
   | 'insurance:read' | 'insurance:write'
   | 'inventory:read' | 'inventory:manage'
   | 'hr:read' | 'hr:manage' | 'hr:attendance'
+  | 'notifications:send' | 'notifications:manage'
   | 'audit:read'
   | 'settings:read' | 'settings:write'
   | 'dashboard:read'

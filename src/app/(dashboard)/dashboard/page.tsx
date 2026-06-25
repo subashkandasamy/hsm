@@ -1,28 +1,36 @@
-import PageHeader from '@/components/ui/PageHeader'
-import GlassCard from '@/components/ui/GlassCard'
-import { LayoutDashboard } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import {
+  getAdminDashboard, getDoctorDashboard,
+  getReceptionistDashboard, getPharmacistDashboard,
+} from '@/app/actions/dashboard'
+import AdminDashboard from './_components/AdminDashboard'
+import DoctorDashboard from './_components/DoctorDashboard'
+import ReceptionistDashboard from './_components/ReceptionistDashboard'
+import PharmacistDashboard from './_components/PharmacistDashboard'
+import GenericDashboard from './_components/GenericDashboard'
 
-export default function DashboardPage() {
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        subtitle="Hospital overview and key metrics"
-      />
-      <GlassCard className="p-8">
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-            style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)' }}
-          >
-            <LayoutDashboard className="w-6 h-6" style={{ color: '#0D9488' }} />
-          </div>
-          <p className="text-base font-semibold" style={{ color: '#475569' }}>Coming in a later phase</p>
-          <p className="mt-1 text-sm max-w-xs" style={{ color: '#94A3B8' }}>
-            Dashboard widgets, KPIs, and hospital metrics will be added in Phase 1.
-          </p>
-        </div>
-      </GlassCard>
-    </div>
-  )
+export default async function DashboardPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles').select('role').eq('id', user!.id).single()
+  const role = (profile?.role as string) ?? 'nurse'
+
+  if (role === 'admin' || role === 'accountant') {
+    const kpis = await getAdminDashboard().catch(() => null)
+    return <AdminDashboard kpis={kpis} />
+  }
+  if (role === 'doctor') {
+    const kpis = await getDoctorDashboard().catch(() => null)
+    return <DoctorDashboard kpis={kpis} />
+  }
+  if (role === 'receptionist') {
+    const kpis = await getReceptionistDashboard().catch(() => null)
+    return <ReceptionistDashboard kpis={kpis} />
+  }
+  if (role === 'pharmacist') {
+    const kpis = await getPharmacistDashboard().catch(() => null)
+    return <PharmacistDashboard kpis={kpis} />
+  }
+  return <GenericDashboard role={role} />
 }

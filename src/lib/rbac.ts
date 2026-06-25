@@ -18,6 +18,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'insurance:read', 'insurance:write',
     'inventory:read', 'inventory:manage',
     'hr:read', 'hr:manage', 'hr:attendance',
+    'notifications:send', 'notifications:manage',
     'audit:read',
     'settings:read', 'settings:write',
     'dashboard:read',
@@ -35,6 +36,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'bloodbank:read', 'bloodbank:request',
     'billing:read',
     'insurance:read',
+    'notifications:send',
     'dashboard:read',
   ],
   nurse: [
@@ -57,6 +59,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'emergency:read', 'emergency:register',
     'billing:read', 'billing:write',
     'insurance:read',
+    'notifications:send',
     'dashboard:read',
   ],
   lab_tech: [
@@ -75,6 +78,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'billing:read', 'billing:write', 'billing:manage',
     'insurance:read', 'insurance:write',
     'inventory:read', 'inventory:manage',
+    'notifications:send',
     'dashboard:read',
   ],
 }
@@ -125,9 +129,10 @@ export const NAV_CONFIG: NavGroup[] = [
   {
     label: 'Platform',
     items: [
-      { label: 'Staff & HR', href: '/staff',    icon: 'UserCog',       requiredPermission: 'hr:read' },
-      { label: 'Audit Log',  href: '/audit',    icon: 'ClipboardList', requiredPermission: 'audit:read' },
-      { label: 'Settings',   href: '/settings', icon: 'Settings',      requiredPermission: 'settings:read' },
+      { label: 'Staff & HR',     href: '/staff',         icon: 'UserCog',       requiredPermission: 'hr:read' },
+      { label: 'Notifications',  href: '/notifications', icon: 'Bell',          requiredPermission: 'notifications:send' },
+      { label: 'Audit Log',      href: '/audit',         icon: 'ClipboardList', requiredPermission: 'audit:read' },
+      { label: 'Settings',       href: '/settings',      icon: 'Settings',      requiredPermission: 'settings:read' },
     ],
   },
 ]

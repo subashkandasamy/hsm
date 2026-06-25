@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Printer, CheckCircle2, XCircle, DollarSign, Loader2 } from 'lucide-react'
+import { ArrowLeft, Printer, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
@@ -11,6 +11,7 @@ import Modal from '@/components/ui/Modal'
 import {
   finalizeBill, cancelBill, recordPayment, applyDiscount, setTax, getBill,
 } from '@/app/actions/billing'
+import { sendBillNotification } from '@/app/actions/notifications'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, BillItemSource } from '@/lib/types'
@@ -63,6 +64,20 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
   const [taxVal, setTaxVal]             = useState(String(bill.tax))
   const [adjError, setAdjError]         = useState<string | null>(null)
   const [adjLoading, setAdjLoading]     = useState(false)
+
+  const [notifStatus, setNotifStatus]   = useState<string | null>(null)
+  const [notifSending, setNotifSending] = useState(false)
+  const canNotify = !!role && hasPermission(role, 'notifications:send')
+
+  async function handleSendNotif(channel: 'whatsapp' | 'sms') {
+    setNotifSending(true); setNotifStatus(null)
+    const res = await sendBillNotification(bill.id, channel)
+    setNotifSending(false)
+    setNotifStatus(res.success
+      ? `Sent via ${res.fallback ? 'SMS (fallback)' : channel} ✓`
+      : (res.error ?? 'Send failed'))
+    setTimeout(() => setNotifStatus(null), 5000)
+  }
 
   async function refresh() {
     setLoading(true)
@@ -166,6 +181,29 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">Print</span>
           </button>
+
+          {canNotify && (
+            <>
+              <button onClick={() => handleSendNotif('whatsapp')} disabled={notifSending}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+                style={{ border: '1px solid rgba(37,211,102,0.4)', color: '#15803D', background: 'rgba(37,211,102,0.06)', minHeight: '40px', cursor: notifSending ? 'not-allowed' : 'pointer' }}>
+                <MessageSquare className="w-4 h-4" />
+                <span className="hidden sm:inline">WhatsApp</span>
+              </button>
+              <button onClick={() => handleSendNotif('sms')} disabled={notifSending}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+                style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '40px', cursor: notifSending ? 'not-allowed' : 'pointer' }}>
+                <Phone className="w-4 h-4" />
+                <span className="hidden sm:inline">SMS</span>
+              </button>
+            </>
+          )}
+          {notifStatus && (
+            <span className="text-xs px-3 py-1.5 rounded-xl font-medium"
+              style={{ background: notifStatus.includes('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(220,38,38,0.08)', color: notifStatus.includes('✓') ? '#065F46' : '#DC2626' }}>
+              {notifStatus}
+            </span>
+          )}
 
           {canManage && isMutable && (
             <button

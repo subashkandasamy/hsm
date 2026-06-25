@@ -34,6 +34,8 @@ export const PatientCreateSchema = z.object({
   allergies: z.string().nullable().optional(),
   emergency_contact_name: z.string().nullable().optional(),
   emergency_contact_phone: z.string().nullable().optional(),
+  notify_whatsapp_consent: z.boolean().optional().default(false),
+  notify_sms_consent: z.boolean().optional().default(false),
 })
 export const PatientUpdateSchema = PatientCreateSchema.partial()
 

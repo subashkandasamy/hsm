@@ -59,7 +59,7 @@ export default function TopBar({ fullName, role, onMenuClick }: TopBarProps) {
           <Menu className="w-5 h-5" />
         </button>
         {/* Short title on mobile only */}
-        <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>HMS</span>
+        <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>Uyirly</span>
       </div>
 
       {/* Right: user info + logout */}

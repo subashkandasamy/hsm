@@ -50,7 +50,7 @@ export default function LoginPage() {
             style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
             <Building2 className="w-7 h-7" style={{ color: '#0D9488' }} />
           </div>
-          <h1 className="text-2xl font-bold" style={{ color: '#0F172A' }}>Hospital Management</h1>
+          <h1 className="text-2xl font-bold" style={{ color: '#0F172A' }}>Uyirly</h1>
           <p className="mt-1 text-sm" style={{ color: '#64748B' }}>Sign in to your account</p>
         </div>
 
@@ -149,7 +149,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center mt-6 text-xs" style={{ color: '#94A3B8' }}>
-          Hospital Management System &copy; {new Date().getFullYear()}
+          Uyirly &copy; {new Date().getFullYear()}
         </p>
       </div>
     </main>

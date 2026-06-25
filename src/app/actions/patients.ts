@@ -53,6 +53,8 @@ export async function createPatient(
     allergies: data.allergies || null,
     emergency_contact_name: data.emergency_contact_name || null,
     emergency_contact_phone: data.emergency_contact_phone || null,
+    notify_whatsapp_consent: data.notify_whatsapp_consent ?? false,
+    notify_sms_consent: data.notify_sms_consent ?? false,
     created_by: actor.id,
   })
 

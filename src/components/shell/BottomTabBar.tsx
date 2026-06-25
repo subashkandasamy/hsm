@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, Stethoscope, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
-  Warehouse, UserCog,
+  Warehouse, UserCog, Bell,
 } from 'lucide-react'
 import { hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
@@ -26,6 +26,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ShieldPlus:      <ShieldPlus className="w-5 h-5" />,
   Warehouse:       <Warehouse className="w-5 h-5" />,
   UserCog:         <UserCog className="w-5 h-5" />,
+  Bell:            <Bell className="w-5 h-5" />,
 }
 
 // Priority order of destinations per role (pick first 5 that pass permission check)
@@ -59,8 +60,9 @@ export default function BottomTabBar({ role }: BottomTabBarProps) {
     { href: '/ot',           label: 'OT',       icon: 'Scissors',        requiredPermission: 'ot:read' as Permission },
     { href: '/billing',      label: 'Billing',  icon: 'Receipt',         requiredPermission: 'billing:read' as Permission },
     { href: '/insurance',  label: 'Insurance', icon: 'ShieldPlus', requiredPermission: 'insurance:read' as Permission },
-    { href: '/inventory',  label: 'Inventory', icon: 'Warehouse',  requiredPermission: 'inventory:read' as Permission },
-    { href: '/staff',      label: 'Staff',     icon: 'UserCog',    requiredPermission: 'hr:read' as Permission },
+    { href: '/inventory',      label: 'Inventory', icon: 'Warehouse',  requiredPermission: 'inventory:read' as Permission },
+    { href: '/staff',          label: 'Staff',     icon: 'UserCog',    requiredPermission: 'hr:read' as Permission },
+    { href: '/notifications',  label: 'Notify',    icon: 'Bell',       requiredPermission: 'notifications:send' as Permission },
   ]
 
   const priority = ROLE_PRIORITY[role] ?? ['/dashboard']

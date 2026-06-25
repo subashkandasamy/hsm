@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
-  LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse,
+  LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
@@ -29,6 +29,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Scissors:        <Scissors className="w-4 h-4" />,
   Droplets:        <Droplets className="w-4 h-4" />,
   ShieldPlus:      <ShieldPlus className="w-4 h-4" />,
+  Bell:            <Bell className="w-4 h-4" />,
   Warehouse:       <Warehouse className="w-4 h-4" />,
 }
 
@@ -63,7 +64,7 @@ export default function Sidebar({ role, drawerOpen = false, onClose }: SidebarPr
           <Building2 className="w-4 h-4" style={{ color: '#0D9488' }} />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>HMS</p>
+          <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>Uyirly</p>
           <p className="text-xs truncate" style={{ color: '#64748B' }}>Hospital Management</p>
         </div>
       </div>

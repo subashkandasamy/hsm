@@ -24,6 +24,8 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     full_name: '', dob: '', gender: '', phone: '', email: '',
     address: '', blood_group: '', allergies: '',
     emergency_contact_name: '', emergency_contact_phone: '',
+    notify_whatsapp_consent: false,
+    notify_sms_consent: false,
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -37,6 +39,10 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     setApiError(null)
     setDuplicate(null)
     setConfirmed(false)
+  }
+
+  function setConsent(field: 'notify_whatsapp_consent' | 'notify_sms_consent', value: boolean) {
+    setForm((f) => ({ ...f, [field]: value }))
   }
 
   async function handleSubmit(e: React.FormEvent, force = false) {
@@ -55,6 +61,8 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       allergies: form.allergies || null,
       emergency_contact_name: form.emergency_contact_name || null,
       emergency_contact_phone: form.emergency_contact_phone || null,
+      notify_whatsapp_consent: form.notify_whatsapp_consent,
+      notify_sms_consent: form.notify_sms_consent,
     }
 
     const result = await createPatient(input)
@@ -75,6 +83,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       full_name: '', dob: '', gender: '', phone: '', email: '',
       address: '', blood_group: '', allergies: '',
       emergency_contact_name: '', emergency_contact_phone: '',
+      notify_whatsapp_consent: false, notify_sms_consent: false,
     })
     setDuplicate(null)
   }
@@ -184,6 +193,27 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
             </FormField>
           </div>
         </GlassCard>
+
+        {/* Notification consent */}
+        <div className="p-4 rounded-xl space-y-3" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>Notification Consent</p>
+          <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+            <input type="checkbox" checked={form.notify_whatsapp_consent}
+              onChange={(e) => setConsent('notify_whatsapp_consent', e.target.checked)}
+              className="w-4 h-4 rounded" style={{ accentColor: '#0D9488' }} />
+            <span className="text-sm" style={{ color: '#0F172A' }}>
+              Patient consents to WhatsApp notifications (bills, prescriptions, reminders)
+            </span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+            <input type="checkbox" checked={form.notify_sms_consent}
+              onChange={(e) => setConsent('notify_sms_consent', e.target.checked)}
+              className="w-4 h-4 rounded" style={{ accentColor: '#0D9488' }} />
+            <span className="text-sm" style={{ color: '#0F172A' }}>
+              Patient consents to SMS notifications
+            </span>
+          </label>
+        </div>
 
         {apiError && (
           <div className="rounded-xl px-4 py-3 text-sm"
