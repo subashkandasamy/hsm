@@ -1,3 +1,32 @@
+// ---- Phase 9: SaaS / Multi-Tenancy ----
+
+export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
+export type TenantPlan = 'starter' | 'professional' | 'enterprise'
+
+export interface Tenant {
+  id: string; name: string; slug: string
+  status: TenantStatus; plan: TenantPlan
+  custom_domain: string | null; trial_ends_at: string | null; created_at: string
+}
+
+export interface TenantWithStats extends Tenant {
+  user_count: number; patient_count: number; last_activity: string | null
+}
+
+export interface PlatformAdmin {
+  id: string; full_name: string; created_at: string
+}
+
+export interface Subscription {
+  id: string; tenant_id: string
+  stripe_customer_id: string; stripe_subscription_id: string | null
+  plan: string; status: string; current_period_end: string | null; created_at: string
+}
+
+export interface TenantContext {
+  id: string; name: string; slug: string; status: TenantStatus; plan: TenantPlan
+}
+
 export type Role =
   | 'admin'
   | 'doctor'
@@ -468,6 +497,7 @@ export type Permission =
   | 'notifications:send' | 'notifications:manage'
   | 'emr:read' | 'emr:allergy:write' | 'emr:document:upload' | 'emr:document:delete'
   | 'audit:read'
+  | 'account:subscription'
   | 'settings:read' | 'settings:write'
   | 'dashboard:read'
 

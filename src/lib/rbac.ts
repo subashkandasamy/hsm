@@ -20,7 +20,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'hr:read', 'hr:manage', 'hr:attendance',
     'notifications:send', 'notifications:manage',
     'emr:read', 'emr:allergy:write', 'emr:document:upload', 'emr:document:delete',
-    'audit:read',
+    'audit:read', 'account:subscription',
     'settings:read', 'settings:write',
     'dashboard:read',
   ],
@@ -135,10 +135,11 @@ export const NAV_CONFIG: NavGroup[] = [
   {
     label: 'Platform',
     items: [
-      { label: 'Staff & HR',     href: '/staff',         icon: 'UserCog',       requiredPermission: 'hr:read' },
-      { label: 'Notifications',  href: '/notifications', icon: 'Bell',          requiredPermission: 'notifications:send' },
-      { label: 'Audit Log',      href: '/audit',         icon: 'ClipboardList', requiredPermission: 'audit:read' },
-      { label: 'Settings',       href: '/settings',      icon: 'Settings',      requiredPermission: 'settings:read' },
+      { label: 'Staff & HR',     href: '/staff',                   icon: 'UserCog',       requiredPermission: 'hr:read' },
+      { label: 'Notifications',  href: '/notifications',           icon: 'Bell',          requiredPermission: 'notifications:send' },
+      { label: 'Audit Log',      href: '/audit',                   icon: 'ClipboardList', requiredPermission: 'audit:read' },
+      { label: 'Subscription',   href: '/account/subscription',    icon: 'CreditCard',    requiredPermission: 'account:subscription' },
+      { label: 'Settings',       href: '/settings',                icon: 'Settings',      requiredPermission: 'settings:read' },
     ],
   },
 ]

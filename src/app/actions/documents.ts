@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
+import { requireTenantId } from '@/lib/tenant'
 import type { PatientDocument, DocumentCategory } from '@/lib/types'
 
 const BUCKET = 'documents'
@@ -29,8 +30,9 @@ export async function getUploadUrl(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emr:document:upload')
 
+  const tenantId = await requireTenantId()
   const ext = filename.split('.').pop() ?? 'bin'
-  const filePath = `patients/${patientId}/${crypto.randomUUID()}.${ext}`
+  const filePath = `tenants/${tenantId}/patients/${patientId}/${crypto.randomUUID()}.${ext}`
 
   const service = createServiceClient()
   const { data, error } = await service.storage
