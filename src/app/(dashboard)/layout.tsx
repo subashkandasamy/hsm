@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { AuthProvider } from '@/context/AuthContext'
 import AppShell from '@/components/shell/AppShell'
@@ -18,15 +19,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!profile) redirect('/login')
 
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('name')
-    .eq('id', profile.tenant_id)
-    .single()
+  // x-tenant-name is injected by the proxy for every subdomain request
+  const hdrs = await headers()
+  const tenantName = hdrs.get('x-tenant-name') ?? 'Hospital'
 
   return (
     <AuthProvider initialProfile={profile as Profile}>
-      <AppShell role={profile.role} fullName={profile.full_name} tenantName={tenant?.name ?? 'Hospital'}>
+      <AppShell role={profile.role} fullName={profile.full_name} tenantName={tenantName}>
         {children}
       </AppShell>
     </AuthProvider>
