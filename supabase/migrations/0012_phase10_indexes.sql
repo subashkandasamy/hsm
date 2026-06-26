@@ -1,9 +1,7 @@
 -- ============================================================================
 -- Phase 10.2 — Composite Index Audit
 -- ============================================================================
--- All indexes are CONCURRENTLY so they can run against a live database.
--- Note: CONCURRENTLY cannot run inside a transaction block. In Supabase
--- Dashboard, run each statement individually if needed.
+-- Column names verified against each table's CREATE TABLE definition.
 -- ============================================================================
 
 -- Enable pg_trgm for fast ILIKE / fuzzy patient-name searches
@@ -11,8 +9,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 
 -- ── patients ──────────────────────────────────────────────────────────────────
 -- (tenant_id, uhid) UNIQUE already exists from phase 9
+-- full_name is the actual column name (not "name")
 CREATE INDEX IF NOT EXISTS idx_patients_tenant_name_trgm
-  ON patients USING gin (name extensions.gin_trgm_ops);
+  ON patients USING gin (full_name extensions.gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS idx_patients_tenant_phone
   ON patients (tenant_id, phone);
@@ -45,43 +44,50 @@ CREATE INDEX IF NOT EXISTS idx_bills_tenant_status_created
 CREATE INDEX IF NOT EXISTS idx_bills_tenant_patient
   ON bills (tenant_id, patient_id, created_at DESC);
 
--- ── payments ──────────────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_payments_tenant_created
-  ON payments (tenant_id, created_at DESC);
+-- ── payments ─────────────────────────────────────────────────────────────────
+-- payments uses received_at (not created_at)
+CREATE INDEX IF NOT EXISTS idx_payments_tenant_received
+  ON payments (tenant_id, received_at DESC);
 
 -- ── lab_orders ────────────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_lab_orders_tenant_status_created
-  ON lab_orders (tenant_id, status, created_at DESC);
+-- lab_orders uses ordered_at (not created_at)
+CREATE INDEX IF NOT EXISTS idx_lab_orders_tenant_status
+  ON lab_orders (tenant_id, status, ordered_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_lab_orders_tenant_patient
-  ON lab_orders (tenant_id, patient_id, created_at DESC);
+  ON lab_orders (tenant_id, patient_id, ordered_at DESC);
 
 -- ── radiology_orders ──────────────────────────────────────────────────────────
+-- radiology_orders uses ordered_at (not created_at)
 CREATE INDEX IF NOT EXISTS idx_radiology_orders_tenant_status
-  ON radiology_orders (tenant_id, status, created_at DESC);
+  ON radiology_orders (tenant_id, status, ordered_at DESC);
 
--- ── prescriptions ─────────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_prescriptions_tenant_status
-  ON prescriptions (tenant_id, status, created_at DESC);
+-- ── prescriptions ────────────────────────────────────────────────────────────
+-- prescriptions has: id, visit_id, drug_name, dosage, frequency, duration,
+-- instructions, tenant_id — no status or created_at columns
+CREATE INDEX IF NOT EXISTS idx_prescriptions_tenant_visit
+  ON prescriptions (tenant_id, visit_id);
 
--- ── drug_batches ──────────────────────────────────────────────────────────────
+-- ── drug_batches ─────────────────────────────────────────────────────────────
+-- drug_batches uses: expiry (not expiry_date), qty_available (not qty_remaining)
 CREATE INDEX IF NOT EXISTS idx_drug_batches_tenant_expiry
-  ON drug_batches (tenant_id, expiry_date)
-  WHERE qty_remaining > 0;
+  ON drug_batches (tenant_id, expiry)
+  WHERE qty_available > 0;
 
 CREATE INDEX IF NOT EXISTS idx_drug_batches_tenant_low_stock
-  ON drug_batches (tenant_id, qty_remaining)
-  WHERE qty_remaining < 10;
+  ON drug_batches (tenant_id, qty_available)
+  WHERE qty_available < 10;
 
 -- ── admissions ────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_admissions_tenant_status
   ON admissions (tenant_id, status, admitted_at DESC);
 
 -- ── emergency_cases ───────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_emergency_tenant_created
-  ON emergency_cases (tenant_id, created_at DESC);
+-- emergency_cases uses arrived_at (not created_at)
+CREATE INDEX IF NOT EXISTS idx_emergency_tenant_arrived
+  ON emergency_cases (tenant_id, arrived_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_emergency_tenant_status
+CREATE INDEX IF NOT EXISTS idx_emergency_tenant_triage_status
   ON emergency_cases (tenant_id, triage_level, status);
 
 -- ── inventory_items ───────────────────────────────────────────────────────────
