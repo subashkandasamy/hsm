@@ -346,7 +346,7 @@ const FAQS = [
   },
   {
     q: 'What happens when the 14-day trial ends?',
-    a: 'You'll receive reminders before the trial ends. If you don't subscribe, your data is retained for 30 days and then deleted. No automatic charges — you choose when to subscribe.',
+    a: "You'll receive reminders before the trial ends. If you don't subscribe, your data is retained for 30 days and then deleted. No automatic charges — you choose when to subscribe.",
   },
   {
     q: 'Does it work on mobile and tablets?',
