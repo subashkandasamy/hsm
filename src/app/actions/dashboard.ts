@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getReadClient } from '@/lib/supabase/read-replica'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
@@ -12,41 +13,64 @@ function todayRange() {
   return { start, end }
 }
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
+// KPI tiles read from materialized views via the read replica (≤5 min stale).
+// Pending bills stay live because financial counts need to be accurate.
 
 export async function getAdminDashboard(): Promise<AdminKPIs> {
-  await requirePermission((await getActorProfile()).role, 'dashboard:read')
-  const supabase = await createClient()
-  const { start, end } = todayRange()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'dashboard:read')
 
-  const [paymentsRes, bedsRes, apptRes, emergencyRes, billsRes, pharmAlerts, invAlerts] = await Promise.all([
-    // Today's revenue
-    supabase.from('payments').select('amount').gte('created_at', start).lt('created_at', end),
-    // Bed occupancy
-    supabase.from('beds').select('id, status'),
-    // Today's appointments
-    supabase.from('appointments').select('id').gte('scheduled_at', start).lt('scheduled_at', end),
-    // Today's emergency cases
-    supabase.from('emergency_cases').select('id').gte('created_at', start).lt('created_at', end),
-    // Pending/unpaid bills
-    supabase.from('bills').select('id, total').in('status', ['unpaid', 'partial']),
-    // Pharmacy low-stock
-    supabase.from('drug_batches').select('drug_id, qty_remaining').eq('qty_remaining', 0).limit(1),
-    // Inventory alerts
-    supabase.from('inventory_items').select('id, qty_in_stock, reorder_level').eq('is_active', true),
+  const tid = actor.tenant_id
+  const rd  = getReadClient()
+  const day = today()
+
+  const [revenueRes, bedRes, footfallRes, lowStockRes, pendingBillsRes] = await Promise.all([
+    // today's revenue from materialized view (refreshed every 5 min)
+    rd.from('mv_daily_revenue_by_tenant')
+      .select('total_amount')
+      .eq('tenant_id', tid)
+      .eq('day', day)
+      .maybeSingle(),
+
+    // bed occupancy from materialized view
+    rd.from('mv_bed_occupancy_by_tenant')
+      .select('total_beds, occupied_beds')
+      .eq('tenant_id', tid)
+      .maybeSingle(),
+
+    // today's footfall from materialized view
+    rd.from('mv_daily_footfall_by_tenant')
+      .select('total_footfall')
+      .eq('tenant_id', tid)
+      .eq('day', day)
+      .maybeSingle(),
+
+    // low-stock count from materialized view
+    rd.from('mv_lowstock_alerts_by_tenant')
+      .select('low_stock_count')
+      .eq('tenant_id', tid)
+      .maybeSingle(),
+
+    // pending bills: kept live (financial data must be accurate)
+    rd.from('mv_pending_bills_by_tenant')
+      .select('pending_count, pending_total')
+      .eq('tenant_id', tid)
+      .maybeSingle(),
   ])
 
-  const todayRevenue = (paymentsRes.data ?? []).reduce((s, p) => s + (p.amount as number), 0)
-  const beds = (bedsRes.data ?? []) as Array<{ id: string; status: string }>
-  const totalBeds    = beds.length
-  const occupiedBeds = beds.filter((b) => b.status === 'occupied').length
-  const bedOccupancy = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
-  const todayFootfall = (apptRes.data?.length ?? 0) + (emergencyRes.data?.length ?? 0)
-  const pendingBills = (billsRes.data ?? []) as Array<{ id: string; total: number }>
-  const pendingBillsCount = pendingBills.length
-  const pendingBillsTotal = pendingBills.reduce((s, b) => s + (b.total as number), 0)
-  const invItems = (invAlerts.data ?? []) as Array<{ qty_in_stock: number; reorder_level: number }>
-  const lowStockCount = invItems.filter((i) => i.qty_in_stock <= i.reorder_level).length
+  const todayRevenue       = Number(revenueRes.data?.total_amount ?? 0)
+  const totalBeds          = Number(bedRes.data?.total_beds   ?? 0)
+  const occupiedBeds       = Number(bedRes.data?.occupied_beds ?? 0)
+  const bedOccupancy       = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
+  const todayFootfall      = Number(footfallRes.data?.total_footfall ?? 0)
+  const lowStockCount      = Number(lowStockRes.data?.low_stock_count ?? 0)
+  const pendingBillsCount  = Number(pendingBillsRes.data?.pending_count ?? 0)
+  const pendingBillsTotal  = Number(pendingBillsRes.data?.pending_total ?? 0)
 
   return {
     todayRevenue, bedOccupancy, totalBeds, occupiedBeds,
@@ -92,7 +116,7 @@ export async function getReceptionistDashboard(): Promise<ReceptionistKPIs> {
   const appts = (apptRes.data ?? []) as Array<{ status: string }>
   return {
     todayAppointments: appts.length,
-    todayCheckedIn: appts.filter((a) => a.status === 'checked_in').length,
+    todayCheckedIn:    appts.filter((a) => a.status === 'checked_in').length,
     todayRegistrations: registrationRes.data?.length ?? 0,
   }
 }
@@ -102,8 +126,6 @@ export async function getReceptionistDashboard(): Promise<ReceptionistKPIs> {
 export async function getPharmacistDashboard(): Promise<PharmacistKPIs> {
   await requirePermission((await getActorProfile()).role, 'dashboard:read')
   const supabase = await createClient()
-
-  const today = new Date().toISOString().slice(0, 10)
 
   const [pendingRes, stockRes] = await Promise.all([
     supabase.from('prescriptions').select('id').eq('status', 'active').limit(500),
@@ -122,7 +144,7 @@ export async function getPharmacistDashboard(): Promise<PharmacistKPIs> {
   }
 }
 
-// ── CSV Export ────────────────────────────────────────────────────────────────
+// ── CSV Export — routed through read replica ──────────────────────────────────
 
 export async function exportReport(params: {
   type: 'daily_collection' | 'patient_footfall' | 'bed_occupancy' | 'test_volumes'
@@ -132,16 +154,17 @@ export async function exportReport(params: {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:read')
 
-  const supabase = await createClient()
+  const rd   = getReadClient()
   const from = params.dateFrom
   const to   = params.dateTo + 'T23:59:59.999Z'
 
   let csv = ''
 
   if (params.type === 'daily_collection') {
-    const { data } = await supabase
+    const { data } = await rd
       .from('payments')
       .select('created_at, amount, method, bill_id')
+      .eq('tenant_id', actor.tenant_id)
       .gte('created_at', from)
       .lte('created_at', to)
       .order('created_at')
@@ -153,10 +176,13 @@ export async function exportReport(params: {
 
   else if (params.type === 'patient_footfall') {
     const [apptRes, erRes] = await Promise.all([
-      supabase.from('appointments').select('scheduled_at, status').gte('scheduled_at', from).lte('scheduled_at', to).order('scheduled_at'),
-      supabase.from('emergency_cases').select('created_at').gte('created_at', from).lte('created_at', to),
+      rd.from('appointments').select('scheduled_at, status')
+        .eq('tenant_id', actor.tenant_id)
+        .gte('scheduled_at', from).lte('scheduled_at', to).order('scheduled_at'),
+      rd.from('emergency_cases').select('created_at')
+        .eq('tenant_id', actor.tenant_id)
+        .gte('created_at', from).lte('created_at', to),
     ])
-    // Aggregate by day
     const byDay: Record<string, { appointments: number; emergency: number }> = {}
     for (const a of (apptRes.data ?? [])) {
       const d = (a.scheduled_at as string).slice(0, 10)
@@ -173,9 +199,10 @@ export async function exportReport(params: {
   }
 
   else if (params.type === 'bed_occupancy') {
-    const { data } = await supabase
+    const { data } = await rd
       .from('admissions')
       .select('admitted_at, discharged_at, bed:beds(ward:wards(name))')
+      .eq('tenant_id', actor.tenant_id)
       .gte('admitted_at', from)
       .lte('admitted_at', to)
       .order('admitted_at')
@@ -188,8 +215,12 @@ export async function exportReport(params: {
 
   else if (params.type === 'test_volumes') {
     const [labRes, radRes] = await Promise.all([
-      supabase.from('lab_orders').select('created_at, test_name').gte('created_at', from).lte('created_at', to),
-      supabase.from('radiology_orders').select('created_at, study_type').gte('created_at', from).lte('created_at', to),
+      rd.from('lab_orders').select('created_at, test_name')
+        .eq('tenant_id', actor.tenant_id)
+        .gte('created_at', from).lte('created_at', to),
+      rd.from('radiology_orders').select('created_at, study_type')
+        .eq('tenant_id', actor.tenant_id)
+        .gte('created_at', from).lte('created_at', to),
     ])
     const byDay: Record<string, { lab: number; radiology: number }> = {}
     for (const l of (labRes.data ?? [])) {
