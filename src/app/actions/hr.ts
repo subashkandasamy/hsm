@@ -64,6 +64,7 @@ export async function createStaff(
 
   const { error: profileErr } = await supabase.from('profiles').insert({
     id: profileId,
+    tenant_id: actor.tenant_id,
     full_name: parsed.data.full_name,
     role: parsed.data.role,
     phone: parsed.data.phone ?? null,
@@ -78,6 +79,7 @@ export async function createStaff(
   if (parsed.data.designation || parsed.data.joining_date) {
     await supabase.from('staff_profiles').insert({
       profile_id: profileId,
+      tenant_id: actor.tenant_id,
       designation: parsed.data.designation ?? null,
       joining_date: parsed.data.joining_date ?? null,
     })
