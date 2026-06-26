@@ -10,10 +10,10 @@
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_daily_revenue_by_tenant AS
 SELECT
   tenant_id,
-  (created_at AT TIME ZONE 'UTC')::date AS day,
-  SUM(amount)::numeric(14,2)            AS total_amount
+  (received_at AT TIME ZONE 'UTC')::date AS day,
+  SUM(amount)::numeric(14,2)             AS total_amount
 FROM payments
-GROUP BY tenant_id, (created_at AT TIME ZONE 'UTC')::date
+GROUP BY tenant_id, (received_at AT TIME ZONE 'UTC')::date
 WITH DATA;
 
 -- Unique index required for REFRESH CONCURRENTLY
@@ -50,10 +50,10 @@ FROM (
 
   SELECT
     tenant_id,
-    (created_at AT TIME ZONE 'UTC')::date AS day,
+    (arrived_at AT TIME ZONE 'UTC')::date AS day,
     COUNT(*) AS cnt
   FROM emergency_cases
-  GROUP BY tenant_id, (created_at AT TIME ZONE 'UTC')::date
+  GROUP BY tenant_id, (arrived_at AT TIME ZONE 'UTC')::date
 ) sub
 GROUP BY tenant_id, day
 WITH DATA;
