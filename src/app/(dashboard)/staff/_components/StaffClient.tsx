@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Plus, RefreshCw, Users, CalendarCheck, CalendarClock,
   Edit2, UserX, Phone, Mail, Briefcase,
@@ -14,7 +14,7 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { listStaff, updateStaff, deactivateStaff, getAttendance, getRoster } from '@/app/actions/hr'
+import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, getAttendance, getRoster } from '@/app/actions/hr'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { StaffMember, StaffAttendance, DutyRoster, Role } from '@/lib/types'
@@ -279,16 +279,28 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
 
 function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; onClose: () => void; onSuccess: () => void }) {
   const [form, setForm] = useState({
-    full_name:        member.full_name,
-    role:             member.role as Role,
-    phone:            member.phone ?? '',
-    designation:      member.staff?.designation ?? '',
-    joining_date:     member.staff?.joining_date ?? '',
-    address:          member.staff?.address ?? '',
+    full_name:         member.full_name,
+    role:              member.role as Role,
+    phone:             member.phone ?? '',
+    designation:       member.staff?.designation ?? '',
+    joining_date:      member.staff?.joining_date ?? '',
+    address:           member.staff?.address ?? '',
     emergency_contact: member.staff?.emergency_contact ?? '',
+    email:             '',
   })
+  const originalEmail = useRef<string>('')
+  const [emailLoading, setEmailLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getStaffEmail(member.id).then((email) => {
+      const e = email ?? ''
+      originalEmail.current = e
+      setForm((f) => ({ ...f, email: e }))
+      setEmailLoading(false)
+    })
+  }, [member.id])
 
   function set(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -297,13 +309,20 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true); setError('')
+
+    const newEmail = form.email.trim().toLowerCase()
+    if (newEmail !== originalEmail.current.toLowerCase()) {
+      const emailRes = await updateStaffEmail(member.id, newEmail)
+      if (!emailRes.success) { setSaving(false); setError(emailRes.error); return }
+    }
+
     const res = await updateStaff(member.id, {
-      full_name:        form.full_name.trim(),
-      role:             form.role,
-      phone:            form.phone.trim() || null,
-      designation:      form.designation.trim() || null,
-      joining_date:     form.joining_date || null,
-      address:          form.address.trim() || null,
+      full_name:         form.full_name.trim(),
+      role:              form.role,
+      phone:             form.phone.trim() || null,
+      designation:       form.designation.trim() || null,
+      joining_date:      form.joining_date || null,
+      address:           form.address.trim() || null,
       emergency_contact: form.emergency_contact.trim() || null,
     })
     setSaving(false)
@@ -325,9 +344,9 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
             style={{ background: '#F1F5F9', color: '#475569', border: 'none', cursor: 'pointer' }}>
             Cancel
           </button>
-          <button form="edit-staff-form" type="submit" disabled={saving}
+          <button form="edit-staff-form" type="submit" disabled={saving || emailLoading}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: saving ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            style={{ background: (saving || emailLoading) ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: (saving || emailLoading) ? 'not-allowed' : 'pointer' }}>
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
@@ -352,24 +371,36 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
           </FormField>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormField label="Email" required hint="Changing email updates their Supabase login immediately.">
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => set('email', e.target.value)}
+              required
+              disabled={emailLoading}
+              placeholder={emailLoading ? 'Loading…' : 'staff@hospital.com'}
+            />
+          </FormField>
           <FormField label="Phone">
             <Input type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           </FormField>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Designation">
             <Input value={form.designation} onChange={(e) => set('designation', e.target.value)} placeholder="e.g. Senior Consultant" />
           </FormField>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Joining Date">
             <Input type="date" value={form.joining_date} onChange={(e) => set('joining_date', e.target.value)} />
           </FormField>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Emergency Contact">
             <Input value={form.emergency_contact} onChange={(e) => set('emergency_contact', e.target.value)} placeholder="Name & phone" />
           </FormField>
+          <FormField label="Address">
+            <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
+          </FormField>
         </div>
-        <FormField label="Address">
-          <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
-        </FormField>
       </form>
     </Modal>
   )

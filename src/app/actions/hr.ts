@@ -126,6 +126,26 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   return { success: true }
 }
 
+export async function getStaffEmail(profileId: string): Promise<string | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'hr:manage')
+  const service = createServiceClient()
+  const { data } = await service.auth.admin.getUserById(profileId)
+  return data?.user?.email ?? null
+}
+
+export async function updateStaffEmail(profileId: string, newEmail: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'hr:manage')
+  const trimmed = newEmail.trim().toLowerCase()
+  if (!trimmed) return { success: false, error: 'Email cannot be empty' }
+  const service = createServiceClient()
+  const { error } = await service.auth.admin.updateUserById(profileId, { email: trimmed })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update_email', 'staff', profileId)
+  return { success: true }
+}
+
 export async function deactivateStaff(profileId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
