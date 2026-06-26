@@ -167,7 +167,9 @@ export async function proxy(request: NextRequest) {
   }
 
   // ── Local dev or unrecognised hostname: standard Supabase auth gate ────────
-  if (isPublicPath) return NextResponse.next()
+  // Marketing pages served at the apex domain in prod are also public on localhost
+  const isMarketingPath = pathname === '/' || pathname.startsWith('/pricing')
+  if (isPublicPath || isMarketingPath) return NextResponse.next()
 
   let supabaseResponse = NextResponse.next({ request })
 
