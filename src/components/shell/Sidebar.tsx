@@ -35,11 +35,12 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 interface SidebarProps {
   role: Role
+  tenantName: string
   drawerOpen?: boolean
   onClose?: () => void
 }
 
-export default function Sidebar({ role, drawerOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ role, tenantName, drawerOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname()
 
   // Close drawer on route change
@@ -64,7 +65,7 @@ export default function Sidebar({ role, drawerOpen = false, onClose }: SidebarPr
           <Building2 className="w-4 h-4" style={{ color: '#0D9488' }} />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>Uyirly</p>
+          <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>{tenantName}</p>
           <p className="text-xs truncate" style={{ color: '#64748B' }}>Hospital Management</p>
         </div>
       </div>

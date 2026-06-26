@@ -19,10 +19,11 @@ const ROLE_LABELS: Record<Role, string> = {
 interface TopBarProps {
   fullName: string
   role: Role
+  tenantName: string
   onMenuClick?: () => void
 }
 
-export default function TopBar({ fullName, role, onMenuClick }: TopBarProps) {
+export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopBarProps) {
   const router = useRouter()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -59,7 +60,7 @@ export default function TopBar({ fullName, role, onMenuClick }: TopBarProps) {
           <Menu className="w-5 h-5" />
         </button>
         {/* Short title on mobile only */}
-        <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>Uyirly</span>
+        <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>{tenantName}</span>
       </div>
 
       {/* Right: user info + logout */}
