@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
-  Building2, CheckCircle, ArrowRight, X, Star,
-  Activity, FlaskConical, Receipt, Shield, Users,
+  Building2, CheckCircle, ArrowRight, X, Star, Activity,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -34,8 +33,8 @@ function Nav() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <Building2 className="w-4 h-4" style={{ color: T }} />
+            style={{ background: T }}>
+            <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
           </div>
           <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
         </Link>
@@ -232,57 +231,117 @@ function BeforeAfter() {
   )
 }
 
-// ── Dashboard mock panel ──────────────────────────────────────────────────────
-function DashPanel({ accent = T }: { accent?: string }) {
+// ── Feature mock panels (light, topic-specific) ───────────────────────────────
+function ClinicalMock() {
+  const rows = [
+    { token: '01', name: 'Rajesh Kumar',   uhid: 'UH-2024-0311', status: 'In Progress', teal: true  },
+    { token: '02', name: 'Priya Sharma',   uhid: 'UH-2024-0312', status: 'Waiting',     teal: false },
+    { token: '03', name: 'Mohammed Aslam', uhid: 'UH-2024-0313', status: 'Waiting',     teal: false },
+    { token: '04', name: 'Anitha Devi',    uhid: 'UH-2024-0314', status: 'Waiting',     teal: false },
+  ]
   return (
-    <div className="aspect-[4/3] rounded-2xl overflow-hidden relative"
-      style={{ background: `linear-gradient(145deg, ${DARK} 0%, ${S8} 100%)`, border: '1px solid rgba(255,255,255,0.07)' }}>
-      {/* Window chrome */}
-      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex gap-1.5">
-          {['#EF4444', '#F59E0B', '#10B981'].map(c => (
-            <div key={c} className="w-2.5 h-2.5 rounded-full" style={{ background: c, opacity: 0.7 }} />
-          ))}
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.06)' }}>
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: S9 }}>OPD Queue — Today</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>General Medicine · Dr. Krishnan</p>
         </div>
-        <div className="flex-1 mx-3 h-5 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }} />
-        <div className="w-16 h-5 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold"
+          style={{ background: 'rgba(13,148,136,0.1)', color: T }}>4 waiting</span>
       </div>
+      {rows.map(({ token, name, uhid, status, teal }) => (
+        <div key={token} className="px-5 py-3.5 flex items-center gap-4"
+          style={{ borderBottom: `1px solid ${S2}`, background: teal ? 'rgba(13,148,136,0.03)' : '#fff' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+            style={{ background: teal ? 'rgba(13,148,136,0.12)' : S1, color: teal ? T : S5, border: `1px solid ${teal ? 'rgba(13,148,136,0.2)' : S2}` }}>
+            {token}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: S9 }}>{name}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>{uhid}</p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0"
+            style={{ background: teal ? 'rgba(13,148,136,0.1)' : 'rgba(245,158,11,0.1)', color: teal ? T : '#B45309' }}>
+            {status}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
-      {/* Sidebar + content */}
-      <div className="flex" style={{ height: 'calc(100% - 45px)' }}>
-        {/* Sidebar */}
-        <div className="w-14 py-4 flex flex-col items-center gap-3 flex-shrink-0"
-          style={{ borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="w-8 h-8 rounded-xl" style={{ background: `${accent}22`, border: `1px solid ${accent}33` }} />
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="w-8 h-8 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }} />
-          ))}
+function DiagnosticsMock() {
+  const tests = [
+    { name: 'Haemoglobin',    value: '13.2 g/dL', range: '13–17',   status: 'Normal', ok: true  },
+    { name: 'Fasting Glucose', value: '118 mg/dL', range: '70–100',  status: 'High',   ok: false },
+    { name: 'Serum Creatinine',value: '0.9 mg/dL', range: '0.7–1.3', status: 'Normal', ok: true  },
+    { name: 'WBC Count',       value: '7.4 K/µL',  range: '4–11',    status: 'Normal', ok: true  },
+  ]
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.06)' }}>
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: S9 }}>Lab Report</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>Priya Sharma · UH-2024-0312 · Blood Panel</p>
         </div>
-        {/* Main content */}
-        <div className="flex-1 p-4 flex flex-col gap-3">
-          {/* Stat cards */}
-          <div className="grid grid-cols-3 gap-2">
-            {[accent, 'rgba(99,102,241,0.7)', 'rgba(245,158,11,0.7)'].map((c, i) => (
-              <div key={i} className="rounded-xl p-2.5" style={{ background: `${c}12`, border: `1px solid ${c}25` }}>
-                <div className="h-1.5 rounded w-10 mb-2" style={{ background: `${c}50` }} />
-                <div className="h-3.5 rounded w-14" style={{ background: `${c}70` }} />
-              </div>
-            ))}
-          </div>
-          {/* Table rows */}
-          <div className="rounded-xl overflow-hidden flex-1" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-            {[90, 70, 80, 55].map((w, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2.5"
-                style={{ borderBottom: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i === 0 ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
-                <div className="w-6 h-6 rounded-full flex-shrink-0"
-                  style={{ background: i === 0 ? `${accent}30` : 'rgba(255,255,255,0.07)' }} />
-                <div className="flex-1 h-2 rounded" style={{ background: 'rgba(255,255,255,0.07)', maxWidth: `${w}%` }} />
-                <div className="w-12 h-5 rounded-full"
-                  style={{ background: i % 2 === 0 ? `${accent}20` : 'rgba(255,255,255,0.04)', border: `1px solid ${i % 2 === 0 ? `${accent}35` : 'rgba(255,255,255,0.06)'}` }} />
-              </div>
-            ))}
-          </div>
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold"
+          style={{ background: '#FEF3C7', color: '#B45309' }}>1 abnormal</span>
+      </div>
+      <div className="px-5 py-2" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div className="grid grid-cols-3 gap-2 text-xs font-semibold" style={{ color: S4 }}>
+          <span>Test</span><span className="text-center">Result</span><span className="text-right">Status</span>
         </div>
+      </div>
+      {tests.map(({ name, value, range, status, ok }) => (
+        <div key={name} className="px-5 py-3.5 grid grid-cols-3 gap-2 items-center"
+          style={{ borderBottom: `1px solid ${S2}`, background: ok ? '#fff' : '#FFFBEB' }}>
+          <div>
+            <p className="text-xs font-medium" style={{ color: S9 }}>{name}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>Ref: {range}</p>
+          </div>
+          <p className="text-sm font-bold text-center" style={{ color: ok ? S9 : '#D97706' }}>{value}</p>
+          <span className="text-xs font-semibold text-right" style={{ color: ok ? T : '#D97706' }}>{status}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BillingMock() {
+  const lines = [
+    { label: 'OPD Consultation',       qty: '1',  amount: '₹500'   },
+    { label: 'Blood Panel (6 tests)',   qty: '6',  amount: '₹1,200' },
+    { label: 'Pharmacy — Metformin',    qty: '30', amount: '₹180'   },
+    { label: 'Radiology — Chest X-ray', qty: '1',  amount: '₹650'   },
+  ]
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.06)' }}>
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: S9 }}>Invoice #2024-0183</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>Rajesh Kumar · UH-2024-0311 · 26 Jun 2024</p>
+        </div>
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold"
+          style={{ background: 'rgba(13,148,136,0.1)', color: T }}>Auto-generated</span>
+      </div>
+      {lines.map(({ label, qty, amount }) => (
+        <div key={label} className="px-5 py-3.5 flex items-center" style={{ borderBottom: `1px solid ${S2}` }}>
+          <div className="flex-1">
+            <p className="text-xs font-medium" style={{ color: S9 }}>{label}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>Qty: {qty}</p>
+          </div>
+          <p className="text-sm font-bold" style={{ color: S9 }}>{amount}</p>
+        </div>
+      ))}
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: 'rgba(13,148,136,0.04)', borderTop: `2px solid rgba(13,148,136,0.15)` }}>
+        <div>
+          <p className="text-xs" style={{ color: S5 }}>Total (incl. GST)</p>
+          <p className="text-xl font-bold mt-0.5" style={{ color: S9 }}>₹2,530</p>
+        </div>
+        <span className="px-3 py-1.5 rounded-xl text-xs font-bold"
+          style={{ background: 'rgba(13,148,136,0.12)', color: T, border: '1px solid rgba(13,148,136,0.2)' }}>
+          Paid ✓
+        </span>
       </div>
     </div>
   )
@@ -290,7 +349,7 @@ function DashPanel({ accent = T }: { accent?: string }) {
 
 // ── Feature rows ──────────────────────────────────────────────────────────────
 interface FeatureRowProps {
-  icon: React.ReactNode
+  visual: React.ReactNode
   eyebrow: string
   heading: string
   body: string
@@ -298,20 +357,10 @@ interface FeatureRowProps {
   reverse?: boolean
 }
 
-function FeatureRow({ icon, eyebrow, heading, body, tags, reverse }: FeatureRowProps) {
+function FeatureRow({ visual, eyebrow, heading, body, tags, reverse }: FeatureRowProps) {
   return (
     <div className={`flex flex-col ${reverse ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12 lg:gap-16`}>
-      <div className="w-full md:w-1/2">
-        <div className="relative">
-          <DashPanel />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-              style={{ background: 'rgba(13,148,136,0.18)', border: '1px solid rgba(13,148,136,0.35)', backdropFilter: 'blur(8px)' }}>
-              {icon}
-            </div>
-          </div>
-        </div>
-      </div>
+      <div className="w-full md:w-1/2">{visual}</div>
       <div className="w-full md:w-1/2">
         <span className="text-xs font-bold uppercase tracking-widest mb-3 block" style={{ color: T }}>
           {eyebrow}
@@ -345,7 +394,7 @@ function Features() {
         </div>
 
         <FeatureRow
-          icon={<Users className="w-7 h-7" style={{ color: T }} />}
+          visual={<ClinicalMock />}
           eyebrow="Clinical Core"
           heading="Registration to discharge — no double entry"
           body="Patients get a permanent UHID on first visit. Doctors record vitals, ICD codes, and prescriptions in one screen. Wards admit directly from OPD without re-entering a single field."
@@ -353,7 +402,7 @@ function Features() {
         />
 
         <FeatureRow
-          icon={<FlaskConical className="w-7 h-7" style={{ color: T }} />}
+          visual={<DiagnosticsMock />}
           eyebrow="Diagnostics & Treatment"
           heading="Lab, radiology, pharmacy — all talking to each other"
           body="Doctors order from the visit screen. Lab enters results once — visible to everyone with access. Pharmacy dispenses with FEFO logic and live stock. OT scheduling prevents room conflicts at the database level."
@@ -362,7 +411,7 @@ function Features() {
         />
 
         <FeatureRow
-          icon={<Receipt className="w-7 h-7" style={{ color: T }} />}
+          visual={<BillingMock />}
           eyebrow="Billing & Finance"
           heading="Bills that build themselves"
           body="Consultation fees, lab charges, pharmacy items, OT time, room rent — pulled automatically into a single bill. Insurance claims file in-platform with full TPA tracking. No missed charges, no manual tallying."
@@ -702,8 +751,8 @@ function Footer() {
           <div className="md:col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.2)' }}>
-                <Building2 className="w-4 h-4" style={{ color: T }} />
+                style={{ background: T }}>
+                <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
               </div>
               <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
             </Link>
