@@ -1,7 +1,7 @@
 // ---- Phase 9: SaaS / Multi-Tenancy ----
 
 export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
-export type TenantPlan = 'starter' | 'professional' | 'enterprise'
+export type TenantPlan = 'starter' | 'growth' | 'enterprise'
 
 export interface Tenant {
   id: string; name: string; slug: string

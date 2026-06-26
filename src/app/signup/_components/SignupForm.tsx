@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
 import { CheckCircle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react'
 import { checkSlugAvailable, signupHospital } from '@/app/actions/onboarding'
 
@@ -19,7 +19,11 @@ const focusStyle = {
   boxShadow: '0 0 0 3px rgba(13,148,136,0.1)',
 } as const
 
-export default function SignupForm() {
+interface Props {
+  plan?: 'starter' | 'growth'
+}
+
+export default function SignupForm({ plan = 'starter' }: Props) {
   const [hospitalName, setHospitalName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugState, setSlugState] = useState<SlugState>('idle')
@@ -29,8 +33,8 @@ export default function SignupForm() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState(false)
-  const [doneSlug, setDoneSlug] = useState('')
+  const [redirecting, setRedirecting] = useState(false)
+  const [fallbackSlug, setFallbackSlug] = useState('')
   const [isPending, startTransition] = useTransition()
   const [checkTimer, setCheckTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
 
@@ -68,27 +72,51 @@ export default function SignupForm() {
     e.preventDefault()
     setError('')
     startTransition(async () => {
-      const res = await signupHospital({ hospitalName, slug, adminName, adminEmail: email, password })
-      if (res.success) { setDone(true); setDoneSlug(res.slug) }
-      else setError(res.error)
+      const res = await signupHospital({ hospitalName, slug, adminName, adminEmail: email, password, plan })
+      if (!res.success) {
+        setError(res.error)
+        return
+      }
+      if (res.loginUrl) {
+        // Redirect to magic link — Supabase verifies and bounces to {slug}.uyirly.com/auth/callback
+        setRedirecting(true)
+        window.location.href = res.loginUrl
+      } else {
+        // Fallback: show subdomain link if magic link generation failed
+        setFallbackSlug(res.slug)
+      }
     })
   }
 
-  if (done) {
+  // Fallback success screen (magic link unavailable)
+  if (fallbackSlug) {
+    const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
     return (
       <div className="text-center py-4">
         <CheckCircle className="w-12 h-12 mx-auto mb-4" style={{ color: '#0D9488' }} />
         <h2 className="text-lg font-bold mb-2" style={{ color: '#0F172A' }}>Account created!</h2>
         <p className="text-sm mb-6" style={{ color: '#64748B' }}>
-          Check your email to confirm your account, then log in at:
+          Log in to your hospital dashboard at:
         </p>
         <a
-          href={`http://${doneSlug}.localhost:3000/login`}
+          href={`https://${fallbackSlug}.${rootDomain}/login`}
           className="text-sm font-semibold underline underline-offset-2"
           style={{ color: '#0D9488' }}
         >
-          {doneSlug}.uyirly.com
+          {fallbackSlug}.{rootDomain}
         </a>
+      </div>
+    )
+  }
+
+  // Redirecting screen
+  if (redirecting) {
+    return (
+      <div className="text-center py-8 space-y-4">
+        <div className="w-10 h-10 border-2 rounded-full animate-spin mx-auto"
+          style={{ borderColor: '#E2E8F0', borderTopColor: '#0D9488' }} />
+        <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Setting up your dashboard…</p>
+        <p className="text-xs" style={{ color: '#94A3B8' }}>You'll be signed in automatically.</p>
       </div>
     )
   }
@@ -234,12 +262,12 @@ export default function SignupForm() {
       >
         {isPending
           ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating account…</>
-          : 'Create hospital account'
+          : `Start free trial${plan === 'growth' ? ' — Growth' : ''}`
         }
       </button>
 
       <p className="text-xs text-center" style={{ color: '#94A3B8' }}>
-        By signing up you agree to our Terms of Service and Privacy Policy.
+        14-day free trial. No credit card required.
       </p>
     </form>
   )

@@ -3,7 +3,14 @@ import SignupForm from './_components/SignupForm'
 
 export const metadata = { title: 'Register your hospital — Uyirly' }
 
-export default function SignupPage() {
+interface Props {
+  searchParams: Promise<{ plan?: string }>
+}
+
+export default async function SignupPage({ searchParams }: Props) {
+  const { plan } = await searchParams
+  const selectedPlan = plan === 'growth' ? 'growth' : 'starter'
+
   return (
     <main className="min-h-screen flex items-center justify-center p-4 py-12">
       <div className="w-full max-w-md">
@@ -19,11 +26,17 @@ export default function SignupPage() {
           <p className="mt-1 text-sm" style={{ color: '#64748B' }}>
             Set up your hospital on Uyirly in under 2 minutes.
           </p>
+          {selectedPlan === 'growth' && (
+            <span className="mt-3 px-3 py-1 rounded-full text-xs font-semibold"
+              style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
+              Growth plan selected — 14-day free trial
+            </span>
+          )}
         </div>
 
         {/* Card */}
         <div className="glass-card p-8">
-          <SignupForm />
+          <SignupForm plan={selectedPlan} />
         </div>
 
         <p className="text-center mt-6 text-xs" style={{ color: '#94A3B8' }}>

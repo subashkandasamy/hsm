@@ -45,7 +45,7 @@ export async function proxy(request: NextRequest) {
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
 
   // Public paths that never require authentication
-  const PUBLIC_PATHS = ['/login', '/signup', '/tenant-not-found', '/tenant-suspended']
+  const PUBLIC_PATHS = ['/login', '/signup', '/tenant-not-found', '/tenant-suspended', '/auth/callback']
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 
   // ── If Supabase is not configured, gate all non-public traffic ─────────────
@@ -64,8 +64,11 @@ export async function proxy(request: NextRequest) {
   const isProductionSubdomain = hostWithoutPort.endsWith(`.${rootDomain}`)
 
   if (!isBareLocalhost) {
-    // ── Apex production domain: public pages only ────────────────────────────
-    if (hostWithoutPort === rootDomain) {
+    // ── Apex and www: serve marketing site, no tenant resolution ────────────
+    // Both apex and www pass through here. www→apex canonical redirect is
+    // configured at the Vercel domain level only — never in this proxy —
+    // to avoid redirect loops where Vercel and proxy fight each other.
+    if (hostWithoutPort === rootDomain || hostWithoutPort === `www.${rootDomain}`) {
       return NextResponse.next()
     }
 
@@ -80,11 +83,6 @@ export async function proxy(request: NextRequest) {
           const url = request.nextUrl.clone()
           url.pathname = `/platform-admin${pathname === '/' ? '' : pathname}`
           return NextResponse.rewrite(url)
-        }
-        if (slug === 'www') {
-          const url = request.nextUrl.clone()
-          url.host = rootDomain
-          return NextResponse.redirect(url, { status: 301 })
         }
         const url = request.nextUrl.clone()
         url.pathname = '/tenant-not-found'

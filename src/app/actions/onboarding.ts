@@ -13,10 +13,11 @@ const SignupSchema = z.object({
   adminEmail:   z.string().email('Valid email required'),
   adminPhone:   z.string().optional(),
   password:     z.string().min(8, 'Password must be at least 8 characters'),
+  plan:         z.enum(['starter', 'growth']).default('starter'),
 })
 
 export type SignupResult =
-  | { success: true; tenantId: string; slug: string }
+  | { success: true; tenantId: string; slug: string; loginUrl: string | null }
   | { success: false; error: string }
 
 export async function checkSlugAvailable(
@@ -43,9 +44,8 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   const parsed = SignupSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { hospitalName, slug, adminName, adminEmail, adminPhone, password } = parsed.data
+  const { hospitalName, slug, adminName, adminEmail, adminPhone, password, plan } = parsed.data
 
-  // Re-check slug availability atomically
   const avail = await checkSlugAvailable(slug)
   if (!avail.available) return { success: false, error: avail.reason ?? 'Slug unavailable' }
 
@@ -56,7 +56,7 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   // 1. Create tenant row
   const { error: tenantErr } = await service.from('tenants').insert({
     id: tenantId, name: hospitalName, slug,
-    status: 'trial', plan: 'starter', trial_ends_at: trialEnd,
+    status: 'trial', plan, trial_ends_at: trialEnd,
   })
   if (tenantErr) return { success: false, error: tenantErr.message }
 
@@ -72,7 +72,7 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     return { success: false, error: authErr?.message ?? 'Failed to create user' }
   }
 
-  // 3. Create the admin profile (service role bypasses RLS bootstrapping issue)
+  // 3. Create the admin profile
   const profileId = authData.user.id
   const { error: profileErr } = await service.from('profiles').insert({
     id: profileId,
@@ -88,13 +88,13 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     return { success: false, error: profileErr.message }
   }
 
-  // 4. Seed default departments for this tenant
+  // 4. Seed default departments
   const deptRows = DEFAULT_DEPARTMENTS.map((name) => ({
     id: crypto.randomUUID(), name, tenant_id: tenantId,
   }))
   await service.from('departments').insert(deptRows)
 
-  // 5. Seed default notification templates for this tenant
+  // 5. Seed default notification templates
   const tplRows = [
     { id: crypto.randomUUID(), tenant_id: tenantId, key: 'appointment_reminder', channel: 'whatsapp', body_preview: 'Hi {{1}}, your appointment is on {{2}} at {{3}}.', is_active: true },
     { id: crypto.randomUUID(), tenant_id: tenantId, key: 'bill_ready',           channel: 'whatsapp', body_preview: 'Hi {{1}}, your bill {{2}} for ₹{{3}} is ready. {{4}}', is_active: true },
@@ -103,16 +103,34 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   ]
   await service.from('notification_templates').insert(tplRows)
 
-  // Audit log using service role (no user session yet)
+  // 6. Audit log
   await service.from('audit_logs').insert({
     id: crypto.randomUUID(),
     actor_id: profileId,
     action: 'create',
     entity: 'tenant',
     entity_id: tenantId,
-    meta: { hospital_name: hospitalName, slug, plan: 'starter' },
+    meta: { hospital_name: hospitalName, slug, plan },
     tenant_id: tenantId,
   })
 
-  return { success: true, tenantId, slug }
+  // 7. Generate a magic link so the new admin lands on their subdomain already signed in.
+  //    The link points to /auth/callback on the new subdomain, which exchanges the token
+  //    for a proper cookie session before redirecting to /dashboard?welcome=1.
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
+  const redirectTo = `https://${slug}.${rootDomain}/auth/callback`
+  let loginUrl: string | null = null
+
+  try {
+    const { data: linkData } = await service.auth.admin.generateLink({
+      type: 'magiclink',
+      email: adminEmail,
+      options: { redirectTo },
+    })
+    loginUrl = (linkData as { properties?: { action_link?: string } })?.properties?.action_link ?? null
+  } catch {
+    // Non-fatal: fall back to showing the subdomain link manually
+  }
+
+  return { success: true, tenantId, slug, loginUrl }
 }
