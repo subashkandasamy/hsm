@@ -28,7 +28,7 @@ export async function createRadiologyTest(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('radiology_catalog').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('radiology_catalog').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'radiology_test', id, { name: parsed.data.name })
   const { data: test } = await supabase.from('radiology_catalog').select('*').eq('id', id).single()
@@ -54,7 +54,7 @@ export async function createRadiologyOrder(
 
   const id = crypto.randomUUID()
   const { error } = await supabase.from('radiology_orders').insert({
-    id, patient_id, visit_id: visit_id ?? null, test_id,
+    id, tenant_id: actor.tenant_id, patient_id, visit_id: visit_id ?? null, test_id,
     ordered_by: actor.id, price_snapshot: test.price,
     status: 'ordered', billing_status: 'unbilled',
   })

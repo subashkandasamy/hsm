@@ -60,6 +60,7 @@ export async function saveDocumentRecord(input: {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('patient_documents').insert({
     id,
+    tenant_id: actor.tenant_id,
     patient_id: input.patientId,
     title: input.title.trim(),
     category: input.category,

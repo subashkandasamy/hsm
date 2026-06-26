@@ -43,6 +43,7 @@ export async function createPatient(
   const { error: insertErr } = await supabase.from('patients').insert({
     id,
     uhid,
+    tenant_id: actor.tenant_id,
     full_name: data.full_name,
     dob: data.dob ?? null,
     gender: data.gender ?? null,

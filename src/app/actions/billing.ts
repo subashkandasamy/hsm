@@ -280,6 +280,7 @@ export async function generateBill(
   // Insert the bill first
   const { error: billErr } = await supabase.from('bills').insert({
     id: billId,
+    tenant_id: actor.tenant_id,
     patient_id,
     visit_id: visit_id ?? null,
     admission_id: admission_id ?? null,
@@ -497,6 +498,7 @@ export async function recordPayment(
 
   const { error: payErr } = await supabase.from('payments').insert({
     id: crypto.randomUUID(),
+    tenant_id: actor.tenant_id,
     bill_id: parsed.data.bill_id,
     amount: parsed.data.amount,
     method: parsed.data.method,

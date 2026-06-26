@@ -35,6 +35,7 @@ export async function addPolicy(
   const supabase = await createClient()
   const { error } = await supabase.from('insurance_policies').insert({
     id,
+    tenant_id:       actor.tenant_id,
     patient_id:      parsed.data.patient_id,
     provider:        parsed.data.provider,
     policy_no:       parsed.data.policy_no,
@@ -80,6 +81,7 @@ export async function createClaim(
   const supabase = await createClient()
   const { error } = await supabase.from('insurance_claims').insert({
     id,
+    tenant_id:    actor.tenant_id,
     bill_id:      parsed.data.bill_id,
     policy_id:    parsed.data.policy_id,
     claim_amount: parsed.data.claim_amount,
@@ -154,6 +156,7 @@ export async function advanceClaim(
       if (bill && (bill.status as string) !== 'cancelled') {
         const { error: payErr } = await supabase.from('payments').insert({
           id: crypto.randomUUID(),
+          tenant_id: actor.tenant_id,
           bill_id: claim.bill_id,
           amount: approvedAmt,
           method: 'insurance',

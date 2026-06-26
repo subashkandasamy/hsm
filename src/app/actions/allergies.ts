@@ -31,6 +31,7 @@ export async function addAllergy(input: {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('patient_allergies').insert({
     id,
+    tenant_id: actor.tenant_id,
     patient_id: input.patientId,
     allergen: input.allergen.trim(),
     reaction: input.reaction ?? null,

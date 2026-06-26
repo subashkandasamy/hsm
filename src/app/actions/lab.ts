@@ -27,7 +27,7 @@ export async function createLabTest(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('lab_tests_catalog').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('lab_tests_catalog').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'lab_test', id, { name: parsed.data.name })
   const { data: test } = await supabase.from('lab_tests_catalog').select('*').eq('id', id).single()
@@ -56,13 +56,13 @@ export async function createLabOrder(
   const orderId = crypto.randomUUID()
 
   const { error: orderErr } = await supabase.from('lab_orders').insert({
-    id: orderId, patient_id, visit_id: visit_id ?? null,
+    id: orderId, tenant_id: actor.tenant_id, patient_id, visit_id: visit_id ?? null,
     ordered_by: actor.id, status: 'ordered', billing_status: 'unbilled',
   })
   if (orderErr) return { success: false, error: orderErr.message }
 
   const items = test_ids.map((test_id) => ({
-    id: crypto.randomUUID(), lab_order_id: orderId, test_id,
+    id: crypto.randomUUID(), tenant_id: actor.tenant_id, lab_order_id: orderId, test_id,
     price_snapshot: priceMap.get(test_id) ?? 0, flag: 'pending',
   }))
 

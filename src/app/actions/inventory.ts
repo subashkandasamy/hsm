@@ -27,7 +27,7 @@ export async function createSupplier(input: Record<string, unknown>): Promise<Si
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
   const id = crypto.randomUUID()
-  const { error } = await supabase.from('suppliers').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('suppliers').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'supplier', id, { name: parsed.data.name })
   return { success: true }
@@ -61,7 +61,7 @@ export async function createItem(input: Record<string, unknown>): Promise<Simple
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
   const id = crypto.randomUUID()
-  const { error } = await supabase.from('inventory_items').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('inventory_items').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'inventory_item', id, { name: parsed.data.name })
   return { success: true }
@@ -125,7 +125,7 @@ export async function createPO(
   const poId = crypto.randomUUID()
 
   const { error: poErr } = await supabase.from('purchase_orders').insert({
-    id: poId, po_no: poNo as string,
+    id: poId, tenant_id: actor.tenant_id, po_no: poNo as string,
     supplier_id: parsed.data.supplier_id ?? null,
     status: 'draft', total, created_by: actor.id,
   })
@@ -192,6 +192,7 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
 
     await supabase.from('stock_movements').insert({
       id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
       item_id: poItem.item_id,
       change: receipt.received_qty,
       reason: 'purchase',
@@ -249,6 +250,7 @@ export async function issueStock(input: Record<string, unknown>): Promise<Simple
 
   await supabase.from('stock_movements').insert({
     id: crypto.randomUUID(),
+    tenant_id: actor.tenant_id,
     item_id: parsed.data.item_id,
     change: -parsed.data.qty,
     reason: 'issue',
@@ -282,6 +284,7 @@ export async function adjustStock(input: Record<string, unknown>): Promise<Simpl
 
   await supabase.from('stock_movements').insert({
     id: crypto.randomUUID(),
+    tenant_id: actor.tenant_id,
     item_id: parsed.data.item_id,
     change: parsed.data.change,
     reason: 'adjustment',

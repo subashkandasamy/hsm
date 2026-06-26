@@ -20,7 +20,7 @@ export async function createDrug(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('drugs').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('drugs').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'drug', id, { name: parsed.data.name })
   const { data: drug } = await supabase.from('drugs').select('*').eq('id', id).single()
@@ -48,7 +48,7 @@ export async function addBatch(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('drug_batches').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('drug_batches').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'add_batch', 'drug', parsed.data.drug_id, {
     batch_no: parsed.data.batch_no, qty: parsed.data.qty_available,

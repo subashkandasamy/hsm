@@ -18,7 +18,7 @@ export async function createRoom(input: Record<string, unknown>): Promise<Simple
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('ot_rooms').insert({ id, ...parsed.data, is_active: true })
+  const { error } = await supabase.from('ot_rooms').insert({ id, tenant_id: actor.tenant_id, ...parsed.data, is_active: true })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'ot_room', id, { name: parsed.data.name })
   return { success: true }
@@ -55,7 +55,7 @@ export async function scheduleSurgery(
   const id = crypto.randomUUID()
   const supabase = await createClient()
   const { error } = await supabase.from('ot_schedules').insert({
-    id, ...parsed.data,
+    id, tenant_id: actor.tenant_id, ...parsed.data,
     anaesthetist_id: parsed.data.anaesthetist_id ?? null,
     status: 'scheduled', billing_status: 'unbilled',
   })
@@ -182,7 +182,7 @@ export async function addConsumable(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('ot_consumables').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('ot_consumables').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'add_consumable', 'ot_schedule', parsed.data.ot_schedule_id)
   const { data: row } = await supabase.from('ot_consumables').select('*').eq('id', id).single()

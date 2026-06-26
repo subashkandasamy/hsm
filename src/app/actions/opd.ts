@@ -39,6 +39,7 @@ export async function startVisit(
   const id = crypto.randomUUID()
   const { error } = await supabase.from('visits').insert({
     id,
+    tenant_id: actor.tenant_id,
     patient_id: appt.patient_id,
     doctor_id: appt.doctor_id,
     appointment_id: appointmentId,
@@ -110,7 +111,8 @@ export async function addPrescription(
   const supabase = await createClient()
   const { error } = await supabase.from('prescriptions').insert({
     id,
-    visit_id: visitId,
+    tenant_id:    actor.tenant_id,
+    visit_id:     visitId,
     drug_name:    parsed.data.drug_name,
     dosage:       parsed.data.dosage       ?? null,
     frequency:    parsed.data.frequency    ?? null,

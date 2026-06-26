@@ -38,6 +38,7 @@ export async function registerEmergency(
     const { error: patErr } = await supabase.from('patients').insert({
       id:         patientId,
       uhid,
+      tenant_id:  actor.tenant_id,
       full_name:  provName,
       gender:     parsed.data.prov_gender ?? null,
       phone:      provPhone,
@@ -49,6 +50,7 @@ export async function registerEmergency(
   const caseId = crypto.randomUUID()
   const { error } = await supabase.from('emergency_cases').insert({
     id:           caseId,
+    tenant_id:    actor.tenant_id,
     patient_id:   patientId,
     triage_level: parsed.data.triage_level,
     arrival_mode: parsed.data.arrival_mode ?? null,
@@ -118,6 +120,7 @@ export async function recordEmergencyVisit(
   const visitId = crypto.randomUUID()
   const { error } = await supabase.from('visits').insert({
     id:         visitId,
+    tenant_id:  actor.tenant_id,
     patient_id: ec.patient_id,
     doctor_id:  actor.id,
     type:       'emergency',

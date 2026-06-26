@@ -22,6 +22,7 @@ export async function createWard(
   const supabase = await createClient()
   const { error } = await supabase.from('wards').insert({
     id,
+    tenant_id: actor.tenant_id,
     name: parsed.data.name,
     ward_type: parsed.data.ward_type ?? null,
     department_id: parsed.data.department_id ?? null,

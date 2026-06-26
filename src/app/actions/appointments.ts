@@ -32,6 +32,7 @@ export async function bookAppointment(
   const id = crypto.randomUUID()
   const { error } = await supabase.from('appointments').insert({
     id,
+    tenant_id: actor.tenant_id,
     patient_id,
     doctor_id,
     department_id: department_id ?? null,

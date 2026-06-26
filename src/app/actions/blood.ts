@@ -23,7 +23,7 @@ export async function addDonor(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
-  const { error } = await supabase.from('blood_donors').insert({ id, ...parsed.data })
+  const { error } = await supabase.from('blood_donors').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'create', 'blood_donor', id, { name: parsed.data.name })
   const { data: row } = await supabase.from('blood_donors').select('*').eq('id', id).single()
@@ -48,7 +48,7 @@ export async function addBloodUnit(
   const id = crypto.randomUUID()
   const supabase = await createClient()
   const { error } = await supabase.from('blood_units').insert({
-    id, ...parsed.data,
+    id, tenant_id: actor.tenant_id, ...parsed.data,
     donor_id:     parsed.data.donor_id ?? null,
     collected_at: parsed.data.collected_at ?? null,
     status: 'available',
@@ -143,7 +143,7 @@ export async function raiseRequest(
   const id = crypto.randomUUID()
   const supabase = await createClient()
   const { error } = await supabase.from('blood_requests').insert({
-    id, ...parsed.data,
+    id, tenant_id: actor.tenant_id, ...parsed.data,
     notes:        parsed.data.notes ?? null,
     requested_by: actor.id,
     status:       'requested',
