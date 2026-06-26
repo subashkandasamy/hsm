@@ -53,6 +53,7 @@ export async function addProgressNote(
   const supabase = await createClient()
   const { error } = await supabase.from('ipd_progress_notes').insert({
     id:           crypto.randomUUID(),
+    tenant_id:    actor.tenant_id,
     admission_id: admissionId,
     author_id:    actor.id,
     note:         parsed.data.note,
@@ -98,6 +99,7 @@ export async function transferBed(
   // Record as a progress note
   await supabase.from('ipd_progress_notes').insert({
     id:           crypto.randomUUID(),
+    tenant_id:    actor.tenant_id,
     admission_id: admissionId,
     author_id:    actor.id,
     note:         `Transferred to new bed.`,

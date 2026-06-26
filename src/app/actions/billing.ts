@@ -248,13 +248,14 @@ export async function generateBill(
 
   // Build bill_items list
   type BillItemInsert = {
-    id: string; bill_id: string; source: BillItemSource; ref_id: string | null
+    id: string; tenant_id: string; bill_id: string; source: BillItemSource; ref_id: string | null
     description: string; qty: number; unit_price: number; amount: number
   }
 
   const itemsToInsert: BillItemInsert[] = [
     ...selectedCharges.map((c) => ({
       id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
       bill_id: billId,
       source: c.source,
       ref_id: c.ref_id,
@@ -265,6 +266,7 @@ export async function generateBill(
     })),
     ...(manual_items ?? []).map((m) => ({
       id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
       bill_id: billId,
       source: 'manual' as BillItemSource,
       ref_id: null,

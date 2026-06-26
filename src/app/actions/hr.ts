@@ -119,7 +119,7 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
 
   if (Object.keys(staffData).length > 0) {
     await supabase.from('staff_profiles')
-      .upsert({ profile_id: profileId, ...staffData }, { onConflict: 'profile_id' })
+      .upsert({ profile_id: profileId, tenant_id: actor.tenant_id, ...staffData }, { onConflict: 'profile_id' })
   }
 
   await logAudit(actor.id, 'update', 'staff', profileId, parsed.data as Record<string, unknown>)
@@ -149,6 +149,7 @@ export async function markAttendance(input: Record<string, unknown>): Promise<Si
   const { error } = await supabase.from('staff_attendance').upsert(
     {
       id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
       profile_id: parsed.data.profile_id,
       date: parsed.data.date,
       status: parsed.data.status,
@@ -213,6 +214,7 @@ export async function setRoster(input: Record<string, unknown>): Promise<SimpleR
   const { error } = await supabase.from('duty_roster').upsert(
     {
       id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
       profile_id: parsed.data.profile_id,
       date: parsed.data.date,
       shift: parsed.data.shift ?? null,

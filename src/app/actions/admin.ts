@@ -3,23 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
+import { getActorProfile } from '@/lib/server-utils'
 import { DepartmentSchema } from '@/lib/schemas'
-import type { Role } from '@/lib/types'
-
-async function getActorProfile() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('UNAUTHENTICATED')
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) throw new Error('PROFILE_NOT_FOUND')
-  return profile as { id: string; role: Role }
-}
 
 export async function createDepartment(formData: FormData) {
   const actor = await getActorProfile()
@@ -32,7 +17,7 @@ export async function createDepartment(formData: FormData) {
   })
 
   const supabase = await createClient()
-  const { error } = await supabase.from('departments').insert(input)
+  const { error } = await supabase.from('departments').insert({ ...input, tenant_id: actor.tenant_id })
   if (error) throw new Error(error.message)
 
   await logAudit(actor.id, 'create', 'department', input.id, { name: input.name })

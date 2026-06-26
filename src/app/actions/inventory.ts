@@ -133,7 +133,7 @@ export async function createPO(
 
   const { error: itemsErr } = await supabase.from('po_items').insert(
     parsed.data.lines.map((l) => ({
-      id: crypto.randomUUID(), po_id: poId,
+      id: crypto.randomUUID(), tenant_id: actor.tenant_id, po_id: poId,
       item_id: l.item_id, qty: l.qty, unit_price: l.unit_price, received_qty: 0,
     }))
   )

@@ -81,6 +81,11 @@ export async function proxy(request: NextRequest) {
           url.pathname = `/platform-admin${pathname === '/' ? '' : pathname}`
           return NextResponse.rewrite(url)
         }
+        if (slug === 'www') {
+          const url = request.nextUrl.clone()
+          url.host = rootDomain
+          return NextResponse.redirect(url, { status: 301 })
+        }
         const url = request.nextUrl.clone()
         url.pathname = '/tenant-not-found'
         return NextResponse.rewrite(url)

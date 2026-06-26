@@ -53,7 +53,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult> {
   // 1. Fetch patient + consent
   const { data: patient } = await supabase
     .from('patients')
-    .select('id, phone, notify_whatsapp_consent, notify_sms_consent')
+    .select('id, phone, tenant_id, notify_whatsapp_consent, notify_sms_consent')
     .eq('id', input.patientId)
     .single()
 
@@ -102,6 +102,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult> {
   const notifId = crypto.randomUUID()
   await supabase.from('notifications').insert({
     id: notifId,
+    tenant_id: (patient as Record<string, unknown>).tenant_id,
     patient_id: input.patientId,
     channel,
     template_key: input.templateKey,
