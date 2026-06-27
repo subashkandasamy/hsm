@@ -63,7 +63,8 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
   const navContent = (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: '#E2E8F0' }}>
+      <div className="flex items-center gap-3 px-5 border-b"
+        style={{ paddingTop: 'calc(1.25rem + env(safe-area-inset-top, 0px))', paddingBottom: '1.25rem', borderColor: '#E2E8F0' }}>
         <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
           <Building2 className="w-4 h-4" style={{ color: '#0D9488' }} />

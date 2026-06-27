@@ -48,7 +48,9 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
   }, [dropdownOpen])
 
   return (
-    <header className="glass-topbar fixed top-0 left-0 lg:left-60 right-0 h-14 flex items-center justify-between px-4 md:px-6 z-30">
+    <header className="glass-topbar fixed top-0 left-0 lg:left-60 right-0 z-30"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+      <div className="h-14 flex items-center justify-between px-4 md:px-6">
       {/* Left: hamburger on mobile, empty on desktop */}
       <div className="flex items-center gap-3">
         <button
@@ -127,6 +129,7 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
             </div>
           )}
         </div>
+      </div>
       </div>
     </header>
   )
