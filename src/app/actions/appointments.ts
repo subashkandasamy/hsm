@@ -81,7 +81,7 @@ export async function checkIn(id: string): Promise<SimpleResult> {
 
   // Fire push notification to the doctor (best-effort, non-blocking)
   if (appt?.doctor_id) {
-    const patientName = (appt.patient as { full_name: string } | null)?.full_name ?? 'A patient'
+    const patientName = (appt.patient as unknown as { full_name: string } | null)?.full_name ?? 'A patient'
     Promise.resolve().then(async () => {
       const { getTokensForProfile } = await import('@/app/actions/pushTokens')
       const { sendPushNotification } = await import('@/lib/pushSend')
