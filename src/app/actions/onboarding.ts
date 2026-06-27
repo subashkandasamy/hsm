@@ -4,16 +4,29 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { isValidSlug, RESERVED_SLUGS } from '@/lib/tenant'
 import { z } from 'zod'
 
+// Map from user-facing department choice to clinical_template
+const DEPT_TEMPLATE_MAP: Record<string, 'dental' | 'ophthalmology' | 'general'> = {
+  'Dental':        'dental',
+  'Eye Care':      'ophthalmology',
+}
+
+// All offered starter departments
+const ALL_OFFERED_DEPTS = [
+  'General Medicine', 'Dental', 'Eye Care', 'Paediatrics',
+  'Gynaecology', 'Orthopaedics', 'Surgery', 'ENT',
+]
+
 const SignupSchema = z.object({
-  hospitalName: z.string().min(2, 'Hospital name must be at least 2 characters').max(200),
-  slug:         z.string().min(3).max(63).refine(isValidSlug, {
+  hospitalName:   z.string().min(2, 'Hospital name must be at least 2 characters').max(200),
+  slug:           z.string().min(3).max(63).refine(isValidSlug, {
     message: 'Slug must be lowercase letters, numbers, hyphens only (3-63 chars) and not reserved',
   }),
-  adminName:    z.string().min(2, 'Admin name required').max(200),
-  adminEmail:   z.string().email('Valid email required'),
-  adminPhone:   z.string().optional(),
-  password:     z.string().min(8, 'Password must be at least 8 characters'),
-  plan:         z.enum(['starter', 'growth']).default('starter'),
+  adminName:      z.string().min(2, 'Admin name required').max(200),
+  adminEmail:     z.string().email('Valid email required'),
+  adminPhone:     z.string().optional(),
+  password:       z.string().min(8, 'Password must be at least 8 characters'),
+  plan:           z.enum(['starter', 'growth']).default('starter'),
+  departments:    z.array(z.string()).optional(), // selected starting departments
 })
 
 export type SignupResult =
@@ -40,11 +53,16 @@ const DEFAULT_DEPARTMENTS = [
   'Radiology', 'Pathology / Laboratory', 'Pharmacy', 'Emergency',
 ]
 
+// Display label → DB department name mapping
+const DEPT_DISPLAY_TO_DB: Record<string, string> = {
+  'Eye Care': 'Ophthalmology',
+}
+
 export async function signupHospital(input: Record<string, unknown>): Promise<SignupResult> {
   const parsed = SignupSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { hospitalName, slug, adminName, adminEmail, adminPhone, password, plan } = parsed.data
+  const { hospitalName, slug, adminName, adminEmail, adminPhone, password, plan, departments: chosenDepts } = parsed.data
 
   const avail = await checkSlugAvailable(slug)
   if (!avail.available) return { success: false, error: avail.reason ?? 'Slug unavailable' }
@@ -88,9 +106,21 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     return { success: false, error: profileErr.message }
   }
 
-  // 4. Seed default departments
-  const deptRows = DEFAULT_DEPARTMENTS.map((name) => ({
-    id: crypto.randomUUID(), name, tenant_id: tenantId,
+  // 4. Seed departments — use chosen ones if provided, else fall back to defaults
+  const deptsToSeed: { name: string; clinical_template: string }[] =
+    (chosenDepts && chosenDepts.length > 0)
+      ? chosenDepts.map((displayName) => {
+          const dbName = DEPT_DISPLAY_TO_DB[displayName] ?? displayName
+          const template = DEPT_TEMPLATE_MAP[displayName] ?? 'general'
+          return { name: dbName, clinical_template: template }
+        })
+      : DEFAULT_DEPARTMENTS.map((name) => ({ name, clinical_template: 'general' }))
+
+  const deptRows = deptsToSeed.map((d) => ({
+    id: crypto.randomUUID(),
+    name: d.name,
+    clinical_template: d.clinical_template,
+    tenant_id: tenantId,
   }))
   await service.from('departments').insert(deptRows)
 

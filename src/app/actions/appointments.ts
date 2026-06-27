@@ -63,12 +63,37 @@ export async function checkIn(id: string): Promise<SimpleResult> {
   await requirePermission(actor.role, 'appointments:write')
 
   const supabase = await createClient()
+
+  // Fetch appointment to get doctor + patient name for the push
+  const { data: appt } = await supabase
+    .from('appointments')
+    .select('doctor_id, patient:patients(full_name)')
+    .eq('id', id)
+    .eq('status', 'booked')
+    .single()
+
   const { error } = await supabase
     .from('appointments').update({ status: 'checked_in' })
     .eq('id', id).eq('status', 'booked')
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'check_in', 'appointment', id)
+
+  // Fire push notification to the doctor (best-effort, non-blocking)
+  if (appt?.doctor_id) {
+    const patientName = (appt.patient as { full_name: string } | null)?.full_name ?? 'A patient'
+    Promise.resolve().then(async () => {
+      const { getTokensForProfile } = await import('@/app/actions/pushTokens')
+      const { sendPushNotification } = await import('@/lib/pushSend')
+      const tokens = await getTokensForProfile(appt.doctor_id)
+      await Promise.all(
+        tokens.map((t) =>
+          sendPushNotification(t.push_token, t.platform, 'Patient checked in', `${patientName} is ready for you.`, { appointment_id: id })
+        )
+      )
+    }).catch(() => {})
+  }
+
   return { success: true }
 }
 

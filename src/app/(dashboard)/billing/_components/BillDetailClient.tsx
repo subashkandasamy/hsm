@@ -25,6 +25,7 @@ const SOURCE_LABELS: Record<BillItemSource, string> = {
   ot: 'Operation Theatre',
   ot_consumable: 'OT Consumables',
   blood: 'Blood Bank',
+  dental: 'Dental',
   manual: 'Manual',
 }
 

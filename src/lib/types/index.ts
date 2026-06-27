@@ -41,6 +41,7 @@ export interface Profile {
   full_name: string
   role: Role
   phone: string | null
+  phone_verified: boolean
   department_id: string | null
   is_active: boolean
   created_at: string
@@ -101,6 +102,7 @@ export interface Visit {
   type: string; visit_date: string; vitals: Vitals | null; complaint: string | null
   diagnosis: string | null; icd_code: string | null; notes: string | null
   status: VisitStatus; consultation_fee: number; billing_status: VisitBillingStatus
+  clinical_data: Record<string, unknown> | null
   created_at: string
   doctor?: Pick<Profile, 'id' | 'full_name'>
   prescriptions?: Prescription[]
@@ -286,7 +288,7 @@ export interface BloodInventoryCell {
 
 export type BillStatus = 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled'
 export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance'
-export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ot' | 'ot_consumable' | 'blood' | 'manual'
+export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual'
 
 export interface Tariff { id: string; key: string; label: string | null; amount: number }
 
@@ -500,6 +502,63 @@ export type Permission =
   | 'account:subscription'
   | 'settings:read' | 'settings:write'
   | 'dashboard:read'
+  | 'departments:manage'
+  | 'settings:modules'
+  | 'dental:read' | 'dental:write'
+  | 'ophthalmology:write'
 
-export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission }
+export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
 export interface NavGroup { label: string; items: NavItem[] }
+
+// ---- Phase 12: Specialty Clinical Templates ----
+
+export type ClinicalTemplate = 'general' | 'dental' | 'ophthalmology'
+
+export type ToothStatus = 'healthy' | 'decayed' | 'filled' | 'crowned' | 'root_canal' | 'missing' | 'extracted' | 'implant'
+export type DentalProcedure = 'filling' | 'extraction' | 'root_canal' | 'crown' | 'cleaning' | 'implant' | 'other'
+export type DentalRecallStatus = 'pending' | 'notified' | 'completed' | 'cancelled'
+
+export interface DentalTooth {
+  tooth_number: number
+  current_status: ToothStatus
+}
+
+export interface DentalTreatment {
+  id: string
+  visit_id: string
+  patient_id: string
+  tooth_number: number | null
+  procedure: string
+  notes: string | null
+  price_snapshot: number
+  billing_status: 'unbilled' | 'billed'
+  created_at: string
+}
+
+export interface DentalRecall {
+  id: string
+  patient_id: string
+  recall_date: string
+  reason: string | null
+  status: DentalRecallStatus
+  created_at: string
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
+}
+
+export interface EyeExamData {
+  visualAcuity: { od: string; os: string }
+  iop: { od: number | null; os: number | null }
+  refraction: {
+    od: { sphere: number | null; cylinder: number | null; axis: number | null }
+    os: { sphere: number | null; cylinder: number | null; axis: number | null }
+  }
+  notes: string
+}
+
+export interface DepartmentWithTemplate {
+  id: string
+  name: string
+  description: string | null
+  clinical_template: ClinicalTemplate
+  created_at: string
+}

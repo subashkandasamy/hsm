@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { Upload, FileText, Trash2, Eye, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Upload, FileText, Trash2, Eye, X, Camera } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
@@ -49,7 +49,37 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [viewerTitle, setViewerTitle] = useState<string>('')
   const [loadingViewId, setLoadingViewId] = useState<string | null>(null)
+  const [isNative, setIsNative] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    import('@capacitor/core')
+      .then(({ Capacitor }) => setIsNative(Capacitor.isNativePlatform()))
+      .catch(() => {})
+  }, [])
+
+  async function handleCameraCapture() {
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+      })
+      if (!photo.dataUrl) return
+      // Convert data URL to File object
+      const res = await fetch(photo.dataUrl)
+      const blob = await res.blob()
+      const filename = `photo_${Date.now()}.jpg`
+      setFile(new File([blob], filename, { type: 'image/jpeg' }))
+      setUploadError(null)
+    } catch (e: unknown) {
+      if ((e as { message?: string })?.message !== 'User cancelled photos app') {
+        setUploadError('Camera access failed. Check permissions.')
+      }
+    }
+  }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
@@ -182,6 +212,17 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
                 accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
+              {/* Native-only: Take Photo option */}
+              {isNative && (
+                <button
+                  type="button"
+                  onClick={handleCameraCapture}
+                  className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl text-sm font-medium min-h-[40px]"
+                  style={{ background: 'rgba(13,148,136,0.07)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}
+                >
+                  <Camera className="w-4 h-4" /> Take Photo
+                </button>
+              )}
             </div>
 
             {uploadError && (

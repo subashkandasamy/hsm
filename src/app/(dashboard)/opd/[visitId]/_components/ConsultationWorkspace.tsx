@@ -19,12 +19,15 @@ import { useAuth } from '@/context/AuthContext'
 import {
   saveVitals, saveConsultation, addPrescription, removePrescription, closeVisit,
 } from '@/app/actions/opd'
-import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug, PatientAllergy } from '@/lib/types'
+import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall } from '@/lib/types'
+import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
 import InstructionsPicker from './InstructionsPicker'
+import DentalClinicalSection from './DentalClinicalSection'
+import EyeClinicalSection from './EyeClinicalSection'
 
 interface Props {
   visit: Visit
@@ -34,6 +37,10 @@ interface Props {
   radiologyCatalog: RadiologyCatalog[]
   drugs: Drug[]
   allergies: PatientAllergy[]
+  clinicalTemplate?: ClinicalTemplate
+  dentalTeeth?: DentalTooth[] | null
+  dentalTreatments?: DentalTreatment[] | null
+  dentalRecalls?: DentalRecall[] | null
 }
 
 function computeAge(dob: string | null) {
@@ -45,7 +52,10 @@ function computeAge(dob: string | null) {
   return a
 }
 
-export default function ConsultationWorkspace({ visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies }: Props) {
+export default function ConsultationWorkspace({
+  visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies,
+  clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
+}: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const isDoctor = profile?.role === 'doctor' || profile?.role === 'admin'
@@ -411,6 +421,26 @@ export default function ConsultationWorkspace({ visit: initialVisit, patient, hi
               </FormField>
             </div>
           </GlassCard>
+
+          {/* ── Specialty Clinical Section ─────────────────────────── */}
+          {clinicalTemplate === 'dental' && dentalTeeth && (
+            <DentalClinicalSection
+              visitId={visit.id}
+              patientId={patient.id}
+              initialTeeth={dentalTeeth}
+              initialTreatments={dentalTreatments ?? []}
+              initialRecalls={dentalRecalls ?? []}
+              disabled={isClosed || !isDoctor}
+            />
+          )}
+
+          {clinicalTemplate === 'ophthalmology' && (
+            <EyeClinicalSection
+              visitId={visit.id}
+              initialData={visit.clinical_data ? (visit.clinical_data as unknown as EyeExamData) : null}
+              disabled={isClosed || !isDoctor}
+            />
+          )}
 
           {/* Prescriptions */}
           <GlassCard className="p-5">

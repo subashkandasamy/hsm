@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { markMagicLinkLogin } from '@/app/actions/auth'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -12,8 +13,7 @@ export default function AuthCallbackPage() {
     async function handleCallback() {
       const supabase = createClient()
 
-      // ── Implicit flow: Supabase magic link appends tokens as URL hash ─────
-      // e.g. /auth/callback#access_token=...&refresh_token=...&type=magiclink
+      // ── Implicit flow: tokens in URL hash ─────────────────────────────────
       const hash = typeof window !== 'undefined' ? window.location.hash : ''
       if (hash) {
         const params = new URLSearchParams(hash.slice(1))
@@ -22,25 +22,28 @@ export default function AuthCallbackPage() {
         if (access_token && refresh_token) {
           const { error } = await supabase.auth.setSession({ access_token, refresh_token })
           if (!error) {
+            await markMagicLinkLogin()
             router.replace('/dashboard?welcome=1')
             return
           }
         }
       }
 
-      // ── PKCE flow: code in query string ──────────────────────────────────
+      // ── PKCE flow: code in query string ───────────────────────────────────
       const code = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('code')
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (!error) {
+          await markMagicLinkLogin()
           router.replace('/dashboard?welcome=1')
           return
         }
       }
 
-      // ── Existing session (user revisits the page) ─────────────────────────
+      // ── Existing session ───────────────────────────────────────────────────
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
+        await markMagicLinkLogin()
         router.replace('/dashboard?welcome=1')
         return
       }
@@ -68,11 +71,9 @@ export default function AuthCallbackPage() {
             </p>
           </>
         ) : (
-          <>
-            <p className="text-sm font-medium" style={{ color: '#DC2626' }}>
-              Sign-in link expired. Redirecting to login…
-            </p>
-          </>
+          <p className="text-sm font-medium" style={{ color: '#DC2626' }}>
+            Sign-in link expired. Redirecting to login…
+          </p>
         )}
       </div>
     </div>

@@ -1,10 +1,21 @@
 'use client'
 
-import { useState, useTransition, useCallback, useEffect } from 'react'
-import { CheckCircle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react'
+import { useState, useTransition, useCallback } from 'react'
+import { CheckCircle, XCircle, Loader2, Eye, EyeOff, Check } from 'lucide-react'
 import { checkSlugAvailable, signupHospital } from '@/app/actions/onboarding'
 
 type SlugState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
+
+const DEPT_OPTIONS = [
+  { value: 'General Medicine', label: 'General Medicine' },
+  { value: 'Dental',           label: 'Dental' },
+  { value: 'Eye Care',         label: 'Eye Care (Ophthalmology)' },
+  { value: 'Paediatrics',      label: 'Paediatrics' },
+  { value: 'Gynaecology',      label: 'Gynaecology' },
+  { value: 'Orthopaedics',     label: 'Orthopaedics' },
+  { value: 'Surgery',          label: 'Surgery' },
+  { value: 'ENT',              label: 'ENT' },
+]
 
 const inputStyle = {
   background: 'rgba(255,255,255,0.8)',
@@ -29,9 +40,12 @@ export default function SignupForm({ plan = 'starter' }: Props) {
   const [slugState, setSlugState] = useState<SlugState>('idle')
   const [slugReason, setSlugReason] = useState('')
   const [adminName, setAdminName] = useState('')
+  const [adminPhone, setAdminPhone] = useState('')
+  const [phoneError, setPhoneError] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(['General Medicine'])
   const [error, setError] = useState('')
   const [redirecting, setRedirecting] = useState(false)
   const [fallbackSlug, setFallbackSlug] = useState('')
@@ -72,7 +86,8 @@ export default function SignupForm({ plan = 'starter' }: Props) {
     e.preventDefault()
     setError('')
     startTransition(async () => {
-      const res = await signupHospital({ hospitalName, slug, adminName, adminEmail: email, password, plan })
+      const depts = selectedDepts.length > 0 ? selectedDepts : undefined
+      const res = await signupHospital({ hospitalName, slug, adminName, adminPhone: `+91${adminPhone}`, adminEmail: email, password, plan, departments: depts })
       if (!res.success) {
         setError(res.error)
         return
@@ -122,7 +137,8 @@ export default function SignupForm({ plan = 'starter' }: Props) {
   }
 
   const slugOk = slugState === 'available'
-  const canSubmit = !isPending && slugOk && hospitalName && adminName && email && password.length >= 8
+  const phoneValid = /^\d{10}$/.test(adminPhone)
+  const canSubmit = !isPending && slugOk && hospitalName && adminName && phoneValid && !phoneError && email && password.length >= 8
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -193,6 +209,42 @@ export default function SignupForm({ plan = 'starter' }: Props) {
         />
       </div>
 
+      {/* Admin phone */}
+      <div>
+        <label className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
+          Mobile number
+        </label>
+        <div className="flex items-stretch rounded-xl overflow-hidden transition-all"
+          style={{ border: `1px solid ${phoneError ? '#DC2626' : '#E2E8F0'}`, background: 'rgba(255,255,255,0.8)', minHeight: '44px' }}>
+          <span className="px-3 flex items-center text-sm font-medium select-none shrink-0"
+            style={{ background: 'rgba(13,148,136,0.06)', borderRight: '1px solid #E2E8F0', color: '#0F172A' }}>
+            +91
+          </span>
+          <input
+            type="tel"
+            inputMode="numeric"
+            value={adminPhone}
+            onChange={e => {
+              const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+              setAdminPhone(digits)
+              if (phoneError && digits.length === 10) setPhoneError('')
+            }}
+            onBlur={() => {
+              if (adminPhone && adminPhone.length !== 10) setPhoneError('Enter exactly 10 digits')
+              else setPhoneError('')
+            }}
+            placeholder="9876543210"
+            required
+            maxLength={10}
+            className="flex-1 px-3 py-2.5 text-sm bg-transparent focus:outline-none"
+            style={{ color: '#0F172A' }}
+          />
+        </div>
+        {phoneError && (
+          <p className="mt-1 text-xs" style={{ color: '#DC2626' }}>{phoneError}</p>
+        )}
+      </div>
+
       {/* Email */}
       <div>
         <label className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
@@ -238,6 +290,53 @@ export default function SignupForm({ plan = 'starter' }: Props) {
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
+      </div>
+
+      {/* Department selection */}
+      <div>
+        <label className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
+          Starting Departments
+        </label>
+        <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>
+          Choose which departments to set up. You can add more in Settings later.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {DEPT_OPTIONS.map(({ value, label }) => {
+            const selected = selectedDepts.includes(value)
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setSelectedDepts((prev) =>
+                    selected ? prev.filter((d) => d !== value) : [...prev, value]
+                  )
+                }}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-medium transition-all"
+                style={{
+                  background: selected ? 'rgba(13,148,136,0.08)' : 'rgba(255,255,255,0.8)',
+                  border: `1px solid ${selected ? '#0D9488' : '#E2E8F0'}`,
+                  color: selected ? '#0D9488' : '#475569',
+                  cursor: 'pointer', minHeight: '44px',
+                }}
+              >
+                <div className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center"
+                  style={{ background: selected ? '#0D9488' : '#E2E8F0' }}>
+                  {selected && <Check className="w-2.5 h-2.5" style={{ color: '#fff' }} />}
+                </div>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => setSelectedDepts([])}
+          className="mt-2 text-xs underline"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+        >
+          I'll set this up myself
+        </button>
       </div>
 
       {error && (

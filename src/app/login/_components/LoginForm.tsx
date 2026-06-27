@@ -1,20 +1,27 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { LoginSchema } from '@/lib/schemas'
-import { Building2, Eye, EyeOff, LogIn } from 'lucide-react'
+import { initiate2FA } from '@/app/actions/auth'
+import { Building2, Eye, EyeOff, LogIn, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface Props { hospitalName?: string | null }
 
 export default function LoginForm({ hospitalName }: Props) {
   const router = useRouter()
+  const params = useSearchParams()
+  const isExpired = params.get('expired') === '1'
+  const isReset   = params.get('reset') === '1'
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<'credentials' | 'sending_otp'>('credentials')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,8 +43,29 @@ export default function LoginForm({ hospitalName }: Props) {
       return
     }
 
-    router.push('/dashboard')
-    router.refresh()
+    // Password auth succeeded — initiate SMS 2FA
+    setStep('sending_otp')
+    const twoFAResult = await initiate2FA()
+    setLoading(false)
+
+    if (twoFAResult.status === 'disabled') {
+      router.push('/dashboard')
+      return
+    }
+
+    if (twoFAResult.status === 'no_phone') {
+      router.push('/add-phone')
+      return
+    }
+
+    if (twoFAResult.status === 'error') {
+      setStep('credentials')
+      setError(twoFAResult.error)
+      return
+    }
+
+    // OTP sent → pass maskedPhone so the verify page can display it
+    router.push('/verify-otp?phone=' + encodeURIComponent(twoFAResult.maskedPhone))
   }
 
   return (
@@ -54,6 +82,24 @@ export default function LoginForm({ hospitalName }: Props) {
           </h1>
           <p className="mt-1 text-sm" style={{ color: '#64748B' }}>Sign in to your account</p>
         </div>
+
+        {/* Session expired banner */}
+        {isExpired && (
+          <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
+            style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            Your session expired after 24 hours. Please sign in again.
+          </div>
+        )}
+
+        {/* Password reset success banner */}
+        {isReset && (
+          <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
+            style={{ background: '#D1FAE5', color: '#065F46', border: '1px solid #A7F3D0' }}>
+            <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            Password updated successfully. Sign in with your new password.
+          </div>
+        )}
 
         {/* Login card */}
         <div className="glass-card p-8">
@@ -84,9 +130,16 @@ export default function LoginForm({ hospitalName }: Props) {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="password" className="text-sm font-medium" style={{ color: '#0F172A' }}>
+                  Password
+                </label>
+                <Link href="/forgot-password"
+                  className="text-xs font-medium"
+                  style={{ color: '#0D9488' }}>
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   id="password"
@@ -111,7 +164,7 @@ export default function LoginForm({ hospitalName }: Props) {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
-                  style={{ color: '#94A3B8' }}
+                  style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -119,9 +172,20 @@ export default function LoginForm({ hospitalName }: Props) {
             </div>
 
             {error && (
-              <div className="rounded-xl px-3.5 py-2.5 text-sm"
+              <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-sm"
                 style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 {error}
+              </div>
+            )}
+
+            {step === 'sending_otp' && !error && (
+              <div className="flex items-center gap-2 text-sm" style={{ color: '#0D9488' }}>
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Sending verification code…
               </div>
             )}
 

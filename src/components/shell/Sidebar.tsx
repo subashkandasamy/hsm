@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
+  ToggleLeft, CreditCard,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
@@ -31,16 +32,19 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ShieldPlus:      <ShieldPlus className="w-4 h-4" />,
   Bell:            <Bell className="w-4 h-4" />,
   Warehouse:       <Warehouse className="w-4 h-4" />,
+  ToggleLeft:      <ToggleLeft className="w-4 h-4" />,
+  CreditCard:      <CreditCard className="w-4 h-4" />,
 }
 
 interface SidebarProps {
   role: Role
   tenantName: string
+  enabledModules?: string[]
   drawerOpen?: boolean
   onClose?: () => void
 }
 
-export default function Sidebar({ role, tenantName, drawerOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ role, tenantName, enabledModules, drawerOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname()
 
   // Close drawer on route change
@@ -73,9 +77,11 @@ export default function Sidebar({ role, tenantName, drawerOpen = false, onClose 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
         {NAV_CONFIG.map((group) => {
-          const visibleItems = group.items.filter((item) =>
-            hasPermission(role, item.requiredPermission as Permission)
-          )
+          const visibleItems = group.items.filter((item) => {
+            if (!hasPermission(role, item.requiredPermission as Permission)) return false
+            if (item.moduleKey && enabledModules && !enabledModules.includes(item.moduleKey)) return false
+            return true
+          })
           if (visibleItems.length === 0) return null
           return (
             <div key={group.label}>

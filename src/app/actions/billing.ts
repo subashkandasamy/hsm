@@ -213,6 +213,29 @@ export async function getUnbilledCharges(params: {
     }
   }
 
+  // ---- Dental treatments (unbilled) ----
+  {
+    let q = supabase
+      .from('dental_treatments')
+      .select('id, procedure, tooth_number, price_snapshot')
+      .eq('patient_id', patientId)
+      .eq('billing_status', 'unbilled')
+    if (visitId) q = q.eq('visit_id', visitId)
+    const { data } = await q
+    for (const t of data ?? []) {
+      const proc = (t.procedure as string).replace('_', ' ')
+      const toothLabel = t.tooth_number ? ` (Tooth #${t.tooth_number})` : ''
+      lines.push({
+        source: 'dental',
+        ref_id: t.id,
+        description: `Dental: ${proc}${toothLabel}`,
+        qty: 1,
+        unit_price: t.price_snapshot as number,
+        amount: t.price_snapshot as number,
+      })
+    }
+  }
+
   return lines
 }
 
@@ -336,6 +359,7 @@ export async function generateBill(
     pharmacy:     'dispenses',
     ot:           'ot_schedules',
     blood:        'blood_issues',
+    dental:       'dental_treatments',
   }
 
   for (const [source, refs] of refsBySource) {
@@ -469,6 +493,8 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
       await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).in('id', refs)
     } else if (source === 'blood') {
       await supabase.from('blood_issues').update({ billing_status: 'unbilled' }).in('id', refs)
+    } else if (source === 'dental') {
+      await supabase.from('dental_treatments').update({ billing_status: 'unbilled' }).in('id', refs)
     }
   }
 

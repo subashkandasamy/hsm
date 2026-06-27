@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { verifySessionCookie, SESSION_COOKIE, SESSION_MAX_MS } from '@/lib/sessionCookie'
 
 // ── Tenant cache (in-process, 5-min TTL) ──────────────────────────────────────
 interface CachedTenant {
@@ -44,9 +45,17 @@ export async function proxy(request: NextRequest) {
   const hostWithoutPort = hostname.replace(/:\d+$/, '')
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
 
-  // Public paths that never require authentication
-  const PUBLIC_PATHS = ['/login', '/signup', '/tenant-not-found', '/tenant-suspended', '/auth/callback']
+  // Public paths — no auth needed
+  const PUBLIC_PATHS = [
+    '/login', '/signup', '/tenant-not-found', '/tenant-suspended',
+    '/auth/callback', '/forgot-password', '/reset-password',
+    '/native-entry',  // Capacitor first-launch screen — public, no tenant context
+  ]
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
+
+  // Auth-only paths that don't require completed 2FA
+  const TWO_FA_EXEMPT = ['/verify-otp', '/add-phone']
+  const isTwoFAExempt = TWO_FA_EXEMPT.some(p => pathname === p || pathname.startsWith(p + '/'))
 
   // ── If Supabase is not configured, gate all non-public traffic ─────────────
   if (!isValidUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)) {
@@ -56,7 +65,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Bare localhost (no subdomain) → skip tenant resolution, use seed tenant
+  // Bare localhost (no subdomain) → skip tenant resolution AND 2FA gate
   const isBareLocalhost = hostWithoutPort === 'localhost'
 
   // Subdomain on localhost (e.g. citygeneral.localhost) OR production subdomain
@@ -65,10 +74,19 @@ export async function proxy(request: NextRequest) {
 
   if (!isBareLocalhost) {
     // ── Apex and www: serve marketing site, no tenant resolution ────────────
-    // Both apex and www pass through here. www→apex canonical redirect is
-    // configured at the Vercel domain level only — never in this proxy —
-    // to avoid redirect loops where Vercel and proxy fight each other.
     if (hostWithoutPort === rootDomain || hostWithoutPort === `www.${rootDomain}`) {
+      return NextResponse.next()
+    }
+
+    // ── app.uyirly.com: Capacitor native app entry point ─────────────────────
+    // The native WebView loads from https://app.uyirly.com/native-entry.
+    // Serve it as-is — no tenant context needed.
+    if (hostWithoutPort === `app.${rootDomain}`) {
+      if (!isPublicPath) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/native-entry'
+        return NextResponse.rewrite(url)
+      }
       return NextResponse.next()
     }
 
@@ -133,19 +151,14 @@ export async function proxy(request: NextRequest) {
 
       const { data: { user } } = await supabase.auth.getUser()
 
+      // ── Unauthenticated: redirect to login ────────────────────────────────
       if (!user && !isPublicPath) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)
       }
 
-      if (user && pathname === '/login') {
-        const url = request.nextUrl.clone()
-        url.pathname = '/dashboard'
-        return NextResponse.redirect(url)
-      }
-
-      // Cross-tenant session defense
+      // ── Cross-tenant session defense ──────────────────────────────────────
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -162,12 +175,55 @@ export async function proxy(request: NextRequest) {
         }
       }
 
+      // ── 2FA + session expiry gate (tenant subdomains only) ────────────────
+      if (user && !isPublicPath) {
+        const la = request.cookies.get(SESSION_COOKIE)?.value
+        const loginAt = await verifySessionCookie(la, user.id)
+
+        if (loginAt !== null && Date.now() - loginAt > SESSION_MAX_MS) {
+          // Session exceeded 24 hours — force sign-out
+          await supabase.auth.signOut()
+          const url = request.nextUrl.clone()
+          url.pathname = '/login'
+          url.search = '?expired=1'
+          const resp = NextResponse.redirect(url)
+          resp.cookies.delete(SESSION_COOKIE)
+          await logSessionExpiry(user.id)
+          return resp
+        }
+
+        if (loginAt === null && !isTwoFAExempt) {
+          // Authenticated but no valid 2FA cookie → must complete 2FA
+          const url = request.nextUrl.clone()
+          url.pathname = '/verify-otp'
+          url.search = ''
+          return NextResponse.redirect(url)
+        }
+
+        // Fully authenticated: redirect away from 2FA-only pages
+        if (loginAt !== null && isTwoFAExempt) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/dashboard'
+          url.search = ''
+          return NextResponse.redirect(url)
+        }
+      }
+
+      // Redirect logged-in+2FA'd users away from /login
+      if (user && pathname === '/login') {
+        const la = request.cookies.get(SESSION_COOKIE)?.value
+        const loginAt = await verifySessionCookie(la, user.id)
+        const url = request.nextUrl.clone()
+        url.pathname = loginAt !== null ? '/dashboard' : '/verify-otp'
+        url.search = ''
+        return NextResponse.redirect(url)
+      }
+
       return supabaseResponse
     }
   }
 
   // ── Local dev or unrecognised hostname: standard Supabase auth gate ────────
-  // Marketing pages served at the apex domain in prod are also public on localhost
   const isMarketingPath = pathname === '/' || pathname.startsWith('/pricing')
   if (isPublicPath || isMarketingPath) return NextResponse.next()
 
@@ -205,6 +261,35 @@ export async function proxy(request: NextRequest) {
   }
 
   return supabaseResponse
+}
+
+// Fire-and-forget audit log for session expiry (no tenant RLS context in middleware)
+async function logSessionExpiry(userId: string): Promise<void> {
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { cookies: { getAll: () => [], setAll: () => {} } }
+    )
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('tenant_id')
+      .eq('id', userId)
+      .single()
+    if (!profile?.tenant_id) return
+
+    await supabase.from('audit_logs').insert({
+      id: crypto.randomUUID(),
+      tenant_id: profile.tenant_id,
+      actor_id: userId,
+      action: 'session_expired',
+      entity: 'auth',
+      entity_id: userId,
+      meta: { expired_at: new Date().toISOString() },
+    })
+  } catch {
+    // Non-fatal — middleware must not crash
+  }
 }
 
 export const config = {

@@ -40,36 +40,38 @@ const ROLE_PRIORITY: Record<Role, string[]> = {
   accountant:   ['/billing', '/insurance', '/dashboard', '/patients'],
 }
 
-interface BottomTabBarProps { role: Role }
+interface BottomTabBarProps { role: Role; enabledModules?: string[] }
 
-export default function BottomTabBar({ role }: BottomTabBarProps) {
+export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps) {
   const pathname = usePathname()
 
-  // Flatten all nav items for lookup
+  // Flatten all nav items for lookup (moduleKey matches NAV_CONFIG)
   const allItems = [
-    { href: '/dashboard',    label: 'Home',     icon: 'LayoutDashboard', requiredPermission: 'dashboard:read' as Permission },
-    { href: '/patients',     label: 'Patients', icon: 'Users',           requiredPermission: 'patients:read' as Permission },
-    { href: '/appointments', label: 'Schedule', icon: 'CalendarDays',    requiredPermission: 'appointments:read' as Permission },
-    { href: '/opd',          label: 'OPD',      icon: 'Stethoscope',     requiredPermission: 'opd:read' as Permission },
-    { href: '/wards',        label: 'Wards',    icon: 'BedDouble',       requiredPermission: 'ipd:read' as Permission },
-    { href: '/emergency',    label: 'ER',       icon: 'Siren',           requiredPermission: 'emergency:read' as Permission },
-    { href: '/lab',          label: 'Lab',      icon: 'FlaskConical',    requiredPermission: 'lab:read' as Permission },
-    { href: '/radiology',    label: 'Radiology',icon: 'Scan',            requiredPermission: 'radiology:read' as Permission },
-    { href: '/pharmacy',     label: 'Pharmacy', icon: 'Pill',            requiredPermission: 'pharmacy:read' as Permission },
-    { href: '/blood',        label: 'Blood',    icon: 'Droplets',        requiredPermission: 'bloodbank:read' as Permission },
-    { href: '/ot',           label: 'OT',       icon: 'Scissors',        requiredPermission: 'ot:read' as Permission },
-    { href: '/billing',      label: 'Billing',  icon: 'Receipt',         requiredPermission: 'billing:read' as Permission },
-    { href: '/insurance',  label: 'Insurance', icon: 'ShieldPlus', requiredPermission: 'insurance:read' as Permission },
-    { href: '/inventory',      label: 'Inventory', icon: 'Warehouse',  requiredPermission: 'inventory:read' as Permission },
-    { href: '/staff',          label: 'Staff',     icon: 'UserCog',    requiredPermission: 'hr:read' as Permission },
-    { href: '/notifications',  label: 'Notify',    icon: 'Bell',       requiredPermission: 'notifications:send' as Permission },
+    { href: '/dashboard',    label: 'Home',     icon: 'LayoutDashboard', requiredPermission: 'dashboard:read' as Permission,      moduleKey: undefined },
+    { href: '/patients',     label: 'Patients', icon: 'Users',           requiredPermission: 'patients:read' as Permission,       moduleKey: undefined },
+    { href: '/appointments', label: 'Schedule', icon: 'CalendarDays',    requiredPermission: 'appointments:read' as Permission,   moduleKey: undefined },
+    { href: '/opd',          label: 'OPD',      icon: 'Stethoscope',     requiredPermission: 'opd:read' as Permission,            moduleKey: undefined },
+    { href: '/wards',        label: 'Wards',    icon: 'BedDouble',       requiredPermission: 'ipd:read' as Permission,            moduleKey: 'ipd' },
+    { href: '/emergency',    label: 'ER',       icon: 'Siren',           requiredPermission: 'emergency:read' as Permission,      moduleKey: 'emergency' },
+    { href: '/lab',          label: 'Lab',      icon: 'FlaskConical',    requiredPermission: 'lab:read' as Permission,            moduleKey: 'lab' },
+    { href: '/radiology',    label: 'Radiology',icon: 'Scan',            requiredPermission: 'radiology:read' as Permission,      moduleKey: 'radiology' },
+    { href: '/pharmacy',     label: 'Pharmacy', icon: 'Pill',            requiredPermission: 'pharmacy:read' as Permission,       moduleKey: 'pharmacy' },
+    { href: '/blood',        label: 'Blood',    icon: 'Droplets',        requiredPermission: 'bloodbank:read' as Permission,      moduleKey: 'bloodbank' },
+    { href: '/ot',           label: 'OT',       icon: 'Scissors',        requiredPermission: 'ot:read' as Permission,             moduleKey: 'ot' },
+    { href: '/billing',      label: 'Billing',  icon: 'Receipt',         requiredPermission: 'billing:read' as Permission,        moduleKey: undefined },
+    { href: '/insurance',    label: 'Insurance',icon: 'ShieldPlus',      requiredPermission: 'insurance:read' as Permission,      moduleKey: 'insurance' },
+    { href: '/inventory',    label: 'Inventory',icon: 'Warehouse',       requiredPermission: 'inventory:read' as Permission,      moduleKey: 'inventory' },
+    { href: '/staff',        label: 'Staff',    icon: 'UserCog',         requiredPermission: 'hr:read' as Permission,             moduleKey: 'hr' },
+    { href: '/notifications',label: 'Notify',   icon: 'Bell',            requiredPermission: 'notifications:send' as Permission,  moduleKey: undefined },
   ]
 
   const priority = ROLE_PRIORITY[role] ?? ['/dashboard']
   const tabs = priority
     .map((href) => allItems.find((i) => i.href === href))
     .filter((item): item is NonNullable<typeof item> =>
-      !!item && hasPermission(role, item.requiredPermission)
+      !!item &&
+      hasPermission(role, item.requiredPermission) &&
+      (!item.moduleKey || !enabledModules || enabledModules.includes(item.moduleKey))
     )
     .slice(0, 5)
 

@@ -182,20 +182,66 @@ export async function closeVisit(visitId: string): Promise<SimpleResult> {
 
 export async function getVisit(visitId: string): Promise<Visit | null> {
   const supabase = await createClient()
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('visits')
-    .select('*, doctor:profiles(id,full_name), prescriptions(*)')
+    .select('*, doctor:profiles(id,full_name)')
     .eq('id', visitId)
     .single()
-  return data as unknown as Visit | null
+  if (error) {
+    console.error('[getVisit] supabase error:', error.code, error.message, { visitId })
+    return null
+  }
+  if (!data) return null
+
+  // Fetch prescriptions separately — FK to partitioned visits was dropped in Phase 10
+  const { data: prescriptions } = await supabase
+    .from('prescriptions')
+    .select('*')
+    .eq('visit_id', visitId)
+
+  return { ...data, prescriptions: prescriptions ?? [] } as unknown as Visit
 }
 
 export async function getPatientVisits(patientId: string): Promise<Visit[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('visits')
-    .select('*, doctor:profiles(id,full_name), prescriptions(*)')
+    .select('*, doctor:profiles(id,full_name)')
     .eq('patient_id', patientId)
     .order('visit_date', { ascending: false })
-  return (data ?? []) as unknown as Visit[]
+  if (!data?.length) return []
+
+  // Fetch all prescriptions for these visits in one query
+  const visitIds = data.map((v) => v.id as string)
+  const { data: prescriptions } = await supabase
+    .from('prescriptions')
+    .select('*')
+    .in('visit_id', visitIds)
+
+  const rxByVisit = new Map<string, unknown[]>()
+  for (const rx of prescriptions ?? []) {
+    const vid = (rx as Record<string, unknown>).visit_id as string
+    if (!rxByVisit.has(vid)) rxByVisit.set(vid, [])
+    rxByVisit.get(vid)!.push(rx)
+  }
+
+  return data.map((v) => ({ ...v, prescriptions: rxByVisit.get(v.id as string) ?? [] })) as unknown as Visit[]
+}
+
+export async function saveClinicalData(
+  visitId: string,
+  clinicalData: Record<string, unknown>
+): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'opd:write')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('visits')
+    .update({ clinical_data: clinicalData })
+    .eq('id', visitId)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'visit_clinical_data', visitId)
+  return { success: true }
 }
