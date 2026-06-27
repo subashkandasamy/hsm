@@ -147,7 +147,6 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Subscription',   href: '/account/subscription',         icon: 'CreditCard',    requiredPermission: 'account:subscription' },
       { label: 'Departments',    href: '/settings/departments',         icon: 'Building2',     requiredPermission: 'departments:manage' },
       { label: 'Module Settings',href: '/settings/modules',             icon: 'ToggleLeft',    requiredPermission: 'settings:modules' },
-      { label: 'Security',       href: '/settings/security',            icon: 'ShieldCheck',   requiredPermission: 'settings:write' },
       { label: 'Settings',       href: '/settings',                     icon: 'Settings',      requiredPermission: 'settings:read' },
     ],
   },

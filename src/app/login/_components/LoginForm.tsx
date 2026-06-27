@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { LoginSchema } from '@/lib/schemas'
-import { initiate2FA } from '@/app/actions/auth'
 import { Building2, Eye, EyeOff, LogIn, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface Props { hospitalName?: string | null }
@@ -21,7 +20,6 @@ export default function LoginForm({ hospitalName }: Props) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'credentials' | 'sending_otp'>('credentials')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -43,35 +41,12 @@ export default function LoginForm({ hospitalName }: Props) {
       return
     }
 
-    // Password auth succeeded — initiate SMS 2FA
-    setStep('sending_otp')
-    const twoFAResult = await initiate2FA()
-    setLoading(false)
-
-    if (twoFAResult.status === 'disabled') {
-      router.push('/dashboard')
-      return
-    }
-
-    if (twoFAResult.status === 'no_phone') {
-      router.push('/add-phone')
-      return
-    }
-
-    if (twoFAResult.status === 'error') {
-      setStep('credentials')
-      setError(twoFAResult.error)
-      return
-    }
-
-    // OTP sent → pass maskedPhone so the verify page can display it
-    router.push('/verify-otp?phone=' + encodeURIComponent(twoFAResult.maskedPhone))
+    router.push('/dashboard')
   }
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo / branding */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
             style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
@@ -83,16 +58,14 @@ export default function LoginForm({ hospitalName }: Props) {
           <p className="mt-1 text-sm" style={{ color: '#64748B' }}>Sign in to your account</p>
         </div>
 
-        {/* Session expired banner */}
         {isExpired && (
           <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
             style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            Your session expired after 24 hours. Please sign in again.
+            Your session expired. Please sign in again.
           </div>
         )}
 
-        {/* Password reset success banner */}
         {isReset && (
           <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
             style={{ background: '#D1FAE5', color: '#065F46', border: '1px solid #A7F3D0' }}>
@@ -101,7 +74,6 @@ export default function LoginForm({ hospitalName }: Props) {
           </div>
         )}
 
-        {/* Login card */}
         <div className="glass-card p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -109,21 +81,11 @@ export default function LoginForm({ hospitalName }: Props) {
                 Email address
               </label>
               <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="email" type="email" autoComplete="email" required
+                value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@hospital.com"
                 className="w-full px-3.5 py-2.5 rounded-xl text-sm transition-all"
-                style={{
-                  background: 'rgba(255,255,255,0.8)',
-                  border: '1px solid #E2E8F0',
-                  color: '#0F172A',
-                  outline: 'none',
-                  minHeight: '44px',
-                }}
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '44px' }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(13,148,136,0.1)' }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.boxShadow = 'none' }}
               />
@@ -131,41 +93,25 @@ export default function LoginForm({ hospitalName }: Props) {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="password" className="text-sm font-medium" style={{ color: '#0F172A' }}>
-                  Password
-                </label>
-                <Link href="/forgot-password"
-                  className="text-xs font-medium"
-                  style={{ color: '#0D9488' }}>
+                <label htmlFor="password" className="text-sm font-medium" style={{ color: '#0F172A' }}>Password</label>
+                <Link href="/forgot-password" className="text-xs font-medium" style={{ color: '#0D9488' }}>
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
                 <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="password" type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password" required
+                  value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full px-3.5 py-2.5 rounded-xl text-sm transition-all pr-10"
-                  style={{
-                    background: 'rgba(255,255,255,0.8)',
-                    border: '1px solid #E2E8F0',
-                    color: '#0F172A',
-                    outline: 'none',
-                    minHeight: '44px',
-                  }}
+                  style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '44px' }}
                   onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(13,148,136,0.1)' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.boxShadow = 'none' }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
+                <button type="button" onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
-                  style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}
-                >
+                  style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}>
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -179,38 +125,18 @@ export default function LoginForm({ hospitalName }: Props) {
               </div>
             )}
 
-            {step === 'sending_otp' && !error && (
-              <div className="flex items-center gap-2 text-sm" style={{ color: '#0D9488' }}>
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Sending verification code…
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
+            <button type="submit" disabled={loading}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: loading ? '#94A3B8' : '#0D9488',
-                color: '#ffffff',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                border: 'none',
-                minHeight: '44px',
-              }}
+              style={{ background: loading ? '#94A3B8' : '#0D9488', color: '#ffffff', cursor: loading ? 'not-allowed' : 'pointer', border: 'none', minHeight: '44px' }}
               onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = '#0F766E' }}
-              onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = '#0D9488' }}
+              onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = loading ? '#94A3B8' : '#0D9488' }}
             >
-              {loading ? (
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <LogIn className="w-4 h-4" />
-              )}
+              {loading
+                ? <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                : <LogIn className="w-4 h-4" />}
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>

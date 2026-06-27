@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+// createClient used by getEnabledModules
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
@@ -15,43 +16,6 @@ const UpdateModulesSchema = z.object({
 })
 
 type SimpleResult = { success: true } | { success: false; error: string }
-
-export async function get2FAEnabled(): Promise<boolean> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('tenant_id')
-    .eq('id', user.id)
-    .single()
-  if (!profile?.tenant_id) return false
-
-  const service = createServiceClient()
-  const { data: tenant } = await service
-    .from('tenants')
-    .select('sms_2fa_enabled')
-    .eq('id', profile.tenant_id)
-    .single()
-
-  return tenant?.sms_2fa_enabled ?? false
-}
-
-export async function set2FAEnabled(enabled: boolean): Promise<SimpleResult> {
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'settings:write')
-
-  const service = createServiceClient()
-  const { error } = await service
-    .from('tenants')
-    .update({ sms_2fa_enabled: enabled })
-    .eq('id', actor.tenant_id)
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'update', 'tenant_security', actor.tenant_id, { sms_2fa_enabled: enabled })
-  return { success: true }
-}
 
 export async function getEnabledModules(): Promise<ModuleKey[]> {
   const supabase = await createClient()
