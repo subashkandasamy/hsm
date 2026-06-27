@@ -138,19 +138,31 @@ export async function initiate2FA(): Promise<Initiate2FAResult> {
 
     if (!profile) return { status: 'error', error: 'Profile not found' }
 
-    // Check if this tenant has SMS 2FA enabled
-    const { createServiceClient } = await import('@/lib/supabase/service')
-    const service = createServiceClient()
-    const { data: tenant } = await service
-      .from('tenants')
-      .select('sms_2fa_enabled')
-      .eq('id', profile.tenant_id)
-      .single()
+    // Read 2FA flag from the proxy-injected header (avoids an extra DB round-trip).
+    // Falls back to checking the DB directly if header is missing (e.g. local dev).
+    const hdrs = await headers()
+    const twoFAHeader = hdrs.get('x-tenant-2fa')
+    let sms2faEnabled: boolean
+    if (twoFAHeader !== null) {
+      sms2faEnabled = twoFAHeader === '1'
+    } else {
+      const { createServiceClient } = await import('@/lib/supabase/service')
+      const service = createServiceClient()
+      const { data: tenant } = await service
+        .from('tenants')
+        .select('sms_2fa_enabled')
+        .eq('id', profile.tenant_id)
+        .single()
+      sms2faEnabled = tenant?.sms_2fa_enabled ?? false
+    }
 
-    if (!tenant?.sms_2fa_enabled) {
+    if (!sms2faEnabled) {
       // 2FA disabled — grant session immediately
       await _setSessionCookie(user.id)
-      await logAudit(user.id, 'login_success', 'auth', user.id, { method: 'password', two_fa: 'disabled' })
+      // Fire-and-forget audit log so it doesn't block the response
+      Promise.resolve()
+        .then(() => logAudit(user.id, 'login_success', 'auth', user.id, { method: 'password', two_fa: 'disabled' }))
+        .catch(() => {})
       return { status: 'disabled' }
     }
 

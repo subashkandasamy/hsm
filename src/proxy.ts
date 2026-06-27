@@ -145,11 +145,13 @@ export async function proxy(request: NextRequest) {
 
       // ── Inject tenant context headers + Supabase auth ─────────────────────
       const requestHeaders = new Headers(request.headers)
-      requestHeaders.set('x-tenant-id',     tenant.id)
-      requestHeaders.set('x-tenant-slug',   tenant.slug)
-      requestHeaders.set('x-tenant-name',   tenant.name)
-      requestHeaders.set('x-tenant-status', tenant.status)
-      requestHeaders.set('x-tenant-plan',   tenant.plan)
+      requestHeaders.set('x-tenant-id',       tenant.id)
+      requestHeaders.set('x-tenant-slug',     tenant.slug)
+      requestHeaders.set('x-tenant-name',     tenant.name)
+      requestHeaders.set('x-tenant-status',   tenant.status)
+      requestHeaders.set('x-tenant-plan',     tenant.plan)
+      // Let server actions read 2FA setting without an extra DB round-trip
+      requestHeaders.set('x-tenant-2fa',      tenant.sms_2fa_enabled ? '1' : '0')
 
       let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
@@ -176,6 +178,14 @@ export async function proxy(request: NextRequest) {
       if (!user && !isPublicPath) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
+        return NextResponse.redirect(url)
+      }
+
+      // ── Authenticated at root → send to dashboard ─────────────────────────
+      if (user && pathname === '/') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        url.search = ''
         return NextResponse.redirect(url)
       }
 
