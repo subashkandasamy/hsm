@@ -23,7 +23,7 @@ export default function AppShell({ role, fullName, tenantName, enabledModules, c
       <Sidebar role={role} tenantName={tenantName} enabledModules={enabledModules} drawerOpen={drawerOpen} onClose={closeDrawer} />
       <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} />
       {/* Main content: full-width on mobile, offset by sidebar on lg+ */}
-      <main className="lg:ml-60 min-h-screen pb-16 md:pb-0"
+      <main className="lg:ml-60 min-h-screen pb-safe-nav"
         style={{ background: 'transparent', paddingTop: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}>
         <div className="p-4 md:p-6">
           {children}
