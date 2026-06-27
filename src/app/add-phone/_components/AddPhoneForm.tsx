@@ -30,7 +30,7 @@ export default function AddPhoneForm({ hospitalName }: Props) {
     } else if (result.status === 'no_phone') {
       setError('Please enter a valid phone number.')
     } else {
-      setError(result.error ?? 'Something went wrong. Please try again.')
+      setError(('error' in result ? result.error : null) ?? 'Something went wrong. Please try again.')
     }
   }
 
