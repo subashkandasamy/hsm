@@ -4,7 +4,9 @@ import { verifySessionCookie, SESSION_COOKIE, SESSION_MAX_MS } from '@/lib/sessi
 
 // ── Tenant cache (in-process, 5-min TTL) ──────────────────────────────────────
 interface CachedTenant {
-  id: string; name: string; slug: string; status: string; plan: string; cachedAt: number
+  id: string; name: string; slug: string; status: string; plan: string
+  sms_2fa_enabled: boolean
+  cachedAt: number
 }
 const tenantCache = new Map<string, CachedTenant>()
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -22,14 +24,33 @@ async function resolveTenant(slug: string): Promise<CachedTenant | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll: () => [], setAll: () => {} } }
   )
-  const { data } = await supabase
+  // Attempt to fetch including sms_2fa_enabled (added in migration 0017).
+  // If the column doesn't exist yet the query returns an error — fall back to
+  // the base select and treat 2FA as disabled (consistent with initiate2FA()).
+  let baseData: { id: string; name: string; slug: string; status: string; plan: string } | null = null
+  let sms2faEnabled = false
+
+  const { data: fullData, error: fullErr } = await supabase
     .from('tenants')
-    .select('id, name, slug, status, plan')
+    .select('id, name, slug, status, plan, sms_2fa_enabled')
     .eq('slug', slug)
     .single()
 
-  if (!data) return null
-  const entry: CachedTenant = { ...data, cachedAt: Date.now() }
+  if (fullData) {
+    baseData = fullData
+    sms2faEnabled = (fullData as unknown as { sms_2fa_enabled?: boolean }).sms_2fa_enabled ?? false
+  } else if (fullErr) {
+    // Column may not exist yet — retry without it
+    const { data: fallback } = await supabase
+      .from('tenants')
+      .select('id, name, slug, status, plan')
+      .eq('slug', slug)
+      .single()
+    baseData = fallback
+  }
+
+  if (!baseData) return null
+  const entry: CachedTenant = { ...baseData, sms_2fa_enabled: sms2faEnabled, cachedAt: Date.now() }
   tenantCache.set(slug, entry)
   return entry
 }
@@ -193,6 +214,10 @@ export async function proxy(request: NextRequest) {
         }
 
         if (loginAt === null && !isTwoFAExempt) {
+          // If 2FA is disabled for this tenant, let them through without OTP
+          if (!tenant.sms_2fa_enabled) {
+            return supabaseResponse
+          }
           // Authenticated but no valid 2FA cookie → must complete 2FA
           const url = request.nextUrl.clone()
           url.pathname = '/verify-otp'
@@ -209,12 +234,13 @@ export async function proxy(request: NextRequest) {
         }
       }
 
-      // Redirect logged-in+2FA'd users away from /login
+      // Redirect logged-in users away from /login
       if (user && pathname === '/login') {
         const la = request.cookies.get(SESSION_COOKIE)?.value
         const loginAt = await verifySessionCookie(la, user.id)
         const url = request.nextUrl.clone()
-        url.pathname = loginAt !== null ? '/dashboard' : '/verify-otp'
+        // 2FA disabled: always go to dashboard; 2FA enabled: cookie check decides
+        url.pathname = (loginAt !== null || !tenant.sms_2fa_enabled) ? '/dashboard' : '/verify-otp'
         url.search = ''
         return NextResponse.redirect(url)
       }
