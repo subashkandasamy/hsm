@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Uyirly</string>
+    <string name="title_activity_main">Uyirly</string>
+    <string name="package_name">com.uyirly.app</string>
+    <string name="custom_url_scheme">com.uyirly.app</string>
+</resources>
