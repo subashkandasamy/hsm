@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "217434263035",
+    "project_id": "uyirly-9a539",
+    "storage_bucket": "uyirly-9a539.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:217434263035:android:6a32aea21b32efb1f20f5e",
+        "android_client_info": {
+          "package_name": "com.uyirly.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyANimvqvVjXSfl8DqSyUpjkouh9ZwmD21s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
