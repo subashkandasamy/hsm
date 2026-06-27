@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { AuthProvider } from '@/context/AuthContext'
 import AppShell from '@/components/shell/AppShell'
-import PushRegistration from '@/components/native/PushRegistration'
 import type { Profile } from '@/lib/types'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -39,7 +38,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <AppShell role={profile.role} fullName={profile.full_name} tenantName={tenantName} enabledModules={enabledModules}>
         {children}
       </AppShell>
-      <PushRegistration />
     </AuthProvider>
   )
 }
