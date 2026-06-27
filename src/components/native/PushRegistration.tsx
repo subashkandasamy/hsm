@@ -15,10 +15,20 @@ export default function PushRegistration() {
       const { PushNotifications } = await import('@capacitor/push-notifications')
 
       // Request permission
-      const { receive } = await PushNotifications.requestPermissions()
-      if (receive !== 'granted') return
+      let permResult: { receive: string }
+      try {
+        permResult = await PushNotifications.requestPermissions()
+      } catch {
+        // Firebase not configured (no google-services.json) — skip silently
+        return
+      }
+      if (permResult.receive !== 'granted') return
 
-      await PushNotifications.register()
+      try {
+        await PushNotifications.register()
+      } catch {
+        return
+      }
 
       // Token received
       PushNotifications.addListener('registration', async ({ value: token }) => {
