@@ -2,14 +2,14 @@
 // Strategy: cache-first for static assets; network-first for HTML/API.
 // NOT a write queue — offline writes are out of scope (see Phase 14 spec).
 
-const CACHE = 'uyirly-shell-v1'
+const CACHE = 'uyirly-shell-v2'
 
 // Static assets to pre-cache on install
 const PRECACHE = [
   '/manifest.webmanifest',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
-  '/icons/icon-maskable.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable.png',
 ]
 
 self.addEventListener('install', (event) => {
