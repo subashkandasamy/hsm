@@ -1,6 +1,7 @@
 'use server'
 
 import { headers, cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { getActorProfile } from '@/lib/server-utils'
@@ -157,13 +158,15 @@ export async function initiate2FA(): Promise<Initiate2FAResult> {
     }
 
     if (!sms2faEnabled) {
-      // 2FA disabled — grant session immediately
-      await _setSessionCookie(user.id)
-      // Fire-and-forget audit log so it doesn't block the response
+      // 2FA disabled — the proxy bypasses the session-cookie gate for this tenant,
+      // so no cookie is needed. Avoid setting it because Next.js automatically
+      // re-renders the current page after any cookieStore.set(), which adds an
+      // extra middleware round-trip (~400 ms) to every login.
+      // Fire-and-forget the audit log so it never blocks the redirect.
       Promise.resolve()
         .then(() => logAudit(user.id, 'login_success', 'auth', user.id, { method: 'password', two_fa: 'disabled' }))
         .catch(() => {})
-      return { status: 'disabled' }
+      redirect('/dashboard')
     }
 
     if (!profile.phone) return { status: 'no_phone' }
