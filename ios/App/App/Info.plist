@@ -28,9 +28,15 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Uyirly uses the camera to capture patient documents and photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Uyirly needs access to your photo library to attach images to patient records.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Uyirly may save images to your photo library.</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

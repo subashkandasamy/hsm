@@ -17,9 +17,9 @@ export default function PwaInit() {
       if (!Capacitor.isNativePlatform()) return
 
       const { StatusBar, Style } = await import('@capacitor/status-bar')
-      // App header is always teal — use light icons (white) so they're visible
-      // regardless of whether the phone is in dark or light mode
-      await StatusBar.setStyle({ style: Style.Dark })
+      // App header is always teal — use Light style (white icons) so they're
+      // visible on the dark teal background regardless of phone theme
+      await StatusBar.setStyle({ style: Style.Light })
       await StatusBar.setBackgroundColor({ color: '#0D9488' })
     }
 
