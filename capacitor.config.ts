@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   // the WebView to https://{slug}.uyirly.com — no app-store resubmission needed
   // for regular feature updates, since those ship via the hosted Next.js app.
   server: {
-    url: 'https://test.uyirly.com',
+    url: 'https://app.uyirly.com',
     cleartext: false,
     // Allow in-WebView navigation to tenant subdomains after hospital selection
     allowNavigation: ['*.uyirly.com'],
