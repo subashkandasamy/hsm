@@ -4,12 +4,6 @@ import { useState, useEffect, useTransition } from 'react'
 import { Building2, ArrowRight, Loader2, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
 import { checkTenantExists } from '@/app/actions/tenantLookup'
 
-// @capacitor/preferences — loaded dynamically so the web bundle is unaffected
-async function getPreferences() {
-  const { Preferences } = await import('@capacitor/preferences')
-  return Preferences
-}
-
 const PREF_KEY = 'uyirly_hospital_slug'
 
 function normalizeSlug(raw: string): string {
@@ -37,15 +31,16 @@ export default function HospitalEntryForm({ forcePick = false }: Props) {
   useEffect(() => {
     if (forcePick) { setStep('pick'); return }
 
-    getPreferences().then(async (Preferences) => {
+    async function checkSaved() {
+      const { Preferences } = await import('@capacitor/preferences')
       const { value } = await Preferences.get({ key: PREF_KEY })
       if (value) {
-        // Saved slug found — go straight to the tenant login
         window.location.href = `https://${value}.uyirly.com/login`
       } else {
         setStep('pick')
       }
-    }).catch(() => setStep('pick'))
+    }
+    checkSaved().catch(() => setStep('pick'))
   }, [forcePick])
 
   function handleSubmit(e: React.FormEvent) {
@@ -69,7 +64,7 @@ export default function HospitalEntryForm({ forcePick = false }: Props) {
   }
 
   async function handleConfirm() {
-    const Preferences = await getPreferences()
+    const { Preferences } = await import('@capacitor/preferences')
     await Preferences.set({ key: PREF_KEY, value: confirmedSlug })
     window.location.href = `https://${confirmedSlug}.uyirly.com/login`
   }
