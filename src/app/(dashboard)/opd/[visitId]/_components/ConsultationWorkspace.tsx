@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, Droplet, AlertTriangle, ChevronDown, ChevronRight,
   Activity, FileText, Pill, CheckCircle, Plus, Trash2, Save, Lock,
-  FlaskConical, Scan,
+  FlaskConical, Scan, BedDouble,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -23,11 +23,18 @@ import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Dr
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
+import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
 import InstructionsPicker from './InstructionsPicker'
 import DentalClinicalSection from './DentalClinicalSection'
 import EyeClinicalSection from './EyeClinicalSection'
+
+interface WardOption {
+  id: string
+  name: string
+  availableBeds: { id: string; bed_no: string }[]
+}
 
 interface Props {
   visit: Visit
@@ -41,6 +48,12 @@ interface Props {
   dentalTeeth?: DentalTooth[] | null
   dentalTreatments?: DentalTreatment[] | null
   dentalRecalls?: DentalRecall[] | null
+  // IPD admission
+  admitDoctors: { id: string; full_name: string }[]
+  admitWards: WardOption[]
+  admitTariffs: import('@/lib/types').ProcedureTariff[]
+  admitGeneralTariffPrice?: number
+  admitAdvancePercentage?: number
 }
 
 function computeAge(dob: string | null) {
@@ -55,6 +68,7 @@ function computeAge(dob: string | null) {
 export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
+  admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -64,9 +78,6 @@ export default function ConsultationWorkspace({
   const [visit, setVisit] = useState(initialVisit)
   const [prescriptions, setPrescriptions] = useState<Prescription[]>(initialVisit.prescriptions ?? [])
   const isClosed = visit.status === 'closed'
-
-  // Mobile panel toggle: 'history' | 'consultation'
-  const [mobilePanel, setMobilePanel] = useState<'history' | 'consultation'>('consultation')
 
   // Investigation order modals
   const [showLabOrder, setShowLabOrder] = useState(false)
@@ -114,6 +125,9 @@ export default function ConsultationWorkspace({
   const [showClose, setShowClose] = useState(false)
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
+
+  // Admit to IPD
+  const [showAdmit, setShowAdmit] = useState(false)
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -202,7 +216,7 @@ export default function ConsultationWorkspace({
         <ArrowLeft className="w-4 h-4" /> Back to OPD
       </Link>
 
-      {/* Allergy banner — always visible above consultation area */}
+      {/* Allergy banner */}
       {allergies.length > 0 && (
         <AllergyBanner allergies={allergies} className="mb-4" />
       )}
@@ -214,100 +228,128 @@ export default function ConsultationWorkspace({
         </div>
       )}
 
-      {/* Mobile panel toggle */}
-      <div className="flex lg:hidden gap-1 mb-4 p-1 rounded-xl w-full"
-        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-        {(['consultation', 'history'] as const).map((panel) => (
-          <button key={panel} onClick={() => setMobilePanel(panel)}
-            className="flex-1 py-2 rounded-lg text-sm font-medium capitalize"
-            style={mobilePanel === panel
-              ? { background: '#0D9488', color: '#fff' }
-              : { color: '#64748B', background: 'transparent' }}>
-            {panel === 'consultation' ? 'Consultation' : `History (${history.length})`}
-          </button>
-        ))}
-      </div>
+      {/* ── Patient details card (top, full-width) ── */}
+      <GlassCard className="p-4 mb-4">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.2)' }}>
+            <User className="w-5 h-5" style={{ color: '#0D9488' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link href={`/patients/${patient.id}`}
+                className="font-bold text-base hover:underline"
+                style={{ color: '#0F172A' }}>
+                {patient.full_name}
+              </Link>
+              <span className="font-mono text-xs px-2 py-0.5 rounded-lg"
+                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
+                {patient.uhid}
+              </span>
+              <StatusBadge status={visit.status} label={visit.status} />
+            </div>
+            {age !== null && (
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                {age}y · <span className="capitalize">{patient.gender ?? '—'}</span>
+              </p>
+            )}
+          </div>
+        </div>
 
-      <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* ─── LEFT PANEL ─── */}
-        <div className={`w-full lg:w-72 lg:flex-shrink-0 space-y-4 ${mobilePanel === 'consultation' ? 'hidden lg:block' : 'block'}`}>
-          {/* Patient card */}
-          <GlassCard className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.2)' }}>
-                <User className="w-5 h-5" style={{ color: '#0D9488' }} />
-              </div>
-              <div className="min-w-0">
-                <Link href={`/patients/${patient.id}`}
-                  className="font-semibold text-sm block truncate hover:underline"
-                  style={{ color: '#0F172A' }}>
-                  {patient.full_name}
-                </Link>
-                <p className="text-xs font-mono" style={{ color: '#94A3B8' }}>{patient.uhid}</p>
-                {age !== null && (
-                  <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                    {age}y · <span className="capitalize">{patient.gender ?? '—'}</span>
-                  </p>
-                )}
+        {/* Blood group + allergies */}
+        <div className="flex flex-wrap gap-3 mb-4">
+          {patient.blood_group ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: '#64748B' }}>Blood Group</span>
+              <span className="flex items-center gap-1 font-bold text-sm px-2.5 py-0.5 rounded-lg"
+                style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <Droplet className="w-3 h-3" />{patient.blood_group}
+              </span>
+            </div>
+          ) : null}
+          {allergies.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold" style={{ color: '#B45309' }}>
+                ⚠ Allergies
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {allergies.map((a) => (
+                  <span key={a.id} className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                    {a.allergen}
+                  </span>
+                ))}
               </div>
             </div>
-
-            <div className="mt-3 flex gap-2 flex-wrap">
-              {patient.blood_group && (
-                <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-xl font-semibold"
-                  style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                  <Droplet className="w-3 h-3" />{patient.blood_group}
-                </span>
-              )}
-              {allergies.length > 0 && (
-                <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-xl font-semibold"
-                  style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                  <AlertTriangle className="w-3 h-3" />{allergies.length} Allerg{allergies.length === 1 ? 'y' : 'ies'}
-                </span>
-              )}
-            </div>
-          </GlassCard>
-
-          {/* Past visits accordion */}
-          {history.length > 0 && (
-            <GlassCard className="overflow-hidden">
-              <button
-                onClick={() => setHistoryOpen((o) => !o)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#0F172A' }}
-              >
-                <span>Past Visits ({history.length})</span>
-                {historyOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </button>
-              {historyOpen && (
-                <div className="px-4 pb-4 space-y-3 border-t" style={{ borderColor: '#E2E8F0' }}>
-                  {history.slice(0, 5).map((v) => (
-                    <div key={v.id} className="pt-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold" style={{ color: '#0F172A' }}>
-                          {v.diagnosis || 'No diagnosis'}
-                        </p>
-                        <StatusBadge status={v.status} label={v.status} />
-                      </div>
-                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                        <DateText date={v.visit_date} /> · {v.doctor?.full_name}
-                      </p>
-                      {(v.prescriptions?.length ?? 0) > 0 && (
-                        <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
-                          {v.prescriptions!.length} prescription{v.prescriptions!.length !== 1 ? 's' : ''}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
+          )}
+          {!patient.blood_group && allergies.length === 0 && (
+            <span className="text-xs" style={{ color: '#94A3B8' }}>No blood group or allergy info recorded</span>
           )}
         </div>
 
-        {/* ─── RIGHT PANEL ─── */}
-        <div className={`w-full lg:flex-1 lg:min-w-0 space-y-5 ${mobilePanel === 'history' ? 'hidden lg:block' : 'block'}`}>
+        {/* Visit meta row */}
+        <div className="pt-3 grid grid-cols-2 sm:grid-cols-3 gap-3"
+          style={{ borderTop: '1px solid #F1F5F9' }}>
+          <div>
+            <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Consulting Doctor</p>
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+              {visit.doctor?.full_name ?? '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Visit Date</p>
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+              <DateText date={visit.visit_date} />
+            </p>
+          </div>
+          {visit.complaint && (
+            <div>
+              <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Chief Complaint</p>
+              <p className="text-sm truncate" style={{ color: '#0F172A' }}>{visit.complaint}</p>
+            </div>
+          )}
+        </div>
+      </GlassCard>
+
+      {/* ── Past visits accordion ── */}
+      {history.length > 0 && (
+        <GlassCard className="overflow-hidden mb-4">
+          <button
+            onClick={() => setHistoryOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#0F172A' }}>
+            <span>Past Visits ({history.length})</span>
+            {historyOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          {historyOpen && (
+            <div className="px-4 pb-4 border-t" style={{ borderColor: '#E2E8F0' }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
+                {history.slice(0, 6).map((v) => (
+                  <div key={v.id} className="p-3 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="text-xs font-semibold truncate" style={{ color: '#0F172A' }}>
+                        {v.diagnosis || 'No diagnosis'}
+                      </p>
+                      <StatusBadge status={v.status} label={v.status} />
+                    </div>
+                    <p className="text-xs" style={{ color: '#64748B' }}>
+                      <DateText date={v.visit_date} /> · {v.doctor?.full_name}
+                    </p>
+                    {(v.prescriptions?.length ?? 0) > 0 && (
+                      <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                        {v.prescriptions!.length} Rx
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
+      {/* ── Clinical workspace (single column) ── */}
+      <div className="space-y-5">
           {/* Vitals */}
           <GlassCard className="p-5">
             <div className="flex items-center justify-between mb-4">
@@ -730,9 +772,19 @@ export default function ConsultationWorkspace({
             </GlassCard>
           )}
 
-          {/* Close Visit */}
+          {/* Action row: Admit to IPD + Close Visit */}
           {!isClosed && isDoctor && (
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-3 flex-wrap">
+              <button
+                onClick={() => setShowAdmit(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.18)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.1)' }}
+              >
+                <BedDouble className="w-4 h-4" />
+                Admit to IPD
+              </button>
               <button
                 onClick={() => setShowClose(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
@@ -745,7 +797,6 @@ export default function ConsultationWorkspace({
               </button>
             </div>
           )}
-        </div>
       </div>
 
       <ConfirmDialog
@@ -778,6 +829,23 @@ export default function ConsultationWorkspace({
         prefill={{ patientId: patient.id, patientName: patient.full_name, visitId: visit.id }}
         onSuccess={() => { setShowRadOrder(false); setRadOrdered(true) }}
       />
+
+      {showAdmit && (
+        <AdmitModal
+          open={showAdmit}
+          onClose={() => setShowAdmit(false)}
+          onSuccess={(admissionId) => {
+            setShowAdmit(false)
+            router.push(`/ipd/${admissionId}`)
+          }}
+          doctors={admitDoctors}
+          wards={admitWards}
+          procedureTariffs={admitTariffs}
+          generalTariffPrice={admitGeneralTariffPrice}
+          advancePercentage={admitAdvancePercentage}
+          preselectedPatient={{ id: patient.id, full_name: patient.full_name, uhid: patient.uhid }}
+        />
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
+import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Visit, Prescription } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -35,6 +36,10 @@ export async function startVisit(
 
   if (apptErr || !appt) return { success: false, error: 'Appointment not found' }
   if (appt.status === 'done') return { success: false, error: 'Appointment already closed' }
+
+  // Block visit start if patient is admitted to IPD or active in Emergency
+  const location = await getPatientActiveLocation(appt.patient_id as string, supabase)
+  if (location) return { success: false, error: patientLocationMessage(location) }
 
   // Phase 15: gate on consultation bill payment before opening the visit
   const { data: consultBill } = await supabase

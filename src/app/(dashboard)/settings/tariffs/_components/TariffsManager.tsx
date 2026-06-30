@@ -16,7 +16,7 @@ interface Props {
   initialTariffs: ProcedureTariff[]
 }
 
-const CATEGORIES = ['surgery', 'procedure', 'package'] as const
+const CATEGORIES = ['general', 'surgery', 'procedure', 'package'] as const
 
 export default function TariffsManager({ initialWards, initialTariffs }: Props) {
   const [wards, setWards]       = useState(initialWards)
@@ -32,7 +32,7 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
   const [editingTariffId, setEditingTariffId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [tariffForm, setTariffForm] = useState({
-    name: '', category: '' as '' | 'surgery' | 'procedure' | 'package', default_price: '',
+    name: '', category: '' as '' | 'general' | 'surgery' | 'procedure' | 'package', default_price: '',
   })
 
   // ---- Ward rate actions ----
@@ -69,7 +69,7 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
     setEditingTariffId(t.id)
     setTariffForm({
       name: t.name,
-      category: (t.category ?? '') as '' | 'surgery' | 'procedure' | 'package',
+      category: (t.category ?? '') as '' | 'general' | 'surgery' | 'procedure' | 'package',
       default_price: String(t.default_price),
     })
     setError('')
@@ -245,7 +245,7 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
                 />
                 <select
                   value={tariffForm.category}
-                  onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'surgery' | 'procedure' | 'package' }))}
+                  onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
                   className="px-3 py-2 rounded-lg border text-sm"
                   style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                 >
@@ -312,7 +312,7 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
                         {isEditing ? (
                           <select
                             value={tariffForm.category}
-                            onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'surgery' | 'procedure' | 'package' }))}
+                            onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
                             className="px-2 py-1 text-sm rounded border"
                             style={{ borderColor: '#CBD5E1' }}
                           >

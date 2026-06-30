@@ -387,12 +387,12 @@ function DispenseQueue({
         const headerBg = isPaid
           ? 'rgba(16,185,129,0.07)'
           : isBilled
-            ? 'rgba(59,130,246,0.06)'
+            ? 'rgba(245,158,11,0.05)'
             : allPacked ? 'rgba(13,148,136,0.05)' : 'rgba(13,148,136,0.03)'
 
         return (
           <GlassCard key={group.patient_id} className="overflow-hidden"
-            style={isPaid ? { border: '1.5px solid #6EE7B7' } : isBilled ? { border: '1.5px solid #BFDBFE' } : undefined}>
+            style={isPaid ? { border: '1.5px solid #6EE7B7' } : isBilled ? { border: '1.5px solid #FDE68A' } : undefined}>
 
             {/* Patient header — 2-row layout for mobile */}
             <div className="px-4 py-3"
@@ -427,7 +427,7 @@ function DispenseQueue({
                 {isPaid ? (
                   <>
                     <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0"
-                      style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                      style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
                       {billInfo!.billNo}
                     </span>
                     <button
@@ -456,7 +456,7 @@ function DispenseQueue({
                       onClick={() => handleCheckPayment(group.patient_id)}
                       disabled={checkingPayment.has(group.patient_id)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
-                      style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                      style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                       {checkingPayment.has(group.patient_id)
                         ? <Loader2 className="w-3 h-3 animate-spin" />
                         : <CreditCard className="w-3 h-3" />}
@@ -665,17 +665,17 @@ function DispenseQueue({
 
         return (
           <GlassCard key={ap.patient_id} className="overflow-hidden"
-            style={isPaid ? { border: '1.5px solid #6EE7B7' } : { border: '1.5px solid #BFDBFE' }}>
+            style={isPaid ? { border: '1.5px solid #6EE7B7' } : { border: '1.5px solid #FDE68A' }}>
 
             {/* 2-row layout for mobile */}
             <div className="px-4 py-3"
-              style={{ background: isPaid ? 'rgba(16,185,129,0.07)' : 'rgba(59,130,246,0.06)', borderBottom: isExpanded ? '1px solid #E2E8F0' : 'none' }}>
+              style={{ background: isPaid ? 'rgba(16,185,129,0.07)' : 'rgba(245,158,11,0.05)', borderBottom: isExpanded ? '1px solid #E2E8F0' : 'none' }}>
 
               {/* Row 1: avatar + name + chevron */}
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: isPaid ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.1)' }}>
-                  <User2 className="w-4 h-4" style={{ color: isPaid ? '#059669' : '#3B82F6' }} />
+                  style={{ background: isPaid ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)' }}>
+                  <User2 className="w-4 h-4" style={{ color: isPaid ? '#059669' : '#D97706' }} />
                 </div>
                 <button type="button" onClick={() => toggleGroup(ap.patient_id)}
                   className="flex-1 min-w-0 text-left"
@@ -718,7 +718,7 @@ function DispenseQueue({
                         onClick={() => handleCheckPayment(ap.patient_id)}
                         disabled={checkingPayment.has(ap.patient_id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
-                        style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                         {checkingPayment.has(ap.patient_id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
                         Check Payment
                       </button>

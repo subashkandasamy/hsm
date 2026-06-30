@@ -28,9 +28,10 @@ interface Props {
   onClose: () => void
   onGenerated: (billId: string) => void
   preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
+  admissionId?: string
 }
 
-export default function BillBuilderModal({ onClose, onGenerated, preselectedPatient }: Props) {
+export default function BillBuilderModal({ onClose, onGenerated, preselectedPatient, admissionId }: Props) {
   const [step, setStep] = useState<'patient' | 'charges'>(preselectedPatient ? 'charges' : 'patient')
   const [patientSearch, setPatientSearch] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
@@ -118,6 +119,7 @@ export default function BillBuilderModal({ onClose, onGenerated, preselectedPati
     setError(null)
     const res = await generateBill({
       patient_id:    selectedPatient.id,
+      admission_id:  admissionId ?? null,
       selected_refs: Array.from(selectedRefs),
       manual_items:  manualItems,
     })

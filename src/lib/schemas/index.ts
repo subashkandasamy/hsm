@@ -75,6 +75,7 @@ export const AdmitPatientSchema = z.object({
   admitting_doctor_id: z.string().uuid('Please select an admitting doctor'),
   bed_id: z.string().uuid('Please select a bed'),
   reason: z.string().nullable().optional(),
+  procedure_tariff_id: z.string().uuid().nullable().optional(),
 })
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),

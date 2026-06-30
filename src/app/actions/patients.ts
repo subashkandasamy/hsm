@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
+import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import { getActorProfile } from '@/lib/server-utils'
 import { PatientCreateSchema, PatientUpdateSchema } from '@/lib/schemas'
 import type { Patient } from '@/lib/types'
@@ -128,4 +129,12 @@ export async function listPatients(): Promise<Patient[]> {
     .order('created_at', { ascending: false })
     .limit(200)
   return (data ?? []) as Patient[]
+}
+
+export async function checkPatientLocation(
+  patientId: string
+): Promise<{ location: 'ipd' | 'emergency' | null; message: string }> {
+  const supabase = await createClient()
+  const location = await getPatientActiveLocation(patientId, supabase)
+  return { location, message: patientLocationMessage(location) }
 }

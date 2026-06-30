@@ -121,6 +121,7 @@ export interface Admission {
   id: string; patient_id: string; admitting_doctor_id: string; ward_id: string; bed_id: string
   reason: string | null; admitted_at: string; discharged_at: string | null
   status: AdmissionStatus; discharge_summary: string | null
+  procedure_tariff_id?: string | null; treatment_value?: number | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'>
@@ -376,6 +377,7 @@ export interface StockMovement {
 export interface StaffProfileRecord {
   profile_id: string; designation: string | null; joining_date: string | null
   address: string | null; emergency_contact: string | null; consultation_fee: number | null
+  nursing_charge_per_shift?: number | null
 }
 
 export interface StaffMember extends Profile {
@@ -508,6 +510,7 @@ export type Permission =
   | 'dental:read' | 'dental:write'
   | 'ophthalmology:write'
   | 'tariffs:manage' | 'pharmacy:sale'
+  | 'ipd:config' | 'ipd:nursing'
 
 export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
 export interface NavGroup { label: string; items: NavItem[] }
@@ -571,7 +574,7 @@ export interface ProcedureTariff {
   id: string
   tenant_id: string
   name: string
-  category: 'surgery' | 'procedure' | 'package' | null
+  category: 'surgery' | 'procedure' | 'package' | 'general' | null
   default_price: number
   is_active: boolean
   created_at: string
@@ -628,4 +631,54 @@ export interface AdmissionFinancials {
   totalPaid: number
   balanceDue: number
   unusedAdvance: number
+}
+
+export interface IpdBillingConfig {
+  tenant_id: string
+  charge_room_rent: boolean
+  charge_doctor_fee: boolean
+  charge_nursing: boolean
+  charge_medicines: boolean
+  charge_admission_fee: boolean
+  admission_fee_amount: number
+  service_charge_per_day: number
+  updated_at: string
+}
+
+export interface IpdCustomCharge {
+  id: string
+  tenant_id: string
+  name: string
+  amount: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface AdmissionNurseAssignment {
+  id: string
+  tenant_id: string
+  admission_id: string
+  nurse_id: string
+  shift: 'morning' | 'night'
+  assigned_date: string
+  charge_snapshot: number
+  created_at: string
+  nurse?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface AdvanceDepositRequest {
+  id: string
+  tenant_id: string
+  admission_id: string
+  amount: number
+  status: 'pending' | 'collected' | 'waived'
+  method: 'cash' | 'card' | 'upi' | 'bank_transfer' | null
+  advance_id: string | null
+  created_by: string | null
+  collected_by: string | null
+  collected_at: string | null
+  created_at: string
+  // joined
+  patient?: Pick<Patient, 'full_name' | 'uhid'>
+  admission?: { admitted_at: string; ward?: { name: string }; bed?: { bed_no: string } }
 }

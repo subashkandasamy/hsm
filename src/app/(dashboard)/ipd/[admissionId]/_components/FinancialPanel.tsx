@@ -123,24 +123,24 @@ export default function FinancialPanel({
         )}
 
         {/* Summary grid */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="p-3 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-            <p className="text-xs mb-1" style={{ color: '#64748B' }}>Advance Received</p>
+            <p className="text-xs leading-tight mb-1" style={{ color: '#64748B' }}>Advance Received</p>
             <Money amount={totalAdvance} className="font-bold text-base" style={{ color: '#0D9488' }} />
           </div>
           <div className="p-3 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-            <p className="text-xs mb-1" style={{ color: '#64748B' }}>Total Billed</p>
+            <p className="text-xs leading-tight mb-1" style={{ color: '#64748B' }}>Total Billed</p>
             <Money amount={totalBilled} className="font-bold text-base" style={{ color: '#0F172A' }} />
           </div>
           <div className="p-3 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-            <p className="text-xs mb-1" style={{ color: '#64748B' }}>Total Paid</p>
+            <p className="text-xs leading-tight mb-1" style={{ color: '#64748B' }}>Total Paid</p>
             <Money amount={totalPaid} className="font-bold text-base" style={{ color: '#059669' }} />
           </div>
           <div className="p-3 rounded-xl" style={{
             background: balanceDue > 0 ? '#FEF2F2' : '#F0FDF4',
             border: `1px solid ${balanceDue > 0 ? '#FECACA' : '#BBF7D0'}`,
           }}>
-            <p className="text-xs mb-1" style={{ color: balanceDue > 0 ? '#DC2626' : '#16A34A' }}>
+            <p className="text-xs leading-tight mb-1" style={{ color: balanceDue > 0 ? '#DC2626' : '#16A34A' }}>
               {balanceDue > 0 ? 'Balance Due' : 'Fully Paid'}
             </p>
             <Money amount={balanceDue} className="font-bold text-base"
@@ -192,7 +192,7 @@ export default function FinancialPanel({
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => { setShowAdvanceForm(!showAdvanceForm); setShowRefundForm(false) }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
               style={{ background: '#0D9488', color: '#fff' }}
             >
               <Plus className="w-3.5 h-3.5" /> Record Advance

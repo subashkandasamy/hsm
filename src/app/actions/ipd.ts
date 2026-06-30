@@ -19,9 +19,19 @@ export async function admitPatient(
   const parsed = AdmitPatientSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, admitting_doctor_id, bed_id, reason } = parsed.data
+  const { patient_id, admitting_doctor_id, bed_id, reason, procedure_tariff_id } = parsed.data
   const admissionId = crypto.randomUUID()
   const supabase = await createClient()
+
+  // Block if the patient already has an active admission
+  const { count: activeCount } = await supabase
+    .from('admissions')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patient_id)
+    .eq('status', 'admitted')
+  if ((activeCount ?? 0) > 0) {
+    return { success: false, error: 'This patient is already admitted. Discharge the existing admission before admitting again.' }
+  }
 
   // Concurrency-safe claim: Postgres function does UPDATE WHERE status='available'
   const { data: result, error: rpcErr } = await supabase.rpc('claim_bed_and_admit', {
@@ -36,6 +46,51 @@ export async function admitPatient(
 
   const rpcResult = result as { ok: boolean; error?: string }
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Bed no longer available' }
+
+  // Fetch tenant advance percentage (default 50 if not set)
+  const { data: tenantRow } = await supabase
+    .from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single()
+  const advancePct = (tenantRow?.advance_percentage as number) ?? 50
+
+  // Auto-record advance based on selected procedure tariff (or general tariff as fallback)
+  let tariffPrice: number | null = null
+  let resolvedTariffId: string | null = procedure_tariff_id ?? null
+
+  if (procedure_tariff_id) {
+    const { data: t } = await supabase
+      .from('procedure_tariffs').select('default_price').eq('id', procedure_tariff_id).single()
+    tariffPrice = (t?.default_price as number) ?? null
+  } else {
+    const { data: t } = await supabase
+      .from('procedure_tariffs').select('id, default_price')
+      .eq('category', 'general').eq('is_active', true).limit(1).maybeSingle()
+    tariffPrice = (t?.default_price as number) ?? null
+    resolvedTariffId = (t?.id as string) ?? null
+  }
+
+  // Snapshot treatment on the admission row
+  if (resolvedTariffId || tariffPrice) {
+    await supabase.from('admissions').update({
+      procedure_tariff_id: resolvedTariffId,
+      treatment_value: tariffPrice,
+    }).eq('id', admissionId)
+  }
+
+  if (tariffPrice && tariffPrice > 0 && advancePct > 0) {
+    const advanceAmount = Math.round(tariffPrice * advancePct / 100)
+    // Don't collect here — create a pending obligation at the billing counter
+    await supabase.from('advance_deposit_requests').insert({
+      id:           crypto.randomUUID(),
+      tenant_id:    actor.tenant_id,
+      admission_id: admissionId,
+      amount:       advanceAmount,
+      created_by:   actor.id,
+    })
+    await logAudit(actor.id, 'advance_deposit_created', 'admission', admissionId, {
+      amount: advanceAmount, pct: advancePct,
+      source: procedure_tariff_id ? 'procedure_tariff' : 'general_tariff',
+    })
+  }
 
   await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })
   return { success: true, admissionId }

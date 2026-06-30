@@ -109,21 +109,22 @@ export default function AdminDashboard({ kpis }: { kpis: AdminKPIs | null }) {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-3 items-end">
+          {/* Date inputs: side-by-side on all screens; button full-width on mobile */}
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
             <div className="space-y-1.5">
               <label className="text-xs font-medium" style={{ color: '#475569' }}>From</label>
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                className="rounded-xl px-3 py-2 text-sm"
+                className="w-full rounded-xl px-3 py-2 text-sm"
                 style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '40px' }} />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium" style={{ color: '#475569' }}>To</label>
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                className="rounded-xl px-3 py-2 text-sm"
+                className="w-full rounded-xl px-3 py-2 text-sm"
                 style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '40px' }} />
             </div>
             <button onClick={handleExport} disabled={exporting}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+              className="col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold sm:w-auto"
               style={{ background: exporting ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: exporting ? 'not-allowed' : 'pointer' }}>
               <Download className="w-4 h-4" />
               {exporting ? 'Generating…' : 'Download CSV'}

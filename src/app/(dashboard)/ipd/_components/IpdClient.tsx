@@ -11,7 +11,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { listAdmissions } from '@/app/actions/ipd'
 import { getWardBoard } from '@/app/actions/wards'
 import AdmitModal from '../../wards/_components/AdmitModal'
-import type { Admission, Ward, WardWithBeds } from '@/lib/types'
+import type { Admission, Ward, WardWithBeds, ProcedureTariff } from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(admittedAt).getTime()) / 86400000))
@@ -21,9 +21,12 @@ interface Props {
   initialAdmissions: Admission[]
   wards: Ward[]
   doctors: { id: string; full_name: string }[]
+  procedureTariffs?: ProcedureTariff[]
+  generalTariffPrice?: number
+  advancePercentage?: number
 }
 
-export default function IpdClient({ initialAdmissions, wards, doctors }: Props) {
+export default function IpdClient({ initialAdmissions, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
   const router = useRouter()
   const [admissions, setAdmissions] = useState<Admission[]>(initialAdmissions)
   const [statusFilter, setStatusFilter] = useState<'admitted' | 'discharged' | 'all'>('admitted')
@@ -180,6 +183,9 @@ export default function IpdClient({ initialAdmissions, wards, doctors }: Props) 
           onSuccess={(admissionId) => { setShowAdmit(false); router.push(`/ipd/${admissionId}`) }}
           doctors={doctors}
           wards={wardOptions}
+          procedureTariffs={procedureTariffs}
+          generalTariffPrice={generalTariffPrice}
+          advancePercentage={advancePercentage}
         />
       )}
     </div>

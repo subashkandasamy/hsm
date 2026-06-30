@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
-import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials } from '@/lib/types'
+import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -85,15 +85,29 @@ export async function getAdmissionFinancials(
   // Sum all bills for this admission
   const { data: bills } = await supabase
     .from('bills')
-    .select('total, paid')
+    .select('id, total, paid')
     .eq('admission_id', admissionId)
     .not('status', 'eq', 'cancelled')
   const totalBilled = (bills ?? []).reduce((s, b) => s + (b.total as number), 0)
   const totalPaid   = (bills ?? []).reduce((s, b) => s + (b.paid as number), 0)
 
-  const advanceSpent = totalAdvance - totalRefunded
-  const balanceDue = Math.max(0, totalBilled - totalPaid)
-  const unusedAdvance = Math.max(0, advanceSpent - totalPaid)
+  // Advance actually applied: only count payments with method='advance' against admission bills.
+  // Using totalPaid would be wrong — cash/card payments also increase totalPaid and would
+  // incorrectly reduce the unusedAdvance balance.
+  const billIds = (bills ?? []).map((b) => b.id as string)
+  let advanceApplied = 0
+  if (billIds.length > 0) {
+    const { data: advPayments } = await supabase
+      .from('payments')
+      .select('amount')
+      .in('bill_id', billIds)
+      .eq('method', 'advance')
+    advanceApplied = (advPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)
+  }
+
+  const advanceSpent  = totalAdvance - totalRefunded
+  const balanceDue    = Math.max(0, totalBilled - totalPaid)
+  const unusedAdvance = Math.max(0, advanceSpent - advanceApplied)
 
   return { totalAdvance, totalBilled, totalPaid, balanceDue, unusedAdvance }
 }
@@ -141,6 +155,95 @@ export async function applyAdvanceToBill(
   return { success: true }
 }
 
+// ---- Advance deposit requests (pending obligations at the billing counter) ----
+
+export async function getAdmissionDepositStatus(
+  admissionId: string
+): Promise<AdvanceDepositRequest | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('advance_deposit_requests')
+    .select('*')
+    .eq('admission_id', admissionId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data as AdvanceDepositRequest | null
+}
+
+export async function listPendingAdvanceDeposits(): Promise<AdvanceDepositRequest[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('advance_deposit_requests')
+    .select(`
+      *,
+      patient:admissions(
+        patient:patients(full_name, uhid),
+        admitted_at,
+        ward:wards(name),
+        bed:beds(bed_no)
+      )
+    `)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+  // Flatten the nested join
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+    const adm = row.patient as Record<string, unknown> | null
+    return {
+      ...(row as unknown as AdvanceDepositRequest),
+      patient: adm?.patient as AdvanceDepositRequest['patient'],
+      admission: adm ? {
+        admitted_at: adm.admitted_at as string,
+        ward:        adm.ward as { name: string } | undefined,
+        bed:         adm.bed  as { bed_no: string } | undefined,
+      } : undefined,
+    }
+  })
+}
+
+export async function collectAdvanceDeposit(
+  requestId: string,
+  method: 'cash' | 'card' | 'upi' | 'bank_transfer'
+): Promise<{ success: true; advanceId: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:advance')
+
+  const supabase = await createClient()
+  const { data: req } = await supabase
+    .from('advance_deposit_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single()
+
+  if (!req) return { success: false, error: 'Deposit request not found' }
+  if ((req.status as string) !== 'pending')
+    return { success: false, error: 'This deposit has already been collected' }
+
+  const advanceId = crypto.randomUUID()
+  const { error: advErr } = await supabase.from('admission_advances').insert({
+    id:           advanceId,
+    tenant_id:    req.tenant_id,
+    admission_id: req.admission_id,
+    amount:       req.amount,
+    method,
+    received_by:  actor.id,
+  })
+  if (advErr) return { success: false, error: advErr.message }
+
+  await supabase.from('advance_deposit_requests').update({
+    status:       'collected',
+    method,
+    advance_id:   advanceId,
+    collected_by: actor.id,
+    collected_at: new Date().toISOString(),
+  }).eq('id', requestId)
+
+  await logAudit(actor.id, 'collect_advance_deposit', 'admission_advance', advanceId, {
+    requestId, method,
+  })
+  return { success: true, advanceId }
+}
+
 // ---- Generate daily bills for all admitted patients (called by cron/scheduler) ----
 
 export async function generateDailyAdmissionBills(): Promise<{
@@ -150,18 +253,129 @@ export async function generateDailyAdmissionBills(): Promise<{
   const supabase = await createClient()
   const errors: string[] = []
   let processed = 0
+  const today = new Date().toISOString().split('T')[0]
 
   const { data: admissions } = await supabase
     .from('admissions')
-    .select('id, patient_id, tenant_id, ward_id, admitted_at, ward:wards(daily_rate, name)')
+    .select(`
+      id, patient_id, tenant_id, ward_id, admitting_doctor_id, admitted_at,
+      ward:wards(daily_rate, name)
+    `)
     .eq('status', 'admitted')
 
   for (const admission of admissions ?? []) {
-    const ward = admission.ward as unknown as { daily_rate: number; name: string } | null
-    const rate = ward?.daily_rate ?? 0
-    if (rate === 0) continue
+    // Idempotency guard: skip if any bill was already created today for this admission
+    const { count: existingCount } = await supabase
+      .from('bills')
+      .select('id', { count: 'exact', head: true })
+      .eq('admission_id', admission.id)
+      .gte('created_at', `${today}T00:00:00`)
+    if ((existingCount ?? 0) > 0) continue
 
-    // Generate bill number
+    // Fetch per-tenant billing config
+    const { data: cfg } = await supabase
+      .from('ipd_billing_config')
+      .select('*')
+      .eq('tenant_id', admission.tenant_id)
+      .maybeSingle()
+
+    const chargeRoomRent     = cfg?.charge_room_rent     ?? true
+    const chargeDoctorFee    = cfg?.charge_doctor_fee    ?? true
+    const chargeNursing      = cfg?.charge_nursing       ?? true
+    const chargeAdmFee       = cfg?.charge_admission_fee ?? false
+    const admFeeAmount       = (cfg?.admission_fee_amount as number) ?? 0
+    const svcCharge          = (cfg?.service_charge_per_day as number) ?? 0
+
+    const ward = admission.ward as unknown as { daily_rate: number; name: string } | null
+    const items: { source: string; ref_id: string; description: string; qty: number; unit_price: number }[] = []
+
+    // Room rent
+    if (chargeRoomRent && (ward?.daily_rate ?? 0) > 0) {
+      items.push({
+        source:      'bed',
+        ref_id:      admission.id as string,
+        description: `Bed charge — ${ward?.name ?? 'Ward'} (${today})`,
+        qty:         1,
+        unit_price:  ward!.daily_rate,
+      })
+    }
+
+    // Daily doctor fee
+    if (chargeDoctorFee && admission.admitting_doctor_id) {
+      const { data: sp } = await supabase
+        .from('staff_profiles')
+        .select('consultation_fee')
+        .eq('profile_id', admission.admitting_doctor_id)
+        .maybeSingle()
+      const fee = (sp?.consultation_fee as number) ?? 0
+      if (fee > 0) {
+        items.push({
+          source: 'consultation', ref_id: admission.id as string,
+          description: `Daily doctor rounding fee (${today})`, qty: 1, unit_price: fee,
+        })
+      }
+    }
+
+    // Nursing charges (sum of today's shift assignments)
+    if (chargeNursing) {
+      const { data: nurseRows } = await supabase
+        .from('admission_nurse_assignments')
+        .select('shift, charge_snapshot, nurse:profiles(full_name)')
+        .eq('admission_id', admission.id)
+        .eq('assigned_date', today)
+      for (const na of nurseRows ?? []) {
+        const snap = (na.charge_snapshot as number) ?? 0
+        if (snap > 0) {
+          const nurseName = (na.nurse as unknown as { full_name: string } | null)?.full_name ?? 'Nurse'
+          items.push({
+            source: 'bed', ref_id: admission.id as string,
+            description: `Nursing — ${nurseName} (${na.shift}, ${today})`,
+            qty: 1, unit_price: snap,
+          })
+        }
+      }
+    }
+
+    // Admission fee — only on Day 1
+    if (chargeAdmFee && admFeeAmount > 0) {
+      const admittedAt = (admission as unknown as { admitted_at: string }).admitted_at
+      const dayOne = admittedAt ? new Date(admittedAt).toISOString().split('T')[0] : null
+      if (dayOne === today) {
+        items.push({
+          source: 'manual', ref_id: admission.id as string,
+          description: `Admission fee (${today})`, qty: 1, unit_price: admFeeAmount,
+        })
+      }
+    }
+
+    // Service charge
+    if (svcCharge > 0) {
+      items.push({
+        source: 'manual', ref_id: admission.id as string,
+        description: `Service charge (${today})`, qty: 1, unit_price: svcCharge,
+      })
+    }
+
+    // Tenant custom daily charges
+    const { data: customCharges } = await supabase
+      .from('ipd_custom_charges')
+      .select('name, amount')
+      .eq('tenant_id', admission.tenant_id)
+      .eq('is_active', true)
+    for (const cc of customCharges ?? []) {
+      const amt = (cc.amount as number) ?? 0
+      if (amt > 0) {
+        items.push({
+          source: 'manual', ref_id: admission.id as string,
+          description: `${cc.name as string} (${today})`, qty: 1, unit_price: amt,
+        })
+      }
+    }
+
+    if (items.length === 0) continue
+
+    const subtotal = items.reduce((s, i) => s + i.qty * i.unit_price, 0)
+
     const { data: billNoData, error: billNoErr } = await supabase.rpc('get_next_bill_no')
     if (billNoErr || !billNoData) {
       errors.push(`${admission.id}: failed to get bill number`)
@@ -169,20 +383,18 @@ export async function generateDailyAdmissionBills(): Promise<{
     }
 
     const billId = crypto.randomUUID()
-    const today = new Date().toISOString().split('T')[0]
-
     const { error: billErr } = await supabase.from('bills').insert({
-      id: billId,
-      tenant_id: admission.tenant_id,
-      patient_id: admission.patient_id,
+      id:           billId,
+      tenant_id:    admission.tenant_id,
+      patient_id:   admission.patient_id,
       admission_id: admission.id,
-      bill_no: billNoData as string,
-      subtotal: rate,
+      bill_no:      billNoData as string,
+      subtotal,
       discount: 0,
-      tax: 0,
-      total: rate,
-      paid: 0,
-      status: 'unpaid',
+      tax:      0,
+      total:    subtotal,
+      paid:     0,
+      status:   'unpaid',
       created_by: null,
     })
     if (billErr) {
@@ -190,20 +402,21 @@ export async function generateDailyAdmissionBills(): Promise<{
       continue
     }
 
-    await supabase.from('bill_items').insert({
-      id: crypto.randomUUID(),
-      tenant_id: admission.tenant_id,
-      bill_id: billId,
-      source: 'bed',
-      ref_id: admission.id,
-      description: `Bed charge — ${ward?.name ?? 'Ward'} (${today})`,
-      qty: 1,
-      unit_price: rate,
-      amount: rate,
-    })
+    await supabase.from('bill_items').insert(
+      items.map((item) => ({
+        id:         crypto.randomUUID(),
+        tenant_id:  admission.tenant_id,
+        bill_id:    billId,
+        source:     item.source,
+        ref_id:     item.ref_id,
+        description: item.description,
+        qty:        item.qty,
+        unit_price: item.unit_price,
+        amount:     item.qty * item.unit_price,
+      }))
+    )
 
-    // Immediately apply any available advance credit
-    await applyAdvanceToBill(billId, admission.id).catch(() => {})
+    await applyAdvanceToBill(billId, admission.id as string).catch(() => {})
     processed++
   }
 

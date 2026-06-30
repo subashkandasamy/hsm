@@ -4,21 +4,28 @@ import { getWardBoard } from '@/app/actions/wards'
 import {
   getAdmissionFinancials,
   listAdmissionAdvances,
+  getAdmissionDepositStatus,
 } from '@/app/actions/admissionBilling'
 import { listProcedureTariffs } from '@/app/actions/tariffs'
+import { listNurses, listAssignments } from '@/app/actions/nurseAssignment'
 import AdmissionDetail from './_components/AdmissionDetail'
 
 interface Props { params: Promise<{ admissionId: string }> }
 
 export default async function AdmissionDetailPage({ params }: Props) {
   const { admissionId } = await params
-  const [admission, notes, board, financials, advances, procedureTariffs] = await Promise.all([
+  const today = new Date().toISOString().split('T')[0]
+
+  const [admission, notes, board, financials, advances, procedureTariffs, nurses, depositStatus, todayAssignments] = await Promise.all([
     getAdmission(admissionId),
     getAdmissionNotes(admissionId),
     getWardBoard(),
     getAdmissionFinancials(admissionId),
     listAdmissionAdvances(admissionId),
     listProcedureTariffs(),
+    listNurses(),
+    getAdmissionDepositStatus(admissionId),
+    listAssignments(admissionId, { from: today, to: today }),
   ])
 
   if (!admission) notFound()
@@ -37,6 +44,10 @@ export default async function AdmissionDetailPage({ params }: Props) {
       financials={financials}
       initialAdvances={advances}
       procedureTariffs={procedureTariffs}
+      nurses={nurses}
+      today={today}
+      depositStatus={depositStatus}
+      todayAssignments={todayAssignments}
     />
   )
 }

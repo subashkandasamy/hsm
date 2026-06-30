@@ -8,6 +8,7 @@ import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff } from '@/lib/types'
+import { applyAdvanceToBill } from '@/app/actions/admissionBilling'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -371,6 +372,11 @@ export async function generateBill(
       await supabase.from('bills').delete().eq('id', billId)
       return { success: false, error: flipErr }
     }
+  }
+
+  // Auto-apply any available advance credit for IPD admission bills
+  if (admission_id) {
+    await applyAdvanceToBill(billId, admission_id).catch(() => {})
   }
 
   await logAudit(actor.id, 'generate', 'bill', billId, {

@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
-  Plus, ArrowRightLeft, LogOut, Activity, Lock, Receipt,
+  Plus, ArrowRightLeft, LogOut, Receipt,
+  Wallet, IndianRupee, Stethoscope,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -14,14 +15,18 @@ import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Modal from '@/components/ui/Modal'
+import Money from '@/components/ui/Money'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ipd'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import FinancialPanel from './FinancialPanel'
-import type { Admission, IpdProgressNote, Vitals, AdmissionFinancials, AdmissionAdvance, ProcedureTariff } from '@/lib/types'
+import NursingPanel from './NursingPanel'
+import type {
+  Admission, IpdProgressNote, Vitals, AdmissionFinancials,
+  AdmissionAdvance, ProcedureTariff, AdvanceDepositRequest, AdmissionNurseAssignment,
+} from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(admittedAt).getTime()) / 86400000))
@@ -33,6 +38,8 @@ interface WardOption {
   availableBeds: { id: string; bed_no: string }[]
 }
 
+interface NurseOption { id: string; full_name: string; nursing_charge_per_shift: number | null }
+
 interface Props {
   admission: Admission
   initialNotes: IpdProgressNote[]
@@ -40,20 +47,27 @@ interface Props {
   financials: AdmissionFinancials
   initialAdvances: AdmissionAdvance[]
   procedureTariffs: ProcedureTariff[]
+  nurses: NurseOption[]
+  today: string
+  depositStatus: AdvanceDepositRequest | null
+  todayAssignments: AdmissionNurseAssignment[]
 }
 
 export default function AdmissionDetail({
   admission, initialNotes, availableWards,
   financials, initialAdvances, procedureTariffs,
+  nurses, today, depositStatus, todayAssignments,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const canWrite   = profile && hasPermission(profile.role, 'ipd:write')
   const canNote    = profile && hasPermission(profile.role, 'ipd:notes')
   const canAdvance = profile && hasPermission(profile.role, 'billing:advance')
+  const canNursing = profile && hasPermission(profile.role, 'ipd:nursing')
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
+  const [activeTab, setActiveTab] = useState<'clinical' | 'financials' | 'nursing'>('clinical')
 
   // Progress note form
   const [note, setNote] = useState('')
@@ -130,6 +144,10 @@ export default function AdmissionDetail({
   const isClosed = adm.status !== 'admitted'
   const days = daysAdmitted(adm.admitted_at)
 
+  // Advance deposit chip props
+  const depositPending = depositStatus?.status === 'pending'
+  const depositCollected = depositStatus?.status === 'collected'
+
   return (
     <div>
       <Link href="/ipd" className="inline-flex items-center gap-1.5 text-sm mb-4"
@@ -140,7 +158,7 @@ export default function AdmissionDetail({
       </Link>
 
       {/* Header card */}
-      <GlassCard className="p-5 mb-5">
+      <GlassCard className="p-5 mb-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
@@ -148,7 +166,7 @@ export default function AdmissionDetail({
               <User className="w-6 h-6" style={{ color: '#0D9488' }} />
             </div>
             <div>
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Link href={`/patients/${adm.patient_id}`} className="text-lg font-bold hover:underline"
                   style={{ color: '#0F172A' }}>
                   {adm.patient?.full_name ?? '—'}
@@ -161,7 +179,25 @@ export default function AdmissionDetail({
                   status={adm.status === 'admitted' ? 'active' : adm.status === 'discharged' ? 'success' : 'pending'}
                   label={adm.status}
                 />
+
+                {/* Advance deposit chip — read-only glance status */}
+                {depositPending && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold"
+                    style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                    <IndianRupee className="w-3 h-3" />
+                    Advance: Pending{' '}
+                    <Money amount={depositStatus!.amount} style={{ color: '#92400E', fontSize: 'inherit' }} />
+                  </span>
+                )}
+                {depositCollected && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold"
+                    style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                    <IndianRupee className="w-3 h-3" />
+                    Advance: Paid
+                  </span>
+                )}
               </div>
+
               <div className="flex items-center gap-4 mt-1.5 text-sm flex-wrap" style={{ color: '#475569' }}>
                 <span className="flex items-center gap-1">
                   <BedDouble className="w-3.5 h-3.5" />
@@ -193,10 +229,10 @@ export default function AdmissionDetail({
           </div>
 
           {!isClosed && canWrite && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button onClick={() => setShowTransfer(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
-                style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                 <ArrowRightLeft className="w-4 h-4" /> Transfer
               </button>
               <button onClick={() => setShowDischarge(true)}
@@ -219,23 +255,139 @@ export default function AdmissionDetail({
         )}
       </GlassCard>
 
-      <div className="grid grid-cols-5 gap-5 items-start">
-        {/* Progress notes */}
-        <div className="col-span-3 space-y-4">
-          <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#0F172A' }}>
-            <FileText className="w-4 h-4" style={{ color: '#0D9488' }} />
-            Progress Notes
-          </h3>
+      {/* Post-discharge billing prompt */}
+      {showBillingPrompt && (
+        <div className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap"
+          style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+          <div className="flex items-center gap-3">
+            <Receipt className="w-5 h-5 flex-shrink-0" style={{ color: '#15803D' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Patient discharged</p>
+              <p className="text-xs mt-0.5" style={{ color: '#16A34A' }}>
+                This admission may have unbilled charges. Generate a bill now?
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={() => setShowBillBuilder(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: '#15803D', color: '#fff', border: 'none' }}>
+              <Receipt className="w-4 h-4" /> Generate Bill
+            </button>
+            <button onClick={() => setShowBillingPrompt(false)}
+              className="px-3 py-2 rounded-xl text-sm font-medium"
+              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
+              Later
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
+        style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
+        {([
+          { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
+          { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
+          { key: 'financials', label: 'Financials', Icon: Wallet      },
+        ] as const).map(({ key, label, Icon }) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            style={activeTab === key
+              ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
+              : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Clinical tab ── */}
+      {activeTab === 'clinical' && (
+        <div className="space-y-4">
+
+          {/* Patient info card */}
+          <GlassCard className="p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>
+              Patient Details
+            </p>
+
+            {/* Blood group + allergies */}
+            <div className="flex flex-wrap gap-3 mb-4">
+              {adm.patient?.blood_group && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color: '#64748B' }}>Blood Group</span>
+                  <span className="font-bold text-sm px-2.5 py-0.5 rounded-lg"
+                    style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                    {adm.patient.blood_group}
+                  </span>
+                </div>
+              )}
+              {adm.patient?.allergies && (
+                <div className="flex items-start gap-2">
+                  <span className="text-xs mt-0.5 flex-shrink-0" style={{ color: '#B45309', fontWeight: 600 }}>
+                    ⚠ Allergies
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                    {adm.patient.allergies}
+                  </span>
+                </div>
+              )}
+              {!adm.patient?.blood_group && !adm.patient?.allergies && (
+                <span className="text-xs" style={{ color: '#94A3B8' }}>No blood group or allergy info recorded</span>
+              )}
+            </div>
+
+            {/* Care team row */}
+            <div className="pt-3 grid grid-cols-2 sm:grid-cols-4 gap-3"
+              style={{ borderTop: '1px solid #F1F5F9' }}>
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Attending Doctor</p>
+                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                  {adm.doctor?.full_name ?? '—'}
+                </p>
+              </div>
+
+              {(() => {
+                const morningAssignment = todayAssignments.find((a) => a.shift === 'morning')
+                const nightAssignment   = todayAssignments.find((a) => a.shift === 'night')
+                return (
+                  <>
+                    <div>
+                      <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Morning Nurse</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: morningAssignment ? '#0F172A' : '#94A3B8' }}>
+                        {morningAssignment?.nurse?.full_name ?? '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Night Nurse</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: nightAssignment ? '#0F172A' : '#94A3B8' }}>
+                        {nightAssignment?.nurse?.full_name ?? '—'}
+                      </p>
+                    </div>
+                  </>
+                )
+              })()}
+
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Ward / Bed</p>
+                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                  {adm.ward?.name} — {adm.bed?.bed_no}
+                </p>
+              </div>
+            </div>
+          </GlassCard>
 
           {/* Add note form */}
           {!isClosed && canNote && (
             <GlassCard className="p-4">
+              <h3 className="flex items-center gap-2 text-sm font-semibold mb-3" style={{ color: '#0F172A' }}>
+                <FileText className="w-4 h-4" style={{ color: '#0D9488' }} />
+                Daily Vitals &amp; Note
+              </h3>
               <form onSubmit={handleAddNote} className="space-y-3">
-                <FormField label="Note">
-                  <Textarea value={note} onChange={(e) => setNote(e.target.value)}
-                    placeholder="Clinical note, observations, plan…" style={{ minHeight: '4rem' }} />
-                </FormField>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(['bp', 'pulse', 'temp', 'spo2'] as const).map((key) => (
                     <FormField key={key} label={key.toUpperCase()}>
                       <Input
@@ -247,6 +399,10 @@ export default function AdmissionDetail({
                     </FormField>
                   ))}
                 </div>
+                <FormField label="Clinical Note">
+                  <Textarea value={note} onChange={(e) => setNote(e.target.value)}
+                    placeholder="Observations, plan, instructions…" style={{ minHeight: '4rem' }} />
+                </FormField>
                 {noteError && <p className="text-xs" style={{ color: '#DC2626' }}>{noteError}</p>}
                 <button type="submit" disabled={noteSaving || !note.trim()}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
@@ -263,6 +419,10 @@ export default function AdmissionDetail({
           )}
 
           {/* Notes timeline */}
+          <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#0F172A' }}>
+            <FileText className="w-4 h-4" style={{ color: '#0D9488' }} />
+            Progress Notes
+          </h3>
           {notes.length === 0 ? (
             <GlassCard className="p-6">
               <p className="text-sm text-center" style={{ color: '#94A3B8' }}>No progress notes yet.</p>
@@ -291,50 +451,37 @@ export default function AdmissionDetail({
             ))
           )}
         </div>
+      )}
 
-        {/* Right column: Patient info + Financial panel */}
-        <div className="col-span-2 space-y-4">
-          {/* Financial Summary Panel (Phase 15) */}
-          <FinancialPanel
+      {/* ── Financials tab ── */}
+      {activeTab === 'financials' && (
+        <FinancialPanel
+          admissionId={adm.id}
+          initialFinancials={financials}
+          initialAdvances={initialAdvances}
+          canAdvance={!!canAdvance}
+          procedureTariffs={procedureTariffs}
+          wardId={adm.ward_id}
+        />
+      )}
+
+      {/* ── Nursing tab ── */}
+      {activeTab === 'nursing' && (
+        adm.status === 'admitted' ? (
+          <NursingPanel
             admissionId={adm.id}
-            initialFinancials={financials}
-            initialAdvances={initialAdvances}
-            canAdvance={!!canAdvance}
-            procedureTariffs={procedureTariffs}
-            wardId={adm.ward_id}
+            canAssign={!!canNursing}
+            nurses={nurses}
+            today={today}
           />
-
-          <GlassCard className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>
-              Patient Details
+        ) : (
+          <GlassCard className="p-6">
+            <p className="text-sm text-center" style={{ color: '#94A3B8' }}>
+              Nursing assignments are only available for active admissions.
             </p>
-            <div className="space-y-2 text-sm">
-              {adm.patient?.blood_group && (
-                <div className="flex justify-between">
-                  <span style={{ color: '#64748B' }}>Blood Group</span>
-                  <span className="font-semibold px-2 py-0.5 rounded-lg"
-                    style={{ background: '#FEE2E2', color: '#DC2626' }}>
-                    {adm.patient.blood_group}
-                  </span>
-                </div>
-              )}
-              {adm.patient?.allergies && (
-                <div>
-                  <span className="text-xs font-semibold" style={{ color: '#B45309' }}>Allergies</span>
-                  <p className="text-xs mt-0.5 p-2 rounded-lg"
-                    style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-                    {adm.patient.allergies}
-                  </p>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span style={{ color: '#64748B' }}>Attending</span>
-                <span style={{ color: '#0F172A' }}>{adm.doctor?.full_name ?? '—'}</span>
-              </div>
-            </div>
           </GlassCard>
-        </div>
-      </div>
+        )
+      )}
 
       {/* Transfer modal */}
       <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Patient">
@@ -383,38 +530,6 @@ export default function AdmissionDetail({
         </div>
       </Modal>
 
-      {/* Post-discharge billing prompt */}
-      {showBillingPrompt && (
-        <div className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap"
-          style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-          <div className="flex items-center gap-3">
-            <Receipt className="w-5 h-5 flex-shrink-0" style={{ color: '#15803D' }} />
-            <div>
-              <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Patient discharged</p>
-              <p className="text-xs mt-0.5" style={{ color: '#16A34A' }}>
-                This admission may have unbilled charges. Generate a bill now?
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={() => setShowBillBuilder(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
-              style={{ background: '#15803D', color: '#fff', border: 'none' }}
-            >
-              <Receipt className="w-4 h-4" /> Generate Bill
-            </button>
-            <button
-              onClick={() => setShowBillingPrompt(false)}
-              className="px-3 py-2 rounded-xl text-sm font-medium"
-              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}
-            >
-              Later
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Discharge modal */}
       <Modal open={showDischarge} onClose={() => setShowDischarge(false)} title="Discharge Patient" maxWidth="30rem">
         <div className="space-y-4">
@@ -446,6 +561,7 @@ export default function AdmissionDetail({
       {showBillBuilder && adm.patient && (
         <BillBuilderModal
           preselectedPatient={adm.patient}
+          admissionId={adm.id}
           onClose={() => setShowBillBuilder(false)}
           onGenerated={(billId) => {
             setShowBillBuilder(false)

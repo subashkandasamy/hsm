@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { AppointmentCreateSchema } from '@/lib/schemas'
+import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Appointment } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -44,6 +45,10 @@ export async function bookAppointment(
 
   const { patient_id, doctor_id, department_id, scheduled_at, reason } = parsed.data
   const supabase = await createClient()
+
+  // Block booking if patient is admitted to IPD or active in Emergency
+  const location = await getPatientActiveLocation(patient_id, supabase)
+  if (location) return { success: false, error: patientLocationMessage(location) }
 
   // Race-safe token number
   const scheduledDate = new Date(scheduled_at).toISOString().split('T')[0]

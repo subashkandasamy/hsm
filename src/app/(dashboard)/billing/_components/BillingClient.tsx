@@ -12,9 +12,10 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import { listBills, getBillingStats } from '@/app/actions/billing'
+import { collectAdvanceDeposit, listPendingAdvanceDeposits } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import type { Bill } from '@/lib/types'
+import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
 
 const STATUS_MAP: Record<string, string> = {
@@ -44,31 +45,62 @@ interface PatientGroup {
 interface Props {
   initialBills: Bill[]
   initialStats: BillingStats
+  initialPendingDeposits: AdvanceDepositRequest[]
 }
 
 type ViewMode = 'list' | 'patient'
 
-export default function BillingClient({ initialBills, initialStats }: Props) {
+const PAYMENT_METHODS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'card', label: 'Card' },
+  { value: 'upi', label: 'UPI' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+] as const
+
+export default function BillingClient({ initialBills, initialStats, initialPendingDeposits }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canWrite = !!role && hasPermission(role, 'billing:write')
+  const canAdvance = !!role && hasPermission(role, 'billing:advance')
   const router = useRouter()
 
   const [bills, setBills]                       = useState(initialBills)
   const [stats, setStats]                       = useState(initialStats)
+  const [pendingDeposits, setPendingDeposits]   = useState(initialPendingDeposits)
   const [loading, setLoading]                   = useState(false)
   const [showBuilder, setShowBuilder]           = useState(false)
   const [statusFilter, setStatusFilter]         = useState('all')
   const [search, setSearch]                     = useState('')
   const [viewMode, setViewMode]                 = useState<ViewMode>('list')
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
+  // Advance deposit collection
+  const [collectingId, setCollectingId]         = useState<string | null>(null)
+  const [collectMethod, setCollectMethod]       = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
+  const [collectError, setCollectError]         = useState('')
+  const [collectPending, setCollectPending]     = useState(false)
 
   async function refresh() {
     setLoading(true)
-    const [data, newStats] = await Promise.all([listBills(), getBillingStats()])
+    const [data, newStats, deposits] = await Promise.all([
+      listBills(), getBillingStats(), listPendingAdvanceDeposits(),
+    ])
     setBills(data)
     setStats(newStats)
+    setPendingDeposits(deposits)
     setLoading(false)
+  }
+
+  async function handleCollect(requestId: string) {
+    setCollectPending(true)
+    setCollectError('')
+    const res = await collectAdvanceDeposit(requestId, collectMethod)
+    setCollectPending(false)
+    if (!res.success) { setCollectError(res.error); return }
+    setPendingDeposits((prev) => prev.filter((d) => d.id !== requestId))
+    setCollectingId(null)
+    // Refresh financials totals
+    const [newStats] = await Promise.all([getBillingStats()])
+    setStats(newStats)
   }
 
   function togglePatient(id: string) {
@@ -155,6 +187,83 @@ export default function BillingClient({ initialBills, initialStats }: Props) {
           color={stats.totalOutstanding > 0 ? '#EF4444' : '#10B981'}
         />
       </div>
+
+      {/* ── Pending advance deposits ── */}
+      {canAdvance && pendingDeposits.length > 0 && (
+        <GlassCard className="mb-5">
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Wallet className="w-4 h-4 flex-shrink-0" style={{ color: '#D97706' }} />
+              <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+                Pending Advance Deposits
+              </h3>
+              <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                style={{ background: '#FEF3C7', color: '#92400E' }}>
+                {pendingDeposits.length}
+              </span>
+            </div>
+            {collectError && (
+              <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: '#FEF2F2', color: '#DC2626' }}>
+                {collectError}
+              </div>
+            )}
+            <div className="space-y-2">
+              {pendingDeposits.map((dep) => (
+                <div key={dep.id} className="flex items-center gap-3 px-3 py-3 rounded-xl flex-wrap"
+                  style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                      {dep.patient?.full_name ?? '—'}
+                      <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>
+                        {dep.patient?.uhid}
+                      </span>
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                      {dep.admission?.ward?.name} — Bed {dep.admission?.bed?.bed_no}
+                      {dep.admission?.admitted_at && (
+                        <> · Admitted {new Date(dep.admission.admitted_at).toLocaleDateString('en-IN')}</>
+                      )}
+                    </p>
+                  </div>
+                  <Money amount={dep.amount} className="font-bold flex-shrink-0"
+                    style={{ color: '#D97706', fontSize: '1rem' }} />
+
+                  {collectingId === dep.id ? (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select
+                        value={collectMethod}
+                        onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)}
+                        className="px-2 py-1.5 text-sm rounded-lg border"
+                        style={{ borderColor: '#FDE68A', color: '#0F172A' }}>
+                        {PAYMENT_METHODS.map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: '#0D9488', color: '#fff' }}>
+                        {collectPending ? '…' : 'Collect'}
+                      </button>
+                      <button onClick={() => { setCollectingId(null); setCollectError('') }}
+                        className="px-2 py-1.5 rounded-lg text-xs"
+                        style={{ background: '#F1F5F9', color: '#64748B' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                      style={{ background: '#D97706', color: '#fff' }}>
+                      Collect
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       {/* ── Controls — search full width, rest on one row ── */}
       <div className="flex flex-col gap-2 mb-4">

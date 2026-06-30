@@ -10,7 +10,7 @@ import Textarea from '@/components/ui/Textarea'
 import { admitPatient } from '@/app/actions/ipd'
 import { listAvailableBeds } from '@/app/actions/wards'
 import { searchPatients } from '@/app/actions/patients'
-import type { Patient, Bed } from '@/lib/types'
+import type { Patient, Bed, ProcedureTariff } from '@/lib/types'
 
 interface WardOption {
   id: string
@@ -24,12 +24,16 @@ interface Props {
   onSuccess: (admissionId: string) => void
   doctors: { id: string; full_name: string }[]
   wards: WardOption[]
+  procedureTariffs?: ProcedureTariff[]
   preselectedBed?: { id: string; bed_no: string; ward_name: string }
   preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  generalTariffPrice?: number
+  advancePercentage?: number
 }
 
 export default function AdmitModal({
-  open, onClose, onSuccess, doctors, wards, preselectedBed, preselectedPatient,
+  open, onClose, onSuccess, doctors, wards, procedureTariffs = [], generalTariffPrice,
+  advancePercentage = 50, preselectedBed, preselectedPatient,
 }: Props) {
   const [patientQuery, setPatientQuery] = useState(preselectedPatient?.full_name ?? '')
   const [patientResults, setPatientResults] = useState<Patient[]>([])
@@ -43,9 +47,15 @@ export default function AdmitModal({
   const [wardBeds, setWardBeds] = useState<Pick<Bed, 'id' | 'bed_no'>[]>(
     preselectedBed ? [{ id: preselectedBed.id, bed_no: preselectedBed.bed_no }] : []
   )
+  const [tariffId, setTariffId] = useState('')
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Compute advance preview (25% of selected tariff, or general tariff if none selected)
+  const selectedTariff = procedureTariffs.find((t) => t.id === tariffId)
+  const basePrice = selectedTariff?.default_price ?? (!tariffId ? (generalTariffPrice ?? 0) : 0)
+  const advancePreview = basePrice > 0 ? Math.round(basePrice * advancePercentage / 100) : 0
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) { setPatientResults([]); return }
@@ -78,6 +88,7 @@ export default function AdmitModal({
       admitting_doctor_id: doctorId,
       bed_id: bedId,
       reason: reason || null,
+      procedure_tariff_id: tariffId || null,
     })
     setLoading(false)
 
@@ -176,6 +187,35 @@ export default function AdmitModal({
                 {wardBeds.map((b) => <option key={b.id} value={b.id}>{b.bed_no}</option>)}
               </Select>
             </FormField>
+          </div>
+        )}
+
+        <FormField label="Treatment / Procedure">
+          <Select value={tariffId} onChange={(e) => setTariffId(e.target.value)}>
+            <option value="">
+              {generalTariffPrice
+                ? `General (₹${generalTariffPrice.toLocaleString('en-IN')})`
+                : 'Select treatment (optional)…'}
+            </option>
+            {procedureTariffs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} — ₹{t.default_price.toLocaleString('en-IN')}
+                {t.category ? ` (${t.category})` : ''}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+
+        {advancePreview > 0 && (
+          <div className="px-3.5 py-3 rounded-xl" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <p className="text-xs font-medium" style={{ color: '#92400E' }}>
+              Advance due on admission:{' '}
+              <strong>₹{advancePreview.toLocaleString('en-IN')}</strong>{' '}
+              ({advancePercentage}% of ₹{basePrice.toLocaleString('en-IN')})
+            </p>
+            <p className="text-xs mt-1" style={{ color: '#B45309' }}>
+              A pending advance notice will appear at the billing counter for collection.
+            </p>
           </div>
         )}
 

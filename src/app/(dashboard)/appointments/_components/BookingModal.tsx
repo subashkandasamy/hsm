@@ -8,7 +8,8 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import { bookAppointment } from '@/app/actions/appointments'
-import { searchPatients } from '@/app/actions/patients'
+import { searchPatients, checkPatientLocation } from '@/app/actions/patients'
+import { BedDouble, AlertTriangle } from 'lucide-react'
 import type { Appointment, Patient } from '@/lib/types'
 
 interface Doctor { id: string; full_name: string }
@@ -33,6 +34,7 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [locationWarning, setLocationWarning] = useState<{ loc: 'ipd' | 'emergency'; message: string } | null>(null)
 
   const searchDebounced = useCallback(async (q: string) => {
     if (!q.trim()) { setPatientResults([]); return }
@@ -52,12 +54,15 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
     setApiError(null)
   }
 
-  function selectPatient(p: Patient) {
+  async function selectPatient(p: Patient) {
     setSelectedPatient(p)
     setPatientQuery(p.full_name)
     setShowDropdown(false)
     setPatientResults([])
+    setLocationWarning(null)
     setErrors((e) => { const n = { ...e }; delete n['patient_id']; return n })
+    const { location, message } = await checkPatientLocation(p.id)
+    if (location) setLocationWarning({ loc: location, message })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -115,6 +120,7 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
               onChange={(e) => {
                 setPatientQuery(e.target.value)
                 setSelectedPatient(null)
+                setLocationWarning(null)
               }}
               placeholder="Search patient by name or phone…"
               style={{
@@ -149,10 +155,23 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
               </ul>
             )}
           </div>
-          {selectedPatient && (
+          {selectedPatient && !locationWarning && (
             <div className="mt-1.5 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2"
               style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)' }}>
               ✓ {selectedPatient.full_name} · {selectedPatient.uhid}
+            </div>
+          )}
+          {locationWarning && (
+            <div className="mt-2 px-3 py-3 rounded-xl text-sm flex items-start gap-2.5"
+              style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+              <BedDouble className="w-4 h-4 mt-0.5 shrink-0" style={{ color: '#D97706' }} />
+              <div>
+                <p className="font-semibold text-xs" style={{ color: '#92400E' }}>
+                  Patient is currently{' '}
+                  {locationWarning.loc === 'ipd' ? 'admitted to IPD' : 'in Emergency'}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>{locationWarning.message}</p>
+              </div>
             </div>
           )}
         </FormField>
@@ -208,11 +227,11 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
             style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
             Cancel
           </button>
-          <button type="submit" disabled={loading}
+          <button type="submit" disabled={loading || !!locationWarning}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold"
             style={{
-              background: loading ? '#94A3B8' : '#0D9488', color: '#fff',
-              cursor: loading ? 'not-allowed' : 'pointer', border: 'none',
+              background: (loading || locationWarning) ? '#94A3B8' : '#0D9488', color: '#fff',
+              cursor: (loading || locationWarning) ? 'not-allowed' : 'pointer', border: 'none',
             }}>
             {loading ? 'Booking…' : 'Book Appointment'}
           </button>
