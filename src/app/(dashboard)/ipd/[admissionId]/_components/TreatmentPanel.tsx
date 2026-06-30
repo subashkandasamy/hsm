@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import {
   Pill, Droplets, Wind, Plus, StopCircle, Check, Clock,
   ChevronDown, ChevronRight, Copy, AlertCircle, X,
@@ -11,7 +11,8 @@ import {
   listSchedule, markGiven,
   getVisitPrescriptions, copyPrescriptionsToIPD,
 } from '@/app/actions/ipdTreatment'
-import type { IpdMedicationOrder, IpdAdminSchedule, FrequencyType } from '@/lib/types'
+import { listDrugs } from '@/app/actions/pharmacy'
+import type { IpdMedicationOrder, IpdAdminSchedule, FrequencyType, Drug } from '@/lib/types'
 
 interface Props {
   admissionId: string
@@ -50,6 +51,112 @@ function orderLabel(o: IpdMedicationOrder): string {
   return `O₂ ${o.flow_rate_lpm ?? '?'} L/min — ${o.delivery_method ?? ''}`
 }
 
+// ─── Drug Name Combobox ───────────────────────────────────────────────────────
+
+interface DrugComboboxProps {
+  value: string
+  drugs: Drug[]
+  onChange: (name: string, drug: Drug | null) => void
+}
+
+function DrugCombobox({ value, drugs, onChange }: DrugComboboxProps) {
+  const [open, setOpen]   = useState(false)
+  const [query, setQuery] = useState(value)
+  const inputRef          = useRef<HTMLInputElement>(null)
+
+  const filtered = query.trim().length > 0
+    ? drugs.filter((d) =>
+        d.name.toLowerCase().includes(query.toLowerCase()) ||
+        (d.generic_name ?? '').toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 10)
+    : []
+
+  function select(drug: Drug) {
+    const label = drug.strength ? `${drug.name} ${drug.strength}` : drug.name
+    setQuery(label)
+    onChange(label, drug)
+    setOpen(false)
+  }
+
+  function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
+    setQuery(e.target.value)
+    onChange(e.target.value, null)
+    setOpen(true)
+  }
+
+  function handleBlur() {
+    // short delay so click on dropdown item fires first
+    setTimeout(() => setOpen(false), 150)
+  }
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={handleInput}
+        onFocus={() => { if (query.trim()) setOpen(true) }}
+        onBlur={handleBlur}
+        placeholder="Search pharmacy or type new drug name…"
+        className="w-full px-3 py-2 rounded-lg text-sm border"
+        style={{ borderColor: '#E2E8F0', color: '#0F172A' }}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 rounded-xl shadow-lg overflow-hidden"
+          style={{ background: '#fff', border: '1px solid #E2E8F0' }}>
+          {filtered.map((drug) => (
+            <button
+              key={drug.id}
+              type="button"
+              onMouseDown={() => select(drug)}
+              className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: '1px solid #F8FAFC' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.05)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{drug.name}</p>
+                {drug.generic_name && (
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>{drug.generic_name}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {drug.strength && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-md"
+                    style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
+                    {drug.strength}
+                  </span>
+                )}
+                {drug.form && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-md"
+                    style={{ background: '#F1F5F9', color: '#64748B' }}>
+                    {drug.form}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+          {/* Always allow the typed value as a custom entry */}
+          {query.trim() && !filtered.some((d) => d.name.toLowerCase() === query.trim().toLowerCase()) && (
+            <button
+              type="button"
+              onMouseDown={() => { onChange(query.trim(), null); setOpen(false) }}
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.05)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+              <Plus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#0D9488' }} />
+              <p className="text-sm" style={{ color: '#0D9488' }}>
+                Use &ldquo;<strong>{query.trim()}</strong>&rdquo; (new drug)
+              </p>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── New Order Form ───────────────────────────────────────────────────────────
 
 interface OrderForm {
@@ -82,6 +189,9 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [isPending, startTransition] = useTransition()
   const [error, setError]         = useState('')
 
+  // Pharmacy drug list for autocomplete
+  const [pharmaDrugs, setPharmaDrugs] = useState<Drug[]>([])
+
   // New order form
   const [showForm, setShowForm]   = useState(false)
   const [form, setForm]           = useState<OrderForm>(BLANK)
@@ -106,6 +216,12 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       setOrders(o); setSchedule(s); setLoading(false)
     })
   }, [admissionId])
+
+  useEffect(() => {
+    if (showForm && pharmaDrugs.length === 0) {
+      listDrugs().then(setPharmaDrugs)
+    }
+  }, [showForm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function setF(k: keyof OrderForm, v: string) { setForm((f) => ({ ...f, [k]: v })) }
 
@@ -248,9 +364,14 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                 <div className="grid grid-cols-2 gap-2">
                   <div className="col-span-2">
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Drug Name *</label>
-                    <input value={form.drug_name} onChange={(e) => setF('drug_name', e.target.value)}
-                      placeholder="e.g. Inj. Augmentin" className="w-full px-3 py-2 rounded-lg text-sm border"
-                      style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+                    <DrugCombobox
+                      value={form.drug_name}
+                      drugs={pharmaDrugs}
+                      onChange={(name, drug) => {
+                        setF('drug_name', name)
+                        if (drug?.unit) setF('dose_unit', drug.unit)
+                      }}
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Dose</label>
