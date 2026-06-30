@@ -20,7 +20,8 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ipd'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
-import type { Admission, IpdProgressNote, Vitals } from '@/lib/types'
+import FinancialPanel from './FinancialPanel'
+import type { Admission, IpdProgressNote, Vitals, AdmissionFinancials, AdmissionAdvance, ProcedureTariff } from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(admittedAt).getTime()) / 86400000))
@@ -36,13 +37,20 @@ interface Props {
   admission: Admission
   initialNotes: IpdProgressNote[]
   availableWards: WardOption[]
+  financials: AdmissionFinancials
+  initialAdvances: AdmissionAdvance[]
+  procedureTariffs: ProcedureTariff[]
 }
 
-export default function AdmissionDetail({ admission, initialNotes, availableWards }: Props) {
+export default function AdmissionDetail({
+  admission, initialNotes, availableWards,
+  financials, initialAdvances, procedureTariffs,
+}: Props) {
   const router = useRouter()
   const { profile } = useAuth()
-  const canWrite = profile && hasPermission(profile.role, 'ipd:write')
-  const canNote  = profile && hasPermission(profile.role, 'ipd:notes')
+  const canWrite   = profile && hasPermission(profile.role, 'ipd:write')
+  const canNote    = profile && hasPermission(profile.role, 'ipd:notes')
+  const canAdvance = profile && hasPermission(profile.role, 'billing:advance')
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
@@ -284,8 +292,18 @@ export default function AdmissionDetail({ admission, initialNotes, availableWard
           )}
         </div>
 
-        {/* Patient info panel */}
+        {/* Right column: Patient info + Financial panel */}
         <div className="col-span-2 space-y-4">
+          {/* Financial Summary Panel (Phase 15) */}
+          <FinancialPanel
+            admissionId={adm.id}
+            initialFinancials={financials}
+            initialAdvances={initialAdvances}
+            canAdvance={!!canAdvance}
+            procedureTariffs={procedureTariffs}
+            wardId={adm.ward_id}
+          />
+
           <GlassCard className="p-4">
             <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>
               Patient Details

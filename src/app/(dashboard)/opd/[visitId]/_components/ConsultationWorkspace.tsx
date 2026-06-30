@@ -113,6 +113,7 @@ export default function ConsultationWorkspace({
   // Close dialog
   const [showClose, setShowClose] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [closeError, setCloseError] = useState<string | null>(null)
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -177,12 +178,15 @@ export default function ConsultationWorkspace({
 
   async function handleClose() {
     setClosing(true)
+    setCloseError(null)
     const result = await closeVisit(visit.id)
     setClosing(false)
     if (result.success) {
       setVisit((v) => ({ ...v, status: 'closed' }))
       setShowClose(false)
       router.refresh()
+    } else {
+      setCloseError(result.error)
     }
   }
 
@@ -746,10 +750,14 @@ export default function ConsultationWorkspace({
 
       <ConfirmDialog
         open={showClose}
-        onClose={() => setShowClose(false)}
+        onClose={() => { setShowClose(false); setCloseError(null) }}
         onConfirm={handleClose}
         title="Close Visit"
-        description="Closing the visit will mark it as done and the appointment as completed. You will not be able to add prescriptions after this. Continue?"
+        description={
+          closeError
+            ? `Error: ${closeError}`
+            : 'Closing the visit will mark it as done and the appointment as completed. You will not be able to add prescriptions after this. Continue?'
+        }
         confirmLabel="Close Visit"
         confirmVariant="danger"
         loading={closing}

@@ -64,6 +64,7 @@ export async function addBeds(
 
   const rows = bedNumbers.map((bed_no) => ({
     id: crypto.randomUUID(),
+    tenant_id: actor.tenant_id,
     ward_id: wardId,
     bed_no: bed_no.trim(),
     status: 'available' as BedStatus,

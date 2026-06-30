@@ -15,6 +15,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, getAttendance, getRoster } from '@/app/actions/hr'
+import { setDoctorConsultationFee } from '@/app/actions/tariffs'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { StaffMember, StaffAttendance, DutyRoster, Role } from '@/lib/types'
@@ -57,12 +58,30 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
   const [editMember, setEditMember]     = useState<StaffMember | null>(null)
   const [deactivateId, setDeactivateId] = useState<string | null>(null)
   const [roleFilter, setRoleFilter]     = useState<Role | ''>('')
+  const [feeEditId, setFeeEditId]       = useState<string | null>(null)
+  const [feeInput, setFeeInput]         = useState('')
+  const [feeSaving, setFeeSaving]       = useState(false)
 
   async function refresh() {
     setLoading(true)
     const data = await listStaff()
     setStaff(data)
     setLoading(false)
+  }
+
+  async function saveFee(profileId: string) {
+    setFeeSaving(true)
+    const fee = feeInput.trim() ? parseFloat(feeInput) : null
+    const res = await setDoctorConsultationFee(profileId, fee)
+    setFeeSaving(false)
+    if (res.success) {
+      setFeeEditId(null)
+      setStaff((prev) => prev.map((s) =>
+        s.id === profileId
+          ? { ...s, staff: { ...(s.staff ?? { profile_id: profileId, designation: null, joining_date: null, address: null, emergency_contact: null }), consultation_fee: fee } }
+          : s
+      ))
+    }
   }
 
   const filtered = roleFilter ? staff.filter((s) => s.role === roleFilter) : staff
@@ -170,6 +189,61 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
                 render: (row) => {
                   const s = row as unknown as StaffMember
                   return <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
+                },
+              },
+              {
+                key: 'consultation_fee', header: 'Consult Fee', mobileHidden: true,
+                render: (row) => {
+                  const s = row as unknown as StaffMember
+                  if (s.role !== 'doctor') return <span style={{ color: '#CBD5E1' }}>—</span>
+
+                  if (feeEditId === s.id) {
+                    return (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={feeInput}
+                          onChange={(e) => setFeeInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveFee(s.id); if (e.key === 'Escape') setFeeEditId(null) }}
+                          autoFocus
+                          className="w-20 px-2 py-1 rounded-lg text-sm"
+                          style={{ border: '1px solid #0D9488', outline: 'none', color: '#0F172A' }}
+                        />
+                        <button
+                          onClick={() => saveFee(s.id)}
+                          disabled={feeSaving}
+                          className="px-2 py-1 rounded-lg text-xs font-semibold"
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          {feeSaving ? '…' : '✓'}
+                        </button>
+                        <button
+                          onClick={() => setFeeEditId(null)}
+                          className="px-2 py-1 rounded-lg text-xs"
+                          style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  }
+
+                  const fee = s.staff?.consultation_fee
+                  const hasCustomFee = fee != null && fee > 0
+                  return canManage ? (
+                    <button
+                      onClick={() => { setFeeEditId(s.id); setFeeInput(hasCustomFee ? String(fee) : '') }}
+                      className="text-sm font-medium px-2 py-0.5 rounded-lg"
+                      style={hasCustomFee
+                        ? { background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)', cursor: 'pointer' }
+                        : { background: '#F1F5F9', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                      {hasCustomFee ? `₹${fee}` : 'Set fee'}
+                    </button>
+                  ) : (
+                    <span className="text-sm" style={{ color: hasCustomFee ? '#0D9488' : '#94A3B8' }}>
+                      {hasCustomFee ? `₹${fee}` : 'Default'}
+                    </span>
+                  )
                 },
               },
               {
@@ -287,6 +361,7 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
     address:           member.staff?.address ?? '',
     emergency_contact: member.staff?.emergency_contact ?? '',
     email:             '',
+    consultation_fee:  member.staff?.consultation_fee != null ? String(member.staff.consultation_fee) : '',
   })
   const originalEmail = useRef<string>('')
   const [emailLoading, setEmailLoading] = useState(true)
@@ -316,6 +391,7 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
       if (!emailRes.success) { setSaving(false); setError(emailRes.error); return }
     }
 
+    const feeVal = form.consultation_fee.trim()
     const res = await updateStaff(member.id, {
       full_name:         form.full_name.trim(),
       role:              form.role,
@@ -324,6 +400,9 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
       joining_date:      form.joining_date || null,
       address:           form.address.trim() || null,
       emergency_contact: form.emergency_contact.trim() || null,
+      ...(form.role === 'doctor' ? {
+        consultation_fee: feeVal ? parseFloat(feeVal) : null,
+      } : {}),
     })
     setSaving(false)
     if (!res.success) { setError(res.error); return }
@@ -401,6 +480,18 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
             <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
           </FormField>
         </div>
+        {form.role === 'doctor' && (
+          <FormField label="Consultation Fee (₹)" hint="Per-visit fee billed at appointment booking. Leave blank to use the hospital default.">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.consultation_fee}
+              onChange={(e) => set('consultation_fee', e.target.value)}
+              placeholder="e.g. 500"
+            />
+          </FormField>
+        )}
       </form>
     </Modal>
   )

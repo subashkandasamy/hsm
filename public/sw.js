@@ -2,7 +2,7 @@
 // Strategy: cache-first for static assets; network-first for HTML/API.
 // NOT a write queue — offline writes are out of scope (see Phase 14 spec).
 
-const CACHE = 'uyirly-shell-v2'
+const CACHE = 'uyirly-shell-v4'
 
 // Static assets to pre-cache on install
 const PRECACHE = [

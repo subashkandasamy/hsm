@@ -36,6 +36,21 @@ export async function startVisit(
   if (apptErr || !appt) return { success: false, error: 'Appointment not found' }
   if (appt.status === 'done') return { success: false, error: 'Appointment already closed' }
 
+  // Phase 15: gate on consultation bill payment before opening the visit
+  const { data: consultBill } = await supabase
+    .from('bills')
+    .select('id, status')
+    .eq('appointment_id', appointmentId)
+    .not('status', 'eq', 'cancelled')
+    .maybeSingle()
+
+  if (consultBill && consultBill.status !== 'paid') {
+    return {
+      success: false,
+      error: 'Please collect payment at the counter before starting this consultation',
+    }
+  }
+
   const id = crypto.randomUUID()
   const { error } = await supabase.from('visits').insert({
     id,
@@ -157,17 +172,10 @@ export async function closeVisit(visitId: string): Promise<SimpleResult> {
   const { data: visit } = await supabase
     .from('visits').select('appointment_id').eq('id', visitId).single()
 
-  // Fetch default consultation fee tariff
-  const { data: tariff } = await supabase
-    .from('tariffs').select('amount').eq('key', 'default_consultation_fee').maybeSingle()
-  const consultationFee = (tariff?.amount as number | undefined) ?? 0
-
+  // Phase 15: billing happens at booking time (not at close).
+  // Only update status; billing_status stays 'unbilled' by default.
   const { error } = await supabase
-    .from('visits').update({
-      status: 'closed',
-      consultation_fee: consultationFee,
-      billing_status: 'unbilled',
-    }).eq('id', visitId)
+    .from('visits').update({ status: 'closed' }).eq('id', visitId)
   if (error) return { success: false, error: error.message }
 
   if (visit?.appointment_id) {

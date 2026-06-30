@@ -1,0 +1,538 @@
+'use client'
+
+import { useState, useMemo } from 'react'
+import {
+  ShoppingCart, Plus, Minus, Trash2, CheckCircle2,
+  Search, Package, User2, CreditCard, Truck, Loader2, X, AlertCircle,
+  ChevronDown, ChevronRight,
+} from 'lucide-react'
+import GlassCard from '@/components/ui/GlassCard'
+import Money from '@/components/ui/Money'
+import {
+  startPharmacySale, addSaleItem, updateSaleItemQty, removeSaleItem,
+  finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
+} from '@/app/actions/pharmacySale'
+import { checkBillStatus } from '@/app/actions/pharmacy'
+import type { Drug, Patient, PharmacySale } from '@/lib/types'
+
+interface Props {
+  drugs: Drug[]
+  initialReadySales: PharmacySale[]
+  allPatients?: Patient[]
+}
+
+export default function SaleCartBuilder({ drugs, initialReadySales, allPatients = [] }: Props) {
+  // Cart builder state
+  const [patientQuery, setPatientQuery]       = useState('')
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
+  const [activeSale, setActiveSale]           = useState<PharmacySale | null>(null)
+  const [drugQuery, setDrugQuery]           = useState('')
+  const [selectedDrugId, setSelectedDrugId] = useState('')
+  const [addQty, setAddQty]                 = useState(1)
+  const [cartPending, setCartPending]       = useState(false)
+  const [cartError, setCartError]           = useState('')
+
+  // Fulfillment queue state
+  const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
+  const [readySales, setReadySales] = useState(initialReadySales)
+  const [billStatusMap, setBillStatusMap] = useState<Map<string, { status: string; paid: number; total: number }>>(
+    new Map(initialReadySales.map((s) => [
+      s.id,
+      { status: s.bill?.status ?? 'unpaid', paid: s.bill?.paid ?? 0, total: s.bill?.total ?? 0 },
+    ]))
+  )
+  const [checkingPayment, setCheckingPayment] = useState<Set<string>>(new Set())
+  const [handingOver, setHandingOver]         = useState<Set<string>>(new Set())
+  const [fulfillErrors, setFulfillErrors]     = useState<Map<string, string>>(new Map())
+  const [globalSuccess, setGlobalSuccess]     = useState('')
+
+  // Auto-filter patients as user types
+  const patientResults = useMemo(() => {
+    const q = patientQuery.trim().toLowerCase()
+    if (!q || selectedPatient) return []
+    return allPatients.filter((p) =>
+      p.full_name.toLowerCase().includes(q) ||
+      p.uhid.toLowerCase().includes(q) ||
+      (p.phone ?? '').includes(q)
+    ).slice(0, 8)
+  }, [patientQuery, allPatients, selectedPatient])
+
+  const filteredDrugs = useMemo(() =>
+    drugs.filter((d) =>
+      d.name.toLowerCase().includes(drugQuery.toLowerCase()) ||
+      (d.generic_name ?? '').toLowerCase().includes(drugQuery.toLowerCase())
+    ).slice(0, 15),
+  [drugQuery, drugs])
+
+  async function startCart() {
+    if (!selectedPatient) return
+    setCartError(''); setCartPending(true)
+    const res = await startPharmacySale({ patientId: selectedPatient.id })
+    if (!res.success) { setCartError(res.error); setCartPending(false); return }
+    const sale = await getPharmacySale(res.saleId)
+    setActiveSale(sale); setCartPending(false)
+  }
+
+  async function addItem() {
+    if (!activeSale || !selectedDrugId || addQty < 1) return
+    setCartError(''); setCartPending(true)
+    const res = await addSaleItem({ saleId: activeSale.id, drugId: selectedDrugId, qty: addQty })
+    if (!res.success) { setCartError(res.error); setCartPending(false); return }
+    const updated = await getPharmacySale(activeSale.id)
+    setActiveSale(updated); setSelectedDrugId(''); setDrugQuery(''); setAddQty(1); setCartPending(false)
+  }
+
+  async function changeQty(itemId: string, qty: number) {
+    if (qty < 1 || !activeSale) return
+    setCartPending(true)
+    await updateSaleItemQty(itemId, qty)
+    setActiveSale(await getPharmacySale(activeSale.id))
+    setCartPending(false)
+  }
+
+  async function removeItem(itemId: string) {
+    if (!activeSale) return
+    setCartPending(true)
+    await removeSaleItem(itemId)
+    setActiveSale(await getPharmacySale(activeSale.id))
+    setCartPending(false)
+  }
+
+  async function finalizeCart() {
+    if (!activeSale) return
+    setCartError(''); setCartPending(true)
+    const res = await finalizeSale(activeSale.id)
+    if (!res.success) { setCartError(res.error); setCartPending(false); return }
+    setGlobalSuccess('Bill generated — waiting for payment at counter')
+    setActiveSale(null); setSelectedPatient(null)
+    const ready = await listPharmacySales({ status: 'billed' })
+    setReadySales(ready)
+    setBillStatusMap(new Map(ready.map((s) => [
+      s.id,
+      { status: s.bill?.status ?? 'unpaid', paid: s.bill?.paid ?? 0, total: s.bill?.total ?? 0 },
+    ])))
+    setCartPending(false)
+  }
+
+  async function cancelCart() {
+    if (!activeSale) return
+    setCartPending(true)
+    await cancelSale(activeSale.id)
+    setActiveSale(null); setSelectedPatient(null); setCartPending(false)
+  }
+
+  // ---- Fulfillment actions ----
+
+  async function handleCheckPayment(sale: PharmacySale) {
+    if (!sale.bill_id) return
+    setCheckingPayment((prev) => new Set([...prev, sale.id]))
+    const result = await checkBillStatus(sale.bill_id)
+    if (result) {
+      setBillStatusMap((prev) => new Map([...prev, [sale.id, { status: result.status, paid: result.paid, total: result.total }]]))
+    }
+    setCheckingPayment((prev) => { const n = new Set(prev); n.delete(sale.id); return n })
+  }
+
+  async function handleHandOver(sale: PharmacySale) {
+    setHandingOver((prev) => new Set([...prev, sale.id]))
+    setFulfillErrors((prev) => { const n = new Map(prev); n.delete(sale.id); return n })
+    const res = await fulfillSale(sale.id)
+    setHandingOver((prev) => { const n = new Set(prev); n.delete(sale.id); return n })
+    if (!res.success) {
+      setFulfillErrors((prev) => new Map([...prev, [sale.id, res.error]]))
+      // Refresh bill status in case of payment issue
+      if (sale.bill_id) {
+        const b = await checkBillStatus(sale.bill_id)
+        if (b) setBillStatusMap((prev) => new Map([...prev, [sale.id, { status: b.status, paid: b.paid, total: b.total }]]))
+      }
+      return
+    }
+    setGlobalSuccess('Medicines handed over to patient')
+    setReadySales((prev) => prev.filter((s) => s.id !== sale.id))
+  }
+
+  function toggleSale(saleId: string) {
+    setExpandedSales((prev) => {
+      const next = new Set(prev)
+      if (next.has(saleId)) next.delete(saleId); else next.add(saleId)
+      return next
+    })
+  }
+
+  const cartTotal = activeSale?.items?.reduce((s, i) => s + i.amount, 0) ?? 0
+
+  return (
+    <div className="space-y-4">
+      {/* Global feedback */}
+      {globalSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
+          style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> {globalSuccess}
+          <button onClick={() => setGlobalSuccess('')} className="ml-auto" style={{ color: '#15803D' }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+        {/* ══════════════ LEFT — Cart Builder ══════════════ */}
+        <GlassCard className="overflow-hidden">
+          {/* Header */}
+          <div className="px-5 py-4 flex items-center gap-2"
+            style={{ borderBottom: '1px solid #F1F5F9', background: 'rgba(13,148,136,0.03)' }}>
+            <ShoppingCart className="w-4 h-4" style={{ color: '#0D9488' }} />
+            <h3 className="font-semibold text-sm" style={{ color: '#0F172A' }}>New Sale Cart</h3>
+          </div>
+
+          <div className="p-5">
+            {!activeSale ? (
+              /* ── Patient search ── */
+              <div className="space-y-3">
+                <p className="text-xs font-medium" style={{ color: '#94A3B8' }}>SEARCH PATIENT</p>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
+                  <input
+                    type="text"
+                    placeholder="Type name, UHID or phone…"
+                    value={patientQuery}
+                    onChange={(e) => { setPatientQuery(e.target.value); setSelectedPatient(null) }}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm"
+                    style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: 'rgba(255,255,255,0.85)', outline: 'none', minHeight: '44px' }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
+                  />
+                </div>
+
+                {patientResults.length > 0 && (
+                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                    {patientResults.map((p, i) => (
+                      <button key={p.id} onClick={() => { setSelectedPatient(p); setPatientQuery(p.full_name) }}
+                        className="w-full text-left px-4 py-3 transition-all"
+                        style={{ borderBottom: i < patientResults.length - 1 ? '1px solid #F1F5F9' : 'none', minHeight: '44px' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                        <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{p.full_name}</p>
+                        <p className="text-xs" style={{ color: '#64748B' }}>{p.uhid}{p.phone ? ` · ${p.phone}` : ''}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {selectedPatient && (
+                  <div className="flex items-center justify-between p-4 rounded-xl"
+                    style={{ background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.2)' }}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                        style={{ background: 'rgba(13,148,136,0.12)' }}>
+                        <User2 className="w-4 h-4" style={{ color: '#0D9488' }} />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{selectedPatient.full_name}</p>
+                        <p className="text-xs" style={{ color: '#0D9488' }}>{selectedPatient.uhid}</p>
+                      </div>
+                    </div>
+                    <button onClick={startCart} disabled={cartPending}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                      style={{ background: cartPending ? '#94A3B8' : '#0D9488', border: 'none', cursor: 'pointer' }}>
+                      {cartPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Start Cart
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ── Active cart ── */
+              <div className="space-y-4">
+                {/* Cart patient header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                      style={{ background: 'rgba(13,148,136,0.12)' }}>
+                      <User2 className="w-4 h-4" style={{ color: '#0D9488' }} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>
+                        {activeSale.patient?.full_name ?? 'Patient'}
+                      </p>
+                      <p className="text-xs" style={{ color: '#64748B' }}>{activeSale.patient?.uhid}</p>
+                    </div>
+                  </div>
+                  <button onClick={cancelCart} disabled={cartPending}
+                    className="text-xs px-3 py-1.5 rounded-lg"
+                    style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
+                    Cancel Cart
+                  </button>
+                </div>
+
+                {cartError && (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+                    style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {cartError}
+                  </div>
+                )}
+
+                {/* Add medicine */}
+                <div className="rounded-xl p-3 space-y-2"
+                  style={{ background: 'rgba(13,148,136,0.03)', border: '1px solid rgba(13,148,136,0.15)' }}>
+                  <p className="text-xs font-semibold" style={{ color: '#0D9488' }}>ADD MEDICINE</p>
+                  <div className="relative">
+                    <input type="text" placeholder="Search drug by name…"
+                      value={drugQuery}
+                      onChange={(e) => { setDrugQuery(e.target.value); setSelectedDrugId('') }}
+                      className="w-full px-3 py-2 rounded-lg text-sm"
+                      style={{ border: `1px solid ${selectedDrugId ? '#0D9488' : '#E2E8F0'}`, color: '#0F172A', background: '#fff', outline: 'none' }} />
+                    {selectedDrugId && (
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 rounded-full"
+                        style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>matched</span>
+                    )}
+                    {drugQuery && !selectedDrugId && filteredDrugs.length > 0 && (
+                      <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl shadow-lg overflow-hidden"
+                        style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: '180px', overflowY: 'auto' }}>
+                        {filteredDrugs.map((d) => (
+                          <li key={d.id}>
+                            <button type="button"
+                              onMouseDown={() => { setSelectedDrugId(d.id); setDrugQuery(d.name) }}
+                              className="w-full text-left px-3 py-2 text-sm"
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                              <span className="font-medium" style={{ color: '#0F172A' }}>{d.name}</span>
+                              {d.strength && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>{d.strength}</span>}
+                              {d.form && <span className="ml-1 text-xs capitalize" style={{ color: '#64748B' }}>· {d.form}</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min={1} value={addQty}
+                      onChange={(e) => setAddQty(parseInt(e.target.value) || 1)}
+                      className="w-20 px-3 py-2 rounded-lg text-sm text-center"
+                      style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: '#fff', outline: 'none' }} />
+                    <span className="text-xs flex-1" style={{ color: '#94A3B8' }}>qty</span>
+                    <button onClick={addItem} disabled={cartPending || !selectedDrugId}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                      style={{ background: selectedDrugId && !cartPending ? '#0D9488' : '#94A3B8', border: 'none', cursor: 'pointer' }}>
+                      {cartPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Items */}
+                {(activeSale.items ?? []).length === 0 ? (
+                  <p className="text-sm text-center py-6" style={{ color: '#94A3B8' }}>No items in cart yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeSale.items?.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                        style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                            {item.drug?.name ?? 'Drug'}
+                          </p>
+                          <p className="text-xs" style={{ color: '#94A3B8' }}>
+                            ₹{item.unit_price}/unit
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => changeQty(item.id, item.qty - 1)} disabled={cartPending || item.qty <= 1}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg"
+                            style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="w-8 text-center text-sm font-bold" style={{ color: '#0F172A' }}>{item.qty}</span>
+                          <button onClick={() => changeQty(item.id, item.qty + 1)} disabled={cartPending}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg"
+                            style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <Money amount={item.amount} className="text-sm font-semibold w-20 text-right"
+                          style={{ color: '#0F172A' }} />
+                        <button onClick={() => removeItem(item.id)} disabled={cartPending}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg"
+                          style={{ color: '#DC2626', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Total + Finalize */}
+                {(activeSale.items ?? []).length > 0 && (
+                  <div className="pt-4 space-y-3" style={{ borderTop: '1px solid #F1F5F9' }}>
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-sm font-medium" style={{ color: '#64748B' }}>Total</span>
+                      <Money amount={cartTotal} className="text-lg font-bold" style={{ color: '#0D9488' }} />
+                    </div>
+                    <button onClick={finalizeCart} disabled={cartPending}
+                      className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                      style={{ background: cartPending ? '#94A3B8' : '#0D9488', border: 'none', cursor: 'pointer' }}>
+                      {cartPending ? 'Processing…' : 'Finalize & Send to Counter'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </GlassCard>
+
+        {/* ══════════════ RIGHT — Fulfillment Queue ══════════════ */}
+        <div className="space-y-3">
+          {/* Queue header */}
+          <div className="flex items-center gap-2 px-1">
+            <Package className="w-4 h-4" style={{ color: '#0D9488' }} />
+            <h3 className="font-semibold text-sm" style={{ color: '#0F172A' }}>Fulfillment Queue</h3>
+            {readySales.length > 0 && (
+              <span className="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: '#DCFCE7', color: '#16A34A' }}>
+                {readySales.length} ready
+              </span>
+            )}
+          </div>
+
+          {readySales.length === 0 ? (
+            <GlassCard className="p-8">
+              <p className="text-sm text-center" style={{ color: '#94A3B8' }}>No sales awaiting fulfillment.</p>
+            </GlassCard>
+          ) : (
+            readySales.map((sale) => {
+              const bs = billStatusMap.get(sale.id) ?? { status: sale.bill?.status ?? 'unpaid', paid: sale.bill?.paid ?? 0, total: sale.bill?.total ?? 0 }
+              const isPaid    = bs.status === 'paid'
+              const isPartial = bs.status === 'partial'
+              const balance   = bs.total - bs.paid
+              const isExpanded = expandedSales.has(sale.id)
+
+              return (
+                <GlassCard key={sale.id} className="overflow-hidden"
+                  style={isPaid ? { border: '1.5px solid #6EE7B7' } : { border: '1.5px solid #BFDBFE' }}>
+
+                  {/* Patient header — 2-row layout for mobile */}
+                  <div className="px-4 py-3"
+                    style={{
+                      background: isPaid ? 'rgba(16,185,129,0.07)' : 'rgba(59,130,246,0.05)',
+                      borderBottom: isExpanded ? '1px solid #E2E8F0' : 'none',
+                    }}>
+                    {/* Row 1: avatar + name + chevron */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: isPaid ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.1)' }}>
+                        <User2 className="w-4 h-4" style={{ color: isPaid ? '#059669' : '#3B82F6' }} />
+                      </div>
+                      <button type="button" onClick={() => toggleSale(sale.id)}
+                        className="flex-1 min-w-0 text-left"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>
+                          {sale.patient?.full_name ?? 'Patient'}
+                        </p>
+                        <p className="text-xs truncate" style={{ color: '#64748B' }}>
+                          {sale.patient?.uhid}
+                          {' · '}{sale.items?.length ?? 0} item{(sale.items?.length ?? 0) !== 1 ? 's' : ''}
+                          {sale.bill?.bill_no && <> · {sale.bill.bill_no}</>}
+                        </p>
+                      </button>
+                      <button type="button" onClick={() => toggleSale(sale.id)}
+                        className="flex-shrink-0"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                        {isExpanded
+                          ? <ChevronDown className="w-4 h-4" style={{ color: '#94A3B8' }} />
+                          : <ChevronRight className="w-4 h-4" style={{ color: '#94A3B8' }} />}
+                      </button>
+                    </div>
+
+                    {/* Row 2: actions */}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ paddingLeft: '48px' }}>
+                      {isPaid ? (
+                        <button onClick={() => handleHandOver(sale)}
+                          disabled={handingOver.has(sale.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          style={{ background: '#059669', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          {handingOver.has(sale.id)
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Truck className="w-3 h-3" />}
+                          Hand Over
+                        </button>
+                      ) : (
+                        <>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0"
+                            style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                            {isPartial ? 'Partial — Full Pmt Required' : 'Awaiting Payment'}
+                          </span>
+                          <button onClick={() => handleCheckPayment(sale)}
+                            disabled={checkingPayment.has(sale.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
+                            style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                            {checkingPayment.has(sale.id)
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <CreditCard className="w-3 h-3" />}
+                            Check Payment
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Medicine rows — only when expanded */}
+                  {isExpanded && (
+                    <>
+                      <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+                        {sale.items?.map((item) => (
+                          <div key={item.id} className="flex items-center gap-3 pl-12 pr-4 py-2.5">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+                                {item.drug?.name ?? 'Drug'}
+                              </p>
+                              {item.drug?.strength && (
+                                <p className="text-xs" style={{ color: '#94A3B8' }}>{item.drug.strength}</p>
+                              )}
+                            </div>
+                            <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                              style={{ background: '#F1F5F9', color: '#475569' }}>
+                              × {item.qty}
+                            </span>
+                            <Money amount={item.amount} className="text-sm font-semibold w-20 text-right"
+                              style={{ color: '#0F172A' }} />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Bill summary footer */}
+                      <div className="px-4 py-3 space-y-1.5" style={{ borderTop: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium" style={{ color: '#64748B' }}>Total</span>
+                          <Money amount={bs.total} className="font-bold" style={{ color: '#0F172A' }} />
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span style={{ color: '#64748B' }}>Paid</span>
+                          <Money amount={bs.paid} className="font-semibold"
+                            style={{ color: bs.paid > 0 ? '#15803D' : '#94A3B8' }} />
+                        </div>
+                        {balance > 0 && (
+                          <div className="flex items-center justify-between text-sm font-semibold"
+                            style={{ paddingTop: '4px', borderTop: '1px dashed #E2E8F0' }}>
+                            <span style={{ color: '#DC2626' }}>Balance Due</span>
+                            <Money amount={balance} style={{ color: '#DC2626' }} />
+                          </div>
+                        )}
+                        {fulfillErrors.get(sale.id) && (
+                          <div className="flex items-center gap-1.5 text-xs mt-1" style={{ color: '#DC2626' }}>
+                            <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                            {fulfillErrors.get(sale.id)}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </GlassCard>
+              )
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,7 +1,7 @@
-import { listBills } from '@/app/actions/billing'
+import { listBills, getBillingStats } from '@/app/actions/billing'
 import BillingClient from './_components/BillingClient'
 
 export default async function BillingPage() {
-  const bills = await listBills()
-  return <BillingClient initialBills={bills} />
+  const [bills, stats] = await Promise.all([listBills(), getBillingStats()])
+  return <BillingClient initialBills={bills} initialStats={stats} />
 }

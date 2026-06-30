@@ -25,6 +25,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'departments:manage', 'settings:modules',
     'dental:read', 'dental:write',
     'ophthalmology:write',
+    'tariffs:manage', 'billing:advance', 'pharmacy:sale',
     'dashboard:read',
   ],
   doctor: [
@@ -67,6 +68,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'appointments:read', 'appointments:write',
     'emergency:read', 'emergency:register',
     'billing:read', 'billing:write',
+    'billing:advance',
     'insurance:read',
     'notifications:send',
     'emr:document:upload',
@@ -82,12 +84,13 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   ],
   pharmacist: [
     'patients:read',
-    'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage',
+    'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage', 'pharmacy:sale',
     'emr:read',
     'dashboard:read',
   ],
   accountant: [
     'billing:read', 'billing:write', 'billing:manage',
+    'billing:advance',
     'insurance:read', 'insurance:write',
     'inventory:read', 'inventory:manage',
     'notifications:send',
@@ -146,6 +149,7 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Audit Log',      href: '/audit',                        icon: 'ClipboardList', requiredPermission: 'audit:read' },
       { label: 'Subscription',   href: '/account/subscription',         icon: 'CreditCard',    requiredPermission: 'account:subscription' },
       { label: 'Departments',    href: '/settings/departments',         icon: 'Building2',     requiredPermission: 'departments:manage' },
+      { label: 'Tariffs & Fees', href: '/settings/tariffs',             icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
       { label: 'Module Settings',href: '/settings/modules',             icon: 'ToggleLeft',    requiredPermission: 'settings:modules' },
       { label: 'Settings',       href: '/settings',                     icon: 'Settings',      requiredPermission: 'settings:read' },
     ],

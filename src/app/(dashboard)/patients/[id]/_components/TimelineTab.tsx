@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import {
-  Stethoscope, Siren, BedDouble, FlaskConical, Scan, Scissors, Droplets, FileText,
+  Stethoscope, Siren, BedDouble, FlaskConical, Scan, Scissors, Droplets, FileText, Pill,
   Filter, X, ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
@@ -14,19 +14,20 @@ import { getPatientTimeline } from '@/app/actions/emr'
 import type { TimelineEvent, TimelineEventType, DiagnosisSummary } from '@/lib/types'
 
 const TYPE_META: Record<TimelineEventType, { label: string; icon: ReactNode; color: string; bg: string; href?: (id: string) => string }> = {
-  opd_visit:       { label: 'OPD',       icon: <Stethoscope className="w-4 h-4" />, color: '#0D9488', bg: 'rgba(13,148,136,0.1)', href: (id) => `/opd/${id}` },
-  emergency_visit: { label: 'Emergency', icon: <Siren className="w-4 h-4" />,       color: '#DC2626', bg: '#FEE2E2',             href: (id) => `/emergency` },
-  admission:       { label: 'IPD',       icon: <BedDouble className="w-4 h-4" />,   color: '#7C3AED', bg: '#EDE9FE',             href: (id) => `/ipd/${id}` },
-  lab_order:       { label: 'Lab',       icon: <FlaskConical className="w-4 h-4" />,color: '#0369A1', bg: '#E0F2FE',             href: (id) => `/lab/${id}` },
-  radiology_order: { label: 'Radiology', icon: <Scan className="w-4 h-4" />,        color: '#059669', bg: '#D1FAE5',             href: (id) => `/radiology/${id}` },
-  ot_schedule:     { label: 'OT',        icon: <Scissors className="w-4 h-4" />,    color: '#B45309', bg: '#FEF3C7',             href: (id) => `/ot` },
-  blood_issue:     { label: 'Blood',     icon: <Droplets className="w-4 h-4" />,    color: '#BE123C', bg: '#FFE4E6' },
-  document:        { label: 'Document',  icon: <FileText className="w-4 h-4" />,    color: '#475569', bg: '#F1F5F9' },
+  opd_visit:        { label: 'OPD',       icon: <Stethoscope className="w-4 h-4" />, color: '#0D9488', bg: 'rgba(13,148,136,0.1)', href: (id) => `/opd/${id}` },
+  emergency_visit:  { label: 'Emergency', icon: <Siren className="w-4 h-4" />,       color: '#DC2626', bg: '#FEE2E2',             href: () => `/emergency` },
+  admission:        { label: 'IPD',       icon: <BedDouble className="w-4 h-4" />,   color: '#7C3AED', bg: '#EDE9FE',             href: (id) => `/ipd/${id}` },
+  lab_order:        { label: 'Lab',       icon: <FlaskConical className="w-4 h-4" />,color: '#0369A1', bg: '#E0F2FE',             href: (id) => `/lab/${id}` },
+  radiology_order:  { label: 'Radiology', icon: <Scan className="w-4 h-4" />,        color: '#059669', bg: '#D1FAE5',             href: (id) => `/radiology/${id}` },
+  ot_schedule:      { label: 'OT',        icon: <Scissors className="w-4 h-4" />,    color: '#B45309', bg: '#FEF3C7',             href: () => `/ot` },
+  blood_issue:      { label: 'Blood',     icon: <Droplets className="w-4 h-4" />,    color: '#BE123C', bg: '#FFE4E6' },
+  document:         { label: 'Document',  icon: <FileText className="w-4 h-4" />,    color: '#475569', bg: '#F1F5F9' },
+  pharmacy_dispense:{ label: 'Pharmacy',  icon: <Pill className="w-4 h-4" />,        color: '#7C3AED', bg: '#EDE9FE' },
 }
 
 const ALL_TYPES: TimelineEventType[] = [
   'opd_visit', 'emergency_visit', 'admission',
-  'lab_order', 'radiology_order', 'ot_schedule', 'blood_issue', 'document',
+  'lab_order', 'radiology_order', 'ot_schedule', 'blood_issue', 'document', 'pharmacy_dispense',
 ]
 
 interface Props {

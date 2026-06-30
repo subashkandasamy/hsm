@@ -49,6 +49,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const [catalog, setCatalog] = useState<RadiologyCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<{ id: string; msg: string } | null>(null)
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [reportOrder, setReportOrder] = useState<RadiologyOrder | null>(null)
@@ -67,7 +68,13 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
 
   async function handlePerform(orderId: string) {
     setActionId(orderId)
-    await markPerformed(orderId)
+    setActionError(null)
+    const res = await markPerformed(orderId)
+    if (!res.success) {
+      setActionError({ id: orderId, msg: res.error })
+      setActionId(null)
+      return
+    }
     await refresh()
     setActionId(null)
     setTab('performed')
@@ -168,6 +175,11 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                         <DateText date={order.ordered_at} />
                         <Money amount={order.price_snapshot} />
                       </div>
+                      {actionError?.id === order.id && (
+                        <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }}>
+                          ⚠ {actionError.msg}
+                        </p>
+                      )}
                       {tab === 'reported' && order.report && (
                         <p className="text-xs mt-1.5 line-clamp-2" style={{ color: '#475569' }}>{order.report}</p>
                       )}
@@ -182,8 +194,8 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                     {tab === 'pending' && canProcess && (
                       <button onClick={() => handlePerform(order.id)} disabled={actionId === order.id}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
-                        Mark Performed
+                        style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
+                        {actionId === order.id ? 'Processing…' : 'Mark Performed'}
                       </button>
                     )}
                     {tab === 'performed' && canProcess && (
@@ -193,7 +205,12 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                         Add Report
                       </button>
                     )}
-                    {tab === 'reported' && <StatusBadge status="success" label="Unbilled" />}
+                    {tab === 'reported' && (
+                      <StatusBadge
+                        status={order.billing_status === 'billed' ? 'info' : 'pending'}
+                        label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'}
+                      />
+                    )}
                   </div>
                 </div>
               </GlassCard>

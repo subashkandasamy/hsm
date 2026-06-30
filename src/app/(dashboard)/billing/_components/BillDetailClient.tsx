@@ -22,6 +22,7 @@ const SOURCE_LABELS: Record<BillItemSource, string> = {
   lab: 'Laboratory',
   radiology: 'Radiology',
   pharmacy: 'Pharmacy',
+  pharmacy_sale_item: 'Pharmacy Sale',
   ot: 'Operation Theatre',
   ot_consumable: 'OT Consumables',
   blood: 'Blood Bank',

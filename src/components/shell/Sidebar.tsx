@@ -1,39 +1,54 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
-  ToggleLeft, CreditCard,
+  ToggleLeft, CreditCard, BadgeDollarSign,
+  type LucideProps,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
 
-const ICON_MAP: Record<string, React.ReactNode> = {
-  LayoutDashboard: <LayoutDashboard className="w-4 h-4" />,
-  Users:           <Users className="w-4 h-4" />,
-  CalendarDays:    <CalendarDays className="w-4 h-4" />,
-  FlaskConical:    <FlaskConical className="w-4 h-4" />,
-  Pill:            <Pill className="w-4 h-4" />,
-  Receipt:         <Receipt className="w-4 h-4" />,
-  UserCog:         <UserCog className="w-4 h-4" />,
-  ClipboardList:   <ClipboardList className="w-4 h-4" />,
-  Settings:        <Settings className="w-4 h-4" />,
-  Stethoscope:     <Stethoscope className="w-4 h-4" />,
-  LayoutGrid:      <LayoutGrid className="w-4 h-4" />,
-  BedDouble:       <BedDouble className="w-4 h-4" />,
-  Siren:           <Siren className="w-4 h-4" />,
-  Scan:            <Scan className="w-4 h-4" />,
-  Scissors:        <Scissors className="w-4 h-4" />,
-  Droplets:        <Droplets className="w-4 h-4" />,
-  ShieldPlus:      <ShieldPlus className="w-4 h-4" />,
-  Bell:            <Bell className="w-4 h-4" />,
-  Warehouse:       <Warehouse className="w-4 h-4" />,
-  ToggleLeft:      <ToggleLeft className="w-4 h-4" />,
-  CreditCard:      <CreditCard className="w-4 h-4" />,
+// Store component references — NOT pre-created JSX elements.
+// Pre-created JSX elements (e.g. <Building2 />) at module scope cause
+// hydration mismatches in Next.js SSR because React can't reconcile
+// static element objects across server/client boundaries.
+type IconComp = React.ComponentType<LucideProps>
+
+const ICON_MAP: Record<string, IconComp> = {
+  LayoutDashboard,
+  Users,
+  CalendarDays,
+  FlaskConical,
+  Pill,
+  Receipt,
+  UserCog,
+  ClipboardList,
+  Settings,
+  Stethoscope,
+  LayoutGrid,
+  BedDouble,
+  Siren,
+  Scan,
+  Scissors,
+  Droplets,
+  ShieldPlus,
+  Bell,
+  Warehouse,
+  ToggleLeft,
+  CreditCard,
+  Building2,
+  BadgeDollarSign,
+}
+
+function NavIcon({ name }: { name: string }) {
+  const Icon = ICON_MAP[name]
+  if (!Icon) return null
+  return <Icon className="w-4 h-4" />
 }
 
 interface SidebarProps {
@@ -116,7 +131,7 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
                         }}
                       >
                         <span style={isActive ? { color: '#0D9488' } : { color: '#94A3B8' }}>
-                          {ICON_MAP[item.icon]}
+                          <NavIcon name={item.icon} />
                         </span>
                         {item.label}
                       </Link>

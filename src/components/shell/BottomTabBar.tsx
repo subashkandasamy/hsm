@@ -6,27 +6,36 @@ import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, Stethoscope, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
   Warehouse, UserCog, Bell,
+  type LucideProps,
 } from 'lucide-react'
 import { hasPermission } from '@/lib/rbac'
 import type { Role, Permission } from '@/lib/types'
 
-const ICON_MAP: Record<string, React.ReactNode> = {
-  LayoutDashboard: <LayoutDashboard className="w-5 h-5" />,
-  Users:           <Users className="w-5 h-5" />,
-  CalendarDays:    <CalendarDays className="w-5 h-5" />,
-  FlaskConical:    <FlaskConical className="w-5 h-5" />,
-  Pill:            <Pill className="w-5 h-5" />,
-  Receipt:         <Receipt className="w-5 h-5" />,
-  Stethoscope:     <Stethoscope className="w-5 h-5" />,
-  BedDouble:       <BedDouble className="w-5 h-5" />,
-  Siren:           <Siren className="w-5 h-5" />,
-  Scan:            <Scan className="w-5 h-5" />,
-  Scissors:        <Scissors className="w-5 h-5" />,
-  Droplets:        <Droplets className="w-5 h-5" />,
-  ShieldPlus:      <ShieldPlus className="w-5 h-5" />,
-  Warehouse:       <Warehouse className="w-5 h-5" />,
-  UserCog:         <UserCog className="w-5 h-5" />,
-  Bell:            <Bell className="w-5 h-5" />,
+type IconComp = React.ComponentType<LucideProps>
+
+const ICON_MAP: Record<string, IconComp> = {
+  LayoutDashboard,
+  Users,
+  CalendarDays,
+  FlaskConical,
+  Pill,
+  Receipt,
+  Stethoscope,
+  BedDouble,
+  Siren,
+  Scan,
+  Scissors,
+  Droplets,
+  ShieldPlus,
+  Warehouse,
+  UserCog,
+  Bell,
+}
+
+function TabIcon({ name }: { name: string }) {
+  const Icon = ICON_MAP[name]
+  if (!Icon) return null
+  return <Icon className="w-5 h-5" />
 }
 
 // Priority order of destinations per role (pick first 5 that pass permission check)
@@ -93,7 +102,7 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
               className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl min-w-[56px] min-h-[44px] justify-center"
               style={{ color: isActive ? '#0D9488' : '#94A3B8' }}
             >
-              {ICON_MAP[tab.icon]}
+              <TabIcon name={tab.icon} />
               <span className="text-[10px] font-medium leading-none">{tab.label}</span>
             </Link>
           )

@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
+import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
 import type { Admission, IpdProgressNote } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -131,6 +132,15 @@ export async function dischargePatient(
 
   if (!admission || admission.status !== 'admitted') {
     return { success: false, error: 'Admission not found or already discharged' }
+  }
+
+  // Phase 15: gate on full settlement before discharge
+  const financials = await getAdmissionFinancials(admissionId)
+  if (financials.balanceDue > 0) {
+    return {
+      success: false,
+      error: `Cannot discharge — ₹${financials.balanceDue.toFixed(2)} balance due. Settle the outstanding amount before discharge.`,
+    }
   }
 
   // Free the bed

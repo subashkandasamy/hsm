@@ -53,12 +53,51 @@ export async function createRadiologyOrder(
   if (!test) return { success: false, error: 'Test not found' }
 
   const id = crypto.randomUUID()
+  const priceSnapshot = test.price as number
+
   const { error } = await supabase.from('radiology_orders').insert({
     id, tenant_id: actor.tenant_id, patient_id, visit_id: visit_id ?? null, test_id,
-    ordered_by: actor.id, price_snapshot: test.price,
+    ordered_by: actor.id, price_snapshot: priceSnapshot,
     status: 'ordered', billing_status: 'unbilled',
   })
   if (error) return { success: false, error: error.message }
+
+  // Phase 15: auto-generate bill immediately on order creation
+  if (priceSnapshot > 0) {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    const { data: testDetail } = await supabase
+      .from('radiology_catalog').select('name').eq('id', test_id).single()
+    if (billNoData) {
+      const billId = crypto.randomUUID()
+      const { error: billErr } = await supabase.from('bills').insert({
+        id: billId,
+        tenant_id: actor.tenant_id,
+        patient_id,
+        bill_no: billNoData as string,
+        subtotal: priceSnapshot,
+        discount: 0, tax: 0, total: priceSnapshot, paid: 0,
+        status: 'unpaid',
+        created_by: actor.id,
+      })
+      if (!billErr) {
+        await supabase.from('bill_items').insert({
+          id: crypto.randomUUID(),
+          tenant_id: actor.tenant_id,
+          bill_id: billId,
+          source: 'radiology',
+          ref_id: id,
+          description: (testDetail?.name as string) ?? 'Radiology scan',
+          qty: 1,
+          unit_price: priceSnapshot,
+          amount: priceSnapshot,
+        })
+        await supabase
+          .from('radiology_orders')
+          .update({ billing_status: 'billed' })
+          .eq('id', id)
+      }
+    }
+  }
 
   await logAudit(actor.id, 'create', 'radiology_order', id, { patient_id, test_id })
   return { success: true, orderId: id }
@@ -68,6 +107,20 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:process')
   const supabase = await createClient()
+
+  // Phase 15: gate on payment before performing the scan
+  const { data: billItem } = await supabase
+    .from('bill_items')
+    .select('bill_id, bill:bills(id, status)')
+    .eq('ref_id', orderId)
+    .eq('source', 'radiology')
+    .maybeSingle()
+
+  const linkedBill = (billItem?.bill as unknown as { id: string; status: string } | null)
+  if (linkedBill && linkedBill.status !== 'paid') {
+    return { success: false, error: 'Awaiting payment — please collect payment before performing this scan' }
+  }
+
   const { error } = await supabase
     .from('radiology_orders').update({ status: 'performed' })
     .eq('id', orderId).eq('status', 'ordered')
@@ -102,6 +155,23 @@ export async function cancelRadiologyOrder(orderId: string): Promise<SimpleResul
   const { error } = await supabase
     .from('radiology_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
+
+  // Phase 15: cancel linked bill if it has no payments yet
+  const { data: billItem } = await supabase
+    .from('bill_items')
+    .select('bill_id')
+    .eq('ref_id', orderId)
+    .eq('source', 'radiology')
+    .maybeSingle()
+
+  if (billItem?.bill_id) {
+    const { count } = await supabase
+      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
+    if ((count ?? 0) === 0) {
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
+    }
+  }
+
   await logAudit(actor.id, 'cancel', 'radiology_order', orderId)
   return { success: true }
 }

@@ -49,7 +49,7 @@ export async function createLabOrder(
 
   // Snapshot prices from catalog
   const { data: tests } = await supabase
-    .from('lab_tests_catalog').select('id, price').in('id', test_ids)
+    .from('lab_tests_catalog').select('id, price, name').in('id', test_ids)
   if (!tests?.length) return { success: false, error: 'No valid tests selected' }
 
   const priceMap = new Map(tests.map((t) => [t.id, t.price as number]))
@@ -69,6 +69,45 @@ export async function createLabOrder(
   const { error: itemErr } = await supabase.from('lab_order_items').insert(items)
   if (itemErr) return { success: false, error: itemErr.message }
 
+  // Phase 15: auto-generate bill for this order immediately
+  const totalAmount = items.reduce((s, i) => s + i.price_snapshot, 0)
+  if (totalAmount > 0) {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    if (billNoData) {
+      const billId = crypto.randomUUID()
+      const { error: billErr } = await supabase.from('bills').insert({
+        id: billId,
+        tenant_id: actor.tenant_id,
+        patient_id,
+        bill_no: billNoData as string,
+        subtotal: totalAmount,
+        discount: 0, tax: 0, total: totalAmount, paid: 0,
+        status: 'unpaid',
+        created_by: actor.id,
+      })
+      if (!billErr) {
+        await supabase.from('bill_items').insert(
+          items.map((item) => ({
+            id: crypto.randomUUID(),
+            tenant_id: actor.tenant_id,
+            bill_id: billId,
+            source: 'lab',
+            ref_id: orderId,
+            description: tests?.find((t) => t.id === item.test_id)?.name ?? 'Lab test',
+            qty: 1,
+            unit_price: item.price_snapshot,
+            amount: item.price_snapshot,
+          }))
+        )
+        // Mark order as billed
+        await supabase
+          .from('lab_orders')
+          .update({ billing_status: 'billed' })
+          .eq('id', orderId)
+      }
+    }
+  }
+
   await logAudit(actor.id, 'create', 'lab_order', orderId, { patient_id, test_count: test_ids.length })
   return { success: true, orderId }
 }
@@ -77,6 +116,28 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
+
+  // Phase 15: gate on payment before sample collection
+  const { data: bill } = await supabase
+    .from('bills')
+    .select('id, status')
+    .eq('status', 'unpaid')
+    .contains('items', [])
+    .maybeSingle()
+
+  // Find bill linked to this order via bill_items
+  const { data: billItem } = await supabase
+    .from('bill_items')
+    .select('bill_id, bill:bills(id, status)')
+    .eq('ref_id', orderId)
+    .eq('source', 'lab')
+    .maybeSingle()
+
+  const linkedBill = (billItem?.bill as unknown as { id: string; status: string } | null)
+  if (linkedBill && linkedBill.status !== 'paid') {
+    return { success: false, error: 'Awaiting payment — please collect payment before collecting the sample' }
+  }
+
   const { error } = await supabase
     .from('lab_orders').update({ status: 'collected' }).eq('id', orderId).eq('status', 'ordered')
   if (error) return { success: false, error: error.message }
@@ -146,6 +207,23 @@ export async function cancelLabOrder(orderId: string): Promise<SimpleResult> {
   const { error } = await supabase
     .from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
+
+  // Phase 15: cancel linked bill if it has no payments yet
+  const { data: billItem } = await supabase
+    .from('bill_items')
+    .select('bill_id')
+    .eq('ref_id', orderId)
+    .eq('source', 'lab')
+    .maybeSingle()
+
+  if (billItem?.bill_id) {
+    const { count } = await supabase
+      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
+    if ((count ?? 0) === 0) {
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
+    }
+  }
+
   await logAudit(actor.id, 'cancel', 'lab_order', orderId)
   return { success: true }
 }

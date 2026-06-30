@@ -9,15 +9,17 @@ import { searchPatients } from '@/app/actions/patients'
 import type { Patient, ChargePreviewLine } from '@/lib/types'
 
 const SOURCE_LABELS: Record<string, string> = {
-  consultation: 'Consultation',
-  bed: 'Bed Charges',
-  lab: 'Laboratory',
-  radiology: 'Radiology',
-  pharmacy: 'Pharmacy',
-  ot: 'Operation Theatre',
-  ot_consumable: 'OT Consumables',
-  blood: 'Blood Bank',
-  manual: 'Manual',
+  consultation:      'Consultation',
+  bed:               'Bed Charges',
+  lab:               'Laboratory',
+  radiology:         'Radiology',
+  pharmacy:          'Pharmacy',
+  ot:                'Operation Theatre',
+  ot_consumable:     'OT Consumables',
+  blood:             'Blood Bank',
+  dental:            'Dental Treatment',
+  pharmacy_sale_item:'Pharmacy (POS)',
+  manual:            'Manual',
 }
 
 interface ManualItem { description: string; qty: number; unit_price: number }

@@ -1,12 +1,23 @@
-import { listPendingPrescriptions, getStock, getAlerts, listDrugs } from '@/app/actions/pharmacy'
+import {
+  listPendingPrescriptions,
+  getStock,
+  getAlerts,
+  listDrugs,
+  listPackedAwaitingDispatch,
+} from '@/app/actions/pharmacy'
+import { listPharmacySales } from '@/app/actions/pharmacySale'
+import { listPatients } from '@/app/actions/patients'
 import PharmacyClient from './_components/PharmacyClient'
 
 export default async function PharmacyPage() {
-  const [pending, stock, alerts, drugs] = await Promise.all([
+  const [pending, stock, alerts, drugs, readySales, patients, awaitingDispatch] = await Promise.all([
     listPendingPrescriptions(),
     getStock(),
     getAlerts(),
     listDrugs(),
+    listPharmacySales({ status: 'billed' }),
+    listPatients(),
+    listPackedAwaitingDispatch(),
   ])
 
   return (
@@ -15,6 +26,9 @@ export default async function PharmacyPage() {
       initialStock={stock}
       initialAlerts={alerts}
       drugs={drugs}
+      initialReadySales={readySales}
+      allPatients={patients}
+      initialAwaitingDispatch={awaitingDispatch}
     />
   )
 }

@@ -563,6 +563,27 @@ export async function getBill(id: string): Promise<Bill | null> {
   return data as unknown as Bill | null
 }
 
+export async function getBillingStats(): Promise<{
+  todayBilled: number
+  todayCollected: number
+  totalOutstanding: number
+}> {
+  const supabase = await createClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  const [{ data: todayBills }, { data: todayPayments }, { data: unpaidBills }] = await Promise.all([
+    supabase.from('bills').select('total').gte('created_at', `${today}T00:00:00`).not('status', 'eq', 'cancelled'),
+    supabase.from('payments').select('amount').gte('received_at', `${today}T00:00:00`),
+    supabase.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
+  ])
+
+  return {
+    todayBilled:      (todayBills    ?? []).reduce((s, b) => s + (b.total  as number), 0),
+    todayCollected:   (todayPayments ?? []).reduce((s, p) => s + (p.amount as number), 0),
+    totalOutstanding: (unpaidBills   ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+  }
+}
+
 export async function listBills(filters?: {
   status?: string
   patientId?: string

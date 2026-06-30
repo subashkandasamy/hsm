@@ -19,7 +19,7 @@ export async function getPatientTimeline(
   const [
     opdVisits, emergencyVisits, admissions,
     labOrders, radOrders, otSchedules,
-    bloodIssues, documents,
+    bloodIssues, documents, pharmacyDispenses,
   ] = await Promise.all([
     // OPD visits
     want('opd_visit') ? supabase
@@ -88,6 +88,14 @@ export async function getPatientTimeline(
       .select('id, title, category, uploaded_at')
       .eq('patient_id', patientId)
       .order('uploaded_at', { ascending: false })
+      .limit(200) : { data: [] },
+
+    // Pharmacy dispenses (group by dispensed_at date)
+    want('pharmacy_dispense') ? supabase
+      .from('dispenses')
+      .select('id, qty, price_snapshot, dispensed_at, dispatched_at, drug:drugs(name)')
+      .eq('patient_id', patientId)
+      .order('dispensed_at', { ascending: false })
       .limit(200) : { data: [] },
   ])
 
@@ -226,6 +234,35 @@ export async function getPatientTimeline(
       summary: String(row.category).replace('_', ' '),
       refTable: 'patient_documents',
       refId: row.id as string,
+    })
+  }
+
+  // Pharmacy dispenses — group by day
+  const dispensesByDay = new Map<string, { id: string; drugName: string; qty: number; dispatched: boolean }[]>()
+  for (const d of (pharmacyDispenses.data ?? [])) {
+    const row = d as Record<string, unknown>
+    const day = (row.dispensed_at as string).split('T')[0]
+    const drug = row.drug as Record<string, unknown> | null
+    const entry = dispensesByDay.get(day) ?? []
+    entry.push({
+      id: row.id as string,
+      drugName: (drug?.name as string) ?? 'Medication',
+      qty: row.qty as number,
+      dispatched: !!(row.dispatched_at),
+    })
+    dispensesByDay.set(day, entry)
+  }
+  for (const [day, items] of dispensesByDay) {
+    const drugList = items.map((i) => `${i.drugName} ×${i.qty}`).join(', ')
+    const allDispatched = items.every((i) => i.dispatched)
+    events.push({
+      id: `pharmacy_${day}`,
+      type: 'pharmacy_dispense',
+      date: day,
+      title: `Pharmacy: ${items.length} drug${items.length !== 1 ? 's' : ''} dispensed`,
+      summary: drugList + (allDispatched ? ' · Dispatched' : ' · Awaiting dispatch'),
+      refTable: 'dispenses',
+      refId: items[0].id,
     })
   }
 

@@ -287,8 +287,8 @@ export interface BloodInventoryCell {
 // ---- Phase 5: Billing ----
 
 export type BillStatus = 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled'
-export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance'
-export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual'
+export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance' | 'advance'
+export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual'
 
 export interface Tariff { id: string; key: string; label: string | null; amount: number }
 
@@ -304,7 +304,7 @@ export interface Payment {
 }
 
 export interface Bill {
-  id: string; patient_id: string; visit_id: string | null; admission_id: string | null
+  id: string; patient_id: string; visit_id: string | null; admission_id: string | null; appointment_id: string | null
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
   status: BillStatus; created_by: string | null; created_at: string
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
@@ -375,7 +375,7 @@ export interface StockMovement {
 
 export interface StaffProfileRecord {
   profile_id: string; designation: string | null; joining_date: string | null
-  address: string | null; emergency_contact: string | null
+  address: string | null; emergency_contact: string | null; consultation_fee: number | null
 }
 
 export interface StaffMember extends Profile {
@@ -419,6 +419,7 @@ export type TimelineEventType =
   | 'opd_visit' | 'emergency_visit' | 'admission'
   | 'lab_order' | 'radiology_order'
   | 'ot_schedule' | 'blood_issue' | 'document'
+  | 'pharmacy_dispense'
 
 export interface TimelineEvent {
   id: string
@@ -492,7 +493,7 @@ export type Permission =
   | 'pharmacy:read' | 'pharmacy:dispense' | 'pharmacy:manage'
   | 'ot:read' | 'ot:schedule' | 'ot:record' | 'ot:manage'
   | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue'
-  | 'billing:read' | 'billing:write' | 'billing:manage'
+  | 'billing:read' | 'billing:write' | 'billing:manage' | 'billing:advance'
   | 'insurance:read' | 'insurance:write'
   | 'inventory:read' | 'inventory:manage'
   | 'hr:read' | 'hr:manage' | 'hr:attendance'
@@ -506,6 +507,7 @@ export type Permission =
   | 'settings:modules'
   | 'dental:read' | 'dental:write'
   | 'ophthalmology:write'
+  | 'tariffs:manage' | 'pharmacy:sale'
 
 export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
 export interface NavGroup { label: string; items: NavItem[] }
@@ -561,4 +563,69 @@ export interface DepartmentWithTemplate {
   description: string | null
   clinical_template: ClinicalTemplate
   created_at: string
+}
+
+// ---- Phase 15: POS Billing ----
+
+export interface ProcedureTariff {
+  id: string
+  tenant_id: string
+  name: string
+  category: 'surgery' | 'procedure' | 'package' | null
+  default_price: number
+  is_active: boolean
+  created_at: string
+}
+
+export type PharmacySaleStatus = 'draft' | 'billed' | 'paid' | 'fulfilled' | 'cancelled'
+
+export interface PharmacySaleItem {
+  id: string
+  pharmacy_sale_id: string
+  prescription_id: string | null
+  drug_id: string
+  qty: number
+  unit_price: number
+  amount: number
+  drug?: Pick<Drug, 'id' | 'name' | 'form' | 'strength' | 'unit'>
+}
+
+export interface PharmacySale {
+  id: string
+  patient_id: string
+  visit_id: string | null
+  bill_id: string | null
+  status: PharmacySaleStatus
+  created_by: string | null
+  created_at: string
+  items?: PharmacySaleItem[]
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  bill?: { id: string; bill_no: string; status: string; total: number; paid: number } | null
+}
+
+export interface AdmissionAdvance {
+  id: string
+  admission_id: string
+  amount: number
+  method: 'cash' | 'card' | 'upi' | 'bank_transfer'
+  received_by: string | null
+  received_at: string
+  receiver?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface AdmissionAdvanceRefund {
+  id: string
+  admission_id: string
+  amount: number
+  method: 'cash' | 'card' | 'upi' | 'bank_transfer'
+  refunded_by: string | null
+  refunded_at: string
+}
+
+export interface AdmissionFinancials {
+  totalAdvance: number
+  totalBilled: number
+  totalPaid: number
+  balanceDue: number
+  unusedAdvance: number
 }

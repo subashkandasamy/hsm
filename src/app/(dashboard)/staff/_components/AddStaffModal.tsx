@@ -34,6 +34,7 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
     designation: '',
     joining_date: '',
     temp_password: '',
+    consultation_fee: '',
   })
   const [showPw, setShowPw] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -70,6 +71,9 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
       designation: form.designation.trim() || undefined,
       joining_date: form.joining_date || undefined,
       temp_password: form.temp_password,
+      ...(form.role === 'doctor' && form.consultation_fee
+        ? { consultation_fee: parseFloat(form.consultation_fee) }
+        : {}),
     })
     setSaving(false)
     if (!res.success) { setError(res.error); return }
@@ -79,7 +83,7 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
   function handleClose() {
     if (createdPassword) onSuccess()
     setCreatedPassword(null)
-    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', temp_password: '' })
+    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', temp_password: '', consultation_fee: '' })
     setError('')
     onClose()
   }
@@ -178,6 +182,19 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
             <Input type="date" value={form.joining_date} onChange={(e) => set('joining_date', e.target.value)} />
           </FormField>
         </div>
+
+        {form.role === 'doctor' && (
+          <FormField label="Consultation Fee (₹)" hint="Per-visit fee billed at appointment booking. Leave blank to use the hospital default.">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.consultation_fee}
+              onChange={(e) => set('consultation_fee', e.target.value)}
+              placeholder="e.g. 500"
+            />
+          </FormField>
+        )}
 
         <FormField label="Temporary Password" required hint="Auto-generated or enter custom. Staff must change on first login.">
           <div className="flex gap-2">

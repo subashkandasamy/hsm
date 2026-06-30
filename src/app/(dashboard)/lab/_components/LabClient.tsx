@@ -49,6 +49,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<{ id: string; msg: string } | null>(null)
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [resultOrder, setResultOrder] = useState<LabOrder | null>(null)
@@ -71,7 +72,13 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
 
   async function handleCollect(orderId: string) {
     setActionId(orderId)
-    await collectSample(orderId)
+    setActionError(null)
+    const res = await collectSample(orderId)
+    if (!res.success) {
+      setActionError({ id: orderId, msg: res.error })
+      setActionId(null)
+      return
+    }
     await refresh()
     setActionId(null)
     setTab('results')
@@ -184,6 +191,11 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                   <p className="text-xs mt-1.5" style={{ color: '#94A3B8' }}>
                     {order.orderer?.full_name} · <DateText date={order.ordered_at} />
                   </p>
+                  {actionError?.id === order.id && (
+                    <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }}>
+                      ⚠ {actionError.msg}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -192,8 +204,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                       onClick={() => handleCollect(order.id)}
                       disabled={actionId === order.id}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                      style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
-                      Collect Sample
+                      style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
+                      {actionId === order.id ? 'Collecting…' : 'Collect Sample'}
                     </button>
                   )}
                   {tab === 'results' && canProcess && (
@@ -214,7 +226,10 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                     </>
                   )}
                   {tab === 'reported' && (
-                    <StatusBadge status="success" label="Unbilled" />
+                    <StatusBadge
+                      status={order.billing_status === 'billed' ? 'info' : 'pending'}
+                      label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'}
+                    />
                   )}
                 </div>
               </div>
