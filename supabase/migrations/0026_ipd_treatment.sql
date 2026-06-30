@@ -28,7 +28,7 @@ create table if not exists ipd_medication_orders (
   stop_at         timestamptz,
   status          text not null default 'active' check (status in ('active','stopped')),
   notes           text,
-  copied_from_visit_id uuid references visits(id),
+  copied_from_visit_id uuid,
   created_at      timestamptz default now()
 );
 
