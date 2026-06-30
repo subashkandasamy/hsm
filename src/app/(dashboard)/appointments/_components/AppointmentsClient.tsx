@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CalendarPlus, RefreshCw, CheckCircle, XCircle, Clock, ListOrdered } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import EmptyState from '@/components/ui/EmptyState'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -125,15 +126,14 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
           </button>
         </div>
 
-        <select
+        <Select
           value={doctorFilter}
           onChange={(e) => { setDoctorFilter(e.target.value); refresh(date, e.target.value) }}
-          className="w-full sm:w-auto px-3 py-2.5 rounded-xl text-sm"
-          style={{ minHeight: '44px', background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }}
+          className="w-full sm:w-48"
         >
           <option value="">All Doctors</option>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
-        </select>
+        </Select>
 
         {/* View toggle */}
         <div className="flex gap-1 p-1 rounded-xl sm:ml-auto"

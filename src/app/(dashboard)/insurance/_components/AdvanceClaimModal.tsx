@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import { advanceClaim } from '@/app/actions/insurance'
@@ -124,16 +125,11 @@ export default function AdvanceClaimModal({ claim, onClose, onAdvanced }: Props)
         {nextOptions.length > 1 && (
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Next Status</label>
-            <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value as InsuranceClaimStatus)}
-              className="w-full px-3 py-3 rounded-xl text-sm"
-              style={{
-                background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0',
-                color: '#0F172A', minHeight: '44px', outline: 'none',
-              }}>
+            <Select value={nextStatus} onChange={(e) => setNextStatus(e.target.value as InsuranceClaimStatus)}>
               {nextOptions.map((s) => (
                 <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
 

@@ -21,6 +21,7 @@ import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient,
 import type { PharmacyAlerts, AwaitingDispatchPatient } from '@/app/actions/pharmacy'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
+import Select from '@/components/ui/Select'
 import DispenseModal from './DispenseModal'
 import AddBatchModal from './AddBatchModal'
 import SaleCartBuilder from './SaleCartBuilder'
@@ -639,16 +640,17 @@ function DispenseQueue({
                   <div className="px-4 py-3" style={{ background: 'rgba(13,148,136,0.03)', borderTop: '1px solid #F1F5F9' }}>
                     <p className="text-xs font-semibold mb-2" style={{ color: '#0D9488' }}>Add Extra Drug</p>
                     <div className="flex flex-wrap gap-2 items-center">
-                      <select
+                      <Select
                         value={addDrugId}
                         onChange={(e) => setAddDrugId(e.target.value)}
-                        className="flex-1 rounded-xl text-sm px-3 py-2"
-                        style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A', minHeight: '40px', outline: 'none', minWidth: '180px' }}>
+                        className="flex-1"
+                        style={{ minWidth: '180px' }}
+                      >
                         <option value="">Select drug…</option>
                         {drugs.map((d) => (
                           <option key={d.id} value={d.id}>{d.name}{d.strength ? ` ${d.strength}` : ''}</option>
                         ))}
-                      </select>
+                      </Select>
                       <input
                         type="number" min={1} value={addDrugQty}
                         onChange={(e) => setAddDrugQty(Number(e.target.value) || 1)}

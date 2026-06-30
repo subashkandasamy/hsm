@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition } from 'react'
 import { UserCheck, X, Plus, AlertCircle } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Money from '@/components/ui/Money'
+import Select from '@/components/ui/Select'
 import { assignNurse, unassignNurse, listAssignments, listNurses } from '@/app/actions/nurseAssignment'
 import type { AdmissionNurseAssignment } from '@/lib/types'
 
@@ -137,11 +138,10 @@ export default function NursingPanel({ admissionId, canAssign, nurses: initialNu
                   </>
                 ) : canAssign ? (
                   <>
-                    <select
+                    <Select
                       value={form[value]}
                       onChange={(e) => setForm((f) => ({ ...f, [value]: e.target.value }))}
-                      className="flex-1 px-2 py-1 rounded-lg text-xs border"
-                      style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
+                      className="flex-1"
                     >
                       <option value="">Select nurse…</option>
                       {nurses.map((n) => (
@@ -149,7 +149,7 @@ export default function NursingPanel({ admissionId, canAssign, nurses: initialNu
                           {n.full_name}{n.nursing_charge_per_shift ? ` (₹${n.nursing_charge_per_shift})` : ' (no rate)'}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     <button
                       onClick={() => assign(value)}
                       disabled={isPending || !form[value]}

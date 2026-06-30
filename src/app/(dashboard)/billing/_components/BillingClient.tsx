@@ -8,6 +8,7 @@ import {
 import { useRouter } from 'next/navigation'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
@@ -242,18 +243,18 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         />
 
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="flex-1 px-3 py-2.5 rounded-xl text-sm"
-            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}>
+            className="flex-1"
+          >
             <option value="all">All statuses</option>
             <option value="draft">Draft</option>
             <option value="unpaid">Unpaid</option>
             <option value="partial">Partial</option>
             <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
-          </select>
+          </Select>
 
           {/* View toggle */}
           <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid #E2E8F0' }}>
@@ -414,15 +415,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       {collectError && (
                                         <span className="text-xs w-full" style={{ color: '#DC2626' }}>{collectError}</span>
                                       )}
-                                      <select
+                                      <Select
                                         value={collectMethod}
                                         onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)}
-                                        className="px-2 py-1.5 text-xs rounded-lg border"
-                                        style={{ borderColor: '#FDE68A', color: '#0F172A' }}>
+                                        style={{ minWidth: '110px' }}
+                                      >
                                         {PAYMENT_METHODS.map((m) => (
                                           <option key={m.value} value={m.value}>{m.label}</option>
                                         ))}
-                                      </select>
+                                      </Select>
                                       <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
                                         className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                                         style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>

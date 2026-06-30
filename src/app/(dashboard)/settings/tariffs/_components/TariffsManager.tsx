@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Plus, Pencil, Check, X, BadgeDollarSign, Bed, Stethoscope } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import Money from '@/components/ui/Money'
 import {
   updateWardRate,
@@ -243,15 +244,13 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
                   className="px-3 py-2 rounded-lg border text-sm"
                   style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                 />
-                <select
+                <Select
                   value={tariffForm.category}
                   onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
-                  className="px-3 py-2 rounded-lg border text-sm"
-                  style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                 >
                   <option value="">Category (optional)</option>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}
-                </select>
+                </Select>
                 <input
                   type="number"
                   min={0}
@@ -310,15 +309,13 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
                       </td>
                       <td className="py-3 hidden sm:table-cell" style={{ color: '#64748B' }}>
                         {isEditing ? (
-                          <select
+                          <Select
                             value={tariffForm.category}
                             onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
-                            className="px-2 py-1 text-sm rounded border"
-                            style={{ borderColor: '#CBD5E1' }}
                           >
                             <option value="">—</option>
                             {CATEGORIES.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}
-                          </select>
+                          </Select>
                         ) : catLabel(t.category)}
                       </td>
                       <td className="py-3 text-right">

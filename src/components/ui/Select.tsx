@@ -189,7 +189,7 @@ export default function Select({ value, onChange, children, hasError, required, 
         </ul>
       )}
 
-      {/* Hidden native select — for form required validation */}
+      {/* Hidden native select — form required validation only, never interactable */}
       <select
         value={value}
         required={required}
@@ -197,7 +197,11 @@ export default function Select({ value, onChange, children, hasError, required, 
         onChange={onChange}
         tabIndex={-1}
         aria-hidden="true"
-        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+        style={{
+          position: 'absolute', left: '-9999px', top: 'auto',
+          width: '1px', height: '1px', opacity: 0,
+          overflow: 'hidden', pointerEvents: 'none',
+        }}
       >
         {children}
       </select>

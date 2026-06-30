@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight, Copy, AlertCircle, X,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import SelectUI from '@/components/ui/Select'
 import {
   listOrders, createOrder, stopOrder,
   listSchedule, markGiven,
@@ -379,18 +380,16 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                       <input type="number" value={form.dose} onChange={(e) => setF('dose', e.target.value)}
                         placeholder="1.2" className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm border"
                         style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
-                      <select value={form.dose_unit} onChange={(e) => setF('dose_unit', e.target.value)}
-                        className="px-2 py-2 rounded-lg text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
-                        {DOSE_UNITS.map((u) => <option key={u}>{u}</option>)}
-                      </select>
+                      <SelectUI value={form.dose_unit} onChange={(e) => setF('dose_unit', e.target.value)} style={{ minWidth: '75px' }}>
+                        {DOSE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </SelectUI>
                     </div>
                   </div>
                   <div>
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Route</label>
-                    <select value={form.route} onChange={(e) => setF('route', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
-                      {ROUTES.map((r) => <option key={r}>{r}</option>)}
-                    </select>
+                    <SelectUI value={form.route} onChange={(e) => setF('route', e.target.value)}>
+                      {ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </SelectUI>
                   </div>
                 </div>
               )}
@@ -400,11 +399,10 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                 <div className="grid grid-cols-2 gap-2">
                   <div className="col-span-2">
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Fluid *</label>
-                    <select value={form.fluid_name} onChange={(e) => setF('fluid_name', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
+                    <SelectUI value={form.fluid_name} onChange={(e) => setF('fluid_name', e.target.value)}>
                       <option value="">Select fluid…</option>
-                      {FLUIDS.map((f) => <option key={f}>{f}</option>)}
-                    </select>
+                      {FLUIDS.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </SelectUI>
                   </div>
                   <div>
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Volume (ml)</label>
@@ -432,10 +430,9 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                   </div>
                   <div>
                     <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Delivery Method</label>
-                    <select value={form.delivery_method} onChange={(e) => setF('delivery_method', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
-                      {DELIVERY.map((d) => <option key={d}>{d}</option>)}
-                    </select>
+                    <SelectUI value={form.delivery_method} onChange={(e) => setF('delivery_method', e.target.value)}>
+                      {DELIVERY.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </SelectUI>
                   </div>
                 </div>
               )}
@@ -444,10 +441,9 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Frequency *</label>
-                  <select value={form.frequency_type} onChange={(e) => setF('frequency_type', e.target.value as FrequencyType)}
-                    className="w-full px-3 py-2 rounded-lg text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
+                  <SelectUI value={form.frequency_type} onChange={(e) => setF('frequency_type', e.target.value as FrequencyType)}>
                     {Object.entries(FREQ_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </SelectUI>
                 </div>
                 {form.frequency_type === 'every_x_hours' && (
                   <div>
@@ -657,14 +653,13 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
               <p className="text-sm text-center py-4" style={{ color: '#94A3B8' }}>No past OPD prescriptions found for this patient.</p>
             ) : (
               <>
-                <select value={copyVisitId} onChange={(e) => { setCopyVisitId(e.target.value); setSelectedPrx(new Set()) }}
-                  className="w-full px-3 py-2 rounded-xl text-sm border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }}>
+                <SelectUI value={copyVisitId} onChange={(e) => { setCopyVisitId(e.target.value); setSelectedPrx(new Set()) }}>
                   {visitGroups.map((g) => (
                     <option key={g.visitId} value={g.visitId}>
                       Visit — {new Date(g.visitDate).toLocaleDateString('en-IN')} ({g.prescriptions.length} drugs)
                     </option>
                   ))}
-                </select>
+                </SelectUI>
 
                 <div className="space-y-2 max-h-52 overflow-y-auto">
                   {currentGroup?.prescriptions.map((p) => (

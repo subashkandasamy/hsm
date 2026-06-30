@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Loader2 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import Money from '@/components/ui/Money'
 import { createClaim, listPolicies } from '@/app/actions/insurance'
 import { listBills } from '@/app/actions/billing'
@@ -141,19 +142,14 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
             {bills.length === 0 ? (
               <p className="text-sm" style={{ color: '#94A3B8' }}>No bills for this patient</p>
             ) : (
-              <select value={selectedBill} onChange={(e) => setSelectedBill(e.target.value)}
-                className="w-full px-3 py-3 rounded-xl text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0',
-                  color: '#0F172A', minHeight: '44px', outline: 'none',
-                }}>
+              <Select value={selectedBill} onChange={(e) => setSelectedBill(e.target.value)}>
                 <option value="">— Select bill —</option>
                 {bills.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.bill_no} · Balance: ₹{Math.max(0, b.total - b.paid).toFixed(0)} · {b.status}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </div>
 
@@ -162,12 +158,7 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
             {policies.length === 0 ? (
               <p className="text-sm" style={{ color: '#94A3B8' }}>No policies for this patient. Add a policy first.</p>
             ) : (
-              <select value={selectedPolicy} onChange={(e) => setSelectedPolicy(e.target.value)}
-                className="w-full px-3 py-3 rounded-xl text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0',
-                  color: '#0F172A', minHeight: '44px', outline: 'none',
-                }}>
+              <Select value={selectedPolicy} onChange={(e) => setSelectedPolicy(e.target.value)}>
                 <option value="">— Select policy —</option>
                 {policies.map((pol) => (
                   <option key={pol.id} value={pol.id}>
@@ -175,7 +166,7 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
                     {pol.coverage_amount ? ` · Coverage ₹${pol.coverage_amount}` : ''}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </div>
 

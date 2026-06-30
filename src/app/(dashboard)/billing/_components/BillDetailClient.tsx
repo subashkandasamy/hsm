@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Printer, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
@@ -424,24 +425,13 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Method</label>
-            <select
-              value={payMethod}
-              onChange={(e) => setPayMethod(e.target.value)}
-              className="w-full px-3 py-3 rounded-xl text-sm"
-              style={{
-                background: 'rgba(255,255,255,0.8)',
-                border: '1px solid #E2E8F0',
-                color: '#0F172A',
-                minHeight: '44px',
-                outline: 'none',
-              }}
-            >
+            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
               <option value="cash">Cash</option>
               <option value="card">Card</option>
               <option value="upi">UPI</option>
               <option value="bank_transfer">Bank Transfer</option>
               <option value="insurance">Insurance</option>
-            </select>
+            </Select>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reference (optional)</label>

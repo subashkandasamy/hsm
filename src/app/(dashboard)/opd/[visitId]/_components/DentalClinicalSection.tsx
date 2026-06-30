@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Plus, X, Save, CalendarCheck, AlertCircle } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import ToothChart from './ToothChart'
@@ -199,15 +200,14 @@ export default function DentalClinicalSection({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs mb-1" style={{ color: '#64748B' }}>Procedure *</label>
-                <select
+                <Select
                   value={treatForm.procedure}
                   onChange={(e) => setTreatForm((f) => ({ ...f, procedure: e.target.value }))}
-                  style={{ ...inputStyle, appearance: 'auto' }}
                 >
                   {PROCEDURES.map((p) => (
                     <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div>
                 <label className="block text-xs mb-1" style={{ color: '#64748B' }}>Price (₹) *</label>
@@ -322,12 +322,11 @@ export default function DentalClinicalSection({
               </div>
               <div>
                 <label className="block text-xs mb-1" style={{ color: '#64748B' }}>Reason</label>
-                <select value={recallReason} onChange={(e) => setRecallReason(e.target.value)}
-                  style={{ ...inputStyle, appearance: 'auto' }}>
+                <Select value={recallReason} onChange={(e) => setRecallReason(e.target.value)}>
                   <option value="cleaning">Cleaning</option>
                   <option value="followup">Follow-up</option>
                   <option value="review">Review</option>
-                </select>
+                </Select>
               </div>
             </div>
             <div className="flex gap-2">
