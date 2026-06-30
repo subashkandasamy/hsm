@@ -35,6 +35,7 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
     joining_date: '',
     temp_password: '',
     consultation_fee: '',
+    nursing_charge_per_shift: '',
   })
   const [showPw, setShowPw] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -74,6 +75,9 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
       ...(form.role === 'doctor' && form.consultation_fee
         ? { consultation_fee: parseFloat(form.consultation_fee) }
         : {}),
+      ...(form.role === 'nurse' && form.nursing_charge_per_shift
+        ? { nursing_charge_per_shift: parseFloat(form.nursing_charge_per_shift) }
+        : {}),
     })
     setSaving(false)
     if (!res.success) { setError(res.error); return }
@@ -83,7 +87,7 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
   function handleClose() {
     if (createdPassword) onSuccess()
     setCreatedPassword(null)
-    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', temp_password: '', consultation_fee: '' })
+    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', temp_password: '', consultation_fee: '', nursing_charge_per_shift: '' })
     setError('')
     onClose()
   }
@@ -192,6 +196,19 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
               value={form.consultation_fee}
               onChange={(e) => set('consultation_fee', e.target.value)}
               placeholder="e.g. 500"
+            />
+          </FormField>
+        )}
+
+        {form.role === 'nurse' && (
+          <FormField label="Nursing Charge per Shift (₹)" hint="Amount charged to the patient per nursing shift. Leave blank to use the ward default.">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.nursing_charge_per_shift}
+              onChange={(e) => set('nursing_charge_per_shift', e.target.value)}
+              placeholder="e.g. 300"
             />
           </FormField>
         )}

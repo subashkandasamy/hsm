@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import {
   Plus, RefreshCw, Receipt, LayoutList, Users,
-  Wallet, AlertCircle, ChevronDown, ChevronRight,
+  Wallet, AlertCircle, ChevronDown, ChevronRight, BedDouble,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PageHeader from '@/components/ui/PageHeader'
@@ -12,7 +12,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import { listBills, getBillingStats } from '@/app/actions/billing'
-import { collectAdvanceDeposit, listPendingAdvanceDeposits } from '@/app/actions/admissionBilling'
+import { collectAdvanceDeposit, listAllAdvanceDeposits } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
@@ -26,6 +26,13 @@ const STATUS_MAP: Record<string, string> = {
   cancelled: 'cancelled',
 }
 
+const PAYMENT_METHODS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'card', label: 'Card' },
+  { value: 'upi', label: 'UPI' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+] as const
+
 interface BillingStats {
   todayBilled: number
   todayCollected: number
@@ -37,56 +44,51 @@ interface PatientGroup {
   patientName: string
   uhid: string
   bills: Bill[]
+  deposits: AdvanceDepositRequest[]
   totalBilled: number
   totalPaid: number
   totalOutstanding: number
+  pendingAdvance: number
 }
 
 interface Props {
   initialBills: Bill[]
   initialStats: BillingStats
-  initialPendingDeposits: AdvanceDepositRequest[]
+  initialDeposits: AdvanceDepositRequest[]
 }
 
 type ViewMode = 'list' | 'patient'
 
-const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Card' },
-  { value: 'upi', label: 'UPI' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-] as const
-
-export default function BillingClient({ initialBills, initialStats, initialPendingDeposits }: Props) {
+export default function BillingClient({ initialBills, initialStats, initialDeposits }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite = !!role && hasPermission(role, 'billing:write')
+  const canWrite  = !!role && hasPermission(role, 'billing:write')
   const canAdvance = !!role && hasPermission(role, 'billing:advance')
   const router = useRouter()
 
-  const [bills, setBills]                       = useState(initialBills)
-  const [stats, setStats]                       = useState(initialStats)
-  const [pendingDeposits, setPendingDeposits]   = useState(initialPendingDeposits)
-  const [loading, setLoading]                   = useState(false)
-  const [showBuilder, setShowBuilder]           = useState(false)
-  const [statusFilter, setStatusFilter]         = useState('all')
-  const [search, setSearch]                     = useState('')
-  const [viewMode, setViewMode]                 = useState<ViewMode>('list')
+  const [bills, setBills]       = useState(initialBills)
+  const [stats, setStats]       = useState(initialStats)
+  const [deposits, setDeposits] = useState(initialDeposits)
+  const [loading, setLoading]   = useState(false)
+  const [showBuilder, setShowBuilder] = useState(false)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch]     = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>('patient')
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
-  // Advance deposit collection
-  const [collectingId, setCollectingId]         = useState<string | null>(null)
-  const [collectMethod, setCollectMethod]       = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
-  const [collectError, setCollectError]         = useState('')
-  const [collectPending, setCollectPending]     = useState(false)
+  // Advance collection state
+  const [collectingId, setCollectingId]     = useState<string | null>(null)
+  const [collectMethod, setCollectMethod]   = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
+  const [collectError, setCollectError]     = useState('')
+  const [collectPending, setCollectPending] = useState(false)
 
   async function refresh() {
     setLoading(true)
-    const [data, newStats, deposits] = await Promise.all([
-      listBills(), getBillingStats(), listPendingAdvanceDeposits(),
+    const [data, newStats, newDeposits] = await Promise.all([
+      listBills(), getBillingStats(), listAllAdvanceDeposits(),
     ])
     setBills(data)
     setStats(newStats)
-    setPendingDeposits(deposits)
+    setDeposits(newDeposits)
     setLoading(false)
   }
 
@@ -96,9 +98,11 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
     const res = await collectAdvanceDeposit(requestId, collectMethod)
     setCollectPending(false)
     if (!res.success) { setCollectError(res.error); return }
-    setPendingDeposits((prev) => prev.filter((d) => d.id !== requestId))
+    // Mark it collected in local state
+    setDeposits((prev) =>
+      prev.map((d) => d.id === requestId ? { ...d, status: 'collected', method: collectMethod } : d)
+    )
     setCollectingId(null)
-    // Refresh financials totals
     const [newStats] = await Promise.all([getBillingStats()])
     setStats(newStats)
   }
@@ -111,20 +115,10 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
     })
   }
 
-  const filtered = useMemo(() =>
-    bills.filter((b) => {
-      const matchStatus = statusFilter === 'all' || b.status === statusFilter
-      const q = search.toLowerCase()
-      const matchSearch = !q ||
-        b.bill_no.toLowerCase().includes(q) ||
-        (b.patient?.full_name ?? '').toLowerCase().includes(q) ||
-        (b.patient?.uhid ?? '').toLowerCase().includes(q)
-      return matchStatus && matchSearch
-    }),
-  [bills, statusFilter, search])
-
+  // ── Patient groups: merge bills + deposits keyed by patient_id ──────────────
   const patientGroups = useMemo<PatientGroup[]>(() => {
     const map = new Map<string, PatientGroup>()
+
     for (const bill of bills) {
       const pid = (bill as unknown as { patient_id: string }).patient_id
       if (!pid) continue
@@ -140,22 +134,68 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
           patientName:      bill.patient?.full_name ?? 'Unknown',
           uhid:             bill.patient?.uhid ?? '',
           bills:            [bill],
+          deposits:         [],
           totalBilled:      bill.total,
           totalPaid:        bill.paid,
           totalOutstanding: Math.max(0, bill.total - bill.paid),
+          pendingAdvance:   0,
         })
       }
     }
-    return Array.from(map.values()).sort((a, b) => b.totalOutstanding - a.totalOutstanding)
-  }, [bills])
+
+    // Attach deposits to matching patient group; create a group even if no bills yet
+    for (const dep of deposits) {
+      const pid = dep.patient_id
+      if (!pid) continue
+      const g = map.get(pid)
+      if (g) {
+        g.deposits.push(dep)
+        if (dep.status === 'pending') g.pendingAdvance += dep.amount
+      } else {
+        map.set(pid, {
+          patientId:        pid,
+          patientName:      dep.patient?.full_name ?? 'Unknown',
+          uhid:             dep.patient?.uhid ?? '',
+          bills:            [],
+          deposits:         [dep],
+          totalBilled:      0,
+          totalPaid:        0,
+          totalOutstanding: 0,
+          pendingAdvance:   dep.status === 'pending' ? dep.amount : 0,
+        })
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      // Pending advance first, then outstanding bills, then cleared
+      const aUrgent = (a.pendingAdvance > 0 ? 2 : 0) + (a.totalOutstanding > 0 ? 1 : 0)
+      const bUrgent = (b.pendingAdvance > 0 ? 2 : 0) + (b.totalOutstanding > 0 ? 1 : 0)
+      return bUrgent - aUrgent || b.totalOutstanding - a.totalOutstanding
+    })
+  }, [bills, deposits])
 
   const filteredGroups = useMemo(() => {
-    if (!search) return patientGroups
+    const byStatus = statusFilter === 'all'
+      ? patientGroups
+      : patientGroups.filter((g) => g.bills.some((b) => b.status === statusFilter))
+    if (!search) return byStatus
     const q = search.toLowerCase()
-    return patientGroups.filter(
+    return byStatus.filter(
       (g) => g.patientName.toLowerCase().includes(q) || g.uhid.toLowerCase().includes(q)
     )
-  }, [patientGroups, search])
+  }, [patientGroups, statusFilter, search])
+
+  const filtered = useMemo(() =>
+    bills.filter((b) => {
+      const matchStatus = statusFilter === 'all' || b.status === statusFilter
+      const q = search.toLowerCase()
+      const matchSearch = !q ||
+        b.bill_no.toLowerCase().includes(q) ||
+        (b.patient?.full_name ?? '').toLowerCase().includes(q) ||
+        (b.patient?.uhid ?? '').toLowerCase().includes(q)
+      return matchStatus && matchSearch
+    }),
+  [bills, statusFilter, search])
 
   return (
     <div>
@@ -176,10 +216,10 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
         }
       />
 
-      {/* ── Stat cards — 3-column compact on mobile ── */}
+      {/* ── Stat cards ── */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
-        <StatCard label="Today Billed"    value={stats.todayBilled}      icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />}      color="#0D9488" />
-        <StatCard label="Collected"       value={stats.todayCollected}   icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}       color="#10B981" />
+        <StatCard label="Today Billed"  value={stats.todayBilled}    icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />}   color="#0D9488" />
+        <StatCard label="Collected"     value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}    color="#10B981" />
         <StatCard
           label="Outstanding"
           value={stats.totalOutstanding}
@@ -188,88 +228,11 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
         />
       </div>
 
-      {/* ── Pending advance deposits ── */}
-      {canAdvance && pendingDeposits.length > 0 && (
-        <GlassCard className="mb-5">
-          <div className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Wallet className="w-4 h-4 flex-shrink-0" style={{ color: '#D97706' }} />
-              <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
-                Pending Advance Deposits
-              </h3>
-              <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold"
-                style={{ background: '#FEF3C7', color: '#92400E' }}>
-                {pendingDeposits.length}
-              </span>
-            </div>
-            {collectError && (
-              <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: '#FEF2F2', color: '#DC2626' }}>
-                {collectError}
-              </div>
-            )}
-            <div className="space-y-2">
-              {pendingDeposits.map((dep) => (
-                <div key={dep.id} className="flex items-center gap-3 px-3 py-3 rounded-xl flex-wrap"
-                  style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
-                      {dep.patient?.full_name ?? '—'}
-                      <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>
-                        {dep.patient?.uhid}
-                      </span>
-                    </p>
-                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                      {dep.admission?.ward?.name} — Bed {dep.admission?.bed?.bed_no}
-                      {dep.admission?.admitted_at && (
-                        <> · Admitted {new Date(dep.admission.admitted_at).toLocaleDateString('en-IN')}</>
-                      )}
-                    </p>
-                  </div>
-                  <Money amount={dep.amount} className="font-bold flex-shrink-0"
-                    style={{ color: '#D97706', fontSize: '1rem' }} />
-
-                  {collectingId === dep.id ? (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <select
-                        value={collectMethod}
-                        onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)}
-                        className="px-2 py-1.5 text-sm rounded-lg border"
-                        style={{ borderColor: '#FDE68A', color: '#0F172A' }}>
-                        {PAYMENT_METHODS.map((m) => (
-                          <option key={m.value} value={m.value}>{m.label}</option>
-                        ))}
-                      </select>
-                      <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#0D9488', color: '#fff' }}>
-                        {collectPending ? '…' : 'Collect'}
-                      </button>
-                      <button onClick={() => { setCollectingId(null); setCollectError('') }}
-                        className="px-2 py-1.5 rounded-lg text-xs"
-                        style={{ background: '#F1F5F9', color: '#64748B' }}>
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
-                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                      style={{ background: '#D97706', color: '#fff' }}>
-                      Collect
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </GlassCard>
-      )}
-
-      {/* ── Controls — search full width, rest on one row ── */}
+      {/* ── Controls ── */}
       <div className="flex flex-col gap-2 mb-4">
         <input
           type="search"
-          placeholder={viewMode === 'list' ? 'Search by bill no, patient name or UHID…' : 'Search by patient name or UHID…'}
+          placeholder="Search patient name or UHID…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm"
@@ -279,26 +242,24 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
         />
 
         <div className="flex items-center gap-2">
-          {viewMode === 'list' && (
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="flex-1 px-3 py-2.5 rounded-xl text-sm"
-              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}>
-              <option value="all">All statuses</option>
-              <option value="draft">Draft</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          )}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex-1 px-3 py-2.5 rounded-xl text-sm"
+            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}>
+            <option value="all">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="partial">Partial</option>
+            <option value="paid">Paid</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
 
           {/* View toggle */}
           <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid #E2E8F0' }}>
             {([
-              { key: 'list',    label: 'All Bills',  Icon: LayoutList },
               { key: 'patient', label: 'By Patient', Icon: Users },
+              { key: 'list',    label: 'All Bills',  Icon: LayoutList },
             ] as const).map(({ key, label, Icon }) => (
               <button key={key} onClick={() => setViewMode(key)}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium"
@@ -319,31 +280,240 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
         </div>
       </div>
 
-      {/* ── All Bills (flat list) ── */}
+      {/* ── By Patient (grouped) — DEFAULT ── */}
+      {viewMode === 'patient' && (
+        <div className="space-y-3">
+          {filteredGroups.length === 0
+            ? <GlassCard className="p-8"><EmptyBills /></GlassCard>
+            : filteredGroups.map((group) => {
+                const expanded        = expandedPatients.has(group.patientId)
+                const hasOutstanding  = group.totalOutstanding > 0
+                const hasPendingAdv   = group.pendingAdvance > 0
+                const sortedBills     = [...group.bills].sort(
+                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )
+                const billCount  = group.bills.length
+                const depCount   = group.deposits.length
+                const itemLabel  = billCount + depCount === 1 ? 'item' : 'items'
+
+                return (
+                  <GlassCard key={group.patientId} className="overflow-hidden">
+                    {/* Patient header row */}
+                    <button
+                      onClick={() => togglePatient(group.patientId)}
+                      className="w-full px-4 py-3 text-left"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                          style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
+                          {group.patientName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm" style={{ color: '#0F172A' }}>{group.patientName}</span>
+                            <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{group.uhid}</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded-lg" style={{ background: '#F1F5F9', color: '#64748B' }}>
+                              {billCount + depCount} {itemLabel}
+                            </span>
+                          </div>
+                          {/* Summary line */}
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            {billCount > 0 && (
+                              <>
+                                <span className="text-xs" style={{ color: '#64748B' }}>
+                                  Billed: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={group.totalBilled} /></span>
+                                </span>
+                                <span className="text-xs" style={{ color: '#64748B' }}>
+                                  Paid: <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={group.totalPaid} /></span>
+                                </span>
+                              </>
+                            )}
+                            {hasPendingAdv && (
+                              <span className="text-xs" style={{ color: '#64748B' }}>
+                                Advance due: <span className="font-semibold" style={{ color: '#D97706' }}><Money amount={group.pendingAdvance} /></span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Status chip */}
+                        <div className="flex-shrink-0 flex items-center gap-1.5">
+                          {hasPendingAdv && (
+                            <div className="px-2 py-0.5 rounded-lg text-xs font-semibold"
+                              style={{ background: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A' }}>
+                              Advance
+                            </div>
+                          )}
+                          {hasOutstanding ? (
+                            <div className="px-2.5 py-1 rounded-xl text-xs font-bold"
+                              style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.15)' }}>
+                              <Money amount={group.totalOutstanding} /> due
+                            </div>
+                          ) : billCount > 0 ? (
+                            <div className="px-2.5 py-1 rounded-xl text-xs font-bold"
+                              style={{ background: 'rgba(16,185,129,0.08)', color: '#10B981', border: '1px solid rgba(16,185,129,0.15)' }}>
+                              Cleared
+                            </div>
+                          ) : null}
+                          <div style={{ color: '#94A3B8' }}>
+                            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Expanded items */}
+                    {expanded && (billCount > 0 || depCount > 0) && (
+                      <div style={{ borderTop: '1px solid #F1F5F9' }}>
+
+                        {/* Advance deposit rows */}
+                        {group.deposits.map((dep) => {
+                          const isPending   = dep.status === 'pending'
+                          const isCollected = dep.status === 'collected'
+                          const isCollecting = collectingId === dep.id
+
+                          return (
+                            <div key={dep.id}
+                              className="px-4 py-3"
+                              style={{
+                                background: isPending ? 'rgba(254,243,199,0.4)' : 'rgba(240,253,250,0.4)',
+                                borderBottom: '1px solid #F1F5F9',
+                              }}>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                {/* Icon + label */}
+                                <BedDouble className="w-4 h-4 flex-shrink-0" style={{ color: isPending ? '#D97706' : '#0D9488' }} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>
+                                      IPD Advance Deposit
+                                    </span>
+                                    <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                      style={isPending
+                                        ? { background: '#FEF3C7', color: '#92400E' }
+                                        : isCollected
+                                          ? { background: 'rgba(16,185,129,0.1)', color: '#065F46' }
+                                          : { background: '#F1F5F9', color: '#64748B' }}>
+                                      {dep.status}
+                                    </span>
+                                    {dep.method && (
+                                      <span className="text-xs" style={{ color: '#94A3B8' }}>· {dep.method}</span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                                    {dep.admission?.ward?.name}{dep.admission?.bed?.bed_no ? ` — Bed ${dep.admission.bed.bed_no}` : ''}
+                                  </p>
+                                </div>
+                                <Money amount={dep.amount} className="font-bold flex-shrink-0"
+                                  style={{ color: isPending ? '#D97706' : '#0D9488', fontSize: '0.95rem' }} />
+
+                                {/* Collect inline */}
+                                {isPending && canAdvance && (
+                                  isCollecting ? (
+                                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                      {collectError && (
+                                        <span className="text-xs w-full" style={{ color: '#DC2626' }}>{collectError}</span>
+                                      )}
+                                      <select
+                                        value={collectMethod}
+                                        onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)}
+                                        className="px-2 py-1.5 text-xs rounded-lg border"
+                                        style={{ borderColor: '#FDE68A', color: '#0F172A' }}>
+                                        {PAYMENT_METHODS.map((m) => (
+                                          <option key={m.value} value={m.value}>{m.label}</option>
+                                        ))}
+                                      </select>
+                                      <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                        {collectPending ? '…' : 'Confirm'}
+                                      </button>
+                                      <button onClick={() => { setCollectingId(null); setCollectError('') }}
+                                        className="px-2 py-1.5 rounded-lg text-xs"
+                                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
+                                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                      style={{ background: '#D97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                      Collect
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        {/* Bill rows */}
+                        {sortedBills.map((bill, i) => {
+                          const balance = Math.max(0, bill.total - bill.paid)
+                          return (
+                            <div key={bill.id}
+                              className="px-4 py-3 cursor-pointer"
+                              style={{
+                                borderBottom: i < sortedBills.length - 1 ? '1px solid #F8FAFC' : 'none',
+                                background: 'rgba(248,250,252,0.5)',
+                              }}
+                              onClick={() => router.push(`/billing/${bill.id}`)}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.5)' }}>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="font-mono text-xs font-semibold" style={{ color: '#0D9488' }}>
+                                  {bill.bill_no}
+                                </span>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                  <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs flex-wrap">
+                                <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
+                                <span style={{ color: '#64748B' }}>
+                                  Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
+                                </span>
+                                {balance > 0 ? (
+                                  <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
+                                ) : (
+                                  <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </GlassCard>
+                )
+              })
+          }
+        </div>
+      )}
+
+      {/* ── All Bills flat list ── */}
       {viewMode === 'list' && (
         <GlassCard>
-          {/* Mobile card list */}
+          {/* Mobile */}
           <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
             {filtered.length === 0 ? <EmptyBills /> : filtered.map((bill) => {
               const balance = Math.max(0, bill.total - bill.paid)
               return (
                 <div key={bill.id} className="px-4 py-3.5 cursor-pointer"
                   onClick={() => router.push(`/billing/${bill.id}`)}>
-                  {/* Row 1: bill no + status */}
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <p className="font-mono text-sm font-semibold" style={{ color: '#0D9488' }}>{bill.bill_no}</p>
                     <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
                   </div>
-                  {/* Row 2: patient */}
                   <p className="text-xs mb-1.5" style={{ color: '#64748B' }}>
                     {bill.patient?.full_name} · {bill.patient?.uhid}
                   </p>
-                  {/* Row 3: total + due + date */}
                   <div className="flex items-center justify-between text-xs">
                     <span style={{ color: '#64748B' }}>
                       Total: <Money amount={bill.total} className="font-semibold" style={{ color: '#0F172A' }} />
-                      {' '}&nbsp;
-                      <DateText date={bill.created_at} />
+                      {' '}&nbsp;<DateText date={bill.created_at} />
                     </span>
                     <span style={{ color: balance > 0 ? '#EF4444' : '#10B981', fontWeight: 600 }}>
                       {balance > 0 ? <>Due: <Money amount={balance} /></> : 'Cleared'}
@@ -396,125 +566,6 @@ export default function BillingClient({ initialBills, initialStats, initialPendi
             </table>
           </div>
         </GlassCard>
-      )}
-
-      {/* ── By Patient (grouped) ── */}
-      {viewMode === 'patient' && (
-        <div className="space-y-3">
-          {filteredGroups.length === 0
-            ? <GlassCard className="p-8"><EmptyBills /></GlassCard>
-            : filteredGroups.map((group) => {
-                const expanded       = expandedPatients.has(group.patientId)
-                const hasOutstanding = group.totalOutstanding > 0
-                const sortedBills    = [...group.bills].sort(
-                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                )
-
-                return (
-                  <GlassCard key={group.patientId} className="overflow-hidden">
-                    {/* Patient header */}
-                    <button
-                      onClick={() => togglePatient(group.patientId)}
-                      className="w-full px-4 py-3 text-left"
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-
-                      {/* Row 1: avatar + name + uhid + chevron */}
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-                          style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
-                          {group.patientName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{group.patientName}</span>
-                            <span className="font-mono text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{group.uhid}</span>
-                            <span className="text-xs px-1.5 py-0.5 rounded-lg flex-shrink-0" style={{ background: '#F1F5F9', color: '#64748B' }}>
-                              {group.bills.length} bill{group.bills.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0 flex items-center gap-1">
-                          <div className="px-2.5 py-1 rounded-xl text-xs font-bold flex-shrink-0"
-                            style={hasOutstanding
-                              ? { background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.15)' }
-                              : { background: 'rgba(16,185,129,0.08)', color: '#10B981', border: '1px solid rgba(16,185,129,0.15)' }}>
-                            {hasOutstanding ? <><Money amount={group.totalOutstanding} /> due</> : 'Cleared'}
-                          </div>
-                          <div style={{ color: '#94A3B8' }}>
-                            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Row 2: billed / paid / due summary */}
-                      <div className="flex items-center gap-3 mt-2 flex-wrap" style={{ paddingLeft: '48px' }}>
-                        <span className="text-xs" style={{ color: '#64748B' }}>
-                          Billed: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={group.totalBilled} /></span>
-                        </span>
-                        <span className="text-xs" style={{ color: '#64748B' }}>
-                          Paid: <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={group.totalPaid} /></span>
-                        </span>
-                        {hasOutstanding && (
-                          <span className="text-xs" style={{ color: '#64748B' }}>
-                            Due: <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={group.totalOutstanding} /></span>
-                          </span>
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Expanded: individual bills */}
-                    {expanded && (
-                      <div style={{ borderTop: '1px solid #F1F5F9' }}>
-                        {sortedBills.map((bill, i) => {
-                          const balance = Math.max(0, bill.total - bill.paid)
-                          return (
-                            <div key={bill.id}
-                              className="px-4 py-3 cursor-pointer"
-                              style={{
-                                borderBottom: i < sortedBills.length - 1 ? '1px solid #F8FAFC' : 'none',
-                                background: 'rgba(248,250,252,0.5)',
-                              }}
-                              onClick={() => router.push(`/billing/${bill.id}`)}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.5)' }}>
-
-                              {/* Row 1: bill no + status + view */}
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <span className="font-mono text-xs font-semibold" style={{ color: '#0D9488' }}>
-                                  {bill.bill_no}
-                                </span>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
-                                  <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>
-                                    View
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Row 2: date + total + due */}
-                              <div className="flex items-center gap-3 text-xs flex-wrap">
-                                <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
-                                <span style={{ color: '#64748B' }}>
-                                  Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
-                                </span>
-                                {balance > 0 ? (
-                                  <span className="font-semibold" style={{ color: '#EF4444' }}>
-                                    <Money amount={balance} /> due
-                                  </span>
-                                ) : (
-                                  <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </GlassCard>
-                )
-              })
-          }
-        </div>
       )}
 
       {showBuilder && (

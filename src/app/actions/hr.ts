@@ -19,7 +19,7 @@ export async function listStaff(filters?: { role?: string; departmentId?: string
   const supabase = await createClient()
   let q = supabase
     .from('profiles')
-    .select('*, staff:staff_profiles(profile_id, designation, joining_date, address, emergency_contact, consultation_fee)')
+    .select('*, staff:staff_profiles(profile_id, designation, joining_date, address, emergency_contact, consultation_fee, nursing_charge_per_shift)')
     .order('full_name')
 
   if (filters?.role) q = q.eq('role', filters.role)
@@ -33,7 +33,7 @@ export async function getStaff(profileId: string): Promise<StaffMember | null> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('profiles')
-    .select('*, staff:staff_profiles(profile_id, designation, joining_date, address, emergency_contact, consultation_fee)')
+    .select('*, staff:staff_profiles(profile_id, designation, joining_date, address, emergency_contact, consultation_fee, nursing_charge_per_shift)')
     .eq('id', profileId)
     .single()
   return data as unknown as StaffMember | null
@@ -76,13 +76,14 @@ export async function createStaff(
     return { success: false, error: profileErr.message }
   }
 
-  if (parsed.data.designation || parsed.data.joining_date || parsed.data.consultation_fee != null) {
+  if (parsed.data.designation || parsed.data.joining_date || parsed.data.consultation_fee != null || parsed.data.nursing_charge_per_shift != null) {
     await supabase.from('staff_profiles').upsert({
       profile_id: profileId,
       tenant_id: actor.tenant_id,
       designation: parsed.data.designation ?? null,
       joining_date: parsed.data.joining_date ?? null,
       consultation_fee: parsed.data.consultation_fee ?? null,
+      nursing_charge_per_shift: parsed.data.nursing_charge_per_shift ?? null,
     }, { onConflict: 'profile_id' })
   }
 
@@ -117,7 +118,8 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   if (parsed.data.joining_date !== undefined)      staffData.joining_date      = parsed.data.joining_date
   if (parsed.data.address !== undefined)           staffData.address           = parsed.data.address
   if (parsed.data.emergency_contact !== undefined) staffData.emergency_contact = parsed.data.emergency_contact
-  if (parsed.data.consultation_fee !== undefined)  staffData.consultation_fee  = parsed.data.consultation_fee
+  if (parsed.data.consultation_fee !== undefined)          staffData.consultation_fee          = parsed.data.consultation_fee
+  if (parsed.data.nursing_charge_per_shift !== undefined)  staffData.nursing_charge_per_shift  = parsed.data.nursing_charge_per_shift
 
   if (Object.keys(staffData).length > 0) {
     await supabase.from('staff_profiles')

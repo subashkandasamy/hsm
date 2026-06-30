@@ -139,18 +139,28 @@ export async function listNurses(): Promise<Array<{
   nursing_charge_per_shift: number | null
 }>> {
   const supabase = await createClient()
-  const { data } = await supabase
+
+  const { data: nurses } = await supabase
     .from('profiles')
-    .select('id, full_name, staff_profiles(nursing_charge_per_shift)')
+    .select('id, full_name')
     .eq('role', 'nurse')
     .eq('is_active', true)
     .order('full_name')
 
-  return (data ?? []).map((p) => ({
-    id: p.id as string,
-    full_name: p.full_name as string,
-    nursing_charge_per_shift:
-      ((p.staff_profiles as unknown as Array<{ nursing_charge_per_shift: number | null }>)?.[0]
-        ?.nursing_charge_per_shift) ?? null,
+  if (!nurses?.length) return []
+
+  const { data: sp } = await supabase
+    .from('staff_profiles')
+    .select('profile_id, nursing_charge_per_shift')
+    .in('profile_id', nurses.map((n) => n.id as string))
+
+  const rateMap = new Map(
+    (sp ?? []).map((r) => [r.profile_id as string, r.nursing_charge_per_shift as number | null])
+  )
+
+  return nurses.map((n) => ({
+    id: n.id as string,
+    full_name: n.full_name as string,
+    nursing_charge_per_shift: rateMap.get(n.id as string) ?? null,
   }))
 }

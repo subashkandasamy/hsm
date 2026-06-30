@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt,
-  Wallet, IndianRupee, Stethoscope,
+  Pill, IndianRupee, Stethoscope,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -21,11 +21,11 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ipd'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
-import FinancialPanel from './FinancialPanel'
+import TreatmentPanel from './TreatmentPanel'
 import NursingPanel from './NursingPanel'
 import type {
-  Admission, IpdProgressNote, Vitals, AdmissionFinancials,
-  AdmissionAdvance, ProcedureTariff, AdvanceDepositRequest, AdmissionNurseAssignment,
+  Admission, IpdProgressNote, Vitals,
+  AdvanceDepositRequest, AdmissionNurseAssignment,
 } from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
@@ -44,9 +44,6 @@ interface Props {
   admission: Admission
   initialNotes: IpdProgressNote[]
   availableWards: WardOption[]
-  financials: AdmissionFinancials
-  initialAdvances: AdmissionAdvance[]
-  procedureTariffs: ProcedureTariff[]
   nurses: NurseOption[]
   today: string
   depositStatus: AdvanceDepositRequest | null
@@ -55,19 +52,17 @@ interface Props {
 
 export default function AdmissionDetail({
   admission, initialNotes, availableWards,
-  financials, initialAdvances, procedureTariffs,
   nurses, today, depositStatus, todayAssignments,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const canWrite   = profile && hasPermission(profile.role, 'ipd:write')
   const canNote    = profile && hasPermission(profile.role, 'ipd:notes')
-  const canAdvance = profile && hasPermission(profile.role, 'billing:advance')
   const canNursing = profile && hasPermission(profile.role, 'ipd:nursing')
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'financials' | 'nursing'>('clinical')
+  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing'>('clinical')
 
   // Progress note form
   const [note, setNote] = useState('')
@@ -288,8 +283,8 @@ export default function AdmissionDetail({
         style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
         {([
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
+          { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
-          { key: 'financials', label: 'Financials', Icon: Wallet      },
         ] as const).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
@@ -434,7 +429,14 @@ export default function AdmissionDetail({
                   <p className="text-xs font-semibold" style={{ color: '#0D9488' }}>
                     {n.author?.full_name ?? 'Unknown'} · <span className="capitalize">{n.author?.role}</span>
                   </p>
-                  <span className="text-xs" style={{ color: '#94A3B8' }}><DateText date={n.created_at} /></span>
+                  <span className="text-xs" style={{ color: '#94A3B8' }}>
+                    {n.created_at
+                      ? new Date(n.created_at).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit', hour12: true,
+                        })
+                      : '—'}
+                  </span>
                 </div>
                 <p className="text-sm" style={{ color: '#0F172A', whiteSpace: 'pre-wrap' }}>{n.note}</p>
                 {n.vitals && Object.values(n.vitals).some(Boolean) && (
@@ -453,15 +455,13 @@ export default function AdmissionDetail({
         </div>
       )}
 
-      {/* ── Financials tab ── */}
-      {activeTab === 'financials' && (
-        <FinancialPanel
+      {/* ── Treatment tab ── */}
+      {activeTab === 'treatment' && (
+        <TreatmentPanel
           admissionId={adm.id}
-          initialFinancials={financials}
-          initialAdvances={initialAdvances}
-          canAdvance={!!canAdvance}
-          procedureTariffs={procedureTariffs}
-          wardId={adm.ward_id}
+          patientId={adm.patient_id}
+          canOrder={!!canWrite}
+          canGive={!!canNursing}
         />
       )}
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition } from 'react'
 import { UserCheck, X, Plus, AlertCircle } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Money from '@/components/ui/Money'
-import { assignNurse, unassignNurse, listAssignments } from '@/app/actions/nurseAssignment'
+import { assignNurse, unassignNurse, listAssignments, listNurses } from '@/app/actions/nurseAssignment'
 import type { AdmissionNurseAssignment } from '@/lib/types'
 
 interface Nurse { id: string; full_name: string; nursing_charge_per_shift: number | null }
@@ -25,8 +25,9 @@ function dateLabel(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
-export default function NursingPanel({ admissionId, canAssign, nurses, today }: Props) {
+export default function NursingPanel({ admissionId, canAssign, nurses: initialNurses, today }: Props) {
   const [assignments, setAssignments] = useState<AdmissionNurseAssignment[]>([])
+  const [nurses, setNurses] = useState<Nurse[]>(initialNurses)
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -35,8 +36,12 @@ export default function NursingPanel({ admissionId, canAssign, nurses, today }: 
   const [form, setForm] = useState<Record<'morning' | 'night', string>>({ morning: '', night: '' })
 
   useEffect(() => {
-    listAssignments(admissionId).then((rows) => {
+    Promise.all([
+      listAssignments(admissionId),
+      listNurses(),          // re-fetch fresh so we always get the latest charges
+    ]).then(([rows, freshNurses]) => {
       setAssignments(rows)
+      setNurses(freshNurses)
       setLoading(false)
     })
   }, [admissionId])
@@ -48,11 +53,6 @@ export default function NursingPanel({ admissionId, canAssign, nurses, today }: 
   function assign(shift: 'morning' | 'night') {
     const nurseId = form[shift]
     if (!nurseId) return
-    const nurse = nurses.find((n) => n.id === nurseId)
-    if (nurse && !nurse.nursing_charge_per_shift) {
-      setError(`${nurse.full_name} has no nursing charge configured. Set it on their staff profile first.`)
-      return
-    }
     setError('')
     startTransition(async () => {
       const res = await assignNurse({ admissionId, nurseId, shift, date: today })
@@ -61,6 +61,11 @@ export default function NursingPanel({ admissionId, canAssign, nurses, today }: 
       setForm((f) => ({ ...f, [shift]: '' }))
     })
   }
+
+  // Nurses with no charge — show a soft warning (not a blocker)
+  const selectedNoCharge = (['morning', 'night'] as const)
+    .map((s) => nurses.find((n) => n.id === form[s]))
+    .filter((n): n is Nurse => !!n && !n.nursing_charge_per_shift)
 
   function unassign(id: string) {
     setError('')
@@ -82,6 +87,17 @@ export default function NursingPanel({ admissionId, canAssign, nurses, today }: 
           <UserCheck className="w-4 h-4" style={{ color: '#0D9488' }} />
           <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Nursing Assignments</h3>
         </div>
+
+        {selectedNoCharge.length > 0 && (
+          <div className="flex items-start gap-2 p-2 rounded-lg text-xs mb-3"
+            style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#D97706' }} />
+            <span>
+              {selectedNoCharge.map((n) => n.full_name).join(', ')} {selectedNoCharge.length === 1 ? 'has' : 'have'} no
+              nursing charge set — assignment will proceed with ₹0 billing. Update their rate in Staff & HR.
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-2 p-2 rounded-lg text-xs mb-3"

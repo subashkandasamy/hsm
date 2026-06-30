@@ -4,7 +4,7 @@ import { useState } from 'react'
 import {
   Plus, RefreshCw, AlertTriangle, Package,
   CheckCircle2, Circle, User2, ChevronDown, ChevronRight,
-  X, Loader2, Truck, CreditCard, Search,
+  X, Loader2, Truck, CreditCard, Search, BedDouble, Check,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -16,7 +16,8 @@ import {
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
   dispense as dispenseDrug, listPackedAwaitingDispatch,
 } from '@/app/actions/pharmacy'
-import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient } from '@/lib/types'
+import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
+import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, AwaitingDispatchPatient } from '@/app/actions/pharmacy'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -24,7 +25,7 @@ import DispenseModal from './DispenseModal'
 import AddBatchModal from './AddBatchModal'
 import SaleCartBuilder from './SaleCartBuilder'
 
-type TabKey = 'cart' | 'queue' | 'stock' | 'alerts'
+type TabKey = 'cart' | 'queue' | 'ipd' | 'stock' | 'alerts'
 type BillInfo = { billId: string; billNo: string; status: string }
 
 interface Props {
@@ -35,11 +36,13 @@ interface Props {
   initialReadySales: PharmacySale[]
   allPatients: Patient[]
   initialAwaitingDispatch: AwaitingDispatchPatient[]
+  initialIpdRequests: IpdPharmacyRequest[]
 }
 
 export default function PharmacyClient({
   initialPending, initialStock, initialAlerts, drugs,
   initialReadySales, allPatients, initialAwaitingDispatch,
+  initialIpdRequests,
 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
@@ -81,15 +84,18 @@ export default function PharmacyClient({
     return map
   })
   const [dispatchedPatients, setDispatchedPatients] = useState<Set<string>>(new Set())
+  const [ipdRequests, setIpdRequests] = useState(initialIpdRequests)
+  const [dispensingIpdId, setDispensingIpdId] = useState<string | null>(null)
 
   const alertCount = alerts.lowStock.length + alerts.nearExpiry.length + alerts.expired.length
+  const ipdPendingCount = ipdRequests.filter((r) => r.status === 'pending').length
 
   async function refresh() {
     setLoading(true)
-    const [p, s, a, aw] = await Promise.all([
-      listPendingPrescriptions(), getStock(), getAlerts(), listPackedAwaitingDispatch(),
+    const [p, s, a, aw, ipd] = await Promise.all([
+      listPendingPrescriptions(), getStock(), getAlerts(), listPackedAwaitingDispatch(), listIpdPharmacyRequests(),
     ])
-    setPending(p); setStock(s); setAlerts(a); setAwaitingDispatch(aw)
+    setPending(p); setStock(s); setAlerts(a); setAwaitingDispatch(aw); setIpdRequests(ipd)
     const billMap = new Map<string, BillInfo>()
     const dispMap = new Map<string, string[]>()
     for (const ap of aw) {
@@ -99,6 +105,15 @@ export default function PharmacyClient({
     setBillInfoMap(billMap)
     setPatientDispenseIds(dispMap)
     setLoading(false)
+  }
+
+  async function handleIpdDispense(requestId: string) {
+    setDispensingIpdId(requestId)
+    const res = await dispenseIpdRequest(requestId)
+    setDispensingIpdId(null)
+    if (res.success) {
+      setIpdRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'dispensed' as const } : r))
+    }
   }
 
   // Try to auto-generate bill once all non-skipped RXs + extras for a patient are packed.
@@ -185,6 +200,7 @@ export default function PharmacyClient({
         {([
           { key: 'cart' as TabKey,   label: 'Sale Cart',      count: initialReadySales.length },
           { key: 'queue' as TabKey,  label: 'Dispense Queue', count: pending.length },
+          { key: 'ipd' as TabKey,    label: 'IPD Ward',       count: ipdPendingCount, urgent: ipdPendingCount > 0 },
           { key: 'stock' as TabKey,  label: 'Stock',          count: stock.length },
           { key: 'alerts' as TabKey, label: 'Alerts',         count: alertCount, urgent: alertCount > 0 },
         ]).map(({ key, label, count, urgent }) => (
@@ -229,6 +245,14 @@ export default function PharmacyClient({
         />
       )}
 
+      {tab === 'ipd' && (
+        <IpdWardQueue
+          requests={ipdRequests}
+          canDispense={canDispense}
+          dispensingId={dispensingIpdId}
+          onDispense={handleIpdDispense}
+        />
+      )}
       {tab === 'stock' && <StockView stock={stock} />}
       {tab === 'alerts' && <AlertsView alerts={alerts} />}
 
@@ -919,6 +943,104 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
             ))}
           </div>
         </section>
+      )}
+    </div>
+  )
+}
+
+// ── IPD Ward Queue ────────────────────────────────────────────────────────────
+
+interface IpdWardQueueProps {
+  requests: IpdPharmacyRequest[]
+  canDispense: boolean
+  dispensingId: string | null
+  onDispense: (id: string) => void
+}
+
+function IpdWardQueue({ requests, canDispense, dispensingId, onDispense }: IpdWardQueueProps) {
+  const pending    = requests.filter((r) => r.status === 'pending')
+  const dispensed  = requests.filter((r) => r.status === 'dispensed')
+
+  return (
+    <div className="space-y-4">
+      <GlassCard>
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BedDouble className="w-4 h-4" style={{ color: '#0D9488' }} />
+            <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+              IPD Ward Requests
+              <span className="ml-2 text-xs font-normal" style={{ color: '#94A3B8' }}>
+                — bill settled not required to dispense
+              </span>
+            </h3>
+          </div>
+
+          {pending.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: '#94A3B8' }}>No pending IPD requests.</p>
+          ) : (
+            <div className="space-y-2">
+              {pending.map((req) => {
+                const adm = req.admission
+                return (
+                  <div key={req.id} className="flex items-center gap-3 px-3 py-3 rounded-xl flex-wrap"
+                    style={{ background: 'rgba(13,148,136,0.04)', border: '1px solid rgba(13,148,136,0.15)' }}>
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#F59E0B' }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{req.item_name}</p>
+                        <span className="text-xs px-1.5 py-0.5 rounded-md"
+                          style={{ background: '#F1F5F9', color: '#64748B' }}>
+                          Qty: {req.quantity}{req.unit ? ` ${req.unit}` : ''}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                        {adm?.patient?.full_name ?? '—'}{' '}
+                        <span className="font-mono" style={{ color: '#94A3B8' }}>({adm?.patient?.uhid ?? '—'})</span>
+                        {adm?.ward ? ` · ${adm.ward.name}` : ''}
+                        {adm?.bed  ? ` Bed ${adm.bed.bed_no}` : ''}
+                      </p>
+                    </div>
+                    {canDispense && (
+                      <button
+                        onClick={() => onDispense(req.id)}
+                        disabled={dispensingId === req.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                        <Check className="w-3.5 h-3.5" />
+                        {dispensingId === req.id ? 'Dispensing…' : 'Dispense'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </GlassCard>
+
+      {dispensed.length > 0 && (
+        <GlassCard>
+          <div className="p-4">
+            <h3 className="text-sm font-semibold mb-3" style={{ color: '#94A3B8' }}>
+              Dispensed ({dispensed.length})
+            </h3>
+            <div className="space-y-1.5">
+              {dispensed.map((req) => (
+                <div key={req.id} className="flex items-center justify-between text-xs py-1.5"
+                  style={{ borderBottom: '1px solid #F8FAFC' }}>
+                  <div className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                    <span style={{ color: '#0F172A' }}>{req.item_name}</span>
+                    <span style={{ color: '#94A3B8' }}>{req.admission?.patient?.full_name}</span>
+                  </div>
+                  <span style={{ color: '#64748B' }}>
+                    {req.dispensed_at ? new Date(req.dispensed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </GlassCard>
       )}
     </div>
   )

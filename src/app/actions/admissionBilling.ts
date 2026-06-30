@@ -171,27 +171,13 @@ export async function getAdmissionDepositStatus(
   return data as AdvanceDepositRequest | null
 }
 
-export async function listPendingAdvanceDeposits(): Promise<AdvanceDepositRequest[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('advance_deposit_requests')
-    .select(`
-      *,
-      patient:admissions(
-        patient:patients(full_name, uhid),
-        admitted_at,
-        ward:wards(name),
-        bed:beds(bed_no)
-      )
-    `)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-  // Flatten the nested join
-  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
-    const adm = row.patient as Record<string, unknown> | null
+function flattenDepositRows(data: unknown[]): AdvanceDepositRequest[] {
+  return (data as Array<Record<string, unknown>>).map((row) => {
+    const adm = row.adm as Record<string, unknown> | null
     return {
       ...(row as unknown as AdvanceDepositRequest),
-      patient: adm?.patient as AdvanceDepositRequest['patient'],
+      patient_id: (adm?.patient_id as string) ?? '',
+      patient:    adm?.patient as AdvanceDepositRequest['patient'],
       admission: adm ? {
         admitted_at: adm.admitted_at as string,
         ward:        adm.ward as { name: string } | undefined,
@@ -199,6 +185,36 @@ export async function listPendingAdvanceDeposits(): Promise<AdvanceDepositReques
       } : undefined,
     }
   })
+}
+
+const DEPOSIT_SELECT = `
+  *,
+  adm:admissions(
+    patient_id,
+    patient:patients(full_name, uhid),
+    admitted_at,
+    ward:wards(name),
+    bed:beds(bed_no)
+  )
+`
+
+export async function listPendingAdvanceDeposits(): Promise<AdvanceDepositRequest[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('advance_deposit_requests')
+    .select(DEPOSIT_SELECT)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+  return flattenDepositRows(data ?? [])
+}
+
+export async function listAllAdvanceDeposits(): Promise<AdvanceDepositRequest[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('advance_deposit_requests')
+    .select(DEPOSIT_SELECT)
+    .order('created_at', { ascending: false })
+  return flattenDepositRows(data ?? [])
 }
 
 export async function collectAdvanceDeposit(

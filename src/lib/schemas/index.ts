@@ -360,6 +360,7 @@ export const CreateStaffSchema = z.object({
   designation: z.string().nullable().optional(),
   joining_date: z.string().nullable().optional(),
   consultation_fee: z.number().nonnegative().nullable().optional(),
+  nursing_charge_per_shift: z.number().nonnegative().nullable().optional(),
 })
 export const UpdateStaffSchema = z.object({
   full_name: z.string().min(1).max(200).optional(),
@@ -371,6 +372,7 @@ export const UpdateStaffSchema = z.object({
   address: z.string().nullable().optional(),
   emergency_contact: z.string().nullable().optional(),
   consultation_fee: z.number().nonnegative().nullable().optional(),
+  nursing_charge_per_shift: z.number().nonnegative().nullable().optional(),
 })
 export const MarkAttendanceSchema = z.object({
   profile_id: z.string().uuid(),

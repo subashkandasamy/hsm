@@ -192,9 +192,21 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
                 },
               },
               {
-                key: 'consultation_fee', header: 'Consult Fee', mobileHidden: true,
+                key: 'consultation_fee', header: 'Rate', mobileHidden: true,
                 render: (row) => {
                   const s = row as unknown as StaffMember
+
+                  // Nursing charge row for nurses
+                  if (s.role === 'nurse') {
+                    const rate = s.staff?.nursing_charge_per_shift
+                    const hasRate = rate != null && (rate as number) > 0
+                    return (
+                      <span className="text-sm" style={{ color: hasRate ? '#7C3AED' : '#94A3B8' }}>
+                        {hasRate ? `₹${rate}/shift` : '—'}
+                      </span>
+                    )
+                  }
+
                   if (s.role !== 'doctor') return <span style={{ color: '#CBD5E1' }}>—</span>
 
                   if (feeEditId === s.id) {
@@ -353,15 +365,16 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
 
 function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; onClose: () => void; onSuccess: () => void }) {
   const [form, setForm] = useState({
-    full_name:         member.full_name,
-    role:              member.role as Role,
-    phone:             member.phone ?? '',
-    designation:       member.staff?.designation ?? '',
-    joining_date:      member.staff?.joining_date ?? '',
-    address:           member.staff?.address ?? '',
-    emergency_contact: member.staff?.emergency_contact ?? '',
-    email:             '',
-    consultation_fee:  member.staff?.consultation_fee != null ? String(member.staff.consultation_fee) : '',
+    full_name:                member.full_name,
+    role:                     member.role as Role,
+    phone:                    member.phone ?? '',
+    designation:              member.staff?.designation ?? '',
+    joining_date:             member.staff?.joining_date ?? '',
+    address:                  member.staff?.address ?? '',
+    emergency_contact:        member.staff?.emergency_contact ?? '',
+    email:                    '',
+    consultation_fee:         member.staff?.consultation_fee != null ? String(member.staff.consultation_fee) : '',
+    nursing_charge_per_shift: member.staff?.nursing_charge_per_shift != null ? String(member.staff.nursing_charge_per_shift) : '',
   })
   const originalEmail = useRef<string>('')
   const [emailLoading, setEmailLoading] = useState(true)
@@ -391,7 +404,8 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
       if (!emailRes.success) { setSaving(false); setError(emailRes.error); return }
     }
 
-    const feeVal = form.consultation_fee.trim()
+    const feeVal    = form.consultation_fee.trim()
+    const nurseRate = form.nursing_charge_per_shift.trim()
     const res = await updateStaff(member.id, {
       full_name:         form.full_name.trim(),
       role:              form.role,
@@ -402,6 +416,9 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
       emergency_contact: form.emergency_contact.trim() || null,
       ...(form.role === 'doctor' ? {
         consultation_fee: feeVal ? parseFloat(feeVal) : null,
+      } : {}),
+      ...(form.role === 'nurse' ? {
+        nursing_charge_per_shift: nurseRate ? parseFloat(nurseRate) : null,
       } : {}),
     })
     setSaving(false)
@@ -489,6 +506,19 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
               value={form.consultation_fee}
               onChange={(e) => set('consultation_fee', e.target.value)}
               placeholder="e.g. 500"
+            />
+          </FormField>
+        )}
+
+        {form.role === 'nurse' && (
+          <FormField label="Nursing Charge per Shift (₹)" hint="Amount charged to the patient per nursing shift. Leave blank to use the ward default.">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.nursing_charge_per_shift}
+              onChange={(e) => set('nursing_charge_per_shift', e.target.value)}
+              placeholder="e.g. 300"
             />
           </FormField>
         )}

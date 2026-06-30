@@ -666,10 +666,72 @@ export interface AdmissionNurseAssignment {
   nurse?: Pick<Profile, 'id' | 'full_name'>
 }
 
+export type MedicationOrderType = 'medication' | 'iv_infusion' | 'oxygen'
+export type FrequencyType = 'stat' | 'daily' | 'twice_daily' | 'thrice_daily' | 'every_x_hours' | 'sos' | 'continuous'
+export type AdminStatus = 'pending' | 'given' | 'missed' | 'held'
+
+export interface IpdMedicationOrder {
+  id: string
+  tenant_id: string
+  admission_id: string
+  ordered_by: string
+  type: MedicationOrderType
+  drug_name: string | null
+  dose: number | null
+  dose_unit: string | null
+  route: string | null
+  fluid_name: string | null
+  volume_ml: number | null
+  rate_ml_per_hr: number | null
+  flow_rate_lpm: number | null
+  delivery_method: string | null
+  frequency_type: FrequencyType
+  frequency_hours: number | null
+  start_at: string
+  stop_at: string | null
+  status: 'active' | 'stopped'
+  notes: string | null
+  copied_from_visit_id: string | null
+  created_at: string
+  doctor?: { full_name: string }
+}
+
+export interface IpdAdminSchedule {
+  id: string
+  tenant_id: string
+  order_id: string
+  admission_id: string
+  due_at: string
+  status: AdminStatus
+  given_at: string | null
+  given_by: string | null
+  given_notes: string | null
+  created_at: string
+  order?: Pick<IpdMedicationOrder, 'type' | 'drug_name' | 'fluid_name' | 'dose' | 'dose_unit' | 'route' | 'flow_rate_lpm' | 'delivery_method'>
+  nurse?: { full_name: string }
+}
+
+export interface IpdPharmacyRequest {
+  id: string
+  tenant_id: string
+  order_id: string
+  admission_id: string
+  item_name: string
+  quantity: number
+  unit: string | null
+  status: 'pending' | 'dispensed' | 'cancelled'
+  dispensed_by: string | null
+  dispensed_at: string | null
+  notes: string | null
+  created_at: string
+  admission?: { patient?: Pick<Patient, 'full_name' | 'uhid'>; ward?: { name: string }; bed?: { bed_no: string } }
+}
+
 export interface AdvanceDepositRequest {
   id: string
   tenant_id: string
   admission_id: string
+  patient_id: string
   amount: number
   status: 'pending' | 'collected' | 'waived'
   method: 'cash' | 'card' | 'upi' | 'bank_transfer' | null
