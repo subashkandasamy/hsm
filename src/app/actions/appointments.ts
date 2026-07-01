@@ -251,11 +251,29 @@ export async function listAppointments(filters: {
 
 export async function getTodaysQueue(doctorId?: string): Promise<Appointment[]> {
   const today = new Date().toISOString().split('T')[0]
-  return listAppointments({
+  const supabase = await createClient()
+
+  // Patients currently admitted to IPD or active in Emergency must not appear
+  // in the OPD worklist — the visit-start server action also blocks them, but
+  // hiding them here prevents a confusing "Start Consultation" button showing.
+  const [ipdRes, emRes] = await Promise.all([
+    supabase.from('admissions').select('patient_id').eq('status', 'admitted'),
+    supabase.from('emergency_cases').select('patient_id').in('status', ['waiting', 'in_treatment']),
+  ])
+  const blockedPatientIds = new Set<string>([
+    ...(ipdRes.data ?? []).map((r) => r.patient_id as string),
+    ...(emRes.data ?? []).map((r) => r.patient_id as string),
+  ])
+
+  const appts = await listAppointments({
     date: today,
     status: 'checked_in',
     ...(doctorId ? { doctorId } : {}),
   })
+
+  return blockedPatientIds.size > 0
+    ? appts.filter((a) => !blockedPatientIds.has(a.patient_id as string))
+    : appts
 }
 
 // Returns the consultation bill for an appointment, or null if none

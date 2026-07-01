@@ -24,6 +24,7 @@ interface Props {
   doctors: Doctor[]
   departments: Department[]
   initialDate: string
+  admittedPatientIds?: string[]
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -31,7 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'cancelled', no_show: 'error',
 }
 
-export default function AppointmentsClient({ initialAppointments, doctors, departments, initialDate }: Props) {
+export default function AppointmentsClient({ initialAppointments, doctors, departments, initialDate, admittedPatientIds = [] }: Props) {
   const router = useRouter()
   const [appts, setAppts] = useState<Appointment[]>(initialAppointments)
   const [date, setDate] = useState(initialDate)
@@ -41,6 +42,8 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
   const [view, setView] = useState<'schedule' | 'queue'>('schedule')
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const admittedSet = new Set(admittedPatientIds)
 
   const refresh = useCallback(async (d: string, docId?: string) => {
     setLoading(true)
@@ -76,9 +79,14 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
 
   async function handleStartVisit(appointmentId: string) {
     setActionLoading(appointmentId)
+    setActionError(null)
     const result = await startVisit(appointmentId)
     setActionLoading(null)
-    if (result.success) router.push(`/opd/${result.visitId}`)
+    if (result.success) {
+      router.push(`/opd/${result.visitId}`)
+    } else {
+      setActionError(result.error)
+    }
   }
 
   const displayed = view === 'queue'
@@ -103,6 +111,15 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
           </button>
         }
       />
+
+      {/* Error banner */}
+      {actionError && (
+        <div className="mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-between"
+          style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', fontWeight: 600, fontSize: 16 }}>×</button>
+        </div>
+      )}
 
       {/* Filters — stacked on mobile, row on sm+ */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap mb-5">
@@ -224,16 +241,25 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                       )}
                       {a.status === 'checked_in' && (
                         <>
-                          <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                            Start OPD
-                          </button>
-                          <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
-                            className="p-2 rounded-xl" title="Cancel"
-                            style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
-                            <XCircle className="w-4 h-4" />
-                          </button>
+                          {admittedSet.has(a.patient_id as string) ? (
+                            <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
+                              style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                              In IPD
+                            </span>
+                          ) : (
+                            <>
+                              <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
+                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                Start OPD
+                              </button>
+                              <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
+                                className="p-2 rounded-xl" title="Cancel"
+                                style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -295,16 +321,25 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                         )}
                         {a.status === 'checked_in' && (
                           <>
-                            <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
-                              style={{ background: '#0D9488', color: '#fff', cursor: 'pointer', border: 'none' }}>
-                              Start OPD
-                            </button>
-                            <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
-                              className="p-1.5 rounded-lg" title="Cancel"
-                              style={{ background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', border: 'none' }}>
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
+                            {admittedSet.has(a.patient_id as string) ? (
+                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                                In IPD
+                              </span>
+                            ) : (
+                              <>
+                                <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                  style={{ background: '#0D9488', color: '#fff', cursor: 'pointer', border: 'none' }}>
+                                  Start OPD
+                                </button>
+                                <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
+                                  className="p-1.5 rounded-lg" title="Cancel"
+                                  style={{ background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', border: 'none' }}>
+                                  <XCircle className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                           </>
                         )}
                       </div>

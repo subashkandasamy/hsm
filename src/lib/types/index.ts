@@ -164,7 +164,8 @@ export interface LabOrderItem {
 export type BillingStatus = 'unbilled' | 'billed'
 
 export interface LabOrder {
-  id: string; patient_id: string; visit_id: string | null; ordered_by: string | null
+  id: string; patient_id: string; visit_id: string | null; admission_id: string | null
+  ordered_by: string | null
   status: LabOrderStatus; billing_status: BillingStatus
   ordered_at: string; reported_at: string | null
   items?: LabOrderItem[]
@@ -181,8 +182,8 @@ export interface RadiologyCatalog {
 export type RadiologyOrderStatus = 'ordered' | 'performed' | 'reported' | 'cancelled'
 
 export interface RadiologyOrder {
-  id: string; patient_id: string; visit_id: string | null; test_id: string
-  ordered_by: string | null; price_snapshot: number
+  id: string; patient_id: string; visit_id: string | null; admission_id: string | null
+  test_id: string; ordered_by: string | null; price_snapshot: number
   status: RadiologyOrderStatus; billing_status: BillingStatus
   report: string | null; image_url: string | null
   ordered_at: string; reported_at: string | null
@@ -687,6 +688,7 @@ export interface IpdMedicationOrder {
   delivery_method: string | null
   frequency_type: FrequencyType
   frequency_hours: number | null
+  duration_days: number
   start_at: string
   stop_at: string | null
   status: 'active' | 'stopped'

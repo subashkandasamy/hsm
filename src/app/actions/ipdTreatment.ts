@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, IpdPharmacyRequest,
+  LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
 } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -19,7 +20,7 @@ function makeSlots(
   frequencyType: FrequencyType,
   frequencyHours: number | null,
   startAt: Date,
-  days = 3
+  days: number
 ): Array<{ id: string; tenant_id: string; order_id: string; admission_id: string; due_at: string }> {
   const slot = (due: Date) => ({
     id: crypto.randomUUID(),
@@ -94,6 +95,7 @@ export async function createOrder(
     delivery_method?: string
     frequency_type: FrequencyType
     frequency_hours?: number
+    duration_days: number
     notes?: string
   }
 ): Promise<{ success: true; order: IpdMedicationOrder } | { success: false; error: string }> {
@@ -121,15 +123,17 @@ export async function createOrder(
     delivery_method: input.delivery_method ?? null,
     frequency_type:  input.frequency_type,
     frequency_hours: input.frequency_hours ?? null,
+    duration_days:   input.duration_days,
     start_at:        startAt.toISOString(),
     notes:           input.notes ?? null,
   })
   if (error) return { success: false, error: error.message }
 
-  // Auto-generate administration schedule slots
+  // Auto-generate administration schedule slots for the full duration
   const slots = makeSlots(
     actor.tenant_id, orderId, admissionId,
-    input.frequency_type, input.frequency_hours ?? null, startAt
+    input.frequency_type, input.frequency_hours ?? null, startAt,
+    input.duration_days
   )
   if (slots.length > 0) {
     await supabase.from('ipd_admin_schedule').insert(slots)
@@ -205,12 +209,13 @@ export async function listSchedule(admissionId: string): Promise<IpdAdminSchedul
       nurse:profiles!given_by(full_name)
     `)
     .eq('admission_id', admissionId)
-    .order('due_at', { ascending: false })
+    .order('due_at', { ascending: true })
   return (data ?? []) as unknown as IpdAdminSchedule[]
 }
 
-export async function markGiven(
+export async function updateSlotStatus(
   scheduleId: string,
+  status: 'given' | 'missed' | 'held',
   notes?: string
 ): Promise<SimpleResult> {
   const actor = await getActorProfile()
@@ -220,16 +225,20 @@ export async function markGiven(
   const { error } = await supabase
     .from('ipd_admin_schedule')
     .update({
-      status:     'given',
-      given_at:   new Date().toISOString(),
-      given_by:   actor.id,
+      status,
+      given_at:    new Date().toISOString(),
+      given_by:    actor.id,
       given_notes: notes ?? null,
     })
     .eq('id', scheduleId)
 
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'mark_given', 'ipd_admin_schedule', scheduleId, { notes })
+  await logAudit(actor.id, `slot_${status}`, 'ipd_admin_schedule', scheduleId, { notes })
   return { success: true }
+}
+
+export async function markGiven(scheduleId: string, notes?: string): Promise<SimpleResult> {
+  return updateSlotStatus(scheduleId, 'given', notes)
 }
 
 // Extend schedule by 3 more days (called when page loads and latest slot < today+1)
@@ -262,7 +271,8 @@ export async function extendSchedule(orderId: string): Promise<SimpleResult> {
     actor.tenant_id, orderId, order.admission_id as string,
     order.frequency_type as FrequencyType,
     order.frequency_hours as number | null,
-    new Date(lastDue.getTime() + 1), // start from after last slot
+    new Date(lastDue.getTime() + 1),
+    3,
   )
 
   if (slots.length > 0) await supabase.from('ipd_admin_schedule').insert(slots)
@@ -316,6 +326,7 @@ export async function copyPrescriptionsToIPD(
     const orderId = crypto.randomUUID()
     const startAt = new Date()
 
+    const copyDays = 5
     await supabase.from('ipd_medication_orders').insert({
       id:            orderId,
       tenant_id:     actor.tenant_id,
@@ -327,12 +338,13 @@ export async function copyPrescriptionsToIPD(
       dose_unit:     p.dosage as string | null,
       route:         'oral',
       frequency_type: 'daily',
+      duration_days: copyDays,
       start_at:      startAt.toISOString(),
       notes:         p.instructions as string | null,
       copied_from_visit_id: visitId,
     })
 
-    const slots = makeSlots(actor.tenant_id, orderId, admissionId, 'daily', null, startAt)
+    const slots = makeSlots(actor.tenant_id, orderId, admissionId, 'daily', null, startAt, copyDays)
     if (slots.length > 0) await supabase.from('ipd_admin_schedule').insert(slots)
 
     await supabase.from('ipd_pharmacy_requests').insert({
@@ -402,4 +414,124 @@ export async function dispenseIpdRequest(
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'dispense', 'ipd_pharmacy_request', requestId, {})
   return { success: true }
+}
+
+// ── IPD Lab orders ────────────────────────────────────────────────────────────
+
+export async function listIpdLabOrders(admissionId: string): Promise<LabOrder[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_orders')
+    .select('*, orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
+    .eq('admission_id', admissionId)
+    .order('ordered_at', { ascending: false })
+  return (data ?? []) as unknown as LabOrder[]
+}
+
+export async function createIpdLabOrder(
+  admissionId: string,
+  patientId: string,
+  testIds: string[],
+): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:order')
+
+  const supabase = await createClient()
+  const { data: tests } = await supabase
+    .from('lab_tests_catalog').select('id, price').in('id', testIds)
+  if (!tests?.length) return { success: false, error: 'No valid tests selected' }
+
+  const priceMap = new Map(tests.map((t) => [t.id as string, t.price as number]))
+  const orderId = crypto.randomUUID()
+
+  const { error: orderErr } = await supabase.from('lab_orders').insert({
+    id: orderId, tenant_id: actor.tenant_id,
+    patient_id: patientId, admission_id: admissionId,
+    ordered_by: actor.id, status: 'ordered', billing_status: 'unbilled',
+  })
+  if (orderErr) return { success: false, error: orderErr.message }
+
+  const items = testIds.map((test_id) => ({
+    id: crypto.randomUUID(), tenant_id: actor.tenant_id,
+    lab_order_id: orderId, test_id,
+    price_snapshot: priceMap.get(test_id) ?? 0, flag: 'pending',
+  }))
+  const { error: itemErr } = await supabase.from('lab_order_items').insert(items)
+  if (itemErr) return { success: false, error: itemErr.message }
+
+  await logAudit(actor.id, 'create', 'lab_order', orderId, { admissionId, count: testIds.length })
+  return { success: true, orderId }
+}
+
+export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:order')
+  const supabase = await createClient()
+  const { error } = await supabase.from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'cancel', 'lab_order', orderId, {})
+  return { success: true }
+}
+
+export async function listLabCatalogForIpd(): Promise<LabTestCatalog[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('lab_tests_catalog').select('*').eq('is_active', true).order('name')
+  return (data ?? []) as LabTestCatalog[]
+}
+
+// ── IPD Radiology orders ──────────────────────────────────────────────────────
+
+export async function listIpdRadiologyOrders(admissionId: string): Promise<RadiologyOrder[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('radiology_orders')
+    .select('*, orderer:profiles!ordered_by(id,full_name), test:radiology_catalog(*)')
+    .eq('admission_id', admissionId)
+    .order('ordered_at', { ascending: false })
+  return (data ?? []) as unknown as RadiologyOrder[]
+}
+
+export async function createIpdRadiologyOrder(
+  admissionId: string,
+  patientId: string,
+  testId: string,
+  notes?: string,
+): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:order')
+
+  const supabase = await createClient()
+  const { data: test } = await supabase
+    .from('radiology_catalog').select('price').eq('id', testId).single()
+  if (!test) return { success: false, error: 'Scan not found in catalog' }
+
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('radiology_orders').insert({
+    id, tenant_id: actor.tenant_id,
+    patient_id: patientId, admission_id: admissionId,
+    test_id: testId, ordered_by: actor.id,
+    price_snapshot: test.price as number,
+    status: 'ordered', billing_status: 'unbilled',
+    report: notes ?? null,
+  })
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'create', 'radiology_order', id, { admissionId, testId })
+  return { success: true, orderId: id }
+}
+
+export async function cancelIpdRadiologyOrder(orderId: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:order')
+  const supabase = await createClient()
+  const { error } = await supabase.from('radiology_orders').update({ status: 'cancelled' }).eq('id', orderId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'cancel', 'radiology_order', orderId, {})
+  return { success: true }
+}
+
+export async function listRadiologyCatalogForIpd(): Promise<RadiologyCatalog[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('radiology_catalog').select('*').eq('is_active', true).order('name')
+  return (data ?? []) as RadiologyCatalog[]
 }

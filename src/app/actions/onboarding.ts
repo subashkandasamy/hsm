@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/service'
 import { isValidSlug, RESERVED_SLUGS } from '@/lib/tenant'
+import { seedLabCatalog, seedRadiologyCatalog } from '@/lib/catalogSeed'
 import { z } from 'zod'
 
 // Map from user-facing department choice to clinical_template
@@ -133,7 +134,13 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   ]
   await service.from('notification_templates').insert(tplRows)
 
-  // 6. Audit log
+  // 6. Seed default lab & radiology catalogs (inactive, ₹1 each — admin enables & prices)
+  await Promise.all([
+    seedLabCatalog(tenantId),
+    seedRadiologyCatalog(tenantId),
+  ])
+
+  // 7. Audit log
   await service.from('audit_logs').insert({
     id: crypto.randomUUID(),
     actor_id: profileId,
@@ -144,7 +151,7 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     tenant_id: tenantId,
   })
 
-  // 7. Generate a magic link so the new admin lands on their subdomain already signed in.
+  // 8. Generate a magic link so the new admin lands on their subdomain already signed in.
   //    The link points to /auth/callback on the new subdomain, which exchanges the token
   //    for a proper cookie session before redirecting to /dashboard?welcome=1.
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'

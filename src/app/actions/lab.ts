@@ -18,6 +18,26 @@ export async function listLabCatalog(): Promise<LabTestCatalog[]> {
   return (data ?? []) as LabTestCatalog[]
 }
 
+export async function listAllLabCatalog(): Promise<LabTestCatalog[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_tests_catalog').select('*').order('name')
+  return (data ?? []) as LabTestCatalog[]
+}
+
+export async function updateLabTest(
+  id: string,
+  input: Record<string, unknown>
+): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+  const supabase = await createClient()
+  const { error } = await supabase.from('lab_tests_catalog').update(input).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'lab_test', id, input)
+  return { success: true }
+}
+
 export async function createLabTest(
   input: Record<string, unknown>
 ): Promise<{ success: true; test: LabTestCatalog } | { success: false; error: string }> {

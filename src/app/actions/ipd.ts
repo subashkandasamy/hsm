@@ -92,6 +92,16 @@ export async function admitPatient(
     })
   }
 
+  // Auto-close today's checked_in/booked appointment — patient moved to IPD
+  const todayStr = new Date().toISOString().split('T')[0]
+  await supabase
+    .from('appointments')
+    .update({ status: 'done' })
+    .eq('patient_id', patient_id)
+    .in('status', ['checked_in', 'booked'])
+    .gte('scheduled_at', `${todayStr}T00:00:00`)
+    .lte('scheduled_at', `${todayStr}T23:59:59`)
+
   await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })
   return { success: true, admissionId }
 }

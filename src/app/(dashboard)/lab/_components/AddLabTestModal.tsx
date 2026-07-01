@@ -1,114 +1,314 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Fragment } from 'react'
+import { Plus, Search, Pencil } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
-import FormField from '@/components/ui/FormField'
-import Input from '@/components/ui/Input'
-import Select from '@/components/ui/Select'
-import { createLabTest } from '@/app/actions/lab'
+import { createLabTest, updateLabTest, listAllLabCatalog } from '@/app/actions/lab'
+import type { LabTestCatalog } from '@/lib/types'
 
-interface Props {
-  open: boolean
-  onClose: () => void
-  onSuccess: () => void
+interface Props { open: boolean; onClose: () => void; onSuccess: () => void }
+
+const SAMPLE_TYPES = ['Blood', 'Urine', 'Swab', 'Stool', 'CSF', 'Tissue', 'Sputum', 'Other']
+
+type TestForm = {
+  name: string; code: string; sample_type: string; unit: string
+  ref_low: string; ref_high: string; reference_range: string; price: string
+}
+const BLANK: TestForm = { name: '', code: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '' }
+
+function parseNum(s: string): number | null { const n = parseFloat(s); return isNaN(n) ? null : n }
+
+function testToForm(t: LabTestCatalog): TestForm {
+  return {
+    name: t.name, code: t.code ?? '', sample_type: t.sample_type ?? '',
+    unit: t.unit ?? '', ref_low: t.ref_low != null ? String(t.ref_low) : '',
+    ref_high: t.ref_high != null ? String(t.ref_high) : '',
+    reference_range: t.reference_range ?? '', price: String(t.price),
+  }
 }
 
-const SAMPLE_TYPES = ['blood', 'urine', 'swab', 'stool', 'csf', 'tissue', 'sputum', 'other']
+function formToPayload(f: TestForm) {
+  return {
+    name: f.name.trim(),
+    code: f.code.trim() || null,
+    sample_type: f.sample_type.toLowerCase() || null,
+    unit: f.unit.trim() || null,
+    ref_low: parseNum(f.ref_low),
+    ref_high: parseNum(f.ref_high),
+    reference_range: f.reference_range.trim() || null,
+    price: parseFloat(f.price) || 0,
+  }
+}
 
 export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
-  const [form, setForm] = useState({
-    name: '', code: '', sample_type: '', unit: '',
-    ref_low: '', ref_high: '', reference_range: '', price: '',
-  })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [tests, setTests]           = useState<LabTestCatalog[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [query, setQuery]           = useState('')
+  const [showAdd, setShowAdd]       = useState(false)
+  const [addForm, setAddForm]       = useState<TestForm>(BLANK)
+  const [addErr, setAddErr]         = useState('')
+  const [addSaving, setAddSaving]   = useState(false)
+  const [editId, setEditId]         = useState<string | null>(null)
+  const [editForm, setEditForm]     = useState<TestForm>(BLANK)
+  const [editErr, setEditErr]       = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [toggling, setToggling]     = useState<string | null>(null)
 
-  function set(field: string, value: string) {
-    setForm((f) => ({ ...f, [field]: value }))
+  useEffect(() => { if (open) load() }, [open])
+
+  async function load() {
+    setLoading(true)
+    setTests(await listAllLabCatalog())
+    setLoading(false)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.name.trim()) { setError('Name is required'); return }
-    if (!form.price || isNaN(parseFloat(form.price))) { setError('Price is required'); return }
-    setLoading(true); setError(null)
+  const filtered = query.trim()
+    ? tests.filter((t) =>
+        t.name.toLowerCase().includes(query.toLowerCase()) ||
+        (t.code ?? '').toLowerCase().includes(query.toLowerCase()))
+    : tests
 
-    const result = await createLabTest({
-      name: form.name.trim(),
-      code: form.code.trim() || null,
-      sample_type: form.sample_type || null,
-      unit: form.unit.trim() || null,
-      ref_low: form.ref_low !== '' ? parseFloat(form.ref_low) : null,
-      ref_high: form.ref_high !== '' ? parseFloat(form.ref_high) : null,
-      reference_range: form.reference_range.trim() || null,
-      price: parseFloat(form.price),
-      is_active: true,
-    })
+  async function submitAdd() {
+    if (!addForm.name.trim()) { setAddErr('Name is required'); return }
+    if (!addForm.price) { setAddErr('Price is required'); return }
+    setAddSaving(true); setAddErr('')
+    const res = await createLabTest(formToPayload(addForm))
+    setAddSaving(false)
+    if (!res.success) { setAddErr(res.error); return }
+    setAddForm(BLANK); setShowAdd(false)
+    await load(); onSuccess()
+  }
 
-    setLoading(false)
-    if (!result.success) { setError(result.error); return }
-    setForm({ name: '', code: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '' })
-    onSuccess()
+  async function submitEdit() {
+    if (!editId) return
+    if (!editForm.name.trim()) { setEditErr('Name is required'); return }
+    if (!editForm.price) { setEditErr('Price is required'); return }
+    setEditSaving(true); setEditErr('')
+    const res = await updateLabTest(editId, formToPayload(editForm))
+    setEditSaving(false)
+    if (!res.success) { setEditErr(res.error); return }
+    setEditId(null); await load(); onSuccess()
+  }
+
+  async function toggleActive(t: LabTestCatalog) {
+    setToggling(t.id)
+    await updateLabTest(t.id, { is_active: !t.is_active })
+    await load(); setToggling(null); onSuccess()
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add Lab Test to Catalog" maxWidth="36rem">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Test Name *">
-            <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Complete Blood Count" />
-          </FormField>
-          <FormField label="Code" hint="Short identifier">
-            <Input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CBC" />
-          </FormField>
+    <Modal open={open} onClose={onClose} title={`Lab Test Catalog  ·  ${tests.length} tests`} maxWidth="64rem">
+      {/* Search + Add button */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: '#94A3B8' }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or code…"
+            className="w-full pl-9 pr-3 py-2 rounded-xl text-sm border"
+            style={{ borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }} />
         </div>
+        <button onClick={() => { setShowAdd((v) => !v); setAddErr('') }}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap"
+          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+          <Plus className="w-4 h-4" /> Add Test
+        </button>
+      </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sample Type">
-            <Select value={form.sample_type} onChange={(e) => set('sample_type', e.target.value)}>
-              <option value="">— Select —</option>
-              {SAMPLE_TYPES.map((s) => (
-                <option key={s} value={s} className="capitalize">{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField label="Unit" hint="Result unit, e.g. mg/dL">
-            <Input value={form.unit} onChange={(e) => set('unit', e.target.value)} placeholder="mg/dL" />
-          </FormField>
-        </div>
+      {/* Add form */}
+      {showAdd && (
+        <TestForm
+          form={addForm} err={addErr} saving={addSaving} accent="#0D9488"
+          title="New Test" saveLabel="Add Test"
+          onSet={(f, v) => setAddForm((p) => ({ ...p, [f]: v }))}
+          onSave={submitAdd} onCancel={() => { setShowAdd(false); setAddForm(BLANK) }}
+        />
+      )}
 
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="Ref Low" hint="Numeric">
-            <Input type="number" step="any" value={form.ref_low} onChange={(e) => set('ref_low', e.target.value)} placeholder="70" />
-          </FormField>
-          <FormField label="Ref High" hint="Numeric">
-            <Input type="number" step="any" value={form.ref_high} onChange={(e) => set('ref_high', e.target.value)} placeholder="110" />
-          </FormField>
-          <FormField label="Price (₹) *">
-            <Input type="number" min={0} step="0.01" value={form.price} onChange={(e) => set('price', e.target.value)} placeholder="150" />
-          </FormField>
-        </div>
-
-        <FormField label="Reference Range (display)" hint="e.g. 70–110 mg/dL — shown on report">
-          <Input value={form.reference_range} onChange={(e) => set('reference_range', e.target.value)} placeholder="70–110 mg/dL" />
-        </FormField>
-
-        {error && (
-          <div className="text-sm rounded-xl px-3 py-2" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
-            {error}
+      {/* Catalog table */}
+      {loading ? (
+        <p className="text-sm text-center py-10" style={{ color: '#94A3B8' }}>Loading catalog…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-center py-10" style={{ color: '#94A3B8' }}>
+          {query ? 'No tests match your search.' : 'No tests yet. Add your first test above.'}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
+          <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ background: '#F8FAFC' }}>
+                  {[
+                    { label: 'Name', cls: 'text-left' },
+                    { label: 'Code', cls: 'text-left' },
+                    { label: 'Sample', cls: 'text-left' },
+                    { label: 'Unit', cls: 'text-left' },
+                    { label: 'Ref Range', cls: 'text-left' },
+                    { label: 'Price (₹)', cls: 'text-right' },
+                    { label: 'Status', cls: 'text-center' },
+                    { label: '', cls: '' },
+                  ].map((h) => (
+                    <th key={h.label} className={`py-2.5 px-3 text-xs font-semibold ${h.cls}`}
+                      style={{ color: '#64748B', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, background: '#F8FAFC' }}>
+                      {h.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((t) => (
+                  <Fragment key={t.id}>
+                    <tr style={{ borderBottom: '1px solid #F1F5F9', background: t.is_active ? '#fff' : '#FAFAFA' }}>
+                      <td className="py-2.5 px-3 font-medium" style={{ color: t.is_active ? '#0F172A' : '#64748B' }}>{t.name}</td>
+                      <td className="py-2.5 px-3 font-mono text-xs" style={{ color: '#94A3B8' }}>{t.code ?? '—'}</td>
+                      <td className="py-2.5 px-3 text-xs capitalize" style={{ color: '#64748B' }}>{t.sample_type ?? '—'}</td>
+                      <td className="py-2.5 px-3 text-xs" style={{ color: '#64748B' }}>{t.unit ?? '—'}</td>
+                      <td className="py-2.5 px-3 text-xs" style={{ color: '#475569' }}>
+                        {t.reference_range ?? (t.ref_low != null || t.ref_high != null
+                          ? `${t.ref_low ?? '?'} – ${t.ref_high ?? '?'}`
+                          : '—')}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-semibold" style={{ color: '#0D9488' }}>
+                        ₹{t.price.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button onClick={() => toggleActive(t)} disabled={toggling === t.id}
+                          className="px-2.5 py-0.5 rounded-full text-xs font-medium"
+                          style={t.is_active
+                            ? { background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }
+                            : { background: '#FEF3C7', color: '#92400E', border: 'none', cursor: 'pointer' }}>
+                          {toggling === t.id ? '…' : t.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          onClick={() => {
+                            if (editId === t.id) { setEditId(null) }
+                            else { setEditId(t.id); setEditForm(testToForm(t)); setEditErr('') }
+                          }}
+                          className="p-1.5 rounded-lg"
+                          style={{
+                            background: editId === t.id ? '#CCFBF1' : '#F1F5F9',
+                            color: editId === t.id ? '#0D9488' : '#64748B',
+                            border: `1px solid ${editId === t.id ? '#99F6E4' : '#E2E8F0'}`, cursor: 'pointer',
+                          }}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                    {editId === t.id && (
+                      <tr>
+                        <td colSpan={8} className="p-0 px-2 pb-2">
+                          <TestForm
+                            form={editForm} err={editErr} saving={editSaving} accent="#0D9488"
+                            title={`Editing: ${t.name}`} saveLabel="Save Changes"
+                            onSet={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))}
+                            onSave={submitEdit} onCancel={() => setEditId(null)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-
-        <div className="flex gap-3 justify-end pt-1">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium"
-            style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>Cancel</button>
-          <button type="submit" disabled={loading}
-            className="px-5 py-2 rounded-xl text-sm font-semibold"
-            style={{ background: loading ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer' }}>
-            {loading ? 'Saving…' : 'Add Test'}
-          </button>
         </div>
-      </form>
+      )}
     </Modal>
+  )
+}
+
+// ─── Shared add/edit form ──────────────────────────────────────────────────────
+
+interface FormProps {
+  form: TestForm; err: string; saving: boolean
+  accent: string; title: string; saveLabel: string
+  onSet: (f: string, v: string) => void
+  onSave: () => void; onCancel: () => void
+}
+
+function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, onCancel }: FormProps) {
+  const inp = 'w-full px-3 py-2 rounded-lg text-sm border'
+  const bdr = { borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }
+
+  return (
+    <div className="mt-2 p-4 rounded-xl space-y-3"
+      style={{ background: `color-mix(in srgb, ${accent} 4%, white)`, border: `1px solid color-mix(in srgb, ${accent} 25%, transparent)` }}>
+      <p className="text-xs font-semibold" style={{ color: accent }}>{title}</p>
+
+      {err && (
+        <p className="text-xs px-3 py-1.5 rounded-lg" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+          {err}
+        </p>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="col-span-2">
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Test Name *</label>
+          <input value={form.name} onChange={(e) => onSet('name', e.target.value)}
+            className={inp} style={bdr} placeholder="e.g. Complete Blood Count" />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Code</label>
+          <input value={form.code} onChange={(e) => onSet('code', e.target.value)}
+            className={inp} style={bdr} placeholder="CBC" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
+          <select value={form.sample_type} onChange={(e) => onSet('sample_type', e.target.value)}
+            className={inp} style={{ ...bdr, paddingRight: '8px' }}>
+            <option value="">—</option>
+            {SAMPLE_TYPES.map((s) => (
+              <option key={s} value={s.toLowerCase()}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Unit</label>
+          <input value={form.unit} onChange={(e) => onSet('unit', e.target.value)}
+            className={inp} style={bdr} placeholder="mg/dL" />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Ref Low</label>
+          <input type="number" step="any" value={form.ref_low} onChange={(e) => onSet('ref_low', e.target.value)}
+            className={inp} style={bdr} placeholder="70" />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Ref High</label>
+          <input type="number" step="any" value={form.ref_high} onChange={(e) => onSet('ref_high', e.target.value)}
+            className={inp} style={bdr} placeholder="110" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Reference Range (report display)</label>
+          <input value={form.reference_range} onChange={(e) => onSet('reference_range', e.target.value)}
+            className={inp} style={bdr} placeholder="70–110 mg/dL" />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: accent }}>Price (₹) *</label>
+          <input type="number" min={0} step="0.01" value={form.price} onChange={(e) => onSet('price', e.target.value)}
+            className={inp} style={{ borderColor: accent, color: accent, background: '#fff', fontWeight: 600 }}
+            placeholder="150" />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium"
+          style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+          Cancel
+        </button>
+        <button onClick={onSave} disabled={saving}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: saving ? '#94A3B8' : accent, color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? 'Saving…' : saveLabel}
+        </button>
+      </div>
+    </div>
   )
 }

@@ -19,6 +19,26 @@ export async function listRadiologyCatalog(modality?: string): Promise<Radiology
   return (data ?? []) as RadiologyCatalog[]
 }
 
+export async function listAllRadiologyCatalog(): Promise<RadiologyCatalog[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('radiology_catalog').select('*').order('name')
+  return (data ?? []) as RadiologyCatalog[]
+}
+
+export async function updateRadiologyTest(
+  id: string,
+  input: Record<string, unknown>
+): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:manage')
+  const supabase = await createClient()
+  const { error } = await supabase.from('radiology_catalog').update(input).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'radiology_test', id, input)
+  return { success: true }
+}
+
 export async function createRadiologyTest(
   input: Record<string, unknown>
 ): Promise<{ success: true; test: RadiologyCatalog } | { success: false; error: string }> {
