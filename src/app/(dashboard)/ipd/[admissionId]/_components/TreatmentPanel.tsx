@@ -23,6 +23,7 @@ function CollapsibleSection({ icon, title, badge, iconColor, action, children }:
   return (
     <GlassCard>
       <div className="p-4">
+        {/* Title row */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setOpen((v) => !v)}
@@ -30,14 +31,17 @@ function CollapsibleSection({ icon, title, badge, iconColor, action, children }:
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}
           >
             <span style={{ color: iconColor, flexShrink: 0 }}>{icon}</span>
-            <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{title}</span>
-            {badge && <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>{badge}</span>}
+            <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{title}</span>
+            {badge && <span className="text-xs font-normal flex-shrink-0" style={{ color: '#94A3B8' }}>{badge}</span>}
             <span style={{ marginLeft: 'auto', flexShrink: 0, color: '#94A3B8' }}>
               {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
           </button>
-          {action && <div className="flex-shrink-0 flex gap-2">{action}</div>}
+          {/* Desktop: action buttons inline */}
+          {action && <div className="hidden sm:flex flex-shrink-0 gap-2">{action}</div>}
         </div>
+        {/* Mobile: action buttons on separate row below title */}
+        {action && <div className="sm:hidden flex gap-2 mt-2">{action}</div>}
         {open && (
           <div className="mt-3">
             {children}
