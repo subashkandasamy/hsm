@@ -155,84 +155,137 @@ export default function AddRadiologyTestModal({ open, onClose, onSuccess }: Prop
           {query || filterMod ? 'No procedures match your filter.' : 'No procedures yet. Add your first one above.'}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
-          <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr style={{ background: '#F8FAFC' }}>
-                  {['Procedure Name', 'Modality', 'Price (₹)', 'Status', ''].map((h) => (
-                    <th key={h}
-                      className={`py-2.5 px-3 text-xs font-semibold text-left${h === 'Price (₹)' ? ' text-right' : ''}`}
-                      style={{ color: '#64748B', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, background: '#F8FAFC' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((t) => {
-                  const mc = MODALITY_COLOR[t.modality ?? ''] ?? { bg: '#F1F5F9', color: '#64748B' }
-                  return (
-                    <Fragment key={t.id}>
-                      <tr style={{ borderBottom: '1px solid #F1F5F9', background: t.is_active ? '#fff' : '#FAFAFA' }}>
-                        <td className="py-2.5 px-3 font-medium" style={{ color: t.is_active ? '#0F172A' : '#64748B' }}>{t.name}</td>
-                        <td className="py-2.5 px-3">
-                          {t.modality ? (
-                            <span className="px-2 py-0.5 rounded-md text-xs font-medium"
-                              style={{ background: mc.bg, color: mc.color }}>
-                              {MODALITY_LABEL[t.modality] ?? t.modality}
-                            </span>
-                          ) : (
-                            <span className="text-xs" style={{ color: '#94A3B8' }}>—</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-semibold" style={{ color: '#0D9488' }}>
-                          ₹{t.price.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <button onClick={() => toggleActive(t)} disabled={toggling === t.id}
-                            className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                            style={t.is_active
-                              ? { background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }
-                              : { background: '#FEF3C7', color: '#92400E', border: 'none', cursor: 'pointer' }}>
-                            {toggling === t.id ? '…' : t.is_active ? 'Active' : 'Inactive'}
-                          </button>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <button
-                            onClick={() => {
-                              if (editId === t.id) { setEditId(null) }
-                              else { setEditId(t.id); setEditForm(scanToForm(t)); setEditErr('') }
-                            }}
-                            className="p-1.5 rounded-lg"
-                            style={{
-                              background: editId === t.id ? '#CCFBF1' : '#F1F5F9',
-                              color: editId === t.id ? '#0D9488' : '#64748B',
-                              border: `1px solid ${editId === t.id ? '#99F6E4' : '#E2E8F0'}`, cursor: 'pointer',
-                            }}>
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                      {editId === t.id && (
-                        <tr>
-                          <td colSpan={5} className="p-0 px-2 pb-2">
-                            <ScanForm
-                              form={editForm} err={editErr} saving={editSaving} accent="#0D9488"
-                              title={`Editing: ${t.name}`} saveLabel="Save Changes"
-                              onSet={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))}
-                              onSave={submitEdit} onCancel={() => setEditId(null)}
-                            />
+        <>
+          {/* ── Mobile card list (< sm) ── */}
+          <div className="sm:hidden rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', maxHeight: '55vh', overflowY: 'auto' }}>
+            {filtered.map((t) => {
+              const mc = MODALITY_COLOR[t.modality ?? ''] ?? { bg: '#F1F5F9', color: '#64748B' }
+              return (
+                <Fragment key={t.id}>
+                  <div className="px-3 py-3" style={{ background: t.is_active ? '#fff' : '#FAFAFA', borderBottom: '1px solid #F1F5F9' }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium leading-snug flex-1" style={{ color: t.is_active ? '#0F172A' : '#64748B' }}>{t.name}</p>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => toggleActive(t)} disabled={toggling === t.id}
+                          className="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={t.is_active
+                            ? { background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }
+                            : { background: '#FEF3C7', color: '#92400E', border: 'none', cursor: 'pointer' }}>
+                          {toggling === t.id ? '…' : t.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                        <button
+                          onClick={() => { if (editId === t.id) setEditId(null); else { setEditId(t.id); setEditForm(scanToForm(t)); setEditErr('') } }}
+                          className="p-1.5 rounded-lg flex-shrink-0"
+                          style={{ background: editId === t.id ? '#CCFBF1' : '#F1F5F9', color: editId === t.id ? '#0D9488' : '#64748B', border: `1px solid ${editId === t.id ? '#99F6E4' : '#E2E8F0'}`, cursor: 'pointer' }}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                      {t.modality && (
+                        <span className="px-2 py-0.5 rounded-md text-xs font-medium"
+                          style={{ background: mc.bg, color: mc.color }}>
+                          {MODALITY_LABEL[t.modality] ?? t.modality}
+                        </span>
+                      )}
+                      <span className="text-xs font-semibold" style={{ color: '#0D9488' }}>₹{t.price.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                  {editId === t.id && (
+                    <div className="px-2 pb-2" style={{ background: '#FAFAFA', borderBottom: '1px solid #F1F5F9' }}>
+                      <ScanForm
+                        form={editForm} err={editErr} saving={editSaving} accent="#0D9488"
+                        title={`Editing: ${t.name}`} saveLabel="Save Changes"
+                        onSet={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))}
+                        onSave={submitEdit} onCancel={() => setEditId(null)}
+                      />
+                    </div>
+                  )}
+                </Fragment>
+              )
+            })}
+          </div>
+
+          {/* ── Desktop table (sm+) ── */}
+          <div className="hidden sm:block overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
+            <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr style={{ background: '#F8FAFC' }}>
+                    {['Procedure Name', 'Modality', 'Price (₹)', 'Status', ''].map((h) => (
+                      <th key={h}
+                        className={`py-2.5 px-3 text-xs font-semibold text-left${h === 'Price (₹)' ? ' text-right' : ''}`}
+                        style={{ color: '#64748B', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, background: '#F8FAFC' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t) => {
+                    const mc = MODALITY_COLOR[t.modality ?? ''] ?? { bg: '#F1F5F9', color: '#64748B' }
+                    return (
+                      <Fragment key={t.id}>
+                        <tr style={{ borderBottom: '1px solid #F1F5F9', background: t.is_active ? '#fff' : '#FAFAFA' }}>
+                          <td className="py-2.5 px-3 font-medium" style={{ color: t.is_active ? '#0F172A' : '#64748B' }}>{t.name}</td>
+                          <td className="py-2.5 px-3">
+                            {t.modality ? (
+                              <span className="px-2 py-0.5 rounded-md text-xs font-medium"
+                                style={{ background: mc.bg, color: mc.color }}>
+                                {MODALITY_LABEL[t.modality] ?? t.modality}
+                              </span>
+                            ) : (
+                              <span className="text-xs" style={{ color: '#94A3B8' }}>—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-semibold" style={{ color: '#0D9488' }}>
+                            ₹{t.price.toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <button onClick={() => toggleActive(t)} disabled={toggling === t.id}
+                              className="px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={t.is_active
+                                ? { background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }
+                                : { background: '#FEF3C7', color: '#92400E', border: 'none', cursor: 'pointer' }}>
+                              {toggling === t.id ? '…' : t.is_active ? 'Active' : 'Inactive'}
+                            </button>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <button
+                              onClick={() => {
+                                if (editId === t.id) { setEditId(null) }
+                                else { setEditId(t.id); setEditForm(scanToForm(t)); setEditErr('') }
+                              }}
+                              className="p-1.5 rounded-lg"
+                              style={{
+                                background: editId === t.id ? '#CCFBF1' : '#F1F5F9',
+                                color: editId === t.id ? '#0D9488' : '#64748B',
+                                border: `1px solid ${editId === t.id ? '#99F6E4' : '#E2E8F0'}`, cursor: 'pointer',
+                              }}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
+                        {editId === t.id && (
+                          <tr>
+                            <td colSpan={5} className="p-0 px-2 pb-2">
+                              <ScanForm
+                                form={editForm} err={editErr} saving={editSaving} accent="#0D9488"
+                                title={`Editing: ${t.name}`} saveLabel="Save Changes"
+                                onSet={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))}
+                                onSave={submitEdit} onCancel={() => setEditId(null)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </Modal>
   )
