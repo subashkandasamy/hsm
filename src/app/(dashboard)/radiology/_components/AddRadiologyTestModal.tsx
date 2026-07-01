@@ -104,7 +104,7 @@ export default function AddRadiologyTestModal({ open, onClose, onSuccess }: Prop
   async function toggleActive(t: RadiologyCatalog) {
     setToggling(t.id)
     await updateRadiologyTest(t.id, { is_active: !t.is_active })
-    await load(); setToggling(null); onSuccess()
+    await load(); setToggling(null)
   }
 
   const activeModalities = [...new Set(tests.map((t) => t.modality).filter(Boolean))] as string[]

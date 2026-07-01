@@ -93,7 +93,7 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
   async function toggleActive(t: LabTestCatalog) {
     setToggling(t.id)
     await updateLabTest(t.id, { is_active: !t.is_active })
-    await load(); setToggling(null); onSuccess()
+    await load(); setToggling(null)
   }
 
   return (
@@ -288,8 +288,8 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
         </p>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="sm:col-span-2">
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Test Name *</label>
           <input value={form.name} onChange={(e) => onSet('name', e.target.value)}
             className={inp} style={bdr} placeholder="e.g. Complete Blood Count" />
@@ -301,7 +301,7 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
           <select value={form.sample_type} onChange={(e) => onSet('sample_type', e.target.value)}
@@ -329,7 +329,7 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Reference Range (report display)</label>
           <input value={form.reference_range} onChange={(e) => onSet('reference_range', e.target.value)}
