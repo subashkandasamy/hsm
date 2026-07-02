@@ -93,7 +93,8 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
   async function toggleActive(t: LabTestCatalog) {
     setToggling(t.id)
     await updateLabTest(t.id, { is_active: !t.is_active })
-    await load(); setToggling(null)
+    setTests((prev) => prev.map((item) => item.id === t.id ? { ...item, is_active: !t.is_active } : item))
+    setToggling(null)
   }
 
   return (
