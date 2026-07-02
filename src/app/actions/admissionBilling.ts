@@ -439,6 +439,54 @@ export async function generateDailyAdmissionBills(): Promise<{
   return { processed, errors }
 }
 
+// ---- Batch advance balance for billing page (efficient: 3 queries, not N per admission) ----
+
+export async function listAdvanceSummariesBatch(
+  admissionIds: string[]
+): Promise<Record<string, { totalCollected: number; totalApplied: number; netBalance: number }>> {
+  if (!admissionIds.length) return {}
+  const supabase = await createClient()
+
+  const result: Record<string, { totalCollected: number; totalApplied: number; netBalance: number }> = {}
+  for (const id of admissionIds) result[id] = { totalCollected: 0, totalApplied: 0, netBalance: 0 }
+
+  // 1. Total advance collected per admission (minus refunds)
+  const [{ data: advances }, { data: refunds }] = await Promise.all([
+    supabase.from('admission_advances').select('admission_id, amount').in('admission_id', admissionIds),
+    supabase.from('admission_advance_refunds').select('admission_id, amount').in('admission_id', admissionIds),
+  ])
+  for (const a of advances ?? []) {
+    const aid = a.admission_id as string
+    if (result[aid]) result[aid].totalCollected += a.amount as number
+  }
+  for (const r of refunds ?? []) {
+    const aid = r.admission_id as string
+    if (result[aid]) result[aid].totalCollected -= r.amount as number
+  }
+
+  // 2. Bills for these admissions → get bill_id → admission_id map
+  const { data: bills } = await supabase
+    .from('bills').select('id, admission_id').in('admission_id', admissionIds).neq('status', 'cancelled')
+  const billIdToAdmission = new Map<string, string>()
+  for (const b of bills ?? []) billIdToAdmission.set(b.id as string, b.admission_id as string)
+  const billIds = [...billIdToAdmission.keys()]
+
+  // 3. Advance payments applied across all bills
+  if (billIds.length > 0) {
+    const { data: payments } = await supabase
+      .from('payments').select('bill_id, amount').in('bill_id', billIds).eq('method', 'advance')
+    for (const p of payments ?? []) {
+      const aid = billIdToAdmission.get(p.bill_id as string)
+      if (aid && result[aid]) result[aid].totalApplied += p.amount as number
+    }
+  }
+
+  for (const id of admissionIds) {
+    result[id].netBalance = result[id].totalCollected - result[id].totalApplied
+  }
+  return result
+}
+
 // ---- Advance refund ----
 
 export async function recordAdvanceRefund(params: {

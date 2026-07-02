@@ -237,7 +237,7 @@ export async function listAdmissions(filters?: {
       *,
       patient:patients(id, full_name, uhid, phone, blood_group, allergies),
       doctor:profiles!admissions_admitting_doctor_id_fkey(id, full_name),
-      ward:wards(id, name),
+      ward:wards(id, name, daily_rate),
       bed:beds(id, bed_no)
     `)
     .order('admitted_at', { ascending: false })

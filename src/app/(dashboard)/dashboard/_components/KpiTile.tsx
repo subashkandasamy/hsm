@@ -15,18 +15,20 @@ interface KpiTileProps {
 
 export default function KpiTile({ label, value, sub, icon, href, accent = '#0D9488', urgent }: KpiTileProps) {
   const content = (
-    <div className="glass-card p-3 md:p-5 flex items-start gap-3 transition-all"
+    <div className="glass-card p-3 sm:p-4 md:p-5 h-full flex items-start gap-2.5 transition-all overflow-hidden"
       style={href ? { cursor: 'pointer' } : {}}>
-      <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
         style={{ background: urgent ? 'rgba(220,38,38,0.08)' : `rgba(${hexToRgb(accent)},0.08)`, border: `1px solid ${urgent ? 'rgba(220,38,38,0.15)' : `rgba(${hexToRgb(accent)},0.15)`}` }}>
         <span style={{ color: urgent ? '#DC2626' : accent }}>{icon}</span>
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium leading-snug" style={{ color: '#94A3B8' }}>{label}</p>
-        <p className="text-xl md:text-2xl font-bold leading-tight mt-0.5" style={{ color: urgent ? '#DC2626' : '#0F172A' }}>
+        <p className="text-[11px] font-medium leading-snug truncate" style={{ color: '#94A3B8' }}>{label}</p>
+        <p className="text-lg sm:text-xl md:text-2xl font-bold leading-tight mt-0.5 truncate" style={{ color: urgent ? '#DC2626' : '#0F172A' }}>
           {value}
         </p>
-        {sub && <p className="text-xs mt-0.5 leading-snug" style={{ color: '#64748B' }}>{sub}</p>}
+        {sub && (
+          <p className="text-[11px] mt-0.5 leading-snug line-clamp-1" style={{ color: '#64748B' }}>{sub}</p>
+        )}
       </div>
     </div>
   )

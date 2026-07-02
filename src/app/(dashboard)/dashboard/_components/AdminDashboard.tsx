@@ -21,6 +21,13 @@ const REPORT_TYPES = [
 
 type ReportType = typeof REPORT_TYPES[number]['value']
 
+function fmtAmt(n: number): string {
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`
+  if (n >= 100000)   return `₹${(n / 100000).toFixed(1)}L`
+  if (n >= 1000)     return `₹${Math.round(n / 1000)}K`
+  return `₹${Math.round(n)}`
+}
+
 export default function AdminDashboard({ kpis }: { kpis: AdminKPIs | null }) {
   const [reportType, setReportType]   = useState<ReportType>('daily_collection')
   const [dateFrom, setDateFrom]       = useState(() => {
@@ -49,29 +56,29 @@ export default function AdminDashboard({ kpis }: { kpis: AdminKPIs | null }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KpiTile
           label="Today's Revenue"
-          value={kpis ? `₹${kpis.todayRevenue.toLocaleString('en-IN')}` : '—'}
-          icon={<IndianRupee className="w-5 h-5" />}
+          value={kpis ? fmtAmt(kpis.todayRevenue) : '—'}
+          icon={<IndianRupee className="w-4 h-4" />}
           href="/billing"
         />
         <KpiTile
           label="Bed Occupancy"
           value={kpis ? `${kpis.bedOccupancy}%` : '—'}
           sub={kpis ? `${kpis.occupiedBeds} / ${kpis.totalBeds} beds` : undefined}
-          icon={<BedDouble className="w-5 h-5" />}
+          icon={<BedDouble className="w-4 h-4" />}
           href="/wards"
         />
         <KpiTile
           label="Today's Footfall"
           value={kpis?.todayFootfall ?? '—'}
-          sub="Appointments + ER cases"
-          icon={<Users className="w-5 h-5" />}
+          sub="Appts + ER"
+          icon={<Users className="w-4 h-4" />}
           href="/appointments"
         />
         <KpiTile
           label="Pending Bills"
           value={kpis?.pendingBillsCount ?? '—'}
-          sub={kpis ? `₹${kpis.pendingBillsTotal.toLocaleString('en-IN')} outstanding` : undefined}
-          icon={<FileText className="w-5 h-5" />}
+          sub={kpis ? `${fmtAmt(kpis.pendingBillsTotal)} outstanding` : undefined}
+          icon={<FileText className="w-4 h-4" />}
           href="/billing?status=unpaid"
           urgent={(kpis?.pendingBillsCount ?? 0) > 10}
         />

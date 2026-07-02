@@ -23,12 +23,22 @@ const SOURCE_LABELS: Record<BillItemSource, string> = {
   lab: 'Laboratory',
   radiology: 'Radiology',
   pharmacy: 'Pharmacy',
+  ipd_pharmacy: 'Pharmacy (Ward)',
   pharmacy_sale_item: 'Pharmacy Sale',
   ot: 'Operation Theatre',
   ot_consumable: 'OT Consumables',
   blood: 'Blood Bank',
   dental: 'Dental',
   manual: 'Manual',
+  nursing: 'Nursing',
+}
+
+const BILL_SOURCE_LABELS: Record<string, string> = {
+  bed: 'Room Rent',
+  lab: 'Lab Tests',
+  radiology: 'Radiology',
+  ipd_pharmacy: 'Pharmacy (Ward)',
+  nursing: 'Nursing',
 }
 
 const STATUS_MAP: Record<string, string> = {
@@ -172,6 +182,19 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
             <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>
               {bill.patient?.full_name} &middot; {bill.patient?.uhid}
             </p>
+            {bill.billing_date && (
+              <p className="text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+                {bill.bill_source && (
+                  <span className="px-2 py-0.5 rounded-lg font-medium"
+                    style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
+                    {BILL_SOURCE_LABELS[bill.bill_source] ?? bill.bill_source}
+                  </span>
+                )}
+                <span style={{ color: '#94A3B8' }}>
+                  Charges for {new Date(bill.billing_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              </p>
+            )}
           </div>
         </div>
 

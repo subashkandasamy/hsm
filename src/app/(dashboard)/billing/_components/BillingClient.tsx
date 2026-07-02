@@ -13,7 +13,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import { listBills, getBillingStats } from '@/app/actions/billing'
-import { collectAdvanceDeposit, listAllAdvanceDeposits } from '@/app/actions/admissionBilling'
+import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
@@ -25,6 +25,28 @@ const STATUS_MAP: Record<string, string> = {
   partial:   'pending',
   paid:      'success',
   cancelled: 'cancelled',
+}
+
+function fmtCompact(amount: number): string {
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`
+  if (amount >= 1000) return `₹${Math.round(amount / 1000)}K`
+  return `₹${Math.round(amount)}`
+}
+
+const BILL_SOURCE_LABELS: Record<string, string> = {
+  bed:          'Room Rent',
+  lab:          'Lab',
+  radiology:    'Radiology',
+  ipd_pharmacy: 'Pharmacy (Ward)',
+  nursing:      'Nursing',
+}
+
+const BILL_SOURCE_COLORS: Record<string, { bg: string; color: string }> = {
+  bed:          { bg: '#F0FDF4', color: '#16A34A' },
+  lab:          { bg: '#EFF6FF', color: '#2563EB' },
+  radiology:    { bg: '#FDF4FF', color: '#9333EA' },
+  ipd_pharmacy: { bg: '#FFF7ED', color: '#C2410C' },
+  nursing:      { bg: '#FFF1F2', color: '#BE123C' },
 }
 
 const PAYMENT_METHODS = [
@@ -40,6 +62,8 @@ interface BillingStats {
   totalOutstanding: number
 }
 
+interface AdvanceSummary { totalCollected: number; totalApplied: number; netBalance: number }
+
 interface PatientGroup {
   patientId: string
   patientName: string
@@ -50,17 +74,20 @@ interface PatientGroup {
   totalPaid: number
   totalOutstanding: number
   pendingAdvance: number
+  admissionId: string | null
+  advanceSummary: AdvanceSummary | null
 }
 
 interface Props {
   initialBills: Bill[]
   initialStats: BillingStats
   initialDeposits: AdvanceDepositRequest[]
+  initialAdvanceSummaries: Record<string, AdvanceSummary>
 }
 
 type ViewMode = 'list' | 'patient'
 
-export default function BillingClient({ initialBills, initialStats, initialDeposits }: Props) {
+export default function BillingClient({ initialBills, initialStats, initialDeposits, initialAdvanceSummaries }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canWrite  = !!role && hasPermission(role, 'billing:write')
@@ -70,6 +97,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [bills, setBills]       = useState(initialBills)
   const [stats, setStats]       = useState(initialStats)
   const [deposits, setDeposits] = useState(initialDeposits)
+  const [advanceSummaries, setAdvanceSummaries] = useState(initialAdvanceSummaries)
   const [loading, setLoading]   = useState(false)
   const [showBuilder, setShowBuilder] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
@@ -78,9 +106,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
   // Advance collection state
   const [collectingId, setCollectingId]     = useState<string | null>(null)
+  // Top-up advance state
+  const [topUpAdmissionId, setTopUpAdmissionId]   = useState<string | null>(null)
+  const [topUpAmount, setTopUpAmount]             = useState('')
+  const [topUpMethod, setTopUpMethod]             = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
+  const [topUpPending, setTopUpPending]           = useState(false)
+  const [topUpError, setTopUpError]               = useState('')
   const [collectMethod, setCollectMethod]   = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
   const [collectError, setCollectError]     = useState('')
   const [collectPending, setCollectPending] = useState(false)
+  // Apply advance state
+  const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -90,7 +126,25 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     setBills(data)
     setStats(newStats)
     setDeposits(newDeposits)
+    const admissionIds = [...new Set(data.filter((b) => b.admission_id).map((b) => b.admission_id!))]
+    if (admissionIds.length > 0) {
+      const summaries = await listAdvanceSummariesBatch(admissionIds)
+      setAdvanceSummaries(summaries)
+    }
     setLoading(false)
+  }
+
+  async function handleTopUp(admissionId: string) {
+    const amount = parseFloat(topUpAmount)
+    if (!amount || amount <= 0) { setTopUpError('Enter a valid amount'); return }
+    setTopUpPending(true)
+    setTopUpError('')
+    const res = await recordAdvance({ admissionId, amount, method: topUpMethod })
+    setTopUpPending(false)
+    if (!res.success) { setTopUpError(res.error); return }
+    setTopUpAdmissionId(null)
+    setTopUpAmount('')
+    refresh()
   }
 
   async function handleCollect(requestId: string) {
@@ -108,6 +162,14 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     setStats(newStats)
   }
 
+  async function handleApplyAdvance(e: React.MouseEvent, billId: string, admissionId: string) {
+    e.stopPropagation()
+    setApplyingBillId(billId)
+    await applyAdvanceToBill(billId, admissionId)
+    setApplyingBillId(null)
+    refresh()
+  }
+
   function togglePatient(id: string) {
     setExpandedPatients((prev) => {
       const next = new Set(prev)
@@ -123,12 +185,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     for (const bill of bills) {
       const pid = (bill as unknown as { patient_id: string }).patient_id
       if (!pid) continue
+      const isCancelled = bill.status === 'cancelled'
       const g = map.get(pid)
       if (g) {
         g.bills.push(bill)
-        g.totalBilled      += bill.total
-        g.totalPaid        += bill.paid
-        g.totalOutstanding += Math.max(0, bill.total - bill.paid)
+        if (!isCancelled) {
+          g.totalBilled      += bill.total
+          g.totalPaid        += bill.paid
+          g.totalOutstanding += Math.max(0, bill.total - bill.paid)
+        }
+        // Prefer admission_id from the most recent bill
+        if (bill.admission_id && !g.admissionId) g.admissionId = bill.admission_id
       } else {
         map.set(pid, {
           patientId:        pid,
@@ -136,10 +203,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
           uhid:             bill.patient?.uhid ?? '',
           bills:            [bill],
           deposits:         [],
-          totalBilled:      bill.total,
-          totalPaid:        bill.paid,
-          totalOutstanding: Math.max(0, bill.total - bill.paid),
+          totalBilled:      isCancelled ? 0 : bill.total,
+          totalPaid:        isCancelled ? 0 : bill.paid,
+          totalOutstanding: isCancelled ? 0 : Math.max(0, bill.total - bill.paid),
           pendingAdvance:   0,
+          admissionId:      bill.admission_id ?? null,
+          advanceSummary:   null,
         })
       }
     }
@@ -152,6 +221,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       if (g) {
         g.deposits.push(dep)
         if (dep.status === 'pending') g.pendingAdvance += dep.amount
+        if (!g.admissionId && dep.admission_id) g.admissionId = dep.admission_id
       } else {
         map.set(pid, {
           patientId:        pid,
@@ -163,7 +233,16 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
           totalPaid:        0,
           totalOutstanding: 0,
           pendingAdvance:   dep.status === 'pending' ? dep.amount : 0,
+          admissionId:      dep.admission_id ?? null,
+          advanceSummary:   null,
         })
+      }
+    }
+
+    // Attach advance summaries
+    for (const g of map.values()) {
+      if (g.admissionId && advanceSummaries[g.admissionId]) {
+        g.advanceSummary = advanceSummaries[g.admissionId]
       }
     }
 
@@ -173,7 +252,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       const bUrgent = (b.pendingAdvance > 0 ? 2 : 0) + (b.totalOutstanding > 0 ? 1 : 0)
       return bUrgent - aUrgent || b.totalOutstanding - a.totalOutstanding
     })
-  }, [bills, deposits])
+  }, [bills, deposits, advanceSummaries])
 
   const filteredGroups = useMemo(() => {
     const byStatus = statusFilter === 'all'
@@ -287,9 +366,14 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
           {filteredGroups.length === 0
             ? <GlassCard className="p-8"><EmptyBills /></GlassCard>
             : filteredGroups.map((group) => {
-                const expanded        = expandedPatients.has(group.patientId)
-                const hasOutstanding  = group.totalOutstanding > 0
-                const hasPendingAdv   = group.pendingAdvance > 0
+                const expanded           = expandedPatients.has(group.patientId)
+                const hasOutstanding    = group.totalOutstanding > 0
+                const hasPendingAdv     = group.pendingAdvance > 0
+                const adv               = group.advanceSummary
+                const advNetBalance     = adv?.netBalance ?? 0
+                const advCollected      = adv?.totalCollected ?? 0
+                const advExhausted      = advCollected > 0 && advNetBalance <= 0
+                const advHasBalance     = advNetBalance > 0
                 const sortedBills     = [...group.bills].sort(
                   (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 )
@@ -305,61 +389,74 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                       className="w-full px-4 py-3 text-left"
                       style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
 
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                      <div className="flex items-start gap-2">
+                        {/* Avatar */}
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5"
                           style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
                           {group.patientName.charAt(0).toUpperCase()}
                         </div>
+
+                        {/* Content — expands to fill, all rows stack here */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
+                          {/* Row 1: name · uhid · count */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-semibold text-sm" style={{ color: '#0F172A' }}>{group.patientName}</span>
                             <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{group.uhid}</span>
                             <span className="text-xs px-1.5 py-0.5 rounded-lg" style={{ background: '#F1F5F9', color: '#64748B' }}>
                               {billCount + depCount} {itemLabel}
                             </span>
                           </div>
-                          {/* Summary line */}
-                          <div className="flex items-center gap-3 mt-1 flex-wrap">
-                            {billCount > 0 && (
-                              <>
-                                <span className="text-xs" style={{ color: '#64748B' }}>
-                                  Billed: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={group.totalBilled} /></span>
-                                </span>
-                                <span className="text-xs" style={{ color: '#64748B' }}>
-                                  Paid: <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={group.totalPaid} /></span>
-                                </span>
-                              </>
-                            )}
-                            {hasPendingAdv && (
+
+                          {/* Row 2: billed · paid */}
+                          {billCount > 0 && (
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span className="text-xs" style={{ color: '#64748B' }}>
-                                Advance due: <span className="font-semibold" style={{ color: '#D97706' }}><Money amount={group.pendingAdvance} /></span>
+                                Billed <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={group.totalBilled} /></span>
+                              </span>
+                              <span style={{ color: '#CBD5E1', fontSize: '10px' }}>·</span>
+                              <span className="text-xs" style={{ color: '#64748B' }}>
+                                Paid <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={group.totalPaid} /></span>
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Row 3: status chips — compact, all inline */}
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            {hasPendingAdv && (
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
+                                style={{ background: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A' }}>
+                                Adv {fmtCompact(group.pendingAdvance)} due
                               </span>
                             )}
+                            {advHasBalance && (
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
+                                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
+                                {fmtCompact(advNetBalance)} left
+                              </span>
+                            )}
+                            {advExhausted && hasOutstanding && (
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
+                                style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                Adv overdue
+                              </span>
+                            )}
+                            {hasOutstanding ? (
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-bold"
+                                style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.15)' }}>
+                                {fmtCompact(group.totalOutstanding)} due
+                              </span>
+                            ) : billCount > 0 ? (
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-bold"
+                                style={{ background: 'rgba(16,185,129,0.08)', color: '#10B981', border: '1px solid rgba(16,185,129,0.15)' }}>
+                                Cleared
+                              </span>
+                            ) : null}
                           </div>
                         </div>
 
-                        {/* Status chip */}
-                        <div className="flex-shrink-0 flex items-center gap-1.5">
-                          {hasPendingAdv && (
-                            <div className="px-2 py-0.5 rounded-lg text-xs font-semibold"
-                              style={{ background: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A' }}>
-                              Advance
-                            </div>
-                          )}
-                          {hasOutstanding ? (
-                            <div className="px-2.5 py-1 rounded-xl text-xs font-bold"
-                              style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.15)' }}>
-                              <Money amount={group.totalOutstanding} /> due
-                            </div>
-                          ) : billCount > 0 ? (
-                            <div className="px-2.5 py-1 rounded-xl text-xs font-bold"
-                              style={{ background: 'rgba(16,185,129,0.08)', color: '#10B981', border: '1px solid rgba(16,185,129,0.15)' }}>
-                              Cleared
-                            </div>
-                          ) : null}
-                          <div style={{ color: '#94A3B8' }}>
-                            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                          </div>
+                        {/* Chevron only — no chips here */}
+                        <div className="flex-shrink-0 mt-1" style={{ color: '#94A3B8' }}>
+                          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </div>
                       </div>
                     </button>
@@ -449,42 +546,112 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                           )
                         })}
 
+                        {/* Top Up Advance row — shown for IPD patients when accountant has permission */}
+                        {canAdvance && group.admissionId && (
+                          <div className="px-4 py-2.5" style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9' }}>
+                            {topUpAdmissionId === group.admissionId ? (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold" style={{ color: '#0D9488' }}>Top Up Advance</span>
+                                {topUpError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{topUpError}</span>}
+                                <input
+                                  type="number"
+                                  placeholder="Amount"
+                                  value={topUpAmount}
+                                  onChange={(e) => setTopUpAmount(e.target.value)}
+                                  className="px-2 py-1 rounded-lg text-xs"
+                                  style={{ width: '100px', border: '1px solid #CBD5E1', background: '#fff', outline: 'none' }}
+                                />
+                                <Select
+                                  value={topUpMethod}
+                                  onChange={(e) => setTopUpMethod(e.target.value as typeof topUpMethod)}
+                                  style={{ minWidth: '100px' }}
+                                >
+                                  {PAYMENT_METHODS.map((m) => (
+                                    <option key={m.value} value={m.value}>{m.label}</option>
+                                  ))}
+                                </Select>
+                                <button onClick={() => handleTopUp(group.admissionId!)} disabled={topUpPending}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                  {topUpPending ? '…' : 'Record'}
+                                </button>
+                                <button onClick={() => { setTopUpAdmissionId(null); setTopUpAmount(''); setTopUpError('') }}
+                                  className="px-2 py-1.5 rounded-lg text-xs"
+                                  style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setTopUpAdmissionId(group.admissionId!); setTopUpAmount(''); setTopUpError('') }}
+                                className="flex items-center gap-1.5 text-xs font-semibold"
+                                style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
+                                + Top Up Advance
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         {/* Bill rows */}
-                        {sortedBills.map((bill, i) => {
-                          const balance = Math.max(0, bill.total - bill.paid)
-                          return (
-                            <div key={bill.id}
-                              className="px-4 py-3 cursor-pointer"
-                              style={{
-                                borderBottom: i < sortedBills.length - 1 ? '1px solid #F8FAFC' : 'none',
-                                background: 'rgba(248,250,252,0.5)',
-                              }}
-                              onClick={() => router.push(`/billing/${bill.id}`)}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.5)' }}>
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <span className="font-mono text-xs font-semibold" style={{ color: '#0D9488' }}>
-                                  {bill.bill_no}
-                                </span>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
-                                  <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
+                        {(() => {
+                          const hasCollectedAdvance = group.deposits.some((d) => d.status === 'collected') || advCollected > 0
+                          return sortedBills.map((bill, i) => {
+                            const balance = Math.max(0, bill.total - bill.paid)
+                            const canApply = canAdvance && hasCollectedAdvance
+                              && balance > 0
+                              && (bill.status === 'unpaid' || bill.status === 'partial' || bill.status === 'draft')
+                              && !!bill.admission_id
+                            return (
+                              <div key={bill.id}
+                                className="px-4 py-3 cursor-pointer"
+                                style={{
+                                  borderBottom: i < sortedBills.length - 1 ? '1px solid #F8FAFC' : 'none',
+                                  background: bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)',
+                                  opacity: bill.status === 'cancelled' ? 0.65 : 1,
+                                }}
+                                onClick={() => router.push(`/billing/${bill.id}`)}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)' }}>
+                                <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                                  <span className="font-mono text-xs font-semibold"
+                                    style={{ color: '#0D9488', textDecoration: bill.status === 'cancelled' ? 'line-through' : 'none' }}>
+                                    {bill.bill_no}
+                                  </span>
+                                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                    {canApply && (
+                                      <button
+                                        onClick={(e) => handleApplyAdvance(e, bill.id, bill.admission_id!)}
+                                        disabled={applyingBillId === bill.id}
+                                        className="text-xs px-2.5 py-1 rounded-lg font-semibold"
+                                        style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                                        {applyingBillId === bill.id ? 'Applying…' : '↳ Adjust Advance'}
+                                      </button>
+                                    )}
+                                    <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                    <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs flex-wrap">
+                                  <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
+                                  {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
+                                    <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                      style={BILL_SOURCE_COLORS[bill.bill_source] ?? { bg: '#F1F5F9', color: '#475569' }}>
+                                      {BILL_SOURCE_LABELS[bill.bill_source]}
+                                    </span>
+                                  )}
+                                  <span style={{ color: '#64748B' }}>
+                                    Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
+                                  </span>
+                                  {balance > 0 ? (
+                                    <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
+                                  ) : (
+                                    <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3 text-xs flex-wrap">
-                                <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
-                                <span style={{ color: '#64748B' }}>
-                                  Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
-                                </span>
-                                {balance > 0 ? (
-                                  <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
-                                ) : (
-                                  <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
+                            )
+                          })
+                        })()}
                       </div>
                     )}
                   </GlassCard>
@@ -508,9 +675,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                     <p className="font-mono text-sm font-semibold" style={{ color: '#0D9488' }}>{bill.bill_no}</p>
                     <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
                   </div>
-                  <p className="text-xs mb-1.5" style={{ color: '#64748B' }}>
-                    {bill.patient?.full_name} · {bill.patient?.uhid}
-                  </p>
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <p className="text-xs" style={{ color: '#64748B' }}>
+                      {bill.patient?.full_name} · {bill.patient?.uhid}
+                    </p>
+                    {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
+                      <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                        style={BILL_SOURCE_COLORS[bill.bill_source] ?? { background: '#F1F5F9', color: '#475569' }}>
+                        {BILL_SOURCE_LABELS[bill.bill_source]}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center justify-between text-xs">
                     <span style={{ color: '#64748B' }}>
                       Total: <Money amount={bill.total} className="font-semibold" style={{ color: '#0F172A' }} />
@@ -546,7 +721,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                           onClick={() => router.push(`/billing/${bill.id}`)}
                           onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.6)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                          <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: '#0D9488' }}>{bill.bill_no}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-mono text-xs font-medium" style={{ color: '#0D9488' }}>{bill.bill_no}</p>
+                            {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
+                              <span className="mt-0.5 inline-block px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                style={BILL_SOURCE_COLORS[bill.bill_source] ?? { background: '#F1F5F9', color: '#475569' }}>
+                                {BILL_SOURCE_LABELS[bill.bill_source]}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <p style={{ color: '#0F172A' }}>{bill.patient?.full_name}</p>
                             <p className="text-xs" style={{ color: '#94A3B8' }}>{bill.patient?.uhid}</p>

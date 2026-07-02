@@ -14,6 +14,7 @@ const SOURCE_LABELS: Record<string, string> = {
   lab:               'Laboratory',
   radiology:         'Radiology',
   pharmacy:          'Pharmacy',
+  ipd_pharmacy:      'Pharmacy (Ward)',
   ot:                'Operation Theatre',
   ot_consumable:     'OT Consumables',
   blood:             'Blood Bank',
@@ -52,13 +53,13 @@ export default function BillBuilderModal({ onClose, onGenerated, preselectedPati
   useEffect(() => {
     if (!preselectedPatient) return
     setLoadingCharges(true)
-    getUnbilledCharges({ patientId: preselectedPatient.id }).then((lines) => {
+    getUnbilledCharges({ patientId: preselectedPatient.id, admissionId: admissionId ?? null }).then((lines) => {
       setCharges(lines)
       setSelectedRefs(new Set(lines.map((l) => l.ref_id)))
       setLoadingCharges(false)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preselectedPatient?.id])
+  }, [preselectedPatient?.id, admissionId])
 
   // Search patients with debounce
   useEffect(() => {

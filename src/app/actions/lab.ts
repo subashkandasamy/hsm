@@ -137,15 +137,47 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
 
-  // Phase 15: gate on payment before sample collection
-  const { data: bill } = await supabase
-    .from('bills')
-    .select('id, status')
-    .eq('status', 'unpaid')
-    .contains('items', [])
-    .maybeSingle()
+  // Fetch order to distinguish IPD (has admission_id) from OPD
+  const { data: order } = await supabase
+    .from('lab_orders')
+    .select('id, admission_id, patient_id, tenant_id, items:lab_order_items(id, price_snapshot, test:lab_tests_catalog(name))')
+    .eq('id', orderId)
+    .single()
 
-  // Find bill linked to this order via bill_items
+  if (order?.admission_id) {
+    // IPD path: no payment gate — bill is auto-created on collection
+    const { error } = await supabase
+      .from('lab_orders').update({ status: 'collected' }).eq('id', orderId).eq('status', 'ordered')
+    if (error) return { success: false, error: error.message }
+
+    const items = (order.items ?? []) as unknown as Array<{ id: string; price_snapshot: number; test: { name: string } | null }>
+    const lineItems = items.map((i) => ({
+      source: 'lab' as const,
+      ref_id: i.id,
+      description: (i.test?.name as string) ?? 'Lab test',
+      qty: 1,
+      unit_price: i.price_snapshot,
+    }))
+
+    if (lineItems.length > 0) {
+      const { autoIpdBill } = await import('@/lib/ipdBilling')
+      const today = new Date().toISOString().split('T')[0]
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: order.admission_id as string,
+        patientId: order.patient_id as string,
+        billingDate: today,
+        billSource: 'lab',
+        lineItems,
+      })
+      await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
+    }
+
+    await logAudit(actor.id, 'collect', 'lab_order', orderId)
+    return { success: true }
+  }
+
+  // OPD path: gate on payment before sample collection
   const { data: billItem } = await supabase
     .from('bill_items')
     .select('bill_id, bill:bills(id, status)')

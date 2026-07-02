@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition } from 'react'
 import {
   Pill, Droplets, Wind, Plus, StopCircle, Check,
   ChevronDown, ChevronRight, Copy, AlertCircle, X, Ban, Pause,
-  FlaskConical, ScanLine, Search, XCircle,
+  FlaskConical, ScanLine, Search, XCircle, RotateCcw,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 
@@ -54,7 +54,7 @@ function CollapsibleSection({ icon, title, badge, iconColor, action, children }:
 import SelectUI from '@/components/ui/Select'
 import {
   listOrders, createOrder, stopOrder,
-  listSchedule, updateSlotStatus,
+  listSchedule, updateSlotStatus, restoreSlotToPending,
   getVisitPrescriptions, copyPrescriptionsToIPD,
   listIpdLabOrders, createIpdLabOrder, cancelIpdLabOrder, listLabCatalogForIpd,
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
@@ -204,11 +204,12 @@ function DrugCombobox({ value, drugs, onChange }: DrugComboboxProps) {
 // ─── Slot Row ─────────────────────────────────────────────────────────────────
 
 interface SlotRowProps {
-  slot: IpdAdminSchedule; todayStr: string; canGive: boolean
+  slot: IpdAdminSchedule; todayStr: string; canGive: boolean; pharmacyReady: boolean
   actingId: string | null
   onAction: (id: string, status: 'given' | 'missed' | 'held') => void
+  onRestore: (id: string) => void
 }
-function SlotRow({ slot, todayStr, canGive, actingId, onAction }: SlotRowProps) {
+function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, onRestore }: SlotRowProps) {
   const slotDay  = slot.due_at.split('T')[0]
   const isToday  = slotDay === todayStr
   const isPast   = slotDay < todayStr
@@ -247,12 +248,19 @@ function SlotRow({ slot, todayStr, canGive, actingId, onAction }: SlotRowProps) 
 
       {/* Today / overdue: Given + Missed + Hold */}
       {!isActed && canGive && (isToday || isPast) && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={() => onAction(slot.id, 'given')} disabled={isActing}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
-            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-            <Check className="w-3 h-3" />{isActing ? '…' : 'Given'}
-          </button>
+        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+          {pharmacyReady ? (
+            <button onClick={() => onAction(slot.id, 'given')} disabled={isActing}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Check className="w-3 h-3" />{isActing ? '…' : 'Given'}
+            </button>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
+              style={{ background: '#FFF7ED', color: '#C2410C', border: '1px solid #FED7AA' }}>
+              ⏳ Awaiting pharmacy
+            </span>
+          )}
           <button onClick={() => onAction(slot.id, 'missed')} disabled={isActing}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
             style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
@@ -274,6 +282,14 @@ function SlotRow({ slot, todayStr, canGive, actingId, onAction }: SlotRowProps) 
           <XCircle className="w-3 h-3" />{isActing ? '…' : 'Skip'}
         </button>
       )}
+      {/* Future held (skipped): Restore back to pending */}
+      {isFuture && slot.status === 'held' && canGive && (
+        <button onClick={() => onRestore(slot.id)} disabled={isActing}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs flex-shrink-0"
+          style={{ background: 'rgba(16,185,129,0.08)', color: '#059669', border: '1px solid rgba(16,185,129,0.2)', cursor: 'pointer' }}>
+          <RotateCcw className="w-3 h-3" />{isActing ? '…' : 'Restore'}
+        </button>
+      )}
       {!isActed && isFuture && !canGive && (
         <span className="text-xs flex-shrink-0" style={{ color: '#CBD5E1' }}>Scheduled</span>
       )}
@@ -287,11 +303,16 @@ interface OrderCardProps {
   order: IpdMedicationOrder; slots: IpdAdminSchedule[]; todayStr: string
   canOrder: boolean; canGive: boolean; actingId: string | null; stoppingId: string | null
   onAction: (id: string, status: 'given' | 'missed' | 'held') => void
+  onRestore: (id: string) => void
   onStop: (orderId: string) => void
 }
-function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onStop }: OrderCardProps) {
+function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onRestore, onStop }: OrderCardProps) {
   const [expanded, setExpanded] = useState(false)
   const col = TYPE_COLOR[order.type]
+
+  // Oxygen has no pharmacy flow; other types need pharmacy to dispense before nurse can mark 'given'
+  const pharmacyReady = order.type === 'oxygen' ||
+    (order.pharmacy ?? []).some((r) => r.status === 'dispensed')
 
   const byDay = slots.reduce<Record<string, IpdAdminSchedule[]>>((acc, s) => {
     const day = s.due_at.split('T')[0];(acc[day] ??= []).push(s); return acc
@@ -313,7 +334,13 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
             {order.notes ? ` · ${order.notes}` : ''}
           </p>
         </div>
-        {urgentCount > 0 && (
+        {!pharmacyReady && order.status === 'active' && (
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+            style={{ background: '#FFF7ED', color: '#C2410C', border: '1px solid #FED7AA' }}>
+            Pharmacy pending
+          </span>
+        )}
+        {pharmacyReady && urgentCount > 0 && (
           <span className="text-xs px-2 py-0.5 rounded-full font-bold"
             style={{ background: overdueCount > 0 ? '#FEE2E2' : '#FEF3C7', color: overdueCount > 0 ? '#DC2626' : '#92400E' }}>
             {overdueCount > 0 ? `${overdueCount} overdue` : `${todayPending} due today`}
@@ -345,7 +372,8 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
               <div className="space-y-1.5">
                 {byDay[day].map((slot) => (
                   <SlotRow key={slot.id} slot={slot} todayStr={todayStr}
-                    canGive={canGive} actingId={actingId} onAction={onAction} />
+                    canGive={canGive} pharmacyReady={pharmacyReady}
+                    actingId={actingId} onAction={onAction} onRestore={onRestore} />
                 ))}
               </div>
             </div>
@@ -363,6 +391,8 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
 
 interface LabPanelProps { admissionId: string; patientId: string; canOrder: boolean }
 function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
+  const todayStr = new Date().toISOString().split('T')[0]
+
   const [orders, setOrders]             = useState<LabOrder[]>([])
   const [catalog, setCatalog]           = useState<LabTestCatalog[]>([])
   const [loading, setLoading]           = useState(true)
@@ -370,6 +400,8 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [query, setQuery]               = useState('')
   const [selected, setSelected]         = useState<Set<string>>(new Set())
+  const [priority, setPriority]         = useState<'stat' | 'routine'>('routine')
+  const [scheduledFor, setScheduledFor] = useState(todayStr)
   const [saving, setSaving]             = useState(false)
   const [err, setErr]                   = useState('')
   const [cancelingId, setCancelingId]   = useState<string | null>(null)
@@ -380,6 +412,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
 
   async function openModal() {
     setShowModal(true); setSelected(new Set()); setQuery(''); setErr('')
+    setPriority('routine'); setScheduledFor(todayStr)
     if (catalog.length === 0) {
       setCatalogLoading(true)
       setCatalog(await listLabCatalogForIpd())
@@ -390,7 +423,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   async function submitOrder() {
     if (selected.size === 0) return
     setSaving(true); setErr('')
-    const res = await createIpdLabOrder(admissionId, patientId, Array.from(selected))
+    const res = await createIpdLabOrder(admissionId, patientId, Array.from(selected), priority, scheduledFor)
     setSaving(false)
     if (!res.success) { setErr(res.error); return }
     setOrders(await listIpdLabOrders(admissionId)); setShowModal(false); setSelected(new Set())
@@ -437,8 +470,28 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        {order.priority === 'stat' && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                            style={{ background: '#FEE2E2', color: '#DC2626' }}>STAT</span>
+                        )}
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                           style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                        {order.scheduled_for && order.status === 'ordered' && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={
+                              order.scheduled_for < todayStr
+                                ? { background: '#FEE2E2', color: '#DC2626' }
+                                : order.scheduled_for === todayStr
+                                ? { background: '#DCFCE7', color: '#166534' }
+                                : { background: '#FEF3C7', color: '#92400E' }
+                            }>
+                            {order.scheduled_for < todayStr
+                              ? 'Overdue'
+                              : order.scheduled_for === todayStr
+                              ? 'Due today'
+                              : `Collect: ${fmtDay(order.scheduled_for + 'T00:00:00')}`}
+                          </span>
+                        )}
                         <span className="text-xs" style={{ color: '#94A3B8' }}>
                           {fmtDateTime(order.ordered_at)}
                           {order.orderer?.full_name ? ` · Dr. ${order.orderer.full_name}` : ''}
@@ -495,12 +548,39 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
               </button>
             </div>
             {/* Search */}
-            <div className="px-5 pt-4 pb-3" style={{ flexShrink: 0 }}>
+            <div className="px-5 pt-4 pb-2" style={{ flexShrink: 0 }}>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                 <input value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search tests…" autoFocus
                   className="w-full pl-8 pr-3 py-2 rounded-lg text-sm border"
+                  style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+              </div>
+            </div>
+            {/* Priority + Schedule */}
+            <div className="px-5 pb-3 flex items-center gap-3 flex-wrap" style={{ flexShrink: 0 }}>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <button type="button" onClick={() => setPriority('routine')}
+                  className="px-3 py-1.5 text-xs font-medium"
+                  style={priority === 'routine'
+                    ? { background: '#F1F5F9', color: '#475569', border: 'none', cursor: 'pointer' }
+                    : { background: '#fff', color: '#94A3B8', border: 'none', cursor: 'pointer' }}>
+                  Routine
+                </button>
+                <button type="button" onClick={() => setPriority('stat')}
+                  className="px-3 py-1.5 text-xs font-bold"
+                  style={priority === 'stat'
+                    ? { background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }
+                    : { background: '#fff', color: '#94A3B8', border: 'none', cursor: 'pointer' }}>
+                  STAT
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <label className="text-xs flex-shrink-0" style={{ color: '#64748B' }}>Collect on:</label>
+                <input type="date" value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  min={todayStr}
+                  className="flex-1 min-w-0 px-2 py-1.5 rounded-lg text-xs border"
                   style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
               </div>
             </div>
@@ -572,6 +652,8 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
 
 interface RadPanelProps { admissionId: string; patientId: string; canOrder: boolean }
 function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
+  const todayStr = new Date().toISOString().split('T')[0]
+
   const [orders, setOrders]                 = useState<RadiologyOrder[]>([])
   const [catalog, setCatalog]               = useState<RadiologyCatalog[]>([])
   const [loading, setLoading]               = useState(true)
@@ -580,6 +662,8 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
   const [query, setQuery]                   = useState('')
   const [selectedTest, setSelectedTest]     = useState<RadiologyCatalog | null>(null)
   const [notes, setNotes]                   = useState('')
+  const [priority, setPriority]             = useState<'stat' | 'routine'>('routine')
+  const [scheduledFor, setScheduledFor]     = useState(todayStr)
   const [saving, setSaving]                 = useState(false)
   const [err, setErr]                       = useState('')
   const [cancelingId, setCancelingId]       = useState<string | null>(null)
@@ -590,6 +674,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
 
   async function openModal() {
     setShowModal(true); setSelectedTest(null); setNotes(''); setQuery(''); setErr('')
+    setPriority('routine'); setScheduledFor(todayStr)
     if (catalog.length === 0) {
       setCatalogLoading(true)
       setCatalog(await listRadiologyCatalogForIpd())
@@ -600,7 +685,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
   async function submitOrder() {
     if (!selectedTest) return
     setSaving(true); setErr('')
-    const res = await createIpdRadiologyOrder(admissionId, patientId, selectedTest.id, notes || undefined)
+    const res = await createIpdRadiologyOrder(admissionId, patientId, selectedTest.id, notes || undefined, priority, scheduledFor)
     setSaving(false)
     if (!res.success) { setErr(res.error); return }
     setOrders(await listIpdRadiologyOrders(admissionId))
@@ -654,8 +739,28 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
+                        {order.priority === 'stat' && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                            style={{ background: '#FEE2E2', color: '#DC2626' }}>STAT</span>
+                        )}
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                           style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                        {order.scheduled_for && order.status === 'ordered' && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={
+                              order.scheduled_for < todayStr
+                                ? { background: '#FEE2E2', color: '#DC2626' }
+                                : order.scheduled_for === todayStr
+                                ? { background: '#DCFCE7', color: '#166534' }
+                                : { background: '#FEF3C7', color: '#92400E' }
+                            }>
+                            {order.scheduled_for < todayStr
+                              ? 'Overdue'
+                              : order.scheduled_for === todayStr
+                              ? 'Due today'
+                              : `Perform: ${fmtDay(order.scheduled_for + 'T00:00:00')}`}
+                          </span>
+                        )}
                         <span className="text-xs" style={{ color: '#94A3B8' }}>
                           {fmtDateTime(order.ordered_at)}
                           {order.orderer?.full_name ? ` · Dr. ${order.orderer.full_name}` : ''}
@@ -702,12 +807,39 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
               </button>
             </div>
             {/* Search */}
-            <div className="px-5 pt-4 pb-3" style={{ flexShrink: 0 }}>
+            <div className="px-5 pt-4 pb-2" style={{ flexShrink: 0 }}>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                 <input value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search scans…" autoFocus
                   className="w-full pl-8 pr-3 py-2 rounded-lg text-sm border"
+                  style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+              </div>
+            </div>
+            {/* Priority + Schedule */}
+            <div className="px-5 pb-3 flex items-center gap-3 flex-wrap" style={{ flexShrink: 0 }}>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <button type="button" onClick={() => setPriority('routine')}
+                  className="px-3 py-1.5 text-xs font-medium"
+                  style={priority === 'routine'
+                    ? { background: '#F1F5F9', color: '#475569', border: 'none', cursor: 'pointer' }
+                    : { background: '#fff', color: '#94A3B8', border: 'none', cursor: 'pointer' }}>
+                  Routine
+                </button>
+                <button type="button" onClick={() => setPriority('stat')}
+                  className="px-3 py-1.5 text-xs font-bold"
+                  style={priority === 'stat'
+                    ? { background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }
+                    : { background: '#fff', color: '#94A3B8', border: 'none', cursor: 'pointer' }}>
+                  STAT
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <label className="text-xs flex-shrink-0" style={{ color: '#64748B' }}>Perform on:</label>
+                <input type="date" value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  min={todayStr}
+                  className="flex-1 min-w-0 px-2 py-1.5 rounded-lg text-xs border"
                   style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
               </div>
             </div>
@@ -876,6 +1008,14 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     if (!res.success) { setError(res.error); return }
     setSchedule((prev) => prev.map((s) => s.id === scheduleId
       ? { ...s, status, given_at: new Date().toISOString() } : s))
+  }
+
+  async function handleRestoreSlot(scheduleId: string) {
+    setActingId(scheduleId)
+    const res = await restoreSlotToPending(scheduleId)
+    setActingId(null)
+    if (!res.success) { setError(res.error); return }
+    setSchedule((prev) => prev.map((s) => s.id === scheduleId ? { ...s, status: 'pending' } : s))
   }
 
   async function openCopy() {
@@ -1104,7 +1244,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
               <OrderCard key={o.id} order={o} slots={slotsForOrder(o.id)}
                 todayStr={todayStr} canOrder={canOrder} canGive={canGive}
                 actingId={actingId} stoppingId={stoppingId}
-                onAction={handleSlotAction} onStop={handleStop} />
+                onAction={handleSlotAction} onRestore={handleRestoreSlot} onStop={handleStop} />
             ))}
           </div>
         )}

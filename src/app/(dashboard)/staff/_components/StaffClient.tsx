@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Plus, RefreshCw, Users, CalendarCheck, CalendarClock,
-  Edit2, UserX, Phone, Mail, Briefcase,
+  Edit2, UserX, Phone, Mail, Briefcase, Search,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
@@ -61,6 +61,7 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
   const [feeEditId, setFeeEditId]       = useState<string | null>(null)
   const [feeInput, setFeeInput]         = useState('')
   const [feeSaving, setFeeSaving]       = useState(false)
+  const [mobileSearch, setMobileSearch] = useState('')
 
   async function refresh() {
     setLoading(true)
@@ -85,6 +86,12 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
   }
 
   const filtered = roleFilter ? staff.filter((s) => s.role === roleFilter) : staff
+  const mobileFiltered = mobileSearch
+    ? filtered.filter((s) =>
+        s.full_name.toLowerCase().includes(mobileSearch.toLowerCase()) ||
+        (s.phone ?? '').includes(mobileSearch)
+      )
+    : filtered
   const activeCount = staff.filter((s) => s.is_active).length
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -119,18 +126,20 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
       />
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit"
-        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-        {TABS.map(({ key, label, icon }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap"
-            style={tab === key
-              ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
-              : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-            {icon}
-            {label}
-          </button>
-        ))}
+      <div className="overflow-x-auto -mx-4 px-4 mb-5">
+        <div className="flex gap-1 p-1 rounded-xl w-max"
+          style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
+          {TABS.map(({ key, label, icon }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0"
+              style={tab === key
+                ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
+                : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+              {icon}
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Directory Tab */}
@@ -159,152 +168,219 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
             </div>
           </div>
 
-          <DataTable
-            data={filtered as unknown as Record<string, unknown>[]}
-            searchKeys={['full_name', 'phone']}
-            searchPlaceholder="Search staff…"
-            emptyTitle="No staff found"
-            emptyDescription="Add staff members to get started"
-            columns={[
-              {
-                key: 'full_name', header: 'Name', sortable: true,
-                render: (row) => {
-                  const s = row as unknown as StaffMember
-                  return (
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-                        style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
-                        {s.full_name.charAt(0).toUpperCase()}
+          {/* Mobile compact card list */}
+          <div className="md:hidden glass-card overflow-hidden">
+            <div className="px-4 py-3 border-b" style={{ borderColor: '#E2E8F0' }}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
+                <input
+                  type="search"
+                  placeholder="Search staff…"
+                  value={mobileSearch}
+                  onChange={(e) => setMobileSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg"
+                  style={{
+                    background: 'rgba(255,255,255,0.8)',
+                    border: '1px solid #E2E8F0',
+                    color: '#0F172A',
+                    outline: 'none',
+                    minHeight: '44px',
+                  }}
+                />
+              </div>
+            </div>
+            {mobileFiltered.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm" style={{ color: '#94A3B8' }}>No staff found</div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+                {mobileFiltered.map((s) => (
+                  <div key={s.id} className="px-4 py-4 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                      style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
+                      {s.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm" style={{ color: '#0F172A' }}>{s.full_name}</span>
+                        <StatusBadge status={s.is_active ? 'success' : 'cancelled'} label={s.is_active ? 'Active' : 'Inactive'} />
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate" style={{ color: '#0F172A' }}>{s.full_name}</p>
-                        <p className="text-xs" style={{ color: '#94A3B8' }}>{s.staff?.designation ?? '—'}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
+                        {s.staff?.designation && (
+                          <span className="text-xs truncate" style={{ color: '#94A3B8' }}>{s.staff.designation}</span>
+                        )}
                       </div>
                     </div>
-                  )
-                },
-              },
-              {
-                key: 'role', header: 'Role', sortable: true,
-                render: (row) => {
-                  const s = row as unknown as StaffMember
-                  return <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
-                },
-              },
-              {
-                key: 'consultation_fee', header: 'Rate', mobileHidden: true,
-                render: (row) => {
-                  const s = row as unknown as StaffMember
+                    {canManage && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => setEditMember(s)} title="Edit"
+                          className="w-9 h-9 flex items-center justify-center rounded-lg"
+                          style={{ background: 'rgba(100,116,139,0.08)', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        {s.is_active && (
+                          <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                            className="w-9 h-9 flex items-center justify-center rounded-lg"
+                            style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  // Nursing charge row for nurses
-                  if (s.role === 'nurse') {
-                    const rate = s.staff?.nursing_charge_per_shift
-                    const hasRate = rate != null && (rate as number) > 0
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <DataTable
+              data={filtered as unknown as Record<string, unknown>[]}
+              searchKeys={['full_name', 'phone']}
+              searchPlaceholder="Search staff…"
+              emptyTitle="No staff found"
+              emptyDescription="Add staff members to get started"
+              columns={[
+                {
+                  key: 'full_name', header: 'Name', sortable: true,
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
                     return (
-                      <span className="text-sm" style={{ color: hasRate ? '#7C3AED' : '#94A3B8' }}>
-                        {hasRate ? `₹${rate}/shift` : '—'}
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                          style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
+                          {s.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate" style={{ color: '#0F172A' }}>{s.full_name}</p>
+                          <p className="text-xs" style={{ color: '#94A3B8' }}>{s.staff?.designation ?? '—'}</p>
+                        </div>
+                      </div>
+                    )
+                  },
+                },
+                {
+                  key: 'role', header: 'Role', sortable: true,
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
+                    return <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
+                  },
+                },
+                {
+                  key: 'consultation_fee', header: 'Rate', mobileHidden: true,
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
+
+                    if (s.role === 'nurse') {
+                      const rate = s.staff?.nursing_charge_per_shift
+                      const hasRate = rate != null && (rate as number) > 0
+                      return (
+                        <span className="text-sm" style={{ color: hasRate ? '#7C3AED' : '#94A3B8' }}>
+                          {hasRate ? `₹${rate}/shift` : '—'}
+                        </span>
+                      )
+                    }
+
+                    if (s.role !== 'doctor') return <span style={{ color: '#CBD5E1' }}>—</span>
+
+                    if (feeEditId === s.id) {
+                      return (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={feeInput}
+                            onChange={(e) => setFeeInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveFee(s.id); if (e.key === 'Escape') setFeeEditId(null) }}
+                            autoFocus
+                            className="w-20 px-2 py-1 rounded-lg text-sm"
+                            style={{ border: '1px solid #0D9488', outline: 'none', color: '#0F172A' }}
+                          />
+                          <button
+                            onClick={() => saveFee(s.id)}
+                            disabled={feeSaving}
+                            className="px-2 py-1 rounded-lg text-xs font-semibold"
+                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                            {feeSaving ? '…' : '✓'}
+                          </button>
+                          <button
+                            onClick={() => setFeeEditId(null)}
+                            className="px-2 py-1 rounded-lg text-xs"
+                            style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                            ✕
+                          </button>
+                        </div>
+                      )
+                    }
+
+                    const fee = s.staff?.consultation_fee
+                    const hasCustomFee = fee != null && fee > 0
+                    return canManage ? (
+                      <button
+                        onClick={() => { setFeeEditId(s.id); setFeeInput(hasCustomFee ? String(fee) : '') }}
+                        className="text-sm font-medium px-2 py-0.5 rounded-lg"
+                        style={hasCustomFee
+                          ? { background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)', cursor: 'pointer' }
+                          : { background: '#F1F5F9', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                        {hasCustomFee ? `₹${fee}` : 'Set fee'}
+                      </button>
+                    ) : (
+                      <span className="text-sm" style={{ color: hasCustomFee ? '#0D9488' : '#94A3B8' }}>
+                        {hasCustomFee ? `₹${fee}` : 'Default'}
                       </span>
                     )
-                  }
-
-                  if (s.role !== 'doctor') return <span style={{ color: '#CBD5E1' }}>—</span>
-
-                  if (feeEditId === s.id) {
+                  },
+                },
+                {
+                  key: 'phone', header: 'Contact', mobileHidden: true,
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
                     return (
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={feeInput}
-                          onChange={(e) => setFeeInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') saveFee(s.id); if (e.key === 'Escape') setFeeEditId(null) }}
-                          autoFocus
-                          className="w-20 px-2 py-1 rounded-lg text-sm"
-                          style={{ border: '1px solid #0D9488', outline: 'none', color: '#0F172A' }}
-                        />
-                        <button
-                          onClick={() => saveFee(s.id)}
-                          disabled={feeSaving}
-                          className="px-2 py-1 rounded-lg text-xs font-semibold"
-                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                          {feeSaving ? '…' : '✓'}
-                        </button>
-                        <button
-                          onClick={() => setFeeEditId(null)}
-                          className="px-2 py-1 rounded-lg text-xs"
-                          style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-                          ✕
-                        </button>
+                      <div className="space-y-0.5">
+                        {s.phone && (
+                          <div className="flex items-center gap-1.5 text-xs" style={{ color: '#475569' }}>
+                            <Phone className="w-3 h-3" /> {s.phone}
+                          </div>
+                        )}
                       </div>
                     )
-                  }
-
-                  const fee = s.staff?.consultation_fee
-                  const hasCustomFee = fee != null && fee > 0
-                  return canManage ? (
-                    <button
-                      onClick={() => { setFeeEditId(s.id); setFeeInput(hasCustomFee ? String(fee) : '') }}
-                      className="text-sm font-medium px-2 py-0.5 rounded-lg"
-                      style={hasCustomFee
-                        ? { background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)', cursor: 'pointer' }
-                        : { background: '#F1F5F9', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                      {hasCustomFee ? `₹${fee}` : 'Set fee'}
-                    </button>
-                  ) : (
-                    <span className="text-sm" style={{ color: hasCustomFee ? '#0D9488' : '#94A3B8' }}>
-                      {hasCustomFee ? `₹${fee}` : 'Default'}
-                    </span>
-                  )
+                  },
                 },
-              },
-              {
-                key: 'phone', header: 'Contact', mobileHidden: true,
-                render: (row) => {
-                  const s = row as unknown as StaffMember
-                  return (
-                    <div className="space-y-0.5">
-                      {s.phone && (
-                        <div className="flex items-center gap-1.5 text-xs" style={{ color: '#475569' }}>
-                          <Phone className="w-3 h-3" /> {s.phone}
-                        </div>
-                      )}
-                    </div>
-                  )
+                {
+                  key: 'is_active', header: 'Status',
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
+                    return <StatusBadge status={s.is_active ? 'success' : 'cancelled'} label={s.is_active ? 'Active' : 'Inactive'} />
+                  },
                 },
-              },
-              {
-                key: 'is_active', header: 'Status',
-                render: (row) => {
-                  const s = row as unknown as StaffMember
-                  return <StatusBadge status={s.is_active ? 'success' : 'cancelled'} label={s.is_active ? 'Active' : 'Inactive'} />
-                },
-              },
-              {
-                key: 'actions', header: '',
-                render: (row) => {
-                  const s = row as unknown as StaffMember
-                  if (!canManage) return null
-                  return (
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button onClick={() => setEditMember(s)} title="Edit"
-                        className="w-8 h-8 flex items-center justify-center rounded-lg"
-                        style={{ background: 'rgba(100,116,139,0.08)', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      {s.is_active && (
-                        <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                {
+                  key: 'actions', header: '',
+                  render: (row) => {
+                    const s = row as unknown as StaffMember
+                    if (!canManage) return null
+                    return (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <button onClick={() => setEditMember(s)} title="Edit"
                           className="w-8 h-8 flex items-center justify-center rounded-lg"
-                          style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
-                          <UserX className="w-3.5 h-3.5" />
+                          style={{ background: 'rgba(100,116,139,0.08)', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                      )}
-                    </div>
-                  )
+                        {s.is_active && (
+                          <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                            className="w-8 h-8 flex items-center justify-center rounded-lg"
+                            style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                            <UserX className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  },
                 },
-              },
-            ]}
-          />
+              ]}
+            />
+          </div>
         </div>
       )}
 

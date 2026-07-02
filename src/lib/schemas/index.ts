@@ -157,6 +157,7 @@ export const DrugBatchSchema = z.object({
 export const DispenseSchema = z.object({
   patient_id: z.string().uuid(),
   prescription_id: z.string().uuid().nullable().optional(),
+  admission_id: z.string().uuid().nullable().optional(),
   drug_id: z.string().uuid('Please select a drug'),
   qty: z.number().int().min(1, 'Quantity must be at least 1'),
 })

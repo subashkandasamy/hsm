@@ -8,7 +8,7 @@ import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff } from '@/lib/types'
-import { applyAdvanceToBill } from '@/app/actions/admissionBilling'
+import { autoIpdBill } from '@/lib/ipdBilling'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -100,7 +100,8 @@ export async function getUnbilledCharges(params: {
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
       .not('status', 'eq', 'cancelled')
-    if (visitId) q = q.eq('visit_id', visitId)
+    if (admissionId) q = q.eq('admission_id', admissionId)
+    else if (visitId) q = q.eq('visit_id', visitId)
     const { data } = await q
     for (const o of data ?? []) {
       const items = (o.items ?? []) as unknown as Array<{ price_snapshot: number; test: { name: string } | null }>
@@ -125,7 +126,8 @@ export async function getUnbilledCharges(params: {
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
       .not('status', 'eq', 'cancelled')
-    if (visitId) q = q.eq('visit_id', visitId)
+    if (admissionId) q = q.eq('admission_id', admissionId)
+    else if (visitId) q = q.eq('visit_id', visitId)
     const { data } = await q
     for (const o of data ?? []) {
       lines.push({
@@ -139,13 +141,16 @@ export async function getUnbilledCharges(params: {
     }
   }
 
-  // ---- Pharmacy dispenses (unbilled) ----
+  // ---- Pharmacy dispenses — OPD/direct (unbilled) ----
   {
-    const { data } = await supabase
+    let q = supabase
       .from('dispenses')
       .select('id, qty, price_snapshot, drug:drugs(name)')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
+    if (admissionId) q = q.eq('admission_id', admissionId)
+    else if (visitId) q = q.eq('visit_id', visitId)
+    const { data } = await q
     for (const d of data ?? []) {
       const qty = d.qty as number
       const price = d.price_snapshot as number
@@ -153,6 +158,28 @@ export async function getUnbilledCharges(params: {
         source: 'pharmacy',
         ref_id: d.id,
         description: (d.drug as unknown as { name: string } | null)?.name ?? 'Medication',
+        qty,
+        unit_price: price,
+        amount: qty * price,
+      })
+    }
+  }
+
+  // ---- IPD pharmacy requests — dispensed, unbilled (admission-scoped only) ----
+  if (admissionId) {
+    const { data } = await supabase
+      .from('ipd_pharmacy_requests')
+      .select('id, item_name, quantity, price_snapshot')
+      .eq('admission_id', admissionId)
+      .eq('status', 'dispensed')
+      .eq('billing_status', 'unbilled')
+    for (const r of data ?? []) {
+      const qty = r.quantity as number
+      const price = r.price_snapshot as number
+      lines.push({
+        source: 'ipd_pharmacy',
+        ref_id: r.id,
+        description: r.item_name as string,
         qty,
         unit_price: price,
         amount: qty * price,
@@ -358,6 +385,7 @@ export async function generateBill(
     lab:          'lab_orders',
     radiology:    'radiology_orders',
     pharmacy:     'dispenses',
+    ipd_pharmacy: 'ipd_pharmacy_requests',
     ot:           'ot_schedules',
     blood:        'blood_issues',
     dental:       'dental_treatments',
@@ -374,9 +402,47 @@ export async function generateBill(
     }
   }
 
-  // Auto-apply any available advance credit for IPD admission bills
+  // Auto-apply any available advance credit for IPD admission bills.
+  // Done inline (not via applyAdvanceToBill) to reuse the existing actor + supabase
+  // client and avoid a silent permission failure in the nested server action call.
   if (admission_id) {
-    await applyAdvanceToBill(billId, admission_id).catch(() => {})
+    const { data: advRows } = await supabase
+      .from('admission_advances').select('amount').eq('admission_id', admission_id)
+    const totalAdvance = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
+
+    const { data: refRows } = await supabase
+      .from('admission_advance_refunds').select('amount').eq('admission_id', admission_id)
+    const totalRefunded = (refRows ?? []).reduce((s, r) => s + (r.amount as number), 0)
+
+    // Advance already applied to OTHER bills for this admission (exclude the new bill)
+    const { data: priorBills } = await supabase
+      .from('bills').select('id')
+      .eq('admission_id', admission_id)
+      .neq('id', billId)
+      .not('status', 'eq', 'cancelled')
+    const priorBillIds = (priorBills ?? []).map((b) => b.id as string)
+    let advanceApplied = 0
+    if (priorBillIds.length > 0) {
+      const { data: advPmts } = await supabase
+        .from('payments').select('amount')
+        .in('bill_id', priorBillIds).eq('method', 'advance')
+      advanceApplied = (advPmts ?? []).reduce((s, p) => s + (p.amount as number), 0)
+    }
+
+    const unusedAdvance = Math.max(0, totalAdvance - totalRefunded - advanceApplied)
+    const applyAmount   = Math.min(unusedAdvance, subtotal)
+    if (applyAmount > 0) {
+      await supabase.from('payments').insert({
+        id: crypto.randomUUID(),
+        tenant_id: actor.tenant_id,
+        bill_id: billId,
+        amount: applyAmount,
+        method: 'advance',
+        received_by: actor.id,
+      })
+      const newStatus = applyAmount >= subtotal ? 'paid' : 'partial'
+      await supabase.from('bills').update({ paid: applyAmount, status: newStatus }).eq('id', billId)
+    }
   }
 
   await logAudit(actor.id, 'generate', 'bill', billId, {
@@ -466,10 +532,14 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
   const supabase = await createClient()
 
-  // Must have no payments
-  const { count } = await supabase
-    .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billId)
-  if ((count ?? 0) > 0) return { success: false, error: 'Cannot cancel a bill that has payments' }
+  // Block if non-advance payments exist (cash/card/UPI etc.)
+  const { count: cashCount } = await supabase
+    .from('payments').select('id', { count: 'exact', head: true })
+    .eq('bill_id', billId).neq('method', 'advance')
+  if ((cashCount ?? 0) > 0) return { success: false, error: 'Cannot cancel a bill that has payments' }
+
+  // Delete any advance auto-payments — advance returns to pool via exclusion logic
+  await supabase.from('payments').delete().eq('bill_id', billId).eq('method', 'advance')
 
   // Get all bill items with source and ref_id to revert
   const { data: items } = await supabase
@@ -495,6 +565,8 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
       await supabase.from('radiology_orders').update({ billing_status: 'unbilled' }).in('id', refs)
     } else if (source === 'pharmacy') {
       await supabase.from('dispenses').update({ billing_status: 'unbilled' }).in('id', refs)
+    } else if (source === 'ipd_pharmacy') {
+      await supabase.from('ipd_pharmacy_requests').update({ billing_status: 'unbilled' }).in('id', refs)
     } else if (source === 'ot') {
       await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).in('id', refs)
     } else if (source === 'blood') {
@@ -502,6 +574,7 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
     } else if (source === 'dental') {
       await supabase.from('dental_treatments').update({ billing_status: 'unbilled' }).in('id', refs)
     }
+    // 'nursing' and daily 'bed' auto-bills have no source-table billing_status to revert
   }
 
   const { error } = await supabase
@@ -510,6 +583,92 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
   await logAudit(actor.id, 'cancel', 'bill', billId)
   return { success: true }
+}
+
+// ---- IPD daily charge generation (called from IPD ward board RSC) ----
+
+export async function generateMissingDailyCharges(
+  admissions: Array<{ id: string; patient_id: string; ward: { daily_rate: number } }>
+): Promise<void> {
+  if (!admissions.length) return
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+  const today = new Date().toISOString().split('T')[0]
+  const admissionIds = admissions.map((a) => a.id)
+
+  // ── 1. Fetch all today's non-cancelled bills for these admissions (one query) ──
+  const { data: todayBills } = await supabase
+    .from('bills')
+    .select('id, admission_id, bill_source')
+    .in('admission_id', admissionIds)
+    .eq('billing_date', today)
+    .neq('status', 'cancelled')
+
+  // Map: admissionId → Set<bill_source already created today>
+  const billedToday = new Map<string, Set<string>>()
+  for (const b of todayBills ?? []) {
+    const aid = b.admission_id as string
+    if (!billedToday.has(aid)) billedToday.set(aid, new Set())
+    billedToday.get(aid)!.add(b.bill_source as string)
+  }
+
+  // ── 2. Bed bills: one per admission per day ──────────────────────────────────
+  for (const adm of admissions) {
+    if (billedToday.get(adm.id)?.has('bed')) continue
+    const rate = adm.ward?.daily_rate ?? 0
+    if (rate <= 0) continue
+    await autoIpdBill(supabase, actor.id, {
+      tenantId: actor.tenant_id,
+      admissionId: adm.id,
+      patientId: adm.patient_id,
+      billingDate: today,
+      billSource: 'bed',
+      lineItems: [{
+        source: 'bed',
+        ref_id: null,
+        description: 'Room Rent',
+        qty: 1,
+        unit_price: rate,
+      }],
+    })
+  }
+
+  // ── 3. Nursing bills: fetch all today's assignments, upsert line items ────────
+  const { data: assignments } = await supabase
+    .from('admission_nurse_assignments')
+    .select('id, admission_id, shift, charge_snapshot, nurse:profiles(full_name)')
+    .in('admission_id', admissionIds)
+    .eq('assigned_date', today)
+
+  if (!assignments?.length) return
+
+  // Group by admission_id
+  const byAdmission = new Map<string, typeof assignments>()
+  for (const a of assignments) {
+    const aid = a.admission_id as string
+    if (!byAdmission.has(aid)) byAdmission.set(aid, [])
+    byAdmission.get(aid)!.push(a)
+  }
+
+  for (const [admissionId, shifts] of byAdmission) {
+    const adm = admissions.find((a) => a.id === admissionId)
+    if (!adm) continue
+
+    await autoIpdBill(supabase, actor.id, {
+      tenantId: actor.tenant_id,
+      admissionId,
+      patientId: adm.patient_id,
+      billingDate: today,
+      billSource: 'nursing',
+      lineItems: shifts.map((s) => ({
+        source: 'nursing' as const,
+        ref_id: s.id as string,
+        description: `Nursing — ${String(s.shift).charAt(0).toUpperCase() + String(s.shift).slice(1)} Shift`,
+        qty: 1,
+        unit_price: s.charge_snapshot as number,
+      })),
+    })
+  }
 }
 
 // ---- Payments ----
@@ -606,6 +765,7 @@ export async function listBills(filters?: {
   const { data } = await q.limit(300)
   return (data ?? []) as unknown as Bill[]
 }
+
 
 export async function updateWardDailyRate(wardId: string, dailyRate: number): Promise<SimpleResult> {
   const actor = await getActorProfile()

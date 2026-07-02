@@ -198,7 +198,7 @@ export async function dispense(
   const parsed = DispenseSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, prescription_id, drug_id, qty } = parsed.data
+  const { patient_id, prescription_id, admission_id, drug_id, qty } = parsed.data
   const supabase = await createClient()
   const today = new Date().toISOString().split('T')[0]
 
@@ -235,8 +235,13 @@ export async function dispense(
   const rpcResult = result as { ok: boolean; error?: string }
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Dispense failed' }
 
+  // Link dispense to IPD admission if provided
+  if (admission_id) {
+    await supabase.from('dispenses').update({ admission_id }).eq('id', dispenseId)
+  }
+
   await logAudit(actor.id, 'dispense', 'drug', drug_id, {
-    patient_id, qty, batch_id: batch.id, price: batch.mrp,
+    patient_id, qty, batch_id: batch.id, price: batch.mrp, admission_id: admission_id ?? null,
   })
   return { success: true, dispenseId }
 }

@@ -79,15 +79,17 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
       />
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit"
-        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-        {(['admitted', 'discharged', 'all'] as const).map((s) => (
-          <button key={s} onClick={() => { setStatusFilter(s); refresh(s) }}
-            className="px-4 py-2 rounded-lg text-sm font-medium capitalize"
-            style={statusFilter === s ? { background: '#0D9488', color: '#fff' } : { color: '#64748B', background: 'transparent' }}>
-            {s}
-          </button>
-        ))}
+      <div className="overflow-x-auto -mx-4 px-4 mb-5">
+        <div className="flex gap-1 p-1 rounded-xl w-max"
+          style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
+          {(['admitted', 'discharged', 'all'] as const).map((s) => (
+            <button key={s} onClick={() => { setStatusFilter(s); refresh(s) }}
+              className="px-4 py-2 rounded-lg text-sm font-medium capitalize flex-shrink-0"
+              style={statusFilter === s ? { background: '#0D9488', color: '#fff' } : { color: '#64748B', background: 'transparent' }}>
+              {s}
+            </button>
+          ))}
+        </div>
       </div>
 
       <GlassCard className="overflow-hidden">

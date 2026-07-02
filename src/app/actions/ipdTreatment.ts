@@ -74,7 +74,7 @@ export async function listOrders(admissionId: string): Promise<IpdMedicationOrde
   const supabase = await createClient()
   const { data } = await supabase
     .from('ipd_medication_orders')
-    .select('*, doctor:profiles!ordered_by(full_name)')
+    .select('*, doctor:profiles!ordered_by(full_name), pharmacy:ipd_pharmacy_requests(status)')
     .eq('admission_id', admissionId)
     .order('created_at', { ascending: false })
   return (data ?? []) as unknown as IpdMedicationOrder[]
@@ -222,6 +222,35 @@ export async function updateSlotStatus(
   await requirePermission(actor.role, 'ipd:nursing')
 
   const supabase = await createClient()
+
+  // Block 'given' unless pharmacy has dispensed the medication for this order
+  if (status === 'given') {
+    const { data: slot } = await supabase
+      .from('ipd_admin_schedule')
+      .select('order_id, order:ipd_medication_orders!order_id(type)')
+      .eq('id', scheduleId)
+      .single()
+
+    if (slot) {
+      const orderType = (slot.order as unknown as { type: string } | null)?.type
+      if (orderType && orderType !== 'oxygen') {
+        const { data: pharmReqs } = await supabase
+          .from('ipd_pharmacy_requests')
+          .select('status')
+          .eq('order_id', slot.order_id as string)
+          .neq('status', 'cancelled')
+
+        const dispensed = (pharmReqs ?? []).some((r) => (r.status as string) === 'dispensed')
+        if (!dispensed) {
+          return {
+            success: false,
+            error: 'Pharmacy has not dispensed this medication yet. The dose cannot be marked as given until the pharmacy prepares and dispatches it.',
+          }
+        }
+      }
+    }
+  }
+
   const { error } = await supabase
     .from('ipd_admin_schedule')
     .update({
@@ -234,6 +263,21 @@ export async function updateSlotStatus(
 
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, `slot_${status}`, 'ipd_admin_schedule', scheduleId, { notes })
+  return { success: true }
+}
+
+export async function restoreSlotToPending(scheduleId: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:nursing')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('ipd_admin_schedule')
+    .update({ status: 'pending', given_at: null, given_by: null, given_notes: null })
+    .eq('id', scheduleId)
+
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'slot_restored', 'ipd_admin_schedule', scheduleId)
   return { success: true }
 }
 
@@ -395,24 +439,59 @@ export async function listIpdPharmacyRequests(): Promise<IpdPharmacyRequest[]> {
 
 export async function dispenseIpdRequest(
   requestId: string,
+  pricePerUnit: number,
   notes?: string
 ): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
 
   const supabase = await createClient()
+
+  // Fetch request details needed for auto-billing
+  const { data: req } = await supabase
+    .from('ipd_pharmacy_requests')
+    .select('admission_id, item_name, quantity, admission:admissions(patient_id)')
+    .eq('id', requestId)
+    .single()
+
   const { error } = await supabase
     .from('ipd_pharmacy_requests')
     .update({
-      status:        'dispensed',
-      dispensed_by:  actor.id,
-      dispensed_at:  new Date().toISOString(),
-      notes:         notes ?? null,
+      status:         'dispensed',
+      dispensed_by:   actor.id,
+      dispensed_at:   new Date().toISOString(),
+      notes:          notes ?? null,
+      price_snapshot: pricePerUnit,
+      billing_status: 'billed',
     })
     .eq('id', requestId)
 
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'dispense', 'ipd_pharmacy_request', requestId, {})
+
+  // Auto-create the IPD pharmacy bill for today
+  if (req && pricePerUnit > 0) {
+    const { autoIpdBill } = await import('@/lib/ipdBilling')
+    const patientId = (req.admission as unknown as { patient_id: string } | null)?.patient_id
+    if (patientId) {
+      const today = new Date().toISOString().split('T')[0]
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: req.admission_id as string,
+        patientId,
+        billingDate: today,
+        billSource: 'ipd_pharmacy',
+        lineItems: [{
+          source: 'ipd_pharmacy' as const,
+          ref_id: requestId,
+          description: req.item_name as string,
+          qty: req.quantity as number,
+          unit_price: pricePerUnit,
+        }],
+      })
+    }
+  }
+
+  await logAudit(actor.id, 'dispense', 'ipd_pharmacy_request', requestId, { price_per_unit: pricePerUnit })
   return { success: true }
 }
 
@@ -432,6 +511,8 @@ export async function createIpdLabOrder(
   admissionId: string,
   patientId: string,
   testIds: string[],
+  priority: 'stat' | 'routine' = 'routine',
+  scheduledFor: string | null = null,
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
@@ -448,6 +529,7 @@ export async function createIpdLabOrder(
     id: orderId, tenant_id: actor.tenant_id,
     patient_id: patientId, admission_id: admissionId,
     ordered_by: actor.id, status: 'ordered', billing_status: 'unbilled',
+    priority, scheduled_for: scheduledFor ?? new Date().toISOString().split('T')[0],
   })
   if (orderErr) return { success: false, error: orderErr.message }
 
@@ -496,6 +578,8 @@ export async function createIpdRadiologyOrder(
   patientId: string,
   testId: string,
   notes?: string,
+  priority: 'stat' | 'routine' = 'routine',
+  scheduledFor: string | null = null,
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
@@ -513,6 +597,7 @@ export async function createIpdRadiologyOrder(
     price_snapshot: test.price as number,
     status: 'ordered', billing_status: 'unbilled',
     report: notes ?? null,
+    priority, scheduled_for: scheduledFor ?? new Date().toISOString().split('T')[0],
   })
   if (error) return { success: false, error: error.message }
 

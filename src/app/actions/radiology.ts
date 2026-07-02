@@ -128,7 +128,46 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
   await requirePermission(actor.role, 'radiology:process')
   const supabase = await createClient()
 
-  // Phase 15: gate on payment before performing the scan
+  // Fetch order to distinguish IPD (has admission_id) from OPD
+  const { data: order } = await supabase
+    .from('radiology_orders')
+    .select('id, admission_id, patient_id, tenant_id, price_snapshot, test:radiology_catalog(name)')
+    .eq('id', orderId)
+    .single()
+
+  if (order?.admission_id) {
+    // IPD path: no payment gate — bill is auto-created on scan performed
+    const { error } = await supabase
+      .from('radiology_orders').update({ status: 'performed' })
+      .eq('id', orderId).eq('status', 'ordered')
+    if (error) return { success: false, error: error.message }
+
+    const priceSnapshot = (order.price_snapshot as number) ?? 0
+    if (priceSnapshot > 0) {
+      const { autoIpdBill } = await import('@/lib/ipdBilling')
+      const today = new Date().toISOString().split('T')[0]
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: order.admission_id as string,
+        patientId: order.patient_id as string,
+        billingDate: today,
+        billSource: 'radiology',
+        lineItems: [{
+          source: 'radiology' as const,
+          ref_id: orderId,
+          description: ((order.test as unknown as { name: string } | null)?.name) ?? 'Radiology scan',
+          qty: 1,
+          unit_price: priceSnapshot,
+        }],
+      })
+      await supabase.from('radiology_orders').update({ billing_status: 'billed' }).eq('id', orderId)
+    }
+
+    await logAudit(actor.id, 'perform', 'radiology_order', orderId)
+    return { success: true }
+  }
+
+  // OPD path: gate on payment before performing the scan
   const { data: billItem } = await supabase
     .from('bill_items')
     .select('bill_id, bill:bills(id, status)')

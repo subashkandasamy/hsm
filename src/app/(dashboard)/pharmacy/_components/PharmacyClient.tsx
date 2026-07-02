@@ -108,12 +108,12 @@ export default function PharmacyClient({
     setLoading(false)
   }
 
-  async function handleIpdDispense(requestId: string) {
+  async function handleIpdDispense(requestId: string, pricePerUnit: number) {
     setDispensingIpdId(requestId)
-    const res = await dispenseIpdRequest(requestId)
+    const res = await dispenseIpdRequest(requestId, pricePerUnit)
     setDispensingIpdId(null)
     if (res.success) {
-      setIpdRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'dispensed' as const } : r))
+      setIpdRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'dispensed' as const, price_snapshot: pricePerUnit, billing_status: 'unbilled' as const } : r))
     }
   }
 
@@ -195,28 +195,34 @@ export default function PharmacyClient({
         }
       />
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit"
-        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-        {([
-          { key: 'cart' as TabKey,   label: 'Sale Cart',      count: initialReadySales.length },
-          { key: 'queue' as TabKey,  label: 'Dispense Queue', count: pending.length },
-          { key: 'ipd' as TabKey,    label: 'IPD Ward',       count: ipdPendingCount, urgent: ipdPendingCount > 0 },
-          { key: 'stock' as TabKey,  label: 'Stock',          count: stock.length },
-          { key: 'alerts' as TabKey, label: 'Alerts',         count: alertCount, urgent: alertCount > 0 },
-        ]).map(({ key, label, count, urgent }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
-            style={tab === key ? { background: '#0D9488', color: '#fff' } : { color: '#64748B', background: 'transparent' }}>
-            {label}
-            <span className="text-xs px-1.5 py-0.5 rounded-full"
-              style={tab === key
-                ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
-                : urgent ? { background: '#FEE2E2', color: '#DC2626' } : { background: '#F1F5F9', color: '#64748B' }}>
-              {count}
-            </span>
-          </button>
-        ))}
+      {/* Tabs — scrollable on mobile, compact on small screens */}
+      <div className="overflow-x-auto mb-5 -mx-4 px-4">
+        <div className="flex gap-1 p-1 rounded-xl w-max"
+          style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
+          {([
+            { key: 'cart' as TabKey,   label: 'Sale Cart',   shortLabel: 'Cart',    count: initialReadySales.length },
+            { key: 'queue' as TabKey,  label: 'Dispense',    shortLabel: 'Dispense', count: pending.length },
+            { key: 'ipd' as TabKey,    label: 'IPD Ward',    shortLabel: 'IPD',     count: ipdPendingCount, urgent: ipdPendingCount > 0 },
+            { key: 'stock' as TabKey,  label: 'Stock',       shortLabel: 'Stock',   count: stock.length },
+            { key: 'alerts' as TabKey, label: 'Alerts',      shortLabel: 'Alerts',  count: alertCount, urgent: alertCount > 0 },
+          ]).map(({ key, label, shortLabel, count, urgent }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className="flex items-center gap-1.5 rounded-lg text-sm font-medium flex-shrink-0"
+              style={{
+                ...(tab === key ? { background: '#0D9488', color: '#fff' } : { color: '#64748B', background: 'transparent' }),
+                padding: '6px 10px',
+              }}>
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{shortLabel}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full"
+                style={tab === key
+                  ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
+                  : urgent ? { background: '#FEE2E2', color: '#DC2626' } : { background: '#F1F5F9', color: '#64748B' }}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === 'cart' && canSale && (
@@ -249,6 +255,7 @@ export default function PharmacyClient({
       {tab === 'ipd' && (
         <IpdWardQueue
           requests={ipdRequests}
+          stock={stock}
           canDispense={canDispense}
           dispensingId={dispensingIpdId}
           onDispense={handleIpdDispense}
@@ -952,16 +959,48 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
 
 // ── IPD Ward Queue ────────────────────────────────────────────────────────────
 
-interface IpdWardQueueProps {
-  requests: IpdPharmacyRequest[]
-  canDispense: boolean
-  dispensingId: string | null
-  onDispense: (id: string) => void
+function autoFillPrice(itemName: string, stock: DrugWithStock[]): number {
+  const query = itemName.split(' ')[0].toLowerCase()
+  const drug = stock.find((d) =>
+    d.name.toLowerCase().startsWith(query) || query.startsWith(d.name.toLowerCase())
+  )
+  if (!drug) return 0
+  const batch = drug.batches.find((b) => b.qty_available > 0)
+  return batch?.mrp ?? 0
 }
 
-function IpdWardQueue({ requests, canDispense, dispensingId, onDispense }: IpdWardQueueProps) {
-  const pending    = requests.filter((r) => r.status === 'pending')
-  const dispensed  = requests.filter((r) => r.status === 'dispensed')
+interface IpdWardQueueProps {
+  requests: IpdPharmacyRequest[]
+  stock: DrugWithStock[]
+  canDispense: boolean
+  dispensingId: string | null
+  onDispense: (id: string, pricePerUnit: number) => void
+}
+
+function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }: IpdWardQueueProps) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [priceInput, setPriceInput] = useState('')
+
+  const pending   = requests.filter((r) => r.status === 'pending')
+  const dispensed = requests.filter((r) => r.status === 'dispensed')
+
+  function startDispense(req: IpdPharmacyRequest) {
+    const auto = autoFillPrice(req.item_name, stock)
+    setPriceInput(auto > 0 ? String(auto) : '')
+    setConfirmingId(req.id)
+  }
+
+  function cancelDispense() {
+    setConfirmingId(null)
+    setPriceInput('')
+  }
+
+  function confirmDispense(reqId: string) {
+    const price = parseFloat(priceInput) || 0
+    onDispense(reqId, price)
+    setConfirmingId(null)
+    setPriceInput('')
+  }
 
   return (
     <div className="space-y-4">
@@ -972,7 +1011,7 @@ function IpdWardQueue({ requests, canDispense, dispensingId, onDispense }: IpdWa
             <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
               IPD Ward Requests
               <span className="ml-2 text-xs font-normal" style={{ color: '#94A3B8' }}>
-                — bill settled not required to dispense
+                — no payment required to dispense
               </span>
             </h3>
           </div>
@@ -983,34 +1022,80 @@ function IpdWardQueue({ requests, canDispense, dispensingId, onDispense }: IpdWa
             <div className="space-y-2">
               {pending.map((req) => {
                 const adm = req.admission
+                const isConfirming = confirmingId === req.id
+                const isDispatching = dispensingId === req.id
                 return (
-                  <div key={req.id} className="flex items-center gap-3 px-3 py-3 rounded-xl flex-wrap"
-                    style={{ background: 'rgba(13,148,136,0.04)', border: '1px solid rgba(13,148,136,0.15)' }}>
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#F59E0B' }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{req.item_name}</p>
-                        <span className="text-xs px-1.5 py-0.5 rounded-md"
-                          style={{ background: '#F1F5F9', color: '#64748B' }}>
-                          Qty: {req.quantity}{req.unit ? ` ${req.unit}` : ''}
-                        </span>
+                  <div key={req.id} className="rounded-xl overflow-hidden"
+                    style={{ border: '1px solid rgba(13,148,136,0.2)', background: 'rgba(13,148,136,0.03)' }}>
+                    {/* Main row */}
+                    <div className="flex items-center gap-3 px-3 py-3 flex-wrap">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#F59E0B' }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{req.item_name}</p>
+                          <span className="text-xs px-1.5 py-0.5 rounded-md"
+                            style={{ background: '#F1F5F9', color: '#64748B' }}>
+                            Qty: {req.quantity}{req.unit ? ` ${req.unit}` : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                          {adm?.patient?.full_name ?? '—'}{' '}
+                          <span className="font-mono" style={{ color: '#94A3B8' }}>({adm?.patient?.uhid ?? '—'})</span>
+                          {adm?.ward ? ` · ${adm.ward.name}` : ''}
+                          {adm?.bed  ? ` Bed ${adm.bed.bed_no}` : ''}
+                        </p>
                       </div>
-                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                        {adm?.patient?.full_name ?? '—'}{' '}
-                        <span className="font-mono" style={{ color: '#94A3B8' }}>({adm?.patient?.uhid ?? '—'})</span>
-                        {adm?.ward ? ` · ${adm.ward.name}` : ''}
-                        {adm?.bed  ? ` Bed ${adm.bed.bed_no}` : ''}
-                      </p>
+                      {canDispense && !isConfirming && (
+                        <button
+                          onClick={() => startDispense(req)}
+                          disabled={isDispatching}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          <Check className="w-3.5 h-3.5" />
+                          {isDispatching ? 'Dispensing…' : 'Dispense'}
+                        </button>
+                      )}
                     </div>
-                    {canDispense && (
-                      <button
-                        onClick={() => onDispense(req.id)}
-                        disabled={dispensingId === req.id}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
-                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                        <Check className="w-3.5 h-3.5" />
-                        {dispensingId === req.id ? 'Dispensing…' : 'Dispense'}
-                      </button>
+
+                    {/* Price confirm panel */}
+                    {isConfirming && (
+                      <div className="px-3 pb-3 pt-1 flex items-center gap-2 flex-wrap"
+                        style={{ borderTop: '1px solid rgba(13,148,136,0.15)', background: 'rgba(13,148,136,0.06)' }}>
+                        <span className="text-xs font-medium flex-shrink-0" style={{ color: '#0F172A' }}>
+                          Price per unit (₹)
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={priceInput}
+                          onChange={(e) => setPriceInput(e.target.value)}
+                          placeholder="Enter MRP"
+                          className="w-28 px-2 py-1 rounded-lg text-xs"
+                          style={{ border: '1px solid #CBD5E1', outline: 'none', color: '#0F172A' }}
+                          autoFocus
+                        />
+                        {priceInput && parseFloat(priceInput) > 0 && (
+                          <span className="text-xs" style={{ color: '#64748B' }}>
+                            × {req.quantity} = ₹{(parseFloat(priceInput) * req.quantity).toFixed(2)}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                          <button onClick={cancelDispense}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs"
+                            style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => confirmDispense(req.id)}
+                            disabled={isDispatching}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                            <Check className="w-3 h-3" />
+                            {isDispatching ? 'Dispensing…' : 'Confirm Dispense'}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )
@@ -1035,9 +1120,16 @@ function IpdWardQueue({ requests, canDispense, dispensingId, onDispense }: IpdWa
                     <span style={{ color: '#0F172A' }}>{req.item_name}</span>
                     <span style={{ color: '#94A3B8' }}>{req.admission?.patient?.full_name}</span>
                   </div>
-                  <span style={{ color: '#64748B' }}>
-                    {req.dispensed_at ? new Date(req.dispensed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {req.price_snapshot > 0 && (
+                      <span className="font-medium" style={{ color: '#0D9488' }}>
+                        ₹{(req.price_snapshot * req.quantity).toFixed(2)}
+                      </span>
+                    )}
+                    <span style={{ color: '#64748B' }}>
+                      {req.dispensed_at ? new Date(req.dispensed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

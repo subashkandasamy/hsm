@@ -23,6 +23,7 @@ import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ip
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import TreatmentPanel from './TreatmentPanel'
 import NursingPanel from './NursingPanel'
+
 import type {
   Admission, IpdProgressNote, Vitals,
   AdvanceDepositRequest, AdmissionNurseAssignment,
@@ -279,15 +280,16 @@ export default function AdmissionDetail({
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
-        style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
+      <div className="overflow-x-auto -mx-4 px-4 mb-4">
+        <div className="flex gap-1 p-1 rounded-xl w-max"
+          style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
         {([
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
           { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
         ] as const).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0"
             style={activeTab === key
               ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
               : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
@@ -295,6 +297,7 @@ export default function AdmissionDetail({
             {label}
           </button>
         ))}
+        </div>
       </div>
 
       {/* ── Clinical tab ── */}
@@ -483,7 +486,7 @@ export default function AdmissionDetail({
         )
       )}
 
-      {/* Transfer modal */}
+{/* Transfer modal */}
       <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Patient">
         <div className="space-y-4">
           <p className="text-sm" style={{ color: '#475569' }}>

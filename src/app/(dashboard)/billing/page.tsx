@@ -1,5 +1,5 @@
 import { listBills, getBillingStats } from '@/app/actions/billing'
-import { listAllAdvanceDeposits } from '@/app/actions/admissionBilling'
+import { listAllAdvanceDeposits, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import BillingClient from './_components/BillingClient'
 
 export default async function BillingPage() {
@@ -8,5 +8,18 @@ export default async function BillingPage() {
     getBillingStats(),
     listAllAdvanceDeposits(),
   ])
-  return <BillingClient initialBills={bills} initialStats={stats} initialDeposits={deposits} />
+
+  const admissionIds = [...new Set(
+    bills.filter((b) => b.admission_id).map((b) => b.admission_id!)
+  )]
+  const advanceSummaries = await listAdvanceSummariesBatch(admissionIds)
+
+  return (
+    <BillingClient
+      initialBills={bills}
+      initialStats={stats}
+      initialDeposits={deposits}
+      initialAdvanceSummaries={advanceSummaries}
+    />
+  )
 }
