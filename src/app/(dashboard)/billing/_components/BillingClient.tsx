@@ -12,7 +12,7 @@ import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
-import { listBills, getBillingStats, consolidateBillsForAdmission } from '@/app/actions/billing'
+import { listBills, getBillingStats, consolidateBillsForAdmission, cancelBill } from '@/app/actions/billing'
 import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -126,6 +126,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
   // Consolidation state
   const [consolidatingId, setConsolidatingId] = useState<string | null>(null)
+  // Inline cancel state: null | billId being cancelled | `${billId}:confirm` awaiting confirm
+  const [cancelState, setCancelState] = useState<string | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -177,6 +179,23 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     await applyAdvanceToBill(billId, admissionId)
     setApplyingBillId(null)
     refresh()
+  }
+
+  async function handleCancelBill(e: React.MouseEvent, billId: string) {
+    e.stopPropagation()
+    if (cancelState === `${billId}:confirm`) {
+      // Second click — actually cancel
+      setCancelState(billId)
+      const res = await cancelBill(billId)
+      setCancelState(null)
+      if (!res.success) alert(res.error)
+      else refresh()
+    } else {
+      // First click — ask for confirmation inline
+      setCancelState(`${billId}:confirm`)
+      // Auto-dismiss after 3 s if no second click
+      setTimeout(() => setCancelState((s) => s === `${billId}:confirm` ? null : s), 3000)
+    }
   }
 
   async function handleConsolidate(e: React.MouseEvent, admissionId: string) {
@@ -675,6 +694,19 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       </button>
                                     )}
                                     <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                    {canManage && bill.status !== 'cancelled' && (
+                                      <button
+                                        onClick={(e) => handleCancelBill(e, bill.id)}
+                                        disabled={cancelState === bill.id}
+                                        className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                                        style={
+                                          cancelState === `${bill.id}:confirm`
+                                            ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }
+                                            : { background: 'transparent', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }
+                                        }>
+                                        {cancelState === bill.id ? '…' : cancelState === `${bill.id}:confirm` ? 'Confirm?' : '✕ Cancel'}
+                                      </button>
+                                    )}
                                     <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
                                   </div>
                                 </div>
