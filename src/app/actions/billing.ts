@@ -774,8 +774,8 @@ export async function consolidateBillsForAdmission(
   const patientId   = billsToMerge[0].patient_id as string
 
   // Get next bill number
-  const { data: billNoData } = await supabase.rpc('get_next_bill_no', { p_tenant_id: actor.tenant_id })
-  if (!billNoData) return { success: false, error: 'Could not generate bill number' }
+  const { data: billNoData, error: billNoErr } = await supabase.rpc('get_next_bill_no')
+  if (billNoErr || !billNoData) return { success: false, error: billNoErr?.message ?? 'Could not generate bill number' }
 
   const consolidatedBillId = crypto.randomUUID()
 
