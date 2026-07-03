@@ -170,11 +170,11 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ background: '#FAFAFA' }}>
-                      {['Date', 'Bill No', 'Description', 'Qty', 'Unit Price', 'Amount'].map((h, i) => (
+                      {['Date', 'Description', 'Qty', 'Unit Price', 'Amount'].map((h, i) => (
                         <th key={h} style={{
                           padding: '6px 10px',
                           color: '#94A3B8', fontWeight: 600, fontSize: '11px',
-                          textAlign: i >= 3 ? 'right' : 'left',
+                          textAlign: i >= 2 ? 'right' : 'left',
                           whiteSpace: 'nowrap',
                           borderBottom: '1px solid #F1F5F9',
                         }}>{h}</th>
@@ -185,7 +185,6 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                     {section.rows.map((row, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}>
                         <td style={{ padding: '8px 10px', color: '#64748B', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
-                        <td style={{ padding: '8px 10px', color: '#0D9488', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap' }}>{row.billNo}</td>
                         <td style={{ padding: '8px 10px', color: '#334155' }}>{row.description}</td>
                         <td style={{ padding: '8px 10px', color: '#475569', textAlign: 'right' }}>{row.qty}</td>
                         <td style={{ padding: '8px 10px', color: '#475569', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.unitPrice)}</td>
