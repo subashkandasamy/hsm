@@ -144,58 +144,53 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
             <InfoCell label="Ref. No" value={data.combinedBillNo} mono />
           </div>
 
-          {/* ── Charge sections ── */}
-          <div>
-            {data.sections.length === 0 ? (
-              <div style={{ padding: '48px 0', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
-                No charges found
-              </div>
-            ) : data.sections.map((section, si) => (
-              <div key={section.label}>
-                {/* Section header */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '9px 20px',
-                  background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC',
-                  borderTop: '1px solid #E2E8F0',
-                  borderBottom: '1px solid #E2E8F0',
-                }}>
-                  <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', color: '#334155' }}>
-                    {section.label}
-                  </span>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{fmt(section.subtotal)}</span>
-                </div>
-
-                {/* Rows */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: '#FAFAFA' }}>
-                      {['Date', 'Description', 'Qty', 'Unit Price', 'Amount'].map((h, i) => (
-                        <th key={h} style={{
-                          padding: '6px 10px',
-                          color: '#94A3B8', fontWeight: 600, fontSize: '11px',
-                          textAlign: i >= 2 ? 'right' : 'left',
-                          whiteSpace: 'nowrap',
-                          borderBottom: '1px solid #F1F5F9',
-                        }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {section.rows.map((row, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}>
-                        <td style={{ padding: '8px 10px', color: '#64748B', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
-                        <td style={{ padding: '8px 10px', color: '#334155' }}>{row.description}</td>
-                        <td style={{ padding: '8px 10px', color: '#475569', textAlign: 'right' }}>{row.qty}</td>
-                        <td style={{ padding: '8px 10px', color: '#475569', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.unitPrice)}</td>
-                        <td style={{ padding: '8px 10px', color: '#0F172A', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.amount)}</td>
-                      </tr>
+          {/* ── Charge sections — single table so columns stay aligned across all sections ── */}
+          {data.sections.length === 0 ? (
+            <div style={{ padding: '48px 0', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
+              No charges found
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <colgroup>
+                <col style={{ width: '100px' }} />  {/* Date */}
+                <col />                              {/* Description — fills remaining */}
+                <col style={{ width: '50px' }} />   {/* Qty */}
+                <col style={{ width: '110px' }} />  {/* Unit Price */}
+                <col style={{ width: '110px' }} />  {/* Amount */}
+              </colgroup>
+              {data.sections.map((section, si) => (
+                <tbody key={section.label}>
+                  {/* Section header row */}
+                  <tr style={{ background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC', borderTop: '1px solid #E2E8F0' }}>
+                    <td colSpan={4} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', color: '#334155' }}>
+                      {section.label}
+                    </td>
+                    <td style={{ padding: '9px 12px', fontSize: '13px', fontWeight: 700, color: '#0F172A', textAlign: 'right' }}>
+                      {fmt(section.subtotal)}
+                    </td>
+                  </tr>
+                  {/* Column header row */}
+                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                    {(['Date', 'Description', 'Qty', 'Unit Price', 'Amount'] as const).map((h, i) => (
+                      <th key={h} style={{ padding: '5px 12px', color: '#94A3B8', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
+                        {h}
+                      </th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </div>
+                  </tr>
+                  {/* Data rows */}
+                  {section.rows.map((row, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}>
+                      <td style={{ padding: '8px 12px', color: '#64748B', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
+                      <td style={{ padding: '8px 12px', color: '#334155' }}>{row.description}</td>
+                      <td style={{ padding: '8px 12px', color: '#475569', textAlign: 'right' }}>{row.qty}</td>
+                      <td style={{ padding: '8px 12px', color: '#475569', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.unitPrice)}</td>
+                      <td style={{ padding: '8px 12px', color: '#0F172A', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
+            </table>
+          )}
 
           {/* ── Totals ── */}
           <div style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
