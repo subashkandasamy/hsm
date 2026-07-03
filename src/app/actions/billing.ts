@@ -754,7 +754,7 @@ export async function consolidateBillsForAdmission(
 
   const supabase = await createClient()
 
-  // Fetch all active (non-cancelled, not already consolidated into another bill) bills for this admission with outstanding balance
+  // Fetch all active (non-cancelled, not already consolidated) bills for this admission
   const { data: childBills } = await supabase
     .from('bills')
     .select('id, bill_no, bill_source, total, paid, patient_id')
@@ -765,13 +765,13 @@ export async function consolidateBillsForAdmission(
     .is('consolidated_by', null)
 
   if (!childBills?.length) return { success: false, error: 'No active bills found for this admission' }
+  if (childBills.length < 2) return { success: false, error: 'Need at least 2 bills to consolidate' }
 
-  const billsWithBalance = childBills.filter((b) => (b.total as number) - (b.paid as number) > 0)
-  if (billsWithBalance.length < 2) return { success: false, error: 'Need at least 2 bills with outstanding balance to consolidate' }
-
-  const totalAmount = billsWithBalance.reduce((sum, b) => sum + (b.total as number), 0)
-  const totalPaid   = billsWithBalance.reduce((sum, b) => sum + (b.paid as number), 0)
-  const patientId   = billsWithBalance[0].patient_id as string
+  // Use ALL bills (paid or unpaid) — patient needs one complete invoice
+  const billsToMerge = childBills
+  const totalAmount = billsToMerge.reduce((sum, b) => sum + (b.total as number), 0)
+  const totalPaid   = billsToMerge.reduce((sum, b) => sum + (b.paid as number), 0)
+  const patientId   = billsToMerge[0].patient_id as string
 
   // Get next bill number
   const { data: billNoData } = await supabase.rpc('get_next_bill_no', { p_tenant_id: actor.tenant_id })
@@ -803,7 +803,7 @@ export async function consolidateBillsForAdmission(
   }
 
   // Insert one line item per child bill
-  const lineItems = billsWithBalance.map((b) => ({
+  const lineItems = billsToMerge.map((b) => ({
     id:          crypto.randomUUID(),
     tenant_id:   actor.tenant_id,
     bill_id:     consolidatedBillId,
@@ -811,8 +811,8 @@ export async function consolidateBillsForAdmission(
     ref_id:      b.id as string,
     description: `${b.bill_no} — ${BILL_SOURCE_LABELS_MAP[b.bill_source as string] ?? 'Charges'}`,
     qty:         1,
-    unit_price:  (b.total as number) - (b.paid as number),
-    amount:      (b.total as number) - (b.paid as number),
+    unit_price:  b.total as number,
+    amount:      b.total as number,
   }))
 
   const { error: itemsErr } = await supabase.from('bill_items').insert(lineItems)
@@ -822,11 +822,11 @@ export async function consolidateBillsForAdmission(
   const { error: tagErr } = await supabase
     .from('bills')
     .update({ consolidated_by: consolidatedBillId })
-    .in('id', billsWithBalance.map((b) => b.id as string))
+    .in('id', billsToMerge.map((b) => b.id as string))
   if (tagErr) return { success: false, error: tagErr.message }
 
   await logAudit(actor.id, 'consolidate', 'bill', consolidatedBillId, {
-    admissionId, childCount: billsWithBalance.length, total: totalAmount,
+    admissionId, childCount: billsToMerge.length, total: totalAmount,
   })
 
   return { success: true, billId: consolidatedBillId }

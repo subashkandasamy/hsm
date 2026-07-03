@@ -570,7 +570,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                         {/* Top Up Advance row — shown for IPD patients when accountant has permission */}
                         {canManage && group.admissionId && (() => {
                           const consolidatableCount = group.bills.filter(
-                            (b) => b.status !== 'cancelled' && b.bill_source !== 'consolidated' && !b.consolidated_by && (b.total - b.paid) > 0
+                            (b) => b.status !== 'cancelled' && b.bill_source !== 'consolidated' && !b.consolidated_by
                           ).length
                           return consolidatableCount >= 2 ? (
                             <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'rgba(245,243,255,0.5)', borderBottom: '1px solid #F1F5F9' }}>

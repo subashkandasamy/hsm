@@ -162,8 +162,9 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
   )
 
   const balance = Math.max(0, bill.total - bill.paid)
-  const isMutable = bill.status !== 'cancelled' && bill.status !== 'paid'
   const hasNonAdvancePayments = (bill.payments ?? []).some((p) => p.method !== 'advance')
+  // Allow cancelling 'paid' bills if the only payments were advance (no cash/card collected)
+  const isMutable = bill.status !== 'cancelled' && (bill.status !== 'paid' || !hasNonAdvancePayments)
 
   return (
     <div className="max-w-4xl mx-auto">
