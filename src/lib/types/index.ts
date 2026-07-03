@@ -1,3 +1,26 @@
+// ---- Tenant Profile (hospital branding for billing documents) ----
+
+export interface TenantProfile {
+  tenant_id: string
+  name: string
+  tagline: string | null
+  tagline2: string | null
+  logo_url: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  state: string | null
+  pincode: string | null
+  phone1: string | null
+  phone2: string | null
+  email: string | null
+  website: string | null
+  cin_no: string | null
+  gst_no: string | null
+  emergency_contact: string | null
+  updated_at: string
+}
+
 // ---- Phase 9: SaaS / Multi-Tenancy ----
 
 export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'

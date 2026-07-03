@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import type { AdvanceReceiptData } from '@/lib/types'
+import type { AdvanceReceiptData, TenantProfile } from '@/lib/types'
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank Transfer',
@@ -18,11 +18,75 @@ function fmtDate(iso: string) {
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return (
+    d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+  )
 }
 
-export default function AdvanceReceiptView({ data }: { data: AdvanceReceiptData }) {
+function HospitalHeader({ profile, tenantName }: { profile: TenantProfile | null; tenantName: string }) {
+  const name = profile?.name || tenantName
+  const addressParts = [
+    profile?.address_line1,
+    profile?.address_line2,
+    profile?.city,
+    profile?.state && profile?.pincode
+      ? `${profile.state} - ${profile.pincode}`
+      : (profile?.state ?? profile?.pincode),
+  ].filter(Boolean)
+  const contactParts = [
+    profile?.phone1 && `Ph: ${profile.phone1}`,
+    profile?.phone2 && profile.phone2,
+    profile?.email && `Email: ${profile.email}`,
+    profile?.website && `Web: ${profile.website}`,
+  ].filter(Boolean)
+  const legalParts = [
+    profile?.cin_no && `CIN: ${profile.cin_no}`,
+    profile?.gst_no && `GST: ${profile.gst_no}`,
+  ].filter(Boolean)
+
+  return (
+    <div style={{ padding: '20px 28px', borderBottom: '2px solid #E2E8F0', background: '#fff' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        {profile?.logo_url && (
+          <img
+            src={profile.logo_url}
+            alt="Hospital Logo"
+            style={{ height: '64px', width: 'auto', maxWidth: '100px', objectFit: 'contain', flexShrink: 0 }}
+          />
+        )}
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <p style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.4px', lineHeight: 1.2 }}>
+            {name}
+          </p>
+          {profile?.tagline && (
+            <p style={{ fontSize: '12px', fontWeight: 600, color: '#0D9488', marginTop: '2px' }}>
+              {profile.tagline}
+              {profile.tagline2 && <span style={{ color: '#475569', fontWeight: 400 }}> &nbsp;·&nbsp; {profile.tagline2}</span>}
+            </p>
+          )}
+          {addressParts.length > 0 && (
+            <p style={{ fontSize: '11px', color: '#64748B', marginTop: '4px' }}>{addressParts.join(', ')}</p>
+          )}
+          {contactParts.length > 0 && (
+            <p style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>{contactParts.join('  |  ')}</p>
+          )}
+          {legalParts.length > 0 && (
+            <p style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px' }}>{legalParts.join('  |  ')}</p>
+          )}
+        </div>
+      </div>
+      <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '2px', color: '#475569', textTransform: 'uppercase' }}>
+          Advance Payment Receipt
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function AdvanceReceiptView({ data, profile }: { data: AdvanceReceiptData; profile: TenantProfile | null }) {
   const router = useRouter()
 
   return (
@@ -61,38 +125,12 @@ export default function AdvanceReceiptView({ data }: { data: AdvanceReceiptData 
           overflow: 'hidden',
           boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         }}>
-
-          {/* Header */}
-          <div style={{
-            background: 'linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%)',
-            padding: '24px 28px',
-            color: '#fff',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <p style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.3px', marginBottom: '2px' }}>
-                  {data.tenantName}
-                </p>
-                <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Advance Payment Receipt
-                </p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                {data.admission.combined_bill_no && (
-                  <p style={{ fontFamily: 'monospace', fontSize: '15px', fontWeight: 700, color: '#7DD3FC' }}>
-                    {data.admission.combined_bill_no}
-                  </p>
-                )}
-                <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', marginTop: '2px' }}>
-                  Admitted: {fmtDate(data.admission.admitted_at)}
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Hospital header */}
+          <HospitalHeader profile={profile} tenantName={data.tenantName} />
 
           {/* Patient + admission info */}
           <div style={{
-            padding: '16px 28px',
+            padding: '14px 28px',
             borderBottom: '1px solid #F1F5F9',
             background: '#FAFBFC',
             display: 'flex',
@@ -119,6 +157,16 @@ export default function AdvanceReceiptView({ data }: { data: AdvanceReceiptData 
                 <p style={{ fontSize: '14px', color: '#334155' }}>
                   {[data.admission.ward, data.admission.bed ? `Bed ${data.admission.bed}` : null].filter(Boolean).join(' — ')}
                 </p>
+              </div>
+            )}
+            <div>
+              <p style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '2px' }}>Admitted</p>
+              <p style={{ fontSize: '14px', color: '#334155' }}>{fmtDate(data.admission.admitted_at)}</p>
+            </div>
+            {data.admission.combined_bill_no && (
+              <div>
+                <p style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '2px' }}>Bill No</p>
+                <p style={{ fontSize: '14px', fontFamily: 'monospace', color: '#0D9488' }}>{data.admission.combined_bill_no}</p>
               </div>
             )}
           </div>
@@ -171,11 +219,7 @@ export default function AdvanceReceiptView({ data }: { data: AdvanceReceiptData 
           </div>
 
           {/* Total */}
-          <div style={{
-            padding: '16px 28px',
-            background: '#F8FAFC',
-            borderTop: '2px solid #E2E8F0',
-          }}>
+          <div style={{ padding: '16px 28px', background: '#F8FAFC', borderTop: '2px solid #E2E8F0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>Total Advance Collected</span>
               <span style={{ fontSize: '18px', fontWeight: 800, color: '#0D9488', fontFamily: 'monospace' }}>
@@ -185,13 +229,14 @@ export default function AdvanceReceiptView({ data }: { data: AdvanceReceiptData 
           </div>
 
           {/* Footer */}
-          <div style={{
-            padding: '12px 28px',
-            borderTop: '1px solid #F1F5F9',
-            textAlign: 'center',
-          }}>
-            <p style={{ fontSize: '11px', color: '#CBD5E1' }}>
-              This is a system-generated advance receipt. Amount is subject to final settlement at discharge.
+          <div style={{ padding: '12px 28px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+            {profile?.emergency_contact && (
+              <p style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+                For Emergency Care: {profile.emergency_contact}
+              </p>
+            )}
+            <p style={{ fontSize: '10px', color: '#CBD5E1' }}>
+              System-generated receipt. Amount subject to final settlement at discharge.
             </p>
           </div>
         </div>

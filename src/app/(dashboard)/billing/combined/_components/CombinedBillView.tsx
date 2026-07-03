@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import type { CombinedBillData } from '@/lib/types'
+import type { CombinedBillData, TenantProfile } from '@/lib/types'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -12,12 +12,98 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function CombinedBillView({ data }: { data: CombinedBillData }) {
+function HospitalHeader({ profile, tenantName, billNo, generatedAt }: {
+  profile: TenantProfile | null
+  tenantName: string
+  billNo: string
+  generatedAt: string
+}) {
+  const name = profile?.name || tenantName
+  const addressParts = [
+    profile?.address_line1,
+    profile?.address_line2,
+    profile?.city,
+    profile?.state && profile?.pincode
+      ? `${profile.state} - ${profile.pincode}`
+      : (profile?.state ?? profile?.pincode),
+  ].filter(Boolean)
+  const contactParts = [
+    profile?.phone1 && `Ph: ${profile.phone1}`,
+    profile?.phone2 && profile.phone2,
+    profile?.email && `Email: ${profile.email}`,
+    profile?.website && `Web: ${profile.website}`,
+  ].filter(Boolean)
+  const legalParts = [
+    profile?.cin_no && `CIN: ${profile.cin_no}`,
+    profile?.gst_no && `GST: ${profile.gst_no}`,
+  ].filter(Boolean)
+
+  return (
+    <div style={{ padding: '20px 28px', borderBottom: '2px solid #E2E8F0', background: '#fff' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        {/* Logo */}
+        {profile?.logo_url && (
+          <img
+            src={profile.logo_url}
+            alt="Hospital Logo"
+            style={{ height: '64px', width: 'auto', maxWidth: '100px', objectFit: 'contain', flexShrink: 0 }}
+          />
+        )}
+
+        {/* Hospital info — center */}
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <p style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.4px', lineHeight: 1.2 }}>
+            {name}
+          </p>
+          {profile?.tagline && (
+            <p style={{ fontSize: '12px', fontWeight: 600, color: '#0D9488', marginTop: '2px' }}>
+              {profile.tagline}
+              {profile.tagline2 && <span style={{ color: '#475569', fontWeight: 400 }}> &nbsp;·&nbsp; {profile.tagline2}</span>}
+            </p>
+          )}
+          {addressParts.length > 0 && (
+            <p style={{ fontSize: '11px', color: '#64748B', marginTop: '4px' }}>
+              {addressParts.join(', ')}
+            </p>
+          )}
+          {contactParts.length > 0 && (
+            <p style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+              {contactParts.join('  |  ')}
+            </p>
+          )}
+          {legalParts.length > 0 && (
+            <p style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px' }}>
+              {legalParts.join('  |  ')}
+            </p>
+          )}
+        </div>
+
+        {/* Bill number — right */}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <p style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 700, color: '#0D9488' }}>
+            {billNo}
+          </p>
+          <p style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+            {fmtDate(generatedAt)}
+          </p>
+        </div>
+      </div>
+
+      {/* Divider + "COMBINED BILL" label */}
+      <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '2px', color: '#475569', textTransform: 'uppercase' }}>
+          Combined Bill
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function CombinedBillView({ data, profile }: { data: CombinedBillData; profile: TenantProfile | null }) {
   const router = useRouter()
 
   return (
     <>
-      {/* Print-only styles injected via a style tag */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -28,7 +114,7 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
 
       <div className="print-page" style={{ maxWidth: '820px', margin: '0 auto', padding: '24px 16px' }}>
 
-        {/* Action bar — hidden on print */}
+        {/* Action bar */}
         <div className="no-print flex items-center gap-3 mb-6">
           <button
             onClick={() => router.back()}
@@ -53,35 +139,17 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
           boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         }}>
 
-          {/* Header */}
-          <div style={{
-            background: 'linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%)',
-            padding: '24px 28px',
-            color: '#fff',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <p style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.3px', marginBottom: '2px' }}>
-                  {data.tenantName}
-                </p>
-                <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Combined Bill
-                </p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ fontFamily: 'monospace', fontSize: '15px', fontWeight: 700, color: '#7DD3FC' }}>
-                  {data.combinedBillNo}
-                </p>
-                <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', marginTop: '2px' }}>
-                  Generated: {fmtDate(data.generatedAt)}
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Hospital header */}
+          <HospitalHeader
+            profile={profile}
+            tenantName={data.tenantName}
+            billNo={data.combinedBillNo}
+            generatedAt={data.generatedAt}
+          />
 
           {/* Patient info */}
           <div style={{
-            padding: '16px 28px',
+            padding: '14px 28px',
             borderBottom: '1px solid #F1F5F9',
             background: '#FAFBFC',
             display: 'flex',
@@ -112,13 +180,7 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
               </div>
             ) : data.sections.map((section) => (
               <div key={section.label} style={{ marginBottom: '0', borderBottom: '1px solid #F1F5F9' }}>
-                {/* Section header */}
-                <div style={{
-                  padding: '14px 0 8px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}>
+                <div style={{ padding: '14px 0 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <p style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#475569' }}>
                     {section.label}
                   </p>
@@ -126,8 +188,6 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
                     {fmt(section.subtotal)}
                   </p>
                 </div>
-
-                {/* Row table */}
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '12px', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ background: '#F8FAFC' }}>
@@ -142,12 +202,8 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
                   <tbody>
                     {section.rows.map((row, i) => (
                       <tr key={i} style={{ borderTop: '1px solid #F8FAFC' }}>
-                        <td style={{ padding: '7px 8px', color: '#64748B', whiteSpace: 'nowrap' }}>
-                          {fmtDate(row.date)}
-                        </td>
-                        <td style={{ padding: '7px 8px', color: '#0D9488', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          {row.billNo}
-                        </td>
+                        <td style={{ padding: '7px 8px', color: '#64748B', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
+                        <td style={{ padding: '7px 8px', color: '#0D9488', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap' }}>{row.billNo}</td>
                         <td style={{ padding: '7px 8px', color: '#334155' }}>{row.description}</td>
                         <td style={{ padding: '7px 8px', color: '#475569', textAlign: 'right' }}>{row.qty}</td>
                         <td style={{ padding: '7px 8px', color: '#475569', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.unitPrice)}</td>
@@ -160,22 +216,13 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
             ))}
           </div>
 
-          {/* Totals block */}
-          <div style={{
-            padding: '20px 28px',
-            background: '#F8FAFC',
-            borderTop: '2px solid #E2E8F0',
-          }}>
+          {/* Totals */}
+          <div style={{ padding: '20px 28px', background: '#F8FAFC', borderTop: '2px solid #E2E8F0' }}>
             {[
-              { label: 'Grand Total', value: data.grandTotal, bold: true, color: '#0F172A' },
-              { label: 'Advance Collected', value: data.advanceCollected, bold: false, color: '#0D9488' },
-              { label: 'Total Payments Received', value: data.totalPaid, bold: false, color: '#10B981' },
-              {
-                label: 'Balance Due',
-                value: data.balanceDue,
-                bold: true,
-                color: data.balanceDue > 0 ? '#DC2626' : '#10B981',
-              },
+              { label: 'Grand Total',              value: data.grandTotal,       bold: true,  color: '#0F172A' },
+              { label: 'Advance Collected',         value: data.advanceCollected, bold: false, color: '#0D9488' },
+              { label: 'Total Payments Received',   value: data.totalPaid,        bold: false, color: '#10B981' },
+              { label: 'Balance Due',               value: data.balanceDue,       bold: true,  color: data.balanceDue > 0 ? '#DC2626' : '#10B981' },
             ].map(({ label, value, bold, color }) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
                 <span style={{ fontSize: '13px', color: '#475569', fontWeight: bold ? 700 : 400 }}>{label}</span>
@@ -187,12 +234,13 @@ export default function CombinedBillView({ data }: { data: CombinedBillData }) {
           </div>
 
           {/* Footer */}
-          <div style={{
-            padding: '12px 28px',
-            borderTop: '1px solid #F1F5F9',
-            textAlign: 'center',
-          }}>
-            <p style={{ fontSize: '11px', color: '#CBD5E1' }}>
+          <div style={{ padding: '12px 28px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+            {profile?.emergency_contact && (
+              <p style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+                For Emergency Care: {profile.emergency_contact}
+              </p>
+            )}
+            <p style={{ fontSize: '10px', color: '#CBD5E1' }}>
               This is a system-generated combined bill — {data.combinedBillNo}
             </p>
           </div>

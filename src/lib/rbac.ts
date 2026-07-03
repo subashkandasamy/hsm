@@ -152,6 +152,7 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Departments',    href: '/settings/departments',         icon: 'Building2',     requiredPermission: 'departments:manage' },
       { label: 'Tariffs & Fees', href: '/settings/tariffs',             icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
       { label: 'IPD Billing',    href: '/settings/ipd-billing',         icon: 'BedDouble',     requiredPermission: 'ipd:config' },
+      { label: 'Hospital Profile', href: '/settings/profile',            icon: 'Building2',     requiredPermission: 'settings:write' },
       { label: 'Module Settings',href: '/settings/modules',             icon: 'ToggleLeft',    requiredPermission: 'settings:modules' },
       { label: 'Settings',       href: '/settings',                     icon: 'Settings',      requiredPermission: 'settings:read' },
     ],
