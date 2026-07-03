@@ -120,6 +120,7 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
   async function handlePayment() {
     const amt = parseFloat(payAmount)
     if (!amt || amt <= 0) { setPayError('Enter a valid amount'); return }
+    if (amt > balance) { setPayError(`Amount cannot exceed balance due (₹${balance.toFixed(2)})`); return }
     setPaying(true)
     setPayError(null)
     const res = await recordPayment({
@@ -434,6 +435,7 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
               type="number"
               autoFocus
               min={0.01}
+              max={balance}
               step={0.01}
               placeholder="0.00"
               value={payAmount}

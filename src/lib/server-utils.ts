@@ -1,9 +1,10 @@
 import { createClient } from './supabase/server'
+import { getCachedUser } from './supabase/cached-user'
 import type { Role } from './types'
 
 export async function getActorProfile(): Promise<{ id: string; role: Role; tenant_id: string }> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCachedUser()
   if (!user) throw new Error('UNAUTHENTICATED')
 
   const { data: profile } = await supabase

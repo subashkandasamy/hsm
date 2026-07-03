@@ -102,6 +102,33 @@ export async function admitPatient(
     .gte('scheduled_at', `${todayStr}T00:00:00`)
     .lte('scheduled_at', `${todayStr}T23:59:59`)
 
+  // Assign a combined bill number to this admission.
+  // Carry forward from a same-day OPD visit if one exists; otherwise generate a new one.
+  const { data: todayVisit } = await supabase
+    .from('visits')
+    .select('combined_bill_no')
+    .eq('patient_id', patient_id)
+    .gte('visit_date', `${todayStr}T00:00:00`)
+    .lt('visit_date', `${todayStr}T23:59:59`)
+    .not('combined_bill_no', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let admissionCombinedNo: string | null = null
+  if (todayVisit?.combined_bill_no) {
+    admissionCombinedNo = todayVisit.combined_bill_no as string
+  } else {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    admissionCombinedNo = billNoData as string | null
+  }
+  if (admissionCombinedNo) {
+    await supabase
+      .from('admissions')
+      .update({ combined_bill_no: admissionCombinedNo })
+      .eq('id', admissionId)
+  }
+
   await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })
   return { success: true, admissionId }
 }

@@ -72,6 +72,7 @@ export interface Patient {
   address: string | null; blood_group: string | null; allergies: string | null
   emergency_contact_name: string | null; emergency_contact_phone: string | null
   notify_whatsapp_consent: boolean; notify_sms_consent: boolean
+  combined_bill_no?: string | null
   created_by: string | null; created_at: string
 }
 
@@ -103,6 +104,7 @@ export interface Visit {
   diagnosis: string | null; icd_code: string | null; notes: string | null
   status: VisitStatus; consultation_fee: number; billing_status: VisitBillingStatus
   clinical_data: Record<string, unknown> | null
+  combined_bill_no?: string | null
   created_at: string
   doctor?: Pick<Profile, 'id' | 'full_name'>
   prescriptions?: Prescription[]
@@ -122,6 +124,7 @@ export interface Admission {
   reason: string | null; admitted_at: string; discharged_at: string | null
   status: AdmissionStatus; discharge_summary: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
+  combined_bill_no?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'>
@@ -323,6 +326,44 @@ export interface Bill {
 
 export interface ChargePreviewLine {
   source: BillItemSource; ref_id: string; description: string; qty: number; unit_price: number; amount: number
+}
+
+export interface CombinedBillSection {
+  label: string
+  rows: Array<{ date: string; billNo: string; description: string; qty: number; unitPrice: number; amount: number }>
+  subtotal: number
+}
+
+export interface AdvanceReceiptData {
+  tenantName: string
+  patient: { full_name: string; uhid: string; phone: string | null }
+  admission: {
+    id: string
+    admitted_at: string
+    ward: string | null
+    bed: string | null
+    combined_bill_no: string | null
+  }
+  payments: Array<{
+    id: string
+    received_at: string
+    amount: number
+    method: string
+    receiverName: string | null
+  }>
+  totalCollected: number
+}
+
+export interface CombinedBillData {
+  combinedBillNo: string
+  tenantName: string
+  patient: { full_name: string; uhid: string; phone: string | null }
+  generatedAt: string
+  sections: CombinedBillSection[]
+  grandTotal: number
+  totalPaid: number
+  advanceCollected: number
+  balanceDue: number
 }
 
 // ---- Phase 5: Insurance ----

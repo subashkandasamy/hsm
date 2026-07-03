@@ -1,11 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { getCachedUser } from '@/lib/supabase/cached-user'
 import { getTodaysQueue, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import OpdWorklist from './_components/OpdWorklist'
 
 export default async function OpdPage() {
+  const user = await getCachedUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
   const { data: profile } = await supabase
     .from('profiles').select('id, role').eq('id', user!.id).single()
 

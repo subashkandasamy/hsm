@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getCachedUser } from '@/lib/supabase/cached-user'
 import { getPatient } from '@/app/actions/patients'
 import { listAppointments } from '@/app/actions/appointments'
 import { getPatientVisits } from '@/app/actions/opd'
@@ -16,8 +17,8 @@ export default async function PatientDetailPage({ params }: Props) {
   const { id } = await params
 
   // Fetch the current user's role for RBAC-aware rendering
+  const user = await getCachedUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
   let role: Role = 'receptionist'
   if (user) {
     const { data: profile } = await supabase

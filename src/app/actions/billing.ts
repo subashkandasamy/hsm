@@ -7,7 +7,7 @@ import { getActorProfile } from '@/lib/server-utils'
 import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
-import type { Bill, ChargePreviewLine, BillItemSource, Tariff } from '@/lib/types'
+import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -704,6 +704,11 @@ export async function recordPayment(
   if ((bill.status as string) === 'cancelled') return { success: false, error: 'Bill is cancelled' }
   if ((bill.status as string) === 'paid') return { success: false, error: 'Bill is already fully paid' }
 
+  const balanceDue = (bill.total as number) - (bill.paid as number)
+  if (parsed.data.amount > balanceDue + 0.001) {
+    return { success: false, error: `Payment of ₹${parsed.data.amount.toFixed(2)} exceeds balance due of ₹${balanceDue.toFixed(2)}` }
+  }
+
   const { error: payErr } = await supabase.from('payments').insert({
     id: crypto.randomUUID(),
     tenant_id: actor.tenant_id,
@@ -723,113 +728,10 @@ export async function recordPayment(
   }).eq('id', parsed.data.bill_id)
   if (billErr) return { success: false, error: billErr.message }
 
-  // Propagate full payment to child bills when a consolidated bill is fully paid
-  if (newStatus === 'paid') {
-    const { data: fullBill } = await supabase
-      .from('bills').select('bill_source').eq('id', parsed.data.bill_id).single()
-    if ((fullBill?.bill_source as string) === 'consolidated') {
-      const { data: children } = await supabase
-        .from('bills').select('id, total')
-        .eq('consolidated_by', parsed.data.bill_id)
-        .neq('status', 'cancelled')
-      for (const child of children ?? []) {
-        await supabase.from('bills').update({ paid: child.total, status: 'paid' }).eq('id', child.id)
-      }
-    }
-  }
-
   await logAudit(actor.id, 'payment', 'bill', parsed.data.bill_id, {
     amount: parsed.data.amount, method: parsed.data.method,
   })
   return { success: true }
-}
-
-// ---- Bill Consolidation ----
-
-export async function consolidateBillsForAdmission(
-  admissionId: string
-): Promise<{ success: true; billId: string } | { success: false; error: string }> {
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'billing:manage')
-
-  const supabase = await createClient()
-
-  // Fetch all active (non-cancelled, not already consolidated) bills for this admission
-  const { data: childBills } = await supabase
-    .from('bills')
-    .select('id, bill_no, bill_source, total, paid, patient_id')
-    .eq('tenant_id', actor.tenant_id)
-    .eq('admission_id', admissionId)
-    .neq('status', 'cancelled')
-    .neq('bill_source', 'consolidated')
-    .is('consolidated_by', null)
-
-  if (!childBills?.length) return { success: false, error: 'No active bills found for this admission' }
-  if (childBills.length < 2) return { success: false, error: 'Need at least 2 bills to consolidate' }
-
-  // Use ALL bills (paid or unpaid) — patient needs one complete invoice
-  const billsToMerge = childBills
-  const totalAmount = billsToMerge.reduce((sum, b) => sum + (b.total as number), 0)
-  const totalPaid   = billsToMerge.reduce((sum, b) => sum + (b.paid as number), 0)
-  const patientId   = billsToMerge[0].patient_id as string
-
-  // Get next bill number
-  const { data: billNoData, error: billNoErr } = await supabase.rpc('get_next_bill_no')
-  if (billNoErr || !billNoData) return { success: false, error: billNoErr?.message ?? 'Could not generate bill number' }
-
-  const consolidatedBillId = crypto.randomUUID()
-
-  const { error: insertErr } = await supabase.from('bills').insert({
-    id:           consolidatedBillId,
-    tenant_id:    actor.tenant_id,
-    patient_id:   patientId,
-    admission_id: admissionId,
-    bill_no:      billNoData as string,
-    subtotal:     totalAmount,
-    discount:     0,
-    tax:          0,
-    total:        totalAmount,
-    paid:         totalPaid,
-    status:       totalPaid >= totalAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid',
-    bill_source:  'consolidated',
-    created_by:   actor.id,
-  })
-  if (insertErr) return { success: false, error: insertErr.message }
-
-  const BILL_SOURCE_LABELS_MAP: Record<string, string> = {
-    bed: 'Room Rent', lab: 'Lab', radiology: 'Radiology',
-    ipd_pharmacy: 'Pharmacy (Ward)', nursing: 'Nursing',
-    nursing_morning: 'Nursing AM', nursing_night: 'Nursing Night',
-  }
-
-  // Insert one line item per child bill
-  const lineItems = billsToMerge.map((b) => ({
-    id:          crypto.randomUUID(),
-    tenant_id:   actor.tenant_id,
-    bill_id:     consolidatedBillId,
-    source:      'manual' as const,
-    ref_id:      b.id as string,
-    description: `${b.bill_no} — ${BILL_SOURCE_LABELS_MAP[b.bill_source as string] ?? 'Charges'}`,
-    qty:         1,
-    unit_price:  b.total as number,
-    amount:      b.total as number,
-  }))
-
-  const { error: itemsErr } = await supabase.from('bill_items').insert(lineItems)
-  if (itemsErr) return { success: false, error: itemsErr.message }
-
-  // Tag child bills with consolidated_by
-  const { error: tagErr } = await supabase
-    .from('bills')
-    .update({ consolidated_by: consolidatedBillId })
-    .in('id', billsToMerge.map((b) => b.id as string))
-  if (tagErr) return { success: false, error: tagErr.message }
-
-  await logAudit(actor.id, 'consolidate', 'bill', consolidatedBillId, {
-    admissionId, childCount: billsToMerge.length, total: totalAmount,
-  })
-
-  return { success: true, billId: consolidatedBillId }
 }
 
 // ---- Read ----
@@ -874,7 +776,7 @@ export async function listBills(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('bills')
-    .select('*, patient:patients(id,full_name,uhid,phone)')
+    .select('*, patient:patients(id,full_name,uhid,phone), items:bill_items(source)')
     .order('created_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)
@@ -884,6 +786,338 @@ export async function listBills(filters?: {
   return (data ?? []) as unknown as Bill[]
 }
 
+
+// ---- Combined Bill View ----
+
+const COMBINED_BILL_SECTIONS: Array<{ label: string; sources: string[] }> = [
+  { label: 'Room Charges',      sources: ['bed'] },
+  { label: 'Nursing Charges',   sources: ['nursing', 'nursing_morning', 'nursing_night'] },
+  { label: 'Laboratory',        sources: ['lab'] },
+  { label: 'Radiology',         sources: ['radiology'] },
+  { label: 'Pharmacy',          sources: ['pharmacy', 'ipd_pharmacy', 'pharmacy_sale_item'] },
+  { label: 'Operation Theatre', sources: ['ot', 'ot_consumable'] },
+  { label: 'Blood Bank',        sources: ['blood'] },
+  { label: 'Dental',            sources: ['dental'] },
+  { label: 'Consultations',     sources: ['consultation'] },
+  { label: 'Other Charges',     sources: ['manual'] },
+]
+
+export async function getCombinedBillData(admissionId: string): Promise<CombinedBillData | null> {
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+
+  // 0. Fetch tenant name
+  const { data: tenantRow } = await supabase
+    .from('tenants').select('name').eq('id', actor.tenant_id).single()
+  const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
+
+  // 1. Fetch admission — includes combined_bill_no and admitted_at
+  const { data: admission } = await supabase
+    .from('admissions')
+    .select('id, patient_id, combined_bill_no, admitted_at, discharged_at')
+    .eq('id', admissionId)
+    .single()
+  if (!admission) return null
+
+  const patientId = admission.patient_id as string
+  const admittedAt = admission.admitted_at as string
+  const dischargedAt = (admission as Record<string, unknown>).discharged_at as string | null | undefined
+
+  // 2. Get-or-create combined bill number (lazy generation for old admissions)
+  let combinedBillNo = 'COMBINED'
+  const existingNo = (admission as Record<string, unknown>).combined_bill_no as string | null | undefined
+  if (existingNo) {
+    combinedBillNo = existingNo
+  } else {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    if (billNoData) {
+      combinedBillNo = billNoData as string
+      await supabase.from('admissions').update({ combined_bill_no: combinedBillNo }).eq('id', admissionId)
+    }
+  }
+
+  // 3. Fetch patient info
+  const { data: patient } = await supabase
+    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+  if (!patient) return null
+
+  type RawBill = {
+    id: string; bill_no: string; billing_date: string | null; created_at: string
+    total: number; paid: number; bill_source: string | null
+    items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
+  }
+
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)'
+
+  // 4. Fetch all non-cancelled IPD bills for this admission
+  const { data: admBills } = await supabase
+    .from('bills')
+    .select(BILL_SELECT)
+    .eq('admission_id', admissionId)
+    .neq('status', 'cancelled')
+    .order('billing_date', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  // 5. Fetch OPD/standalone bills for this patient with no admission_id,
+  //    created on or after the admission date — captures same-day OPD bills
+  //    (Lab, Consultation etc. ordered before/during admission).
+  //    Note: .neq('bill_source','consolidated') drops NULL rows in PG — filter in JS.
+  const admissionDateStart = admittedAt.slice(0, 10) + 'T00:00:00'
+  let opdQuery = supabase
+    .from('bills')
+    .select(BILL_SELECT)
+    .eq('patient_id', patientId)
+    .is('admission_id', null)
+    .neq('status', 'cancelled')
+    .gte('created_at', admissionDateStart)
+    .order('created_at', { ascending: true })
+  if (dischargedAt) {
+    opdQuery = opdQuery.lte('created_at', dischargedAt)
+  }
+  const { data: opdBills } = await opdQuery
+
+  const seenIds = new Set<string>()
+  const allBills = [
+    ...((admBills ?? []) as unknown as RawBill[]),
+    ...((opdBills ?? []) as unknown as RawBill[]),
+  ]
+    .filter((b) => {
+      if (b.bill_source === 'consolidated') return false
+      if (seenIds.has(b.id)) return false
+      seenIds.add(b.id)
+      return true
+    })
+
+  // 6. Advance collected for this admission only
+  const { data: advRows } = await supabase
+    .from('admission_advances').select('amount').eq('admission_id', admissionId)
+  const advanceCollected = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
+
+  // 7. Group items into sections
+  const sections: import('@/lib/types').CombinedBillSection[] = []
+  for (const sectionDef of COMBINED_BILL_SECTIONS) {
+    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
+    for (const bill of allBills) {
+      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
+      for (const item of bill.items) {
+        if (sectionDef.sources.includes(item.source)) {
+          rows.push({
+            date,
+            billNo: bill.bill_no,
+            description: item.description,
+            qty: item.qty,
+            unitPrice: item.unit_price,
+            amount: item.amount,
+          })
+        }
+      }
+    }
+    if (rows.length > 0) {
+      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
+    }
+  }
+
+  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
+  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+
+  return {
+    combinedBillNo,
+    tenantName,
+    patient: {
+      full_name: patient.full_name as string,
+      uhid: patient.uhid as string,
+      phone: patient.phone as string | null,
+    },
+    generatedAt: new Date().toISOString(),
+    sections,
+    grandTotal,
+    totalPaid,
+    advanceCollected,
+    balanceDue: Math.max(0, grandTotal - totalPaid),
+  }
+}
+
+export async function getOpdCombinedBillData(visitId: string): Promise<CombinedBillData | null> {
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+
+  // 0. Fetch tenant name
+  const { data: tenantRow } = await supabase
+    .from('tenants').select('name').eq('id', actor.tenant_id).single()
+  const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
+
+  // 1. Fetch visit
+  const { data: visit } = await supabase
+    .from('visits')
+    .select('patient_id, combined_bill_no')
+    .eq('id', visitId)
+    .single()
+  if (!visit) return null
+
+  const patientId = visit.patient_id as string
+
+  // 2. Get-or-create combined bill number
+  let combinedBillNo = 'COMBINED'
+  const existingNo = (visit as Record<string, unknown>).combined_bill_no as string | null | undefined
+  if (existingNo) {
+    combinedBillNo = existingNo
+  } else {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    if (billNoData) {
+      combinedBillNo = billNoData as string
+      await supabase.from('visits').update({ combined_bill_no: combinedBillNo }).eq('id', visitId)
+    }
+  }
+
+  // 3. Fetch patient info
+  const { data: patient } = await supabase
+    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+  if (!patient) return null
+
+  type RawBill = {
+    id: string; bill_no: string; billing_date: string | null; created_at: string
+    total: number; paid: number; bill_source: string | null
+    items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
+  }
+
+  // 4. Fetch all non-cancelled bills for this visit (filter consolidated in JS — PG neq drops NULLs)
+  const { data: visitBills } = await supabase
+    .from('bills')
+    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+    .eq('visit_id', visitId)
+    .neq('status', 'cancelled')
+    .order('billing_date', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  const allBills = ((visitBills ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
+
+  // 5. Group items into sections
+  const sections: import('@/lib/types').CombinedBillSection[] = []
+  for (const sectionDef of COMBINED_BILL_SECTIONS) {
+    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
+    for (const bill of allBills) {
+      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
+      for (const item of bill.items) {
+        if (sectionDef.sources.includes(item.source)) {
+          rows.push({
+            date,
+            billNo: bill.bill_no,
+            description: item.description,
+            qty: item.qty,
+            unitPrice: item.unit_price,
+            amount: item.amount,
+          })
+        }
+      }
+    }
+    if (rows.length > 0) {
+      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
+    }
+  }
+
+  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
+  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+
+  return {
+    combinedBillNo,
+    tenantName,
+    patient: {
+      full_name: patient.full_name as string,
+      uhid: patient.uhid as string,
+      phone: patient.phone as string | null,
+    },
+    generatedAt: new Date().toISOString(),
+    sections,
+    grandTotal,
+    totalPaid,
+    advanceCollected: 0,
+    balanceDue: Math.max(0, grandTotal - totalPaid),
+  }
+}
+
+export async function getPatientCombinedBillData(patientId: string): Promise<CombinedBillData | null> {
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+
+  const { data: tenantRow } = await supabase
+    .from('tenants').select('name').eq('id', actor.tenant_id).single()
+  const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
+
+  const { data: patient } = await supabase
+    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+  if (!patient) return null
+
+  // Use combined_bill_no on the patient row, or generate one
+  let combinedBillNo = 'COMBINED'
+  const { data: billNoRow } = await supabase
+    .from('patients').select('combined_bill_no').eq('id', patientId).maybeSingle()
+  const existingNo = (billNoRow as Record<string, unknown> | null)?.combined_bill_no as string | null | undefined
+  if (existingNo) {
+    combinedBillNo = existingNo
+  } else {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    if (billNoData) {
+      combinedBillNo = billNoData as string
+      await supabase.from('patients').update({ combined_bill_no: combinedBillNo }).eq('id', patientId)
+    }
+  }
+
+  type RawBill = {
+    id: string; bill_no: string; billing_date: string | null; created_at: string
+    total: number; paid: number; bill_source: string | null
+    items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
+  }
+
+  const { data: bills } = await supabase
+    .from('bills')
+    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+    .eq('patient_id', patientId)
+    .neq('status', 'cancelled')
+    .order('billing_date', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  const allBills = ((bills ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
+
+  // Advance across all admissions
+  const { data: admissions } = await supabase.from('admissions').select('id').eq('patient_id', patientId)
+  const admissionIds = (admissions ?? []).map((a) => a.id as string)
+  let advanceCollected = 0
+  if (admissionIds.length > 0) {
+    const { data: advRows } = await supabase.from('admission_advances').select('amount').in('admission_id', admissionIds)
+    advanceCollected = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
+  }
+
+  const sections: import('@/lib/types').CombinedBillSection[] = []
+  for (const sectionDef of COMBINED_BILL_SECTIONS) {
+    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
+    for (const bill of allBills) {
+      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
+      for (const item of bill.items) {
+        if (sectionDef.sources.includes(item.source)) {
+          rows.push({ date, billNo: bill.bill_no, description: item.description, qty: item.qty, unitPrice: item.unit_price, amount: item.amount })
+        }
+      }
+    }
+    if (rows.length > 0) {
+      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
+    }
+  }
+
+  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
+  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+
+  return {
+    combinedBillNo,
+    tenantName,
+    patient: { full_name: patient.full_name as string, uhid: patient.uhid as string, phone: patient.phone as string | null },
+    generatedAt: new Date().toISOString(),
+    sections,
+    grandTotal,
+    totalPaid,
+    advanceCollected,
+    balanceDue: Math.max(0, grandTotal - totalPaid),
+  }
+}
 
 export async function updateWardDailyRate(wardId: string, dailyRate: number): Promise<SimpleResult> {
   const actor = await getActorProfile()

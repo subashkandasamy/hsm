@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
-import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest } from '@/lib/types'
+import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -563,4 +563,57 @@ export async function listAdmissionsWithOutstandingBalance(): Promise<Array<{
     }
   }
   return result
+}
+
+export async function getAdmissionAdvanceReceipt(
+  admissionId: string
+): Promise<AdvanceReceiptData | null> {
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+
+  const { data: adm } = await supabase
+    .from('admissions')
+    .select('id, admitted_at, combined_bill_no, patient:patients(full_name, uhid, phone), ward:wards(name), bed:beds(bed_no)')
+    .eq('id', admissionId)
+    .single()
+  if (!adm) return null
+
+  const { data: advances } = await supabase
+    .from('admission_advances')
+    .select('id, amount, method, received_at, receiver:profiles(id, full_name)')
+    .eq('admission_id', admissionId)
+    .order('received_at', { ascending: true })
+
+  const { data: tenantRow } = await supabase
+    .from('tenants').select('name').eq('id', actor.tenant_id).single()
+  const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
+
+  type ARow = { full_name: string; uhid: string; phone: string | null }
+  const p = (adm.patient as unknown as ARow | null)
+  if (!p) return null
+
+  const payments = ((advances ?? []) as unknown as Array<{
+    id: string; amount: number; method: string; received_at: string
+    receiver: { full_name: string } | null
+  }>).map((a) => ({
+    id: a.id,
+    received_at: a.received_at,
+    amount: a.amount,
+    method: a.method,
+    receiverName: a.receiver?.full_name ?? null,
+  }))
+
+  return {
+    tenantName,
+    patient: { full_name: p.full_name, uhid: p.uhid, phone: p.phone },
+    admission: {
+      id: admissionId,
+      admitted_at: adm.admitted_at as string,
+      ward: (adm.ward as unknown as { name: string } | null)?.name ?? null,
+      bed: (adm.bed as unknown as { bed_no: string } | null)?.bed_no ?? null,
+      combined_bill_no: (adm.combined_bill_no as string | null) ?? null,
+    },
+    payments,
+    totalCollected: payments.reduce((s, pmt) => s + pmt.amount, 0),
+  }
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import {
   Plus, RefreshCw, Receipt, LayoutList, Users,
-  Wallet, AlertCircle, ChevronDown, ChevronRight, BedDouble,
+  Wallet, AlertCircle, ChevronDown, ChevronRight, BedDouble, FileText,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PageHeader from '@/components/ui/PageHeader'
@@ -12,7 +12,8 @@ import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
-import { listBills, getBillingStats, consolidateBillsForAdmission, cancelBill } from '@/app/actions/billing'
+import Link from 'next/link'
+import { listBills, getBillingStats, cancelBill } from '@/app/actions/billing'
 import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -33,6 +34,7 @@ function fmtCompact(amount: number): string {
   return `₹${Math.round(amount)}`
 }
 
+// Labels for auto-generated IPD bills (bill_source column)
 const BILL_SOURCE_LABELS: Record<string, string> = {
   bed:              'Room Rent',
   lab:              'Lab',
@@ -44,15 +46,59 @@ const BILL_SOURCE_LABELS: Record<string, string> = {
   consolidated:     'Consolidated',
 }
 
-const BILL_SOURCE_COLORS: Record<string, { bg: string; color: string }> = {
-  bed:              { bg: '#F0FDF4', color: '#16A34A' },
-  lab:              { bg: '#EFF6FF', color: '#2563EB' },
-  radiology:        { bg: '#FDF4FF', color: '#9333EA' },
-  ipd_pharmacy:     { bg: '#FFF7ED', color: '#C2410C' },
-  nursing:          { bg: '#FFF1F2', color: '#BE123C' },
-  nursing_morning:  { bg: '#F0FDF4', color: '#0D9488' },
-  nursing_night:    { bg: '#EEF2FF', color: '#4338CA' },
-  consolidated:     { bg: '#FAF5FF', color: '#7C3AED' },
+// Labels for individual bill_items sources (used to derive content of OPD bills)
+const ITEM_SOURCE_LABELS: Record<string, string> = {
+  consultation:      'Consultation',
+  bed:               'Room Rent',
+  lab:               'Lab',
+  radiology:         'Radiology',
+  pharmacy:          'Pharmacy',
+  ipd_pharmacy:      'Pharmacy (Ward)',
+  pharmacy_sale_item:'Pharmacy',
+  ot:                'OT',
+  ot_consumable:     'OT',
+  blood:             'Blood Bank',
+  dental:            'Dental',
+  nursing:           'Nursing',
+  nursing_morning:   'Nursing AM',
+  nursing_night:     'Nursing Night',
+  manual:            'Manual',
+}
+
+const BILL_SOURCE_COLORS: Record<string, { background: string; color: string }> = {
+  bed:               { background: '#F0FDF4', color: '#16A34A' },
+  lab:               { background: '#EFF6FF', color: '#2563EB' },
+  radiology:         { background: '#FDF4FF', color: '#9333EA' },
+  ipd_pharmacy:      { background: '#FFF7ED', color: '#C2410C' },
+  nursing:           { background: '#FFF1F2', color: '#BE123C' },
+  nursing_morning:   { background: '#F0FDF4', color: '#0D9488' },
+  nursing_night:     { background: '#EEF2FF', color: '#4338CA' },
+  consolidated:      { background: '#FAF5FF', color: '#7C3AED' },
+  consultation:      { background: '#F0FDF4', color: '#0D9488' },
+  pharmacy:          { background: '#FFF7ED', color: '#C2410C' },
+  ot:                { background: '#FEF9C3', color: '#A16207' },
+  blood:             { background: '#FFF1F2', color: '#BE123C' },
+  dental:            { background: '#F0F9FF', color: '#0369A1' },
+  manual:            { background: '#F8FAFC', color: '#475569' },
+  mixed:             { background: '#F1F5F9', color: '#475569' },
+}
+
+// Derive a display label + color key from bill_source (IPD auto-bills)
+// or from bill_items sources (OPD / manual bills)
+function getBillLabel(bill: Bill): { label: string; colorKey: string } | null {
+  // IPD auto-generated bills have a known bill_source
+  if (bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source]) {
+    return { label: BILL_SOURCE_LABELS[bill.bill_source], colorKey: bill.bill_source }
+  }
+  // For OPD / manual bills, derive from item sources
+  const items = (bill as unknown as { items?: Array<{ source: string }> }).items
+  if (!items?.length) return null
+  const unique = [...new Set(items.map((i) => i.source))]
+    .filter((s) => s !== 'ot_consumable' && s !== 'pharmacy_sale_item')  // dedupe sub-sources
+  const deduped = [...new Set(unique.map((s) => ITEM_SOURCE_LABELS[s] ?? s))]
+  if (deduped.length === 0) return null
+  if (deduped.length === 1) return { label: deduped[0], colorKey: unique[0] }
+  return { label: deduped.join(' · '), colorKey: 'mixed' }
 }
 
 const PAYMENT_METHODS = [
@@ -124,8 +170,6 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [collectPending, setCollectPending] = useState(false)
   // Apply advance state
   const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
-  // Consolidation state
-  const [consolidatingId, setConsolidatingId] = useState<string | null>(null)
   // Inline cancel state: null | billId being cancelled | `${billId}:confirm` awaiting confirm
   const [cancelState, setCancelState] = useState<string | null>(null)
 
@@ -195,18 +239,6 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       setCancelState(`${billId}:confirm`)
       // Auto-dismiss after 3 s if no second click
       setTimeout(() => setCancelState((s) => s === `${billId}:confirm` ? null : s), 3000)
-    }
-  }
-
-  async function handleConsolidate(e: React.MouseEvent, admissionId: string) {
-    e.stopPropagation()
-    setConsolidatingId(admissionId)
-    const res = await consolidateBillsForAdmission(admissionId)
-    setConsolidatingId(null)
-    if (res.success) {
-      router.push(`/billing/${res.billId}`)
-    } else {
-      alert(res.error)
     }
   }
 
@@ -545,6 +577,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                 <Money amount={dep.amount} className="font-bold flex-shrink-0"
                                   style={{ color: isPending ? '#D97706' : '#0D9488', fontSize: '0.95rem' }} />
 
+                                {/* Print receipt for collected advance */}
+                                {isCollected && dep.admission_id && (
+                                  <Link
+                                    href={`/billing/advance-receipt/${dep.admission_id}`}
+                                    target="_blank"
+                                    className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                    style={{ background: '#F0FDF4', color: '#0D9488', border: '1px solid #D1FAE5', textDecoration: 'none' }}>
+                                    🖨 Receipt
+                                  </Link>
+                                )}
+
                                 {/* Collect inline */}
                                 {isPending && canAdvance && (
                                   isCollecting ? (
@@ -586,25 +629,27 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                           )
                         })}
 
-                        {/* Top Up Advance row — shown for IPD patients when accountant has permission */}
-                        {canManage && group.admissionId && (() => {
-                          const consolidatableCount = group.bills.filter(
-                            (b) => b.status !== 'cancelled' && b.bill_source !== 'consolidated' && !b.consolidated_by
-                          ).length
-                          return consolidatableCount >= 2 ? (
-                            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'rgba(245,243,255,0.5)', borderBottom: '1px solid #F1F5F9' }}>
-                              <span className="text-xs" style={{ color: '#7C3AED' }}>
-                                {consolidatableCount} bills with outstanding balance
-                              </span>
-                              <button
-                                onClick={(e) => handleConsolidate(e, group.admissionId!)}
-                                disabled={consolidatingId === group.admissionId}
-                                className="text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0"
-                                style={{ background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                {consolidatingId === group.admissionId ? 'Consolidating…' : 'Consolidate into one bill'}
-                              </button>
+                        {/* Combined Bill link — IPD > OPD visit > patient fallback */}
+                        {group.bills.length > 0 && (() => {
+                          const latestAdmissionId = group.bills.find((b) => b.admission_id)?.admission_id ?? null
+                          const latestVisitId = group.bills.find((b) => b.visit_id && !b.admission_id)?.visit_id ?? null
+                          const combinedHref = latestAdmissionId
+                            ? `/billing/combined/${latestAdmissionId}`
+                            : latestVisitId
+                              ? `/billing/combined/visit/${latestVisitId}`
+                              : `/billing/combined/patient/${group.patientId}`
+                          return (
+                            <div className="px-4 py-2 flex justify-end" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                              <Link
+                                href={combinedHref}
+                                className="flex items-center gap-1.5 text-xs font-semibold"
+                                style={{ color: '#7C3AED' }}
+                                onClick={(e) => e.stopPropagation()}>
+                                <FileText className="w-3.5 h-3.5" />
+                                View Combined Bill →
+                              </Link>
                             </div>
-                          ) : null
+                          )
                         })()}
 
                         {canAdvance && group.admissionId && (
@@ -678,12 +723,6 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                     {bill.bill_no}
                                   </span>
                                   <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                                    {bill.consolidated_by && (
-                                      <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
-                                        style={{ background: '#FAF5FF', color: '#7C3AED', border: '1px solid #E9D5FF' }}>
-                                        Merged
-                                      </span>
-                                    )}
                                     {canApply && (
                                       <button
                                         onClick={(e) => handleApplyAdvance(e, bill.id, bill.admission_id!)}
@@ -712,12 +751,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                 </div>
                                 <div className="flex items-center gap-3 text-xs flex-wrap">
                                   <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
-                                  {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
-                                    <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
-                                      style={BILL_SOURCE_COLORS[bill.bill_source] ?? { bg: '#F1F5F9', color: '#475569' }}>
-                                      {BILL_SOURCE_LABELS[bill.bill_source]}
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const bl = getBillLabel(bill)
+                                    return bl ? (
+                                      <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                        style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
+                                        {bl.label}
+                                      </span>
+                                    ) : null
+                                  })()}
                                   <span style={{ color: '#64748B' }}>
                                     Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
                                   </span>
@@ -758,12 +800,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                     <p className="text-xs" style={{ color: '#64748B' }}>
                       {bill.patient?.full_name} · {bill.patient?.uhid}
                     </p>
-                    {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
-                      <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
-                        style={BILL_SOURCE_COLORS[bill.bill_source] ?? { background: '#F1F5F9', color: '#475569' }}>
-                        {BILL_SOURCE_LABELS[bill.bill_source]}
-                      </span>
-                    )}
+                    {(() => {
+                      const bl = getBillLabel(bill)
+                      return bl ? (
+                        <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                          style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
+                          {bl.label}
+                        </span>
+                      ) : null
+                    })()}
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span style={{ color: '#64748B' }}>
@@ -802,12 +847,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                           <td className="px-4 py-3">
                             <p className="font-mono text-xs font-medium" style={{ color: '#0D9488' }}>{bill.bill_no}</p>
-                            {bill.bill_source && BILL_SOURCE_LABELS[bill.bill_source] && (
-                              <span className="mt-0.5 inline-block px-1.5 py-0.5 rounded-md text-xs font-medium"
-                                style={BILL_SOURCE_COLORS[bill.bill_source] ?? { background: '#F1F5F9', color: '#475569' }}>
-                                {BILL_SOURCE_LABELS[bill.bill_source]}
-                              </span>
-                            )}
+                            {(() => {
+                              const bl = getBillLabel(bill)
+                              return bl ? (
+                                <span className="mt-0.5 inline-block px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                  style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
+                                  {bl.label}
+                                </span>
+                              ) : null
+                            })()}
                           </td>
                           <td className="px-4 py-3">
                             <p style={{ color: '#0F172A' }}>{bill.patient?.full_name}</p>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getCachedUser } from '@/lib/supabase/cached-user'
 import {
   getAdminDashboard, getDoctorDashboard,
   getReceptionistDashboard, getPharmacistDashboard,
@@ -10,8 +11,8 @@ import PharmacistDashboard from './_components/PharmacistDashboard'
 import GenericDashboard from './_components/GenericDashboard'
 
 export default async function DashboardPage() {
+  const user = await getCachedUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase
     .from('profiles').select('role').eq('id', user!.id).single()
   const role = (profile?.role as string) ?? 'nurse'
