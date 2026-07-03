@@ -31,6 +31,8 @@ const SOURCE_LABELS: Record<BillItemSource, string> = {
   dental: 'Dental',
   manual: 'Manual',
   nursing: 'Nursing',
+  nursing_morning: 'Nursing AM',
+  nursing_night: 'Nursing Night',
 }
 
 const BILL_SOURCE_LABELS: Record<string, string> = {
@@ -161,6 +163,7 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
 
   const balance = Math.max(0, bill.total - bill.paid)
   const isMutable = bill.status !== 'cancelled' && bill.status !== 'paid'
+  const hasNonAdvancePayments = (bill.payments ?? []).some((p) => p.method !== 'advance')
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -264,7 +267,7 @@ export default function BillDetailClient({ bill: initialBill }: Props) {
             </button>
           )}
 
-          {canManage && isMutable && (bill.payments ?? []).length === 0 && (
+          {canManage && isMutable && !hasNonAdvancePayments && (
             <button
               onClick={handleCancel}
               disabled={loading}

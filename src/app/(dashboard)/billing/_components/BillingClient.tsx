@@ -12,7 +12,7 @@ import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
-import { listBills, getBillingStats } from '@/app/actions/billing'
+import { listBills, getBillingStats, consolidateBillsForAdmission } from '@/app/actions/billing'
 import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -34,19 +34,25 @@ function fmtCompact(amount: number): string {
 }
 
 const BILL_SOURCE_LABELS: Record<string, string> = {
-  bed:          'Room Rent',
-  lab:          'Lab',
-  radiology:    'Radiology',
-  ipd_pharmacy: 'Pharmacy (Ward)',
-  nursing:      'Nursing',
+  bed:              'Room Rent',
+  lab:              'Lab',
+  radiology:        'Radiology',
+  ipd_pharmacy:     'Pharmacy (Ward)',
+  nursing:          'Nursing',
+  nursing_morning:  'Nursing AM',
+  nursing_night:    'Nursing Night',
+  consolidated:     'Consolidated',
 }
 
 const BILL_SOURCE_COLORS: Record<string, { bg: string; color: string }> = {
-  bed:          { bg: '#F0FDF4', color: '#16A34A' },
-  lab:          { bg: '#EFF6FF', color: '#2563EB' },
-  radiology:    { bg: '#FDF4FF', color: '#9333EA' },
-  ipd_pharmacy: { bg: '#FFF7ED', color: '#C2410C' },
-  nursing:      { bg: '#FFF1F2', color: '#BE123C' },
+  bed:              { bg: '#F0FDF4', color: '#16A34A' },
+  lab:              { bg: '#EFF6FF', color: '#2563EB' },
+  radiology:        { bg: '#FDF4FF', color: '#9333EA' },
+  ipd_pharmacy:     { bg: '#FFF7ED', color: '#C2410C' },
+  nursing:          { bg: '#FFF1F2', color: '#BE123C' },
+  nursing_morning:  { bg: '#F0FDF4', color: '#0D9488' },
+  nursing_night:    { bg: '#EEF2FF', color: '#4338CA' },
+  consolidated:     { bg: '#FAF5FF', color: '#7C3AED' },
 }
 
 const PAYMENT_METHODS = [
@@ -90,8 +96,9 @@ type ViewMode = 'list' | 'patient'
 export default function BillingClient({ initialBills, initialStats, initialDeposits, initialAdvanceSummaries }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite  = !!role && hasPermission(role, 'billing:write')
+  const canWrite   = !!role && hasPermission(role, 'billing:write')
   const canAdvance = !!role && hasPermission(role, 'billing:advance')
+  const canManage  = !!role && hasPermission(role, 'billing:manage')
   const router = useRouter()
 
   const [bills, setBills]       = useState(initialBills)
@@ -117,6 +124,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [collectPending, setCollectPending] = useState(false)
   // Apply advance state
   const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
+  // Consolidation state
+  const [consolidatingId, setConsolidatingId] = useState<string | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -168,6 +177,18 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     await applyAdvanceToBill(billId, admissionId)
     setApplyingBillId(null)
     refresh()
+  }
+
+  async function handleConsolidate(e: React.MouseEvent, admissionId: string) {
+    e.stopPropagation()
+    setConsolidatingId(admissionId)
+    const res = await consolidateBillsForAdmission(admissionId)
+    setConsolidatingId(null)
+    if (res.success) {
+      router.push(`/billing/${res.billId}`)
+    } else {
+      alert(res.error)
+    }
   }
 
   function togglePatient(id: string) {
@@ -547,6 +568,26 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                         })}
 
                         {/* Top Up Advance row — shown for IPD patients when accountant has permission */}
+                        {canManage && group.admissionId && (() => {
+                          const consolidatableCount = group.bills.filter(
+                            (b) => b.status !== 'cancelled' && b.bill_source !== 'consolidated' && !b.consolidated_by && (b.total - b.paid) > 0
+                          ).length
+                          return consolidatableCount >= 2 ? (
+                            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'rgba(245,243,255,0.5)', borderBottom: '1px solid #F1F5F9' }}>
+                              <span className="text-xs" style={{ color: '#7C3AED' }}>
+                                {consolidatableCount} bills with outstanding balance
+                              </span>
+                              <button
+                                onClick={(e) => handleConsolidate(e, group.admissionId!)}
+                                disabled={consolidatingId === group.admissionId}
+                                className="text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0"
+                                style={{ background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                {consolidatingId === group.admissionId ? 'Consolidating…' : 'Consolidate into one bill'}
+                              </button>
+                            </div>
+                          ) : null
+                        })()}
+
                         {canAdvance && group.admissionId && (
                           <div className="px-4 py-2.5" style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9' }}>
                             {topUpAdmissionId === group.admissionId ? (
@@ -618,6 +659,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                     {bill.bill_no}
                                   </span>
                                   <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                    {bill.consolidated_by && (
+                                      <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                                        style={{ background: '#FAF5FF', color: '#7C3AED', border: '1px solid #E9D5FF' }}>
+                                        Merged
+                                      </span>
+                                    )}
                                     {canApply && (
                                       <button
                                         onClick={(e) => handleApplyAdvance(e, bill.id, bill.admission_id!)}

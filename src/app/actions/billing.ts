@@ -633,40 +633,55 @@ export async function generateMissingDailyCharges(
     })
   }
 
-  // ── 3. Nursing bills: fetch all today's assignments, upsert line items ────────
-  const { data: assignments } = await supabase
+  // ── 3. Nursing bills: carry-forward most recent assignment per shift ──────────
+  // Query ALL assignments for these admissions up to and including today,
+  // sorted newest-first so we can take the first match per (admission, shift).
+  const { data: allAssignments } = await supabase
     .from('admission_nurse_assignments')
-    .select('id, admission_id, shift, charge_snapshot, nurse:profiles(full_name)')
+    .select('admission_id, shift, charge_snapshot')
     .in('admission_id', admissionIds)
-    .eq('assigned_date', today)
+    .lte('assigned_date', today)
+    .order('assigned_date', { ascending: false })
 
-  if (!assignments?.length) return
+  if (!allAssignments?.length) return
 
-  // Group by admission_id
-  const byAdmission = new Map<string, typeof assignments>()
-  for (const a of assignments) {
-    const aid = a.admission_id as string
-    if (!byAdmission.has(aid)) byAdmission.set(aid, [])
-    byAdmission.get(aid)!.push(a)
+  // Deduplicate to the most recent assignment per (admission_id, shift)
+  const latestPerShift = new Map<string, { admissionId: string; shift: string; chargeSnapshot: number }>()
+  for (const a of allAssignments) {
+    const key = `${a.admission_id}:${a.shift}`
+    if (!latestPerShift.has(key)) {
+      latestPerShift.set(key, {
+        admissionId: a.admission_id as string,
+        shift: a.shift as string,
+        chargeSnapshot: a.charge_snapshot as number,
+      })
+    }
   }
 
-  for (const [admissionId, shifts] of byAdmission) {
-    const adm = admissions.find((a) => a.id === admissionId)
+  // Build admission map for quick lookup
+  const admissionMap = new Map(admissions.map((a) => [a.id, a]))
+
+  // Create per-shift nursing bills that haven't been created today yet
+  for (const [, entry] of latestPerShift) {
+    const billSource = entry.shift === 'morning' ? 'nursing_morning' : 'nursing_night'
+    if (billedToday.get(entry.admissionId)?.has(billSource)) continue
+
+    const adm = admissionMap.get(entry.admissionId)
     if (!adm) continue
 
+    const shiftLabel = entry.shift === 'morning' ? 'Morning' : 'Night'
     await autoIpdBill(supabase, actor.id, {
       tenantId: actor.tenant_id,
-      admissionId,
+      admissionId: entry.admissionId,
       patientId: adm.patient_id,
       billingDate: today,
-      billSource: 'nursing',
-      lineItems: shifts.map((s) => ({
-        source: 'nursing' as const,
-        ref_id: s.id as string,
-        description: `Nursing — ${String(s.shift).charAt(0).toUpperCase() + String(s.shift).slice(1)} Shift`,
+      billSource,
+      lineItems: [{
+        source: billSource as 'nursing_morning' | 'nursing_night',
+        description: `Nursing — ${shiftLabel} Shift`,
         qty: 1,
-        unit_price: s.charge_snapshot as number,
-      })),
+        unit_price: entry.chargeSnapshot,
+      }],
     })
   }
 }
@@ -708,10 +723,113 @@ export async function recordPayment(
   }).eq('id', parsed.data.bill_id)
   if (billErr) return { success: false, error: billErr.message }
 
+  // Propagate full payment to child bills when a consolidated bill is fully paid
+  if (newStatus === 'paid') {
+    const { data: fullBill } = await supabase
+      .from('bills').select('bill_source').eq('id', parsed.data.bill_id).single()
+    if ((fullBill?.bill_source as string) === 'consolidated') {
+      const { data: children } = await supabase
+        .from('bills').select('id, total')
+        .eq('consolidated_by', parsed.data.bill_id)
+        .neq('status', 'cancelled')
+      for (const child of children ?? []) {
+        await supabase.from('bills').update({ paid: child.total, status: 'paid' }).eq('id', child.id)
+      }
+    }
+  }
+
   await logAudit(actor.id, 'payment', 'bill', parsed.data.bill_id, {
     amount: parsed.data.amount, method: parsed.data.method,
   })
   return { success: true }
+}
+
+// ---- Bill Consolidation ----
+
+export async function consolidateBillsForAdmission(
+  admissionId: string
+): Promise<{ success: true; billId: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:manage')
+
+  const supabase = await createClient()
+
+  // Fetch all active (non-cancelled, not already consolidated into another bill) bills for this admission with outstanding balance
+  const { data: childBills } = await supabase
+    .from('bills')
+    .select('id, bill_no, bill_source, total, paid, patient_id')
+    .eq('tenant_id', actor.tenant_id)
+    .eq('admission_id', admissionId)
+    .neq('status', 'cancelled')
+    .neq('bill_source', 'consolidated')
+    .is('consolidated_by', null)
+
+  if (!childBills?.length) return { success: false, error: 'No active bills found for this admission' }
+
+  const billsWithBalance = childBills.filter((b) => (b.total as number) - (b.paid as number) > 0)
+  if (billsWithBalance.length < 2) return { success: false, error: 'Need at least 2 bills with outstanding balance to consolidate' }
+
+  const totalAmount = billsWithBalance.reduce((sum, b) => sum + (b.total as number), 0)
+  const totalPaid   = billsWithBalance.reduce((sum, b) => sum + (b.paid as number), 0)
+  const patientId   = billsWithBalance[0].patient_id as string
+
+  // Get next bill number
+  const { data: billNoData } = await supabase.rpc('get_next_bill_no', { p_tenant_id: actor.tenant_id })
+  if (!billNoData) return { success: false, error: 'Could not generate bill number' }
+
+  const consolidatedBillId = crypto.randomUUID()
+
+  const { error: insertErr } = await supabase.from('bills').insert({
+    id:           consolidatedBillId,
+    tenant_id:    actor.tenant_id,
+    patient_id:   patientId,
+    admission_id: admissionId,
+    bill_no:      billNoData as string,
+    subtotal:     totalAmount,
+    discount:     0,
+    tax:          0,
+    total:        totalAmount,
+    paid:         totalPaid,
+    status:       totalPaid >= totalAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid',
+    bill_source:  'consolidated',
+    created_by:   actor.id,
+  })
+  if (insertErr) return { success: false, error: insertErr.message }
+
+  const BILL_SOURCE_LABELS_MAP: Record<string, string> = {
+    bed: 'Room Rent', lab: 'Lab', radiology: 'Radiology',
+    ipd_pharmacy: 'Pharmacy (Ward)', nursing: 'Nursing',
+    nursing_morning: 'Nursing AM', nursing_night: 'Nursing Night',
+  }
+
+  // Insert one line item per child bill
+  const lineItems = billsWithBalance.map((b) => ({
+    id:          crypto.randomUUID(),
+    tenant_id:   actor.tenant_id,
+    bill_id:     consolidatedBillId,
+    source:      'manual' as const,
+    ref_id:      b.id as string,
+    description: `${b.bill_no} — ${BILL_SOURCE_LABELS_MAP[b.bill_source as string] ?? 'Charges'}`,
+    qty:         1,
+    unit_price:  (b.total as number) - (b.paid as number),
+    amount:      (b.total as number) - (b.paid as number),
+  }))
+
+  const { error: itemsErr } = await supabase.from('bill_items').insert(lineItems)
+  if (itemsErr) return { success: false, error: itemsErr.message }
+
+  // Tag child bills with consolidated_by
+  const { error: tagErr } = await supabase
+    .from('bills')
+    .update({ consolidated_by: consolidatedBillId })
+    .in('id', billsWithBalance.map((b) => b.id as string))
+  if (tagErr) return { success: false, error: tagErr.message }
+
+  await logAudit(actor.id, 'consolidate', 'bill', consolidatedBillId, {
+    admissionId, childCount: billsWithBalance.length, total: totalAmount,
+  })
+
+  return { success: true, billId: consolidatedBillId }
 }
 
 // ---- Read ----

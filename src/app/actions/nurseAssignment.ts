@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
+import { autoIpdBill } from '@/lib/ipdBilling'
 import type { AdmissionNurseAssignment } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -47,6 +48,60 @@ export async function assignNurse(params: {
   }
 
   await logAudit(actor.id, 'assign', 'nurse', id, { admissionId, nurseId, shift, date, chargeSnapshot })
+
+  // Sync nursing bill for today's assignments
+  const today = new Date().toISOString().split('T')[0]
+  if (date === today && chargeSnapshot > 0) {
+    const billSource = shift === 'morning' ? 'nursing_morning' : 'nursing_night'
+    const shiftLabel = shift === 'morning' ? 'Morning' : 'Night'
+
+    // Check if a bill for this shift already exists today (from carry-forward)
+    const { data: existingBill } = await supabase
+      .from('bills')
+      .select('id')
+      .eq('tenant_id', actor.tenant_id)
+      .eq('admission_id', admissionId)
+      .eq('billing_date', today)
+      .eq('bill_source', billSource)
+      .neq('status', 'cancelled')
+      .maybeSingle()
+
+    if (existingBill) {
+      // Update the existing line item to the new nurse's rate
+      await supabase
+        .from('bill_items')
+        .update({ unit_price: chargeSnapshot, amount: chargeSnapshot })
+        .eq('bill_id', existingBill.id)
+
+      await supabase
+        .from('bills')
+        .update({ subtotal: chargeSnapshot, total: chargeSnapshot })
+        .eq('id', existingBill.id)
+    } else {
+      // No bill yet — create one (admission may have been admitted today)
+      const { data: adm } = await supabase
+        .from('admissions')
+        .select('patient_id')
+        .eq('id', admissionId)
+        .single()
+
+      if (adm?.patient_id) {
+        await autoIpdBill(supabase, actor.id, {
+          tenantId: actor.tenant_id,
+          admissionId,
+          patientId: adm.patient_id as string,
+          billingDate: today,
+          billSource,
+          lineItems: [{
+            source: billSource as 'nursing_morning' | 'nursing_night',
+            description: `Nursing — ${shiftLabel} Shift`,
+            qty: 1,
+            unit_price: chargeSnapshot,
+          }],
+        })
+      }
+    }
+  }
 
   const { data: row } = await supabase
     .from('admission_nurse_assignments')

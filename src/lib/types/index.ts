@@ -294,7 +294,7 @@ export interface BloodInventoryCell {
 
 export type BillStatus = 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled'
 export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance' | 'advance'
-export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing'
+export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing' | 'nursing_morning' | 'nursing_night'
 
 export interface Tariff { id: string; key: string; label: string | null; amount: number }
 
@@ -314,7 +314,8 @@ export interface Bill {
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
-  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | null
+  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | null
+  consolidated_by?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   items?: BillItem[]
   payments?: Payment[]
