@@ -160,33 +160,39 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
               </colgroup>
               {data.sections.map((section, si) => (
                 <tbody key={section.label}>
-                  {/* Section header row */}
+                  {/* Section label — no amount here */}
                   <tr style={{ background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC', borderTop: '1px solid #E2E8F0' }}>
-                    <td colSpan={4} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', color: '#334155' }}>
+                    <td colSpan={5} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>
                       {section.label}
                     </td>
-                    <td style={{ padding: '9px 12px', fontSize: '13px', fontWeight: 700, color: '#0F172A', textAlign: 'right' }}>
-                      {fmt(section.subtotal)}
-                    </td>
                   </tr>
-                  {/* Column header row */}
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                  {/* Column headers */}
+                  <tr style={{ borderBottom: '1px solid #EAECF0' }}>
                     {(['Date', 'Description', 'Qty', 'Unit Price', 'Amount'] as const).map((h, i) => (
-                      <th key={h} style={{ padding: '5px 12px', color: '#94A3B8', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
+                      <th key={h} style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
                         {h}
                       </th>
                     ))}
                   </tr>
                   {/* Data rows */}
                   {section.rows.map((row, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}>
-                      <td style={{ padding: '8px 12px', color: '#64748B', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
-                      <td style={{ padding: '8px 12px', color: '#334155' }}>{row.description}</td>
-                      <td style={{ padding: '8px 12px', color: '#475569', textAlign: 'right' }}>{row.qty}</td>
-                      <td style={{ padding: '8px 12px', color: '#475569', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.unitPrice)}</td>
-                      <td style={{ padding: '8px 12px', color: '#0F172A', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(row.amount)}</td>
+                    <tr key={i} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <td style={{ padding: '7px 12px', color: '#94A3B8', whiteSpace: 'nowrap', fontSize: '12.5px' }}>{fmtDate(row.date)}</td>
+                      <td style={{ padding: '7px 12px', color: '#475569', fontSize: '13px' }}>{row.description}</td>
+                      <td style={{ padding: '7px 12px', color: '#94A3B8', textAlign: 'right', fontSize: '13px' }}>{row.qty}</td>
+                      <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.unitPrice)}</td>
+                      <td style={{ padding: '7px 12px', color: '#1E293B', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.amount)}</td>
                     </tr>
                   ))}
+                  {/* Section subtotal — bottom of section */}
+                  <tr style={{ borderTop: '1px dashed #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
+                    <td colSpan={4} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>
+                      {section.label} Total
+                    </td>
+                    <td style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 700, color: '#334155', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {fmt(section.subtotal)}
+                    </td>
+                  </tr>
                 </tbody>
               ))}
             </table>
