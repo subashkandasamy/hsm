@@ -8,6 +8,7 @@ import { listBills } from '@/app/actions/billing'
 import { listAllergies } from '@/app/actions/allergies'
 import { listDocuments } from '@/app/actions/documents'
 import { getPatientTimeline, getDiagnosisSummary } from '@/app/actions/emr'
+import { listAdmissions } from '@/app/actions/ipd'
 import PatientProfile from './_components/PatientProfile'
 import type { Role } from '@/lib/types'
 
@@ -26,7 +27,7 @@ export default async function PatientDetailPage({ params }: Props) {
     if (profile) role = profile.role as Role
   }
 
-  const [patient, visits, appointments, bills, allergies, documents, timeline, diagnoses] = await Promise.all([
+  const [patient, visits, appointments, bills, allergies, documents, timeline, diagnoses, admissions] = await Promise.all([
     getPatient(id),
     getPatientVisits(id),
     listAppointments({ patientId: id }),
@@ -35,6 +36,7 @@ export default async function PatientDetailPage({ params }: Props) {
     listDocuments(id),
     getPatientTimeline(id).catch(() => []),
     getDiagnosisSummary(id).catch(() => []),
+    listAdmissions({ patientId: id }),
   ])
 
   if (!patient) notFound()
@@ -49,6 +51,7 @@ export default async function PatientDetailPage({ params }: Props) {
       documents={documents}
       timeline={timeline}
       diagnoses={diagnoses}
+      admissions={admissions}
       role={role}
     />
   )

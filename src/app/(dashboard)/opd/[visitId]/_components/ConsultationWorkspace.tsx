@@ -17,8 +17,10 @@ import DateText from '@/components/ui/DateText'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useAuth } from '@/context/AuthContext'
 import {
-  saveVitals, saveConsultation, addPrescription, removePrescription, closeVisit,
+  saveVitals, saveConsultation, addPrescription, removePrescription, closeVisit, reopenVisit,
 } from '@/app/actions/opd'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
+import MicButton from '@/components/ui/MicButton'
 import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall } from '@/lib/types'
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
@@ -126,11 +128,19 @@ export default function ConsultationWorkspace({
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
 
+  // Reopen visit
+  const [reopening, setReopening] = useState(false)
+
   // Admit to IPD
   const [showAdmit, setShowAdmit] = useState(false)
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
+
+  // Speech-to-text for consultation fields
+  const speechComplaint = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, complaint: c.complaint ? `${c.complaint} ${t}` : t })) })
+  const speechDiagnosis = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, diagnosis: c.diagnosis ? `${c.diagnosis} ${t}` : t })) })
+  const speechNotes     = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, notes: c.notes ? `${c.notes} ${t}` : t })) })
 
   async function handleSaveVitals() {
     setVitalsSaving(true)
@@ -204,6 +214,16 @@ export default function ConsultationWorkspace({
     }
   }
 
+  async function handleReopen() {
+    setReopening(true)
+    const result = await reopenVisit(visit.id)
+    setReopening(false)
+    if (result.success) {
+      setVisit((v) => ({ ...v, status: 'open' }))
+      router.refresh()
+    }
+  }
+
   const age = computeAge(patient.dob)
 
   return (
@@ -222,9 +242,16 @@ export default function ConsultationWorkspace({
       )}
 
       {isClosed && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold"
+        <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-sm font-semibold"
           style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
-          <Lock className="w-4 h-4" /> This visit is closed — read-only view
+          <span className="flex items-center gap-2"><Lock className="w-4 h-4" /> This visit is closed — read-only view</span>
+          {isDoctor && (
+            <button onClick={handleReopen} disabled={reopening}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+              style={{ background: '#fff', color: '#0D9488', border: '1px solid #0D9488', cursor: reopening ? 'not-allowed' : 'pointer', opacity: reopening ? 0.6 : 1 }}>
+              {reopening ? 'Re-opening…' : 'Re-open Visit'}
+            </button>
+          )}
         </div>
       )}
 
@@ -428,23 +455,43 @@ export default function ConsultationWorkspace({
 
             <div className="space-y-4">
               <FormField label="Chief Complaint">
-                <Textarea
-                  value={consult.complaint}
-                  onChange={(e) => setConsult((c) => ({ ...c, complaint: e.target.value }))}
-                  placeholder="Patient's main complaint…"
-                  disabled={isClosed || !isDoctor}
-                  style={{ minHeight: '4rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                />
+                <div className="relative">
+                  <Textarea
+                    value={consult.complaint}
+                    onChange={(e) => setConsult((c) => ({ ...c, complaint: e.target.value }))}
+                    placeholder="Patient's main complaint…"
+                    disabled={isClosed || !isDoctor}
+                    style={{ minHeight: '4rem', paddingRight: speechComplaint.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                  />
+                  {speechComplaint.supported && isDoctor && !isClosed && (
+                    <div className="absolute top-2 right-2">
+                      <MicButton listening={speechComplaint.listening} onToggle={speechComplaint.toggle} />
+                    </div>
+                  )}
+                </div>
+                {speechComplaint.interim && (
+                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechComplaint.interim}…</p>
+                )}
               </FormField>
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Diagnosis">
-                  <Textarea
-                    value={consult.diagnosis}
-                    onChange={(e) => setConsult((c) => ({ ...c, diagnosis: e.target.value }))}
-                    placeholder="Clinical diagnosis…"
-                    disabled={isClosed || !isDoctor}
-                    style={{ minHeight: '4rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={consult.diagnosis}
+                      onChange={(e) => setConsult((c) => ({ ...c, diagnosis: e.target.value }))}
+                      placeholder="Clinical diagnosis…"
+                      disabled={isClosed || !isDoctor}
+                      style={{ minHeight: '4rem', paddingRight: speechDiagnosis.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                    />
+                    {speechDiagnosis.supported && isDoctor && !isClosed && (
+                      <div className="absolute top-2 right-2">
+                        <MicButton listening={speechDiagnosis.listening} onToggle={speechDiagnosis.toggle} />
+                      </div>
+                    )}
+                  </div>
+                  {speechDiagnosis.interim && (
+                    <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechDiagnosis.interim}…</p>
+                  )}
                 </FormField>
                 <FormField label="ICD Code" hint="e.g. J06.9">
                   <Input
@@ -457,13 +504,23 @@ export default function ConsultationWorkspace({
                 </FormField>
               </div>
               <FormField label="Notes">
-                <Textarea
-                  value={consult.notes}
-                  onChange={(e) => setConsult((c) => ({ ...c, notes: e.target.value }))}
-                  placeholder="Additional clinical notes, follow-up instructions…"
-                  disabled={isClosed || !isDoctor}
-                  style={{ minHeight: '5rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                />
+                <div className="relative">
+                  <Textarea
+                    value={consult.notes}
+                    onChange={(e) => setConsult((c) => ({ ...c, notes: e.target.value }))}
+                    placeholder="Additional clinical notes, follow-up instructions…"
+                    disabled={isClosed || !isDoctor}
+                    style={{ minHeight: '5rem', paddingRight: speechNotes.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                  />
+                  {speechNotes.supported && isDoctor && !isClosed && (
+                    <div className="absolute top-2 right-2">
+                      <MicButton listening={speechNotes.listening} onToggle={speechNotes.toggle} />
+                    </div>
+                  )}
+                </div>
+                {speechNotes.interim && (
+                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNotes.interim}…</p>
+                )}
               </FormField>
             </div>
           </GlassCard>
@@ -581,8 +638,9 @@ export default function ConsultationWorkspace({
                             const matches = drugs.filter(
                               (d) =>
                                 d.name.toLowerCase().includes(lower) ||
-                                (d.generic_name ?? '').toLowerCase().includes(lower)
-                            ).slice(0, 8)
+                                (d.generic_name ?? '').toLowerCase().includes(lower) ||
+                                (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(lower))
+                            ).slice(0, 10)
                             setDrugSuggestions(matches)
                             setShowSuggestions(matches.length > 0)
                           } else {
@@ -601,7 +659,9 @@ export default function ConsultationWorkspace({
                           } else if (e.key === 'Enter' && activeSuggestion >= 0) {
                             e.preventDefault()
                             const d = drugSuggestions[activeSuggestion]
-                            const label = [d.name, d.strength, d.form].filter(Boolean).join(' ')
+                            const lower2 = newRx.drug_name.toLowerCase()
+                            const matchBrand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(lower2))
+                            const label = matchBrand ? matchBrand : [d.name, d.strength, d.form].filter(Boolean).join(' ')
                             setNewRx((r) => ({ ...r, drug_name: label, dosage: d.strength ?? r.dosage }))
                             setShowSuggestions(false)
                             setActiveSuggestion(-1)
@@ -628,7 +688,12 @@ export default function ConsultationWorkspace({
                           }}
                         >
                           {drugSuggestions.map((d, idx) => {
-                            const label = [d.name, d.strength, d.form].filter(Boolean).join(' ')
+                            const lower = newRx.drug_name.toLowerCase()
+                            const matchingBrand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(lower))
+                            // If a brand triggered the match, use brand as the prescription label
+                            const label = matchingBrand
+                              ? matchingBrand
+                              : [d.name, d.strength, d.form].filter(Boolean).join(' ')
                             return (
                               <button
                                 key={d.id}
@@ -647,15 +712,15 @@ export default function ConsultationWorkspace({
                                 }}
                                 onMouseEnter={() => setActiveSuggestion(idx)}
                               >
-                                <span className="font-medium">{d.name}</span>
+                                <span className="font-medium">{matchingBrand ?? d.name}</span>
                                 {(d.strength || d.form) && (
                                   <span className="ml-1.5 text-xs" style={{ color: '#64748B' }}>
                                     {[d.strength, d.form].filter(Boolean).join(' · ')}
                                   </span>
                                 )}
-                                {d.generic_name && (
-                                  <span className="block text-xs" style={{ color: '#94A3B8' }}>{d.generic_name}</span>
-                                )}
+                                <span className="block text-xs" style={{ color: '#94A3B8' }}>
+                                  {matchingBrand ? d.name : (d.generic_name ?? '')}
+                                </span>
                               </button>
                             )
                           })}

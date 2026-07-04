@@ -41,18 +41,24 @@ export async function startVisit(
   const location = await getPatientActiveLocation(appt.patient_id as string, supabase)
   if (location) return { success: false, error: patientLocationMessage(location) }
 
-  // Phase 15: gate on consultation bill payment before opening the visit
-  const { data: consultBill } = await supabase
+  // Phase 15: gate on consultation bill payment before opening the visit.
+  // Fetch ALL bills for this appointment (including cancelled ones) so a cancelled
+  // bill without payment doesn't silently bypass the gate.
+  const { data: allConsultBills } = await supabase
     .from('bills')
     .select('id, status')
     .eq('appointment_id', appointmentId)
-    .not('status', 'eq', 'cancelled')
-    .maybeSingle()
 
-  if (consultBill && consultBill.status !== 'paid') {
+  const hasBill      = (allConsultBills?.length ?? 0) > 0
+  const hasPaid      = allConsultBills?.some((b) => b.status === 'paid') ?? false
+  const hasActiveUnpaid = allConsultBills?.some((b) => b.status !== 'paid' && b.status !== 'cancelled') ?? false
+
+  if (hasBill && !hasPaid) {
     return {
       success: false,
-      error: 'Please collect payment at the counter before starting this consultation',
+      error: hasActiveUnpaid
+        ? 'Please collect payment at the counter before starting this consultation'
+        : 'Consultation fee was not collected. Please raise a new bill and collect payment before starting.',
     }
   }
 
@@ -190,6 +196,19 @@ export async function closeVisit(visitId: string): Promise<SimpleResult> {
   }
 
   await logAudit(actor.id, 'close', 'visit', visitId)
+  return { success: true }
+}
+
+export async function reopenVisit(visitId: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'opd:write')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('visits').update({ status: 'open' }).eq('id', visitId)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'reopen', 'visit', visitId)
   return { success: true }
 }
 

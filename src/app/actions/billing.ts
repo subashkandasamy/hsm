@@ -917,8 +917,11 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     }
   }
 
-  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
-  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+  const regularBills = allBills.filter(b => b.bill_source !== 'advance_refund')
+  const refundBills  = allBills.filter(b => b.bill_source === 'advance_refund')
+  const grandTotal      = regularBills.reduce((s, b) => s + b.total, 0)
+  const totalPaid       = regularBills.reduce((s, b) => s + b.paid, 0)
+  const advanceRefunded = refundBills.reduce((s, b) => s + Math.abs(b.total), 0)
 
   return {
     combinedBillNo,
@@ -933,6 +936,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     grandTotal,
     totalPaid,
     advanceCollected,
+    advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
   }
 }
@@ -1015,8 +1019,9 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     }
   }
 
-  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
-  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+  const regularBills2 = allBills.filter(b => b.bill_source !== 'advance_refund')
+  const grandTotal = regularBills2.reduce((s, b) => s + b.total, 0)
+  const totalPaid  = regularBills2.reduce((s, b) => s + b.paid, 0)
 
   return {
     combinedBillNo,
@@ -1031,6 +1036,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     grandTotal,
     totalPaid,
     advanceCollected: 0,
+    advanceRefunded: 0,
     balanceDue: Math.max(0, grandTotal - totalPaid),
   }
 }
@@ -1103,8 +1109,11 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
     }
   }
 
-  const grandTotal = allBills.reduce((s, b) => s + b.total, 0)
-  const totalPaid  = allBills.reduce((s, b) => s + b.paid, 0)
+  const regularBills3 = allBills.filter(b => b.bill_source !== 'advance_refund')
+  const refundBills3  = allBills.filter(b => b.bill_source === 'advance_refund')
+  const grandTotal      = regularBills3.reduce((s, b) => s + b.total, 0)
+  const totalPaid       = regularBills3.reduce((s, b) => s + b.paid, 0)
+  const advanceRefunded = refundBills3.reduce((s, b) => s + Math.abs(b.total), 0)
 
   return {
     combinedBillNo,
@@ -1115,6 +1124,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
     grandTotal,
     totalPaid,
     advanceCollected,
+    advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
   }
 }

@@ -48,9 +48,25 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { background: white !important; }
-          .print-page { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-          @page { margin: 12mm; }
+          body * { visibility: hidden; }
+          #bill-print-area, #bill-print-area * { visibility: visible; }
+          #bill-print-area {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+          @page { size: A4 portrait; margin: 10mm; }
+        }
+        @media screen and (max-width: 600px) {
+          .bill-patient-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .bill-totals-wrap  { justify-content: stretch !important; }
+          .bill-totals-panel { min-width: 0 !important; width: 100% !important; }
+          .bill-header-logo  { height: 60px !important; max-width: 80px !important; }
+          .bill-billno       { font-size: 13px !important; word-break: break-all; }
         }
       `}</style>
 
@@ -71,16 +87,16 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
         </div>
 
         {/* Bill card */}
-        <div style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
+        <div id="bill-print-area" style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
 
           {/* ── Hospital Header ── */}
           <div style={{ padding: '20px 32px 16px', borderBottom: '2px solid #0D9488' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
 
               {/* Logo */}
               {profile?.logo_url && (
                 <div style={{ flexShrink: 0 }}>
-                  <img src={profile.logo_url} alt="Logo"
+                  <img src={profile.logo_url} alt="Logo" className="bill-header-logo"
                     style={{ height: '90px', width: 'auto', maxWidth: '120px', objectFit: 'contain', display: 'block' }} />
                 </div>
               )}
@@ -113,9 +129,9 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
               </div>
 
               {/* Bill number block — right */}
-              <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '150px' }}>
+              <div style={{ flexShrink: 0, textAlign: 'right', marginLeft: 'auto' }}>
                 <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0 }}>Bill No</p>
-                <p style={{ fontSize: '16px', fontWeight: 800, color: '#0D9488', fontFamily: 'monospace', margin: '2px 0' }}>
+                <p className="bill-billno" style={{ fontSize: '16px', fontWeight: 800, color: '#0D9488', fontFamily: 'monospace', margin: '2px 0' }}>
                   {data.combinedBillNo}
                 </p>
                 <p style={{ fontSize: '11px', color: '#64748B', margin: 0 }}>
@@ -133,7 +149,7 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
           </div>
 
           {/* ── Patient info grid ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderLeft: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
+          <div className="bill-patient-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', borderLeft: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
             <div style={{ gridColumn: 'span 2', padding: '10px 12px', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.6px', margin: 0 }}>Patient Name</p>
               <p style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A', margin: '2px 0 0' }}>{data.patient.full_name}</p>
@@ -150,26 +166,20 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
               No charges found
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <colgroup>
-                <col style={{ width: '100px' }} />  {/* Date */}
-                <col />                              {/* Description — fills remaining */}
-                <col style={{ width: '50px' }} />   {/* Qty */}
-                <col style={{ width: '110px' }} />  {/* Unit Price */}
-                <col style={{ width: '110px' }} />  {/* Amount */}
-              </colgroup>
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: '540px' }}>
               {data.sections.map((section, si) => (
-                <tbody key={section.label}>
+                <tbody key={section.label} style={{ breakInside: 'avoid' }}>
                   {/* Section label — no amount here */}
                   <tr style={{ background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC', borderTop: '1px solid #E2E8F0' }}>
                     <td colSpan={5} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>
                       {section.label}
                     </td>
                   </tr>
-                  {/* Column headers */}
+                  {/* Column headers — widths set here instead of colgroup */}
                   <tr style={{ borderBottom: '1px solid #EAECF0' }}>
                     {(['Date', 'Description', 'Qty', 'Unit Price', 'Amount'] as const).map((h, i) => (
-                      <th key={h} style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
+                      <th key={h} style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap', width: ['100px', 'auto', '50px', '110px', '110px'][i] }}>
                         {h}
                       </th>
                     ))}
@@ -196,17 +206,19 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 </tbody>
               ))}
             </table>
+            </div>
           )}
 
           {/* ── Totals ── */}
-          <div style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ minWidth: '320px', padding: '16px 24px' }}>
-              {[
-                { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: false },
-                { label: 'Advance Collected',       value: data.advanceCollected, size: '13px', weight: 500, color: '#0D9488', border: false },
-                { label: 'Total Payments Received', value: data.totalPaid,        size: '13px', weight: 500, color: '#10B981', border: false },
-                { label: 'Balance Due',             value: data.balanceDue,       size: '16px', weight: 800, color: data.balanceDue > 0 ? '#DC2626' : '#10B981', border: true },
-              ].map(({ label, value, size, weight, color, border }) => (
+          <div className="bill-totals-wrap" style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="bill-totals-panel" style={{ minWidth: '320px', padding: '16px 24px' }}>
+              {([
+                { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: false, show: true },
+                { label: 'Advance Collected',       value: data.advanceCollected, size: '13px', weight: 500, color: '#0D9488', border: false, show: data.advanceCollected > 0 },
+                { label: 'Advance Refunded',        value: -data.advanceRefunded, size: '13px', weight: 500, color: '#F59E0B', border: false, show: data.advanceRefunded > 0 },
+                { label: 'Total Payments Received', value: data.totalPaid,        size: '13px', weight: 500, color: '#10B981', border: false, show: true },
+                { label: 'Balance Due',             value: data.balanceDue,       size: '16px', weight: 800, color: data.balanceDue > 0 ? '#DC2626' : '#10B981', border: true, show: true },
+              ] as const).filter(r => r.show).map(({ label, value, size, weight, color, border }) => (
                 <div key={label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '5px 0',
@@ -239,7 +251,7 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 </p>
               )}
               <p style={{ fontSize: '10px', color: '#CBD5E1', margin: 0, marginLeft: 'auto' }}>
-                System-generated bill · {data.combinedBillNo}
+                System generated bill &nbsp;·&nbsp; Powered by Uyirly
               </p>
             </div>
           )}

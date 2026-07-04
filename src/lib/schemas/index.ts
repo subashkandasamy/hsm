@@ -146,12 +146,28 @@ export const DrugSchema = z.object({
 })
 
 export const DrugBatchSchema = z.object({
-  drug_id: z.string().uuid(),
-  batch_no: z.string().min(1, 'Batch number is required'),
-  expiry: z.string().min(1, 'Expiry date is required'),
-  qty_available: z.number().int().min(1, 'Quantity must be at least 1'),
-  purchase_price: z.number().nullable().optional(),
-  mrp: z.number().min(0, 'MRP is required'),
+  drug_id:             z.string().uuid().nullable().optional(),
+  drug_master_id:      z.string().uuid().nullable().optional(),
+  batch_no:            z.string().min(1, 'Batch number is required'),
+  expiry:              z.string().min(1, 'Expiry date is required'),
+  qty_available:       z.number().int().min(1, 'Quantity must be at least 1'),
+  purchase_price:      z.number().nullable().optional(),
+  mrp:                 z.number().min(0, 'MRP is required'),
+  reorder_level:       z.number().int().min(0).default(0),
+  // Brand / GRN fields (migration 0044)
+  drug_brand_id:       z.string().uuid().nullable().optional(),
+  brand_name:          z.string().nullable().optional(),
+  manufacturer:        z.string().nullable().optional(),
+  pack_size:           z.number().int().min(1).nullable().optional(),
+  pack_unit:           z.string().nullable().optional(),
+  mfg_date:            z.string().nullable().optional(),
+  hsn_code:            z.string().nullable().optional(),
+  gst_rate:            z.number().min(0).max(28).nullable().optional(),
+  supplier_name:       z.string().nullable().optional(),
+  supplier_invoice_no: z.string().nullable().optional(),
+  purchase_date:       z.string().nullable().optional(),
+}).refine(d => !!(d.drug_id || d.drug_master_id), {
+  message: 'Either drug_id or drug_master_id must be provided',
 })
 
 export const DispenseSchema = z.object({

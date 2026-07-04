@@ -31,6 +31,9 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
   const [addQty, setAddQty]                 = useState(1)
   const [cartPending, setCartPending]       = useState(false)
   const [cartError, setCartError]           = useState('')
+  // drugId → brand/display name chosen by the pharmacist — persists through finalize so
+  // the fulfillment queue also shows the brand label in the same session
+  const [displayNameMap, setDisplayNameMap] = useState<Map<string, string>>(new Map())
 
   // Fulfillment queue state
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
@@ -57,12 +60,14 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
     ).slice(0, 8)
   }, [patientQuery, allPatients, selectedPatient])
 
-  const filteredDrugs = useMemo(() =>
-    drugs.filter((d) =>
-      d.name.toLowerCase().includes(drugQuery.toLowerCase()) ||
-      (d.generic_name ?? '').toLowerCase().includes(drugQuery.toLowerCase())
-    ).slice(0, 15),
-  [drugQuery, drugs])
+  const filteredDrugs = useMemo(() => {
+    const q = drugQuery.toLowerCase()
+    return drugs.filter((d) =>
+      d.name.toLowerCase().includes(q) ||
+      (d.generic_name ?? '').toLowerCase().includes(q) ||
+      (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
+    ).slice(0, 15)
+  }, [drugQuery, drugs])
 
   async function startCart() {
     if (!selectedPatient) return
@@ -289,20 +294,30 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                     {drugQuery && !selectedDrugId && filteredDrugs.length > 0 && (
                       <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl shadow-lg overflow-hidden"
                         style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: '180px', overflowY: 'auto' }}>
-                        {filteredDrugs.map((d) => (
-                          <li key={d.id}>
-                            <button type="button"
-                              onMouseDown={() => { setSelectedDrugId(d.id); setDrugQuery(d.name) }}
-                              className="w-full text-left px-3 py-2 text-sm"
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                              <span className="font-medium" style={{ color: '#0F172A' }}>{d.name}</span>
-                              {d.strength && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>{d.strength}</span>}
-                              {d.form && <span className="ml-1 text-xs capitalize" style={{ color: '#64748B' }}>· {d.form}</span>}
-                            </button>
-                          </li>
-                        ))}
+                        {filteredDrugs.map((d) => {
+                          const q = drugQuery.toLowerCase()
+                          const matchBrand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(q))
+                          return (
+                            <li key={d.id}>
+                              <button type="button"
+                                onMouseDown={() => {
+                                  const label = matchBrand ?? d.name
+                                  setSelectedDrugId(d.id)
+                                  setDrugQuery(label)
+                                  setDisplayNameMap(prev => new Map([...prev, [d.id, label]]))
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm"
+                                style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                                <span className="font-medium" style={{ color: '#0F172A' }}>{matchBrand ?? d.name}</span>
+                                {d.strength && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>{d.strength}</span>}
+                                {d.form && <span className="ml-1 text-xs capitalize" style={{ color: '#64748B' }}>· {d.form}</span>}
+                                {matchBrand && <span className="block text-xs" style={{ color: '#94A3B8' }}>{d.name}</span>}
+                              </button>
+                            </li>
+                          )
+                        })}
                       </ul>
                     )}
                   </div>
@@ -331,7 +346,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                         style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
-                            {item.drug?.name ?? 'Drug'}
+                            {displayNameMap.get(item.drug_id) ?? item.drug?.name ?? 'Drug'}
                           </p>
                           <p className="text-xs" style={{ color: '#94A3B8' }}>
                             ₹{item.unit_price}/unit
@@ -484,7 +499,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                           <div key={item.id} className="flex items-center gap-3 pl-12 pr-4 py-2.5">
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
-                                {item.drug?.name ?? 'Drug'}
+                                {displayNameMap.get(item.drug_id) ?? item.drug?.name ?? 'Drug'}
                               </p>
                               {item.drug?.strength && (
                                 <p className="text-xs" style={{ color: '#94A3B8' }}>{item.drug.strength}</p>

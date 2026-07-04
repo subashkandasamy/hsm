@@ -102,6 +102,15 @@ export async function admitPatient(
     .gte('scheduled_at', `${todayStr}T00:00:00`)
     .lte('scheduled_at', `${todayStr}T23:59:59`)
 
+  // Auto-close any open OPD visits today — patient is now an IPD inpatient
+  await supabase
+    .from('visits')
+    .update({ status: 'closed' })
+    .eq('patient_id', patient_id)
+    .eq('status', 'open')
+    .gte('visit_date', `${todayStr}T00:00:00`)
+    .lte('visit_date', `${todayStr}T23:59:59`)
+
   // Assign a combined bill number to this admission.
   // Carry forward from a same-day OPD visit if one exists; otherwise generate a new one.
   const { data: todayVisit } = await supabase
@@ -250,6 +259,26 @@ export async function dischargePatient(
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'discharge', 'admission', admissionId)
+  return { success: true }
+}
+
+export async function updateDischargeSummary(
+  admissionId: string,
+  summary: string
+): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:write')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('admissions')
+    .update({ discharge_summary: summary })
+    .eq('id', admissionId)
+    .eq('status', 'discharged')
+
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update_discharge_summary', 'admission', admissionId)
   return { success: true }
 }
 

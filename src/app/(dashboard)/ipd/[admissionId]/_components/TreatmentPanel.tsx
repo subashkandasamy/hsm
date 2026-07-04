@@ -146,15 +146,16 @@ function DrugCombobox({ value, drugs, onChange }: DrugComboboxProps) {
   const [open, setOpen]   = useState(false)
   const [query, setQuery] = useState(value)
 
-  const filtered = query.trim().length > 0
+  const q = query.trim().toLowerCase()
+  const filtered = q.length > 0
     ? drugs.filter((d) =>
-        d.name.toLowerCase().includes(query.toLowerCase()) ||
-        (d.generic_name ?? '').toLowerCase().includes(query.toLowerCase())
+        d.name.toLowerCase().includes(q) ||
+        (d.generic_name ?? '').toLowerCase().includes(q) ||
+        (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
       ).slice(0, 10)
     : []
 
-  function select(drug: Drug) {
-    const label = drug.strength ? `${drug.name} ${drug.strength}` : drug.name
+  function select(drug: Drug, label: string) {
     setQuery(label); onChange(label, drug); setOpen(false)
   }
 
@@ -168,23 +169,33 @@ function DrugCombobox({ value, drugs, onChange }: DrugComboboxProps) {
         style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
       {open && filtered.length > 0 && (
         <div className="absolute z-50 left-0 right-0 mt-1 rounded-xl shadow-lg overflow-hidden"
-          style={{ background: '#fff', border: '1px solid #E2E8F0' }}>
-          {filtered.map((drug) => (
-            <button key={drug.id} type="button" onMouseDown={() => select(drug)}
-              className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3"
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: '1px solid #F8FAFC' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.05)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-              <div>
-                <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{drug.name}</p>
-                {drug.generic_name && <p className="text-xs" style={{ color: '#94A3B8' }}>{drug.generic_name}</p>}
-              </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {drug.strength && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{drug.strength}</span>}
-                {drug.form && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>{drug.form}</span>}
-              </div>
-            </button>
-          ))}
+          style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: '220px', overflowY: 'auto' }}>
+          {filtered.map((drug) => {
+            const matchBrand = q ? (drug.brand_aliases ?? []).find(b => b.toLowerCase().includes(q)) : null
+            const label = matchBrand ?? (drug.strength ? `${drug.name} ${drug.strength}` : drug.name)
+            return (
+              <button key={drug.id} type="button" onMouseDown={() => select(drug, label)}
+                className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: '1px solid #F8FAFC' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.05)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{label}</p>
+                  {matchBrand && (
+                    <p className="text-xs truncate" style={{ color: '#94A3B8' }}>
+                      {drug.name}{drug.strength ? ` ${drug.strength}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {!matchBrand && drug.strength && (
+                    <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{drug.strength}</span>
+                  )}
+                  {drug.form && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>{drug.form}</span>}
+                </div>
+              </button>
+            )
+          })}
           {query.trim() && !filtered.some((d) => d.name.toLowerCase() === query.trim().toLowerCase()) && (
             <button type="button" onMouseDown={() => { onChange(query.trim(), null); setOpen(false) }}
               className="w-full text-left px-3 py-2.5 flex items-center gap-2"

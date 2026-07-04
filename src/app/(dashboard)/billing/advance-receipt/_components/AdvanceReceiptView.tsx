@@ -66,9 +66,18 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { background: white !important; }
-          .print-page { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-          @page { margin: 12mm; }
+          body * { visibility: hidden; }
+          #bill-print-area, #bill-print-area * { visibility: visible; }
+          #bill-print-area {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+          @page { size: A4 portrait; margin: 10mm; }
         }
       `}</style>
 
@@ -89,11 +98,11 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
         </div>
 
         {/* Receipt card */}
-        <div style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
+        <div id="bill-print-area" style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
 
           {/* ── Hospital Header ── */}
           <div style={{ padding: '20px 32px 16px', borderBottom: '2px solid #0D9488' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               {profile?.logo_url && (
                 <img src={profile.logo_url} alt="Logo"
                   style={{ height: '90px', width: 'auto', maxWidth: '120px', objectFit: 'contain', flexShrink: 0, display: 'block' }} />
@@ -164,7 +173,8 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
                 No advance payments found
               </p>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '480px' }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #E2E8F0' }}>
                     {['#', 'Date & Time', 'Method', 'Received By', 'Amount'].map((h, i) => (
@@ -196,6 +206,7 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
@@ -217,7 +228,7 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
               </p>
             )}
             <p style={{ fontSize: '10px', color: '#CBD5E1', margin: 0, marginLeft: 'auto' }}>
-              System-generated receipt · Amount subject to final settlement at discharge
+              System generated bill &nbsp;·&nbsp; Powered by Uyirly
             </p>
           </div>
         </div>

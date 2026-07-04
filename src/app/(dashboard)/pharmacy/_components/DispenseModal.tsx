@@ -51,14 +51,26 @@ function parseDurationDays(duration: string | null): number {
   return 1
 }
 
-// Try to find a drug in catalog that matches the prescription drug name
-function findAutoMatch(drugName: string, drugs: Drug[]): Drug | null {
+// Try to find a drug + matching brand label for a prescription drug name (brand or generic)
+function findAutoMatch(drugName: string, drugs: Drug[]): { drug: Drug; label: string } | null {
   const name = drugName.toLowerCase().trim()
-  return (
-    drugs.find((d) => d.name.toLowerCase() === name) ??
-    drugs.find((d) => d.name.toLowerCase().includes(name) || name.includes(d.name.toLowerCase())) ??
-    null
-  )
+  // Exact brand alias match
+  for (const d of drugs) {
+    const brand = (d.brand_aliases ?? []).find(b => b.toLowerCase() === name)
+    if (brand) return { drug: d, label: brand }
+  }
+  // Exact generic name match
+  const exact = drugs.find(d => d.name.toLowerCase() === name)
+  if (exact) return { drug: exact, label: exact.name }
+  // Partial brand match
+  for (const d of drugs) {
+    const brand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(name) || name.includes(b.toLowerCase()))
+    if (brand) return { drug: d, label: brand }
+  }
+  // Partial generic match
+  const partial = drugs.find(d => d.name.toLowerCase().includes(name) || name.includes(d.name.toLowerCase()))
+  if (partial) return { drug: partial, label: partial.name }
+  return null
 }
 
 export default function DispenseModal({ open, prescription, drugs, onClose, onSuccess }: Props) {
@@ -67,8 +79,8 @@ export default function DispenseModal({ open, prescription, drugs, onClose, onSu
   const autoQty     = freqPerDay * durationDay
 
   const autoMatch = findAutoMatch(prescription.drug_name, drugs)
-  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(autoMatch)
-  const [drugSearch, setDrugSearch]     = useState(autoMatch?.name ?? prescription.drug_name)
+  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(autoMatch?.drug ?? null)
+  const [drugSearch, setDrugSearch]     = useState(autoMatch?.label ?? prescription.drug_name)
   const [showDrugDropdown, setShowDrugDropdown] = useState(false)
   const [qty, setQty]         = useState(String(autoQty))
   const [fefo, setFefo]       = useState<{ batch: DrugBatch; price: number } | null>(null)
@@ -76,10 +88,14 @@ export default function DispenseModal({ open, prescription, drugs, onClose, onSu
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
-  const filteredDrugs = drugs.filter((d) =>
-    d.name.toLowerCase().includes(drugSearch.toLowerCase()) ||
-    d.generic_name?.toLowerCase().includes(drugSearch.toLowerCase())
-  ).slice(0, 10)
+  const filteredDrugs = drugs.filter((d) => {
+    const q = drugSearch.toLowerCase()
+    return (
+      d.name.toLowerCase().includes(q) ||
+      (d.generic_name?.toLowerCase().includes(q)) ||
+      (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
+    )
+  }).slice(0, 10)
 
   const loadFefo = useCallback(async (drugId: string, q: number) => {
     if (!drugId || q < 1) { setFefo(null); return }
@@ -191,21 +207,27 @@ export default function DispenseModal({ open, prescription, drugs, onClose, onSu
             {showDrugDropdown && filteredDrugs.length > 0 && (
               <ul className="mt-1 absolute z-50 left-0 right-0 top-full rounded-xl overflow-hidden shadow-lg"
                 style={{ background: 'rgba(255,255,255,0.98)', border: '1px solid #E2E8F0', maxHeight: '12rem', overflowY: 'auto' }}>
-                {filteredDrugs.map((d) => (
-                  <li key={d.id}>
-                    <button type="button"
-                      onMouseDown={() => { setSelectedDrug(d); setDrugSearch(d.name); setShowDrugDropdown(false) }}
-                      className="w-full text-left px-4 py-2.5 text-sm"
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                      <span className="font-medium">{d.name}</span>
-                      {d.generic_name && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>({d.generic_name})</span>}
-                      {d.form && <span className="ml-1 text-xs capitalize" style={{ color: '#64748B' }}>· {d.form}</span>}
-                      {d.strength && <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{d.strength}</span>}
-                    </button>
-                  </li>
-                ))}
+                {filteredDrugs.map((d) => {
+                  const q = drugSearch.trim().toLowerCase()
+                  const matchBrand = q ? (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(q)) : null
+                  const label = matchBrand ?? (d.strength ? `${d.name} ${d.strength}` : d.name)
+                  const subtitle = matchBrand ? d.name : d.generic_name
+                  return (
+                    <li key={d.id}>
+                      <button type="button"
+                        onMouseDown={() => { setSelectedDrug(d); setDrugSearch(label); setShowDrugDropdown(false) }}
+                        className="w-full text-left px-4 py-2.5 text-sm"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                        <span className="font-medium">{label}</span>
+                        {subtitle && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>({subtitle})</span>}
+                        {d.form && <span className="ml-1 text-xs capitalize" style={{ color: '#64748B' }}>· {d.form}</span>}
+                        {!matchBrand && d.strength && <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{d.strength}</span>}
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

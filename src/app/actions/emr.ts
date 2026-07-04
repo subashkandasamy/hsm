@@ -146,8 +146,8 @@ export async function getPatientTimeline(
       title: `IPD Admission — ${ward} / Bed ${bed}`,
       summary: [
         row.reason ? `Reason: ${row.reason}` : null,
-        row.discharged_at ? `Discharged: ${new Date(row.discharged_at as string).toLocaleDateString('en-IN')}` : 'Currently admitted',
-        row.discharge_summary ? `Summary: ${(row.discharge_summary as string).slice(0, 80)}…` : null,
+        row.discharged_at ? `Discharged: ${new Date(row.discharged_at as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : 'Currently admitted',
+        (() => { const s = ((row.discharge_summary as string | null) ?? '').trim(); return s.length > 3 && s.toLowerCase() !== 'na' && s.toLowerCase() !== 'n/a' ? `Summary: ${s.slice(0, 80)}${s.length > 80 ? '…' : ''}` : null })(),
       ].filter(Boolean).join(' · ') || null,
       refTable: 'admissions',
       refId: row.id as string,

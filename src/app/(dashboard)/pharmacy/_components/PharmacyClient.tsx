@@ -287,6 +287,7 @@ export default function PharmacyClient({
         <AddBatchModal
           open={showAddBatch}
           drugs={drugs}
+          canManage={canManage}
           onClose={() => setShowAddBatch(false)}
           onSuccess={() => { setShowAddBatch(false); refresh() }}
         />
@@ -796,7 +797,8 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
           d.name.toLowerCase().includes(q) ||
           (d.generic_name ?? '').toLowerCase().includes(q) ||
           (d.form ?? '').toLowerCase().includes(q) ||
-          (d.strength ?? '').toLowerCase().includes(q)
+          (d.strength ?? '').toLowerCase().includes(q) ||
+          (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
         )
       })
     : stock
@@ -834,14 +836,17 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
       )}
 
       {filtered.map((drug) => {
-        const isLow = drug.total_qty <= drug.reorder_level
+        const isLow = drug.total_qty <= (drug.reorder_level ?? 0)
+        const primaryBrand = (drug.brand_aliases ?? [])[0]
+        const displayName = primaryBrand ?? drug.name
+        const genericLabel = primaryBrand ? drug.name : drug.generic_name
         return (
           <GlassCard key={drug.id} className="p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold" style={{ color: '#0F172A' }}>{drug.name}</p>
-                  {drug.generic_name && <span className="text-xs" style={{ color: '#64748B' }}>({drug.generic_name})</span>}
+                  <p className="font-semibold" style={{ color: '#0F172A' }}>{displayName}</p>
+                  {genericLabel && <span className="text-xs" style={{ color: '#64748B' }}>({genericLabel})</span>}
                   {drug.form && <span className="text-xs px-2 py-0.5 rounded-lg capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{drug.form}</span>}
                   {drug.strength && <span className="text-xs" style={{ color: '#64748B' }}>{drug.strength}</span>}
                   {isLow && (
@@ -854,7 +859,7 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
                 <p className="text-sm mt-1">
                   <span className="font-bold" style={{ color: isLow ? '#DC2626' : '#0D9488' }}>{drug.total_qty}</span>
                   <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{drug.unit ?? 'units'} available</span>
-                  {drug.reorder_level > 0 && (
+                  {(drug.reorder_level ?? 0) > 0 && (
                     <span className="ml-2 text-xs" style={{ color: '#94A3B8' }}>Reorder at {drug.reorder_level}</span>
                   )}
                 </p>

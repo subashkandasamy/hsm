@@ -439,22 +439,37 @@ export async function generateDailyAdmissionBills(): Promise<{
   return { processed, errors }
 }
 
-// ---- Batch advance balance for billing page (efficient: 3 queries, not N per admission) ----
+// ---- Batch advance balance for billing page (efficient: 4 queries, not N per admission) ----
+
+export type AdvanceSummaryEntry = {
+  totalCollected: number
+  totalApplied: number
+  netBalance: number
+  admissionStatus: string | null
+  hasRefundBill: boolean
+}
 
 export async function listAdvanceSummariesBatch(
   admissionIds: string[]
-): Promise<Record<string, { totalCollected: number; totalApplied: number; netBalance: number }>> {
+): Promise<Record<string, AdvanceSummaryEntry>> {
   if (!admissionIds.length) return {}
   const supabase = await createClient()
 
-  const result: Record<string, { totalCollected: number; totalApplied: number; netBalance: number }> = {}
-  for (const id of admissionIds) result[id] = { totalCollected: 0, totalApplied: 0, netBalance: 0 }
+  const result: Record<string, AdvanceSummaryEntry> = {}
+  for (const id of admissionIds) result[id] = { totalCollected: 0, totalApplied: 0, netBalance: 0, admissionStatus: null, hasRefundBill: false }
 
-  // 1. Total advance collected per admission (minus refunds)
-  const [{ data: advances }, { data: refunds }] = await Promise.all([
+  const [
+    { data: advances },
+    { data: refunds },
+    { data: admissions },
+    { data: refundBills },
+  ] = await Promise.all([
     supabase.from('admission_advances').select('admission_id, amount').in('admission_id', admissionIds),
     supabase.from('admission_advance_refunds').select('admission_id, amount').in('admission_id', admissionIds),
+    supabase.from('admissions').select('id, status').in('id', admissionIds),
+    supabase.from('bills').select('admission_id').in('admission_id', admissionIds).eq('bill_source', 'advance_refund'),
   ])
+
   for (const a of advances ?? []) {
     const aid = a.admission_id as string
     if (result[aid]) result[aid].totalCollected += a.amount as number
@@ -463,15 +478,22 @@ export async function listAdvanceSummariesBatch(
     const aid = r.admission_id as string
     if (result[aid]) result[aid].totalCollected -= r.amount as number
   }
+  for (const adm of admissions ?? []) {
+    const aid = adm.id as string
+    if (result[aid]) result[aid].admissionStatus = adm.status as string
+  }
+  for (const rb of refundBills ?? []) {
+    const aid = rb.admission_id as string
+    if (result[aid]) result[aid].hasRefundBill = true
+  }
 
-  // 2. Bills for these admissions → get bill_id → admission_id map
+  // Bills for these admissions → bill_id map for advance payment lookup
   const { data: bills } = await supabase
     .from('bills').select('id, admission_id').in('admission_id', admissionIds).neq('status', 'cancelled')
   const billIdToAdmission = new Map<string, string>()
   for (const b of bills ?? []) billIdToAdmission.set(b.id as string, b.admission_id as string)
   const billIds = [...billIdToAdmission.keys()]
 
-  // 3. Advance payments applied across all bills
   if (billIds.length > 0) {
     const { data: payments } = await supabase
       .from('payments').select('bill_id, amount').in('bill_id', billIds).eq('method', 'advance')
@@ -616,4 +638,86 @@ export async function getAdmissionAdvanceReceipt(
     payments,
     totalCollected: payments.reduce((s, pmt) => s + pmt.amount, 0),
   }
+}
+
+// ---- Issue advance refund as a negative bill ----
+
+export async function issueAdvanceRefundBill(params: {
+  admissionId: string
+  method: 'cash' | 'card' | 'upi' | 'bank_transfer'
+  reference?: string
+}): Promise<{ success: true; billId: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:write')
+
+  const supabase = await createClient()
+  const { admissionId, method, reference } = params
+
+  // 1. Admission must be discharged
+  const { data: adm } = await supabase.from('admissions').select('status, patient_id').eq('id', admissionId).single()
+  if (!adm) return { success: false, error: 'Admission not found' }
+  if ((adm.status as string) !== 'discharged') return { success: false, error: 'Patient must be discharged before issuing a refund' }
+
+  // 2. No existing refund bill for this admission
+  const { data: existing } = await supabase.from('bills').select('id').eq('admission_id', admissionId).eq('bill_source', 'advance_refund').maybeSingle()
+  if (existing) return { success: false, error: 'A refund bill has already been issued for this admission' }
+
+  // 3. Calculate refund amount
+  const financials = await getAdmissionFinancials(admissionId)
+  const refundAmount = Math.round(financials.unusedAdvance * 100) / 100
+  if (refundAmount <= 0) return { success: false, error: 'No excess advance to refund' }
+
+  // 4. Get next bill number
+  const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+  const billNo = billNoData as string
+
+  const billId = crypto.randomUUID()
+  const today = new Date().toISOString().split('T')[0]
+
+  // 5. Create negative bill (amount is negative — money going out)
+  const { error: billErr } = await supabase.from('bills').insert({
+    id:            billId,
+    tenant_id:     actor.tenant_id,
+    patient_id:    adm.patient_id as string,
+    admission_id:  admissionId,
+    bill_no:       billNo,
+    billing_date:  today,
+    subtotal:      -refundAmount,
+    discount:      0,
+    tax:           0,
+    total:         -refundAmount,
+    paid:          -refundAmount,
+    status:        'paid',
+    bill_source:   'advance_refund',
+    created_by:    actor.id,
+  })
+  if (billErr) return { success: false, error: billErr.message }
+
+  // 6. Create the single line item
+  const { error: itemErr } = await supabase.from('bill_items').insert({
+    id:          crypto.randomUUID(),
+    tenant_id:   actor.tenant_id,
+    bill_id:     billId,
+    source:      'manual',
+    description: 'Excess Advance Refund',
+    qty:         1,
+    unit_price:  -refundAmount,
+    amount:      -refundAmount,
+  })
+  if (itemErr) return { success: false, error: itemErr.message }
+
+  // 7. Record outgoing payment entry for audit trail
+  const { error: payErr } = await supabase.from('payments').insert({
+    id:          crypto.randomUUID(),
+    tenant_id:   actor.tenant_id,
+    bill_id:     billId,
+    amount:      -refundAmount,
+    method,
+    reference:   reference ?? null,
+    received_by: actor.id,
+  })
+  if (payErr) return { success: false, error: payErr.message }
+
+  await logAudit(actor.id, 'refund', 'bill', billId, { admissionId, refundAmount, method })
+  return { success: true, billId }
 }

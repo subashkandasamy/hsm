@@ -7,42 +7,21 @@ import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
-  ToggleLeft, CreditCard, BadgeDollarSign,
+  ToggleLeft, CreditCard, BadgeDollarSign, Lock,
   type LucideProps,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
+import { planHasModule, isGrowthOnly } from '@/lib/plans'
 import type { Role, Permission } from '@/lib/types'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 
-// Store component references — NOT pre-created JSX elements.
-// Pre-created JSX elements (e.g. <Building2 />) at module scope cause
-// hydration mismatches in Next.js SSR because React can't reconcile
-// static element objects across server/client boundaries.
 type IconComp = React.ComponentType<LucideProps>
 
 const ICON_MAP: Record<string, IconComp> = {
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  FlaskConical,
-  Pill,
-  Receipt,
-  UserCog,
-  ClipboardList,
-  Settings,
-  Stethoscope,
-  LayoutGrid,
-  BedDouble,
-  Siren,
-  Scan,
-  Scissors,
-  Droplets,
-  ShieldPlus,
-  Bell,
-  Warehouse,
-  ToggleLeft,
-  CreditCard,
-  Building2,
-  BadgeDollarSign,
+  LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
+  Receipt, UserCog, ClipboardList, Settings, Stethoscope,
+  LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
+  Bell, Warehouse, ToggleLeft, CreditCard, Building2, BadgeDollarSign,
 }
 
 function NavIcon({ name }: { name: string }) {
@@ -55,19 +34,21 @@ interface SidebarProps {
   role: Role
   tenantName: string
   enabledModules?: string[]
+  plan?: PlanKey
+  status?: TenantStatus
   drawerOpen?: boolean
   onClose?: () => void
 }
 
-export default function Sidebar({ role, tenantName, enabledModules, drawerOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({
+  role, tenantName, enabledModules,
+  plan = 'starter', status = 'trial',
+  drawerOpen = false, onClose,
+}: SidebarProps) {
   const pathname = usePathname()
 
-  // Close drawer on route change
-  useEffect(() => {
-    onClose?.()
-  }, [pathname]) // intentionally omit onClose to avoid re-runs; it's a stable callback
+  useEffect(() => { onClose?.() }, [pathname])
 
-  // Close on Escape key
   useEffect(() => {
     if (!drawerOpen) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
@@ -90,6 +71,25 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
         </div>
       </div>
 
+      {/* Plan badge */}
+      {status !== 'trial' && (
+        <div className="mx-3 mt-3">
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl"
+            style={{ background: 'rgba(13,148,136,0.07)', border: '1px solid rgba(13,148,136,0.15)' }}>
+            <span className="text-xs font-semibold capitalize" style={{ color: '#0D9488' }}>
+              {plan} plan
+            </span>
+            {plan === 'starter' && (
+              <Link href="/account/subscription"
+                className="text-xs font-bold px-2 py-0.5 rounded-lg"
+                style={{ background: '#0D9488', color: '#fff' }}>
+                Upgrade
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
         {NAV_CONFIG.map((group) => {
@@ -99,6 +99,7 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
             return true
           })
           if (visibleItems.length === 0) return null
+
           return (
             <div key={group.label}>
               <p className="px-2 mb-1.5 text-xs font-semibold uppercase tracking-wider"
@@ -107,8 +108,34 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
               </p>
               <ul className="space-y-0.5">
                 {visibleItems.map((item) => {
-                  const isActive = pathname === item.href ||
+                  const isActive  = pathname === item.href ||
                     (item.href !== '/dashboard' && pathname.startsWith(item.href))
+
+                  // Plan-locked: growth-only module, tenant is on starter (non-trial)
+                  const isLocked = !!(
+                    item.moduleKey &&
+                    isGrowthOnly(item.moduleKey) &&
+                    !planHasModule(plan, status, item.moduleKey)
+                  )
+
+                  if (isLocked) {
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href="/account/subscription?upgrade=1"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium min-h-[44px]"
+                          style={{ color: '#CBD5E1', border: '1px solid transparent', opacity: 0.7 }}
+                          title="Upgrade to Growth plan to unlock">
+                          <span style={{ color: '#CBD5E1' }}>
+                            <NavIcon name={item.icon} />
+                          </span>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          <Lock className="w-3 h-3 flex-shrink-0" style={{ color: '#94A3B8' }} />
+                        </Link>
+                      </li>
+                    )
+                  }
+
                   return (
                     <li key={item.href}>
                       <Link
@@ -128,8 +155,7 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
                             e.currentTarget.style.background = 'transparent'
                             e.currentTarget.style.color = '#475569'
                           }
-                        }}
-                      >
+                        }}>
                         <span style={isActive ? { color: '#0D9488' } : { color: '#94A3B8' }}>
                           <NavIcon name={item.icon} />
                         </span>
@@ -148,25 +174,19 @@ export default function Sidebar({ role, tenantName, enabledModules, drawerOpen =
 
   return (
     <>
-      {/* Desktop: always-visible fixed sidebar (lg+) */}
       <aside className="glass-sidebar fixed left-0 top-0 h-full w-60 flex-col z-40 hidden lg:flex">
         {navContent}
       </aside>
 
-      {/* Mobile/tablet: backdrop + drawer (< lg) */}
       {drawerOpen && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
+        <div className="fixed inset-0 z-40 lg:hidden"
           style={{ background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }}
-          onClick={onClose}
-          aria-hidden="true"
-        />
+          onClick={onClose} aria-hidden="true" />
       )}
       <aside
         className={`glass-sidebar fixed left-0 top-0 h-full w-72 flex flex-col z-50 lg:hidden transition-transform duration-300 ease-out ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
+        }`}>
         {navContent}
       </aside>
     </>

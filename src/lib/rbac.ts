@@ -73,6 +73,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'insurance:read',
     'notifications:send',
     'emr:document:upload',
+    'pharmacy:read',
     'dashboard:read',
   ],
   lab_tech: [

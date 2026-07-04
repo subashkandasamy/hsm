@@ -44,6 +44,10 @@ export default function TimelineTab({ patientId, initialEvents, diagnoses }: Pro
   const [showFilters, setShowFilters] = useState(false)
   const [showAllDiagnoses, setShowAllDiagnoses] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set())
+  function toggleMonth(key: string) {
+    setCollapsedMonths(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s })
+  }
 
   function toggleType(t: TimelineEventType) {
     setSelectedTypes((prev) =>
@@ -198,64 +202,89 @@ export default function TimelineTab({ patientId, initialEvents, diagnoses }: Pro
         <div className="text-center py-12" style={{ color: '#94A3B8' }}>Loading timeline…</div>
       ) : events.length === 0 ? (
         <EmptyState title="No events yet" description="Clinical events will appear here as the patient is seen across departments." />
-      ) : (
-        <div className="relative space-y-3 pl-6">
-          {/* Vertical line */}
-          <div className="absolute left-2.5 top-3 bottom-3 w-0.5" style={{ background: '#E2E8F0' }} />
+      ) : (() => {
+        // Group events by year-month
+        const monthMap = new Map<string, { label: string; events: TimelineEvent[] }>()
+        for (const ev of events) {
+          const d = new Date(ev.date)
+          const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+          if (!monthMap.has(k)) {
+            monthMap.set(k, {
+              label: d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+              events: [],
+            })
+          }
+          monthMap.get(k)!.events.push(ev)
+        }
+        return (
+          <div className="space-y-4">
+            {Array.from(monthMap.entries()).map(([k, { label, events: monthEvents }]) => (
+              <div key={k}>
+                {/* Month header — collapsible */}
+                <button onClick={() => toggleMonth(k)}
+                  className="w-full flex items-center gap-3 mb-3">
+                  <span className="text-xs font-bold uppercase tracking-widest flex-shrink-0"
+                    style={{ color: '#64748B' }}>{label}</span>
+                  <div className="flex-1 h-px" style={{ background: '#E2E8F0' }} />
+                  <span className="text-xs flex-shrink-0" style={{ color: '#CBD5E1' }}>{monthEvents.length}</span>
+                  {collapsedMonths.has(k)
+                    ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#CBD5E1' }} />
+                    : <ChevronUp className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#CBD5E1' }} />}
+                </button>
 
-          {events.map((event) => {
-            const meta = TYPE_META[event.type]
-            const isAbnormal = event.type === 'lab_order' && Boolean(event.meta?.hasAbnormal)
-            const href = meta.href?.(event.refId)
-
-            return (
-              <div key={event.id} className="relative">
-                {/* Dot */}
-                <div className="absolute -left-[22px] top-3.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 z-10"
-                  style={{ background: meta.bg, border: `2px solid ${meta.color}20`, color: meta.color }}>
-                  <span style={{ transform: 'scale(0.65)' }}>{meta.icon}</span>
-                </div>
-
-                <GlassCard className="p-4" style={{ borderLeft: isAbnormal ? `3px solid #DC2626` : undefined }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                          style={{ background: meta.bg, color: meta.color }}>
-                          {meta.label}
-                        </span>
-                        {isAbnormal && (
-                          <span className="flex items-center gap-1 text-xs font-semibold"
-                            style={{ color: '#DC2626' }}>
-                            <AlertTriangle className="w-3 h-3" /> Abnormal
-                          </span>
-                        )}
+                {!collapsedMonths.has(k) && <div className="relative space-y-3 pl-6">
+                  <div className="absolute left-2.5 top-3 bottom-3 w-0.5" style={{ background: '#E2E8F0' }} />
+                  {monthEvents.map((event) => {
+                    const meta = TYPE_META[event.type]
+                    const isAbnormal = event.type === 'lab_order' && Boolean(event.meta?.hasAbnormal)
+                    const href = meta.href?.(event.refId)
+                    return (
+                      <div key={event.id} className="relative">
+                        <div className="absolute -left-[22px] top-3.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 z-10"
+                          style={{ background: meta.bg, border: `2px solid ${meta.color}20`, color: meta.color }}>
+                          <span style={{ transform: 'scale(0.65)' }}>{meta.icon}</span>
+                        </div>
+                        <GlassCard className="p-4" style={{ borderLeft: isAbnormal ? `3px solid #DC2626` : undefined }}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                  style={{ background: meta.bg, color: meta.color }}>
+                                  {meta.label}
+                                </span>
+                                {isAbnormal && (
+                                  <span className="flex items-center gap-1 text-xs font-semibold"
+                                    style={{ color: '#DC2626' }}>
+                                    <AlertTriangle className="w-3 h-3" /> Abnormal
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{event.title}</p>
+                              {event.summary && (
+                                <p className="text-xs mt-0.5" style={{ color: '#475569' }}>{event.summary}</p>
+                              )}
+                              <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
+                                <DateText date={event.date} />
+                              </p>
+                            </div>
+                            {href && (
+                              <Link href={href}
+                                className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium min-h-[36px] flex items-center"
+                                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', whiteSpace: 'nowrap' }}>
+                                View →
+                              </Link>
+                            )}
+                          </div>
+                        </GlassCard>
                       </div>
-                      <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
-                        {event.title}
-                      </p>
-                      {event.summary && (
-                        <p className="text-xs mt-0.5" style={{ color: '#475569' }}>{event.summary}</p>
-                      )}
-                      <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
-                        <DateText date={event.date} />
-                      </p>
-                    </div>
-                    {href && (
-                      <Link href={href}
-                        className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium min-h-[36px] flex items-center"
-                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', whiteSpace: 'nowrap' }}
-                      >
-                        View →
-                      </Link>
-                    )}
-                  </div>
-                </GlassCard>
+                    )
+                  })}
+                </div>}
               </div>
-            )
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -62,6 +62,49 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Landing page animations ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes floatY {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-14px); }
+}
+@keyframes floatYSlow {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(1.5); }
+}
+@keyframes gradientMove {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+@keyframes shimmerSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Scroll reveal */
+.sr-root { transition: opacity 0.65s ease, transform 0.65s ease; }
+.sr-up    { opacity: 0; transform: translateY(24px); }
+.sr-left  { opacity: 0; transform: translateX(-24px); }
+.sr-right { opacity: 0; transform: translateX(24px); }
+.sr-root.sr-revealed { opacity: 1 !important; transform: none !important; }
+
+/* Card hover lift */
+.hover-lift { transition: transform 0.22s ease, box-shadow 0.22s ease; }
+.hover-lift:hover { transform: translateY(-4px); }
+
+/* Speech mic pulse */
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
+  50%       { opacity: 0.85; box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
+}
+
 /* Glass card utility */
 .glass-card {
   background: rgba(255, 255, 255, 0.70);

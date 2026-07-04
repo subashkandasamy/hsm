@@ -19,7 +19,9 @@ import Modal from '@/components/ui/Modal'
 import Money from '@/components/ui/Money'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import { addProgressNote, transferBed, dischargePatient } from '@/app/actions/ipd'
+import { addProgressNote, transferBed, dischargePatient, updateDischargeSummary } from '@/app/actions/ipd'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
+import MicButton from '@/components/ui/MicButton'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import TreatmentPanel from './TreatmentPanel'
 import NursingPanel from './NursingPanel'
@@ -86,6 +88,30 @@ export default function AdmissionDetail({
   const [dischargeError, setDischargeError] = useState<string | null>(null)
   const [showBillingPrompt, setShowBillingPrompt] = useState(false)
   const [showBillBuilder, setShowBillBuilder] = useState(false)
+
+  // Edit discharge summary after discharge
+  const [editingSummary, setEditingSummary] = useState(false)
+  const [editedSummary, setEditedSummary] = useState(adm.discharge_summary ?? '')
+  const [summaryUpdating, setSummaryUpdating] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+
+  // Speech-to-text
+  const speechNote    = useSpeechInput({ onAppend: (t) => setNote((n) => n ? `${n} ${t}` : t) })
+  const speechSummary = useSpeechInput({ onAppend: (t) => setEditedSummary((s) => s ? `${s} ${t}` : t) })
+  const speechDischarge = useSpeechInput({ onAppend: (t) => setSummary((s) => s ? `${s} ${t}` : t) })
+
+  async function handleUpdateSummary() {
+    setSummaryUpdating(true)
+    setSummaryError(null)
+    const result = await updateDischargeSummary(adm.id, editedSummary)
+    setSummaryUpdating(false)
+    if (result.success) {
+      setAdm((a) => ({ ...a, discharge_summary: editedSummary }))
+      setEditingSummary(false)
+    } else {
+      setSummaryError(result.error)
+    }
+  }
 
   async function handleAddNote(e: React.FormEvent) {
     e.preventDefault()
@@ -242,11 +268,51 @@ export default function AdmissionDetail({
           )}
         </div>
 
-        {adm.discharge_summary && (
+        {adm.status === 'discharged' && (
           <div className="mt-4 p-3 rounded-xl text-sm"
-            style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
-            <p className="font-semibold mb-1">Discharge Summary</p>
-            <p style={{ whiteSpace: 'pre-wrap' }}>{adm.discharge_summary}</p>
+            style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+            <div className="flex items-center justify-between mb-1">
+              <p className="font-semibold" style={{ color: '#15803D' }}>Discharge Summary</p>
+              {canWrite && !editingSummary && (
+                <button onClick={() => { setEditedSummary(adm.discharge_summary ?? ''); setEditingSummary(true) }}
+                  className="text-xs px-2 py-1 rounded-lg font-medium"
+                  style={{ background: '#fff', color: '#0D9488', border: '1px solid #0D9488', cursor: 'pointer' }}>
+                  Edit
+                </button>
+              )}
+            </div>
+            {editingSummary ? (
+              <div>
+                <div className="relative">
+                  <textarea value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} rows={4}
+                    className="w-full text-sm rounded-lg p-2 border"
+                    style={{ borderColor: '#BBF7D0', color: '#0F172A', resize: 'vertical', fontFamily: 'inherit', paddingRight: speechSummary.supported ? '2.25rem' : undefined }} />
+                  {speechSummary.supported && (
+                    <div className="absolute top-2 right-2">
+                      <MicButton listening={speechSummary.listening} onToggle={speechSummary.toggle} />
+                    </div>
+                  )}
+                </div>
+                {speechSummary.interim && (
+                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechSummary.interim}…</p>
+                )}
+                {summaryError && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{summaryError}</p>}
+                <div className="flex gap-2 mt-2">
+                  <button onClick={handleUpdateSummary} disabled={summaryUpdating}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                    style={{ background: '#15803D', color: '#fff', cursor: summaryUpdating ? 'not-allowed' : 'pointer', opacity: summaryUpdating ? 0.6 : 1 }}>
+                    {summaryUpdating ? 'Saving…' : 'Save'}
+                  </button>
+                  <button onClick={() => setEditingSummary(false)}
+                    className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                    style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p style={{ whiteSpace: 'pre-wrap', color: '#15803D' }}>{adm.discharge_summary || <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>No summary recorded</span>}</p>
+            )}
           </div>
         )}
       </GlassCard>
@@ -398,8 +464,19 @@ export default function AdmissionDetail({
                   ))}
                 </div>
                 <FormField label="Clinical Note">
-                  <Textarea value={note} onChange={(e) => setNote(e.target.value)}
-                    placeholder="Observations, plan, instructions…" style={{ minHeight: '4rem' }} />
+                  <div className="relative">
+                    <Textarea value={note} onChange={(e) => setNote(e.target.value)}
+                      placeholder="Observations, plan, instructions…"
+                      style={{ minHeight: '4rem', paddingRight: speechNote.supported ? '2.25rem' : undefined }} />
+                    {speechNote.supported && (
+                      <div className="absolute top-2 right-2">
+                        <MicButton listening={speechNote.listening} onToggle={speechNote.toggle} />
+                      </div>
+                    )}
+                  </div>
+                  {speechNote.interim && (
+                    <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNote.interim}…</p>
+                  )}
                 </FormField>
                 {noteError && <p className="text-xs" style={{ color: '#DC2626' }}>{noteError}</p>}
                 <button type="submit" disabled={noteSaving || !note.trim()}
@@ -463,8 +540,8 @@ export default function AdmissionDetail({
         <TreatmentPanel
           admissionId={adm.id}
           patientId={adm.patient_id}
-          canOrder={!!canWrite}
-          canGive={!!canNursing}
+          canOrder={!!canWrite && !isClosed}
+          canGive={!!canNursing && !isClosed}
         />
       )}
 
@@ -537,9 +614,19 @@ export default function AdmissionDetail({
       <Modal open={showDischarge} onClose={() => setShowDischarge(false)} title="Discharge Patient" maxWidth="30rem">
         <div className="space-y-4">
           <FormField label="Discharge Summary" required>
-            <Textarea value={summary} onChange={(e) => setSummary(e.target.value)}
-              placeholder="Condition at discharge, treatment given, follow-up instructions…"
-              style={{ minHeight: '7rem' }} />
+            <div className="relative">
+              <Textarea value={summary} onChange={(e) => setSummary(e.target.value)}
+                placeholder="Condition at discharge, treatment given, follow-up instructions…"
+                style={{ minHeight: '7rem', paddingRight: speechDischarge.supported ? '2.25rem' : undefined }} />
+              {speechDischarge.supported && (
+                <div className="absolute top-2 right-2">
+                  <MicButton listening={speechDischarge.listening} onToggle={speechDischarge.toggle} />
+                </div>
+              )}
+            </div>
+            {speechDischarge.interim && (
+              <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechDischarge.interim}…</p>
+            )}
           </FormField>
           {dischargeError && <p className="text-sm" style={{ color: '#DC2626' }}>{dischargeError}</p>}
           <div className="flex gap-3 justify-end">

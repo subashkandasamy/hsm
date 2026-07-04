@@ -224,14 +224,56 @@ export interface RadiologyOrder {
 
 // ---- Phase 3: Pharmacy ----
 
+// Global drug master — Uyirly-curated, no tenant_id
+export interface DrugMaster {
+  id: string; name: string; generic_name: string | null; category: string | null
+  form: string | null; strength: string | null; unit: string | null; is_active: boolean
+  schedule: string | null           // OTC | H | H1 | X | G
+  atc_code: string | null           // WHO ATC code e.g. J01CA04
+  pharmacological_class: string | null
+}
+
+// Global brand catalog — linked to drug_master
+export interface DrugBrand {
+  id: string; drug_master_id: string; brand_name: string; manufacturer: string
+  hsn_code: string; gst_rate: number; pack_size: number; pack_unit: string
+  mrp_per_pack: number | null; is_active: boolean
+}
+
+// Drug used in UI — unifies DrugMaster + tenant custom drugs
+// is_global=true → from drug_master table; false → from drugs table (tenant custom)
 export interface Drug {
   id: string; name: string; generic_name: string | null; form: string | null
-  strength: string | null; unit: string | null; reorder_level: number; is_active: boolean
+  strength: string | null; unit: string | null; reorder_level?: number; is_active: boolean
+  is_global?: boolean
+  brand_aliases?: string[]  // brand names only, for autocomplete search
+  brand_data?: Array<{
+    brand_name: string
+    manufacturer: string | null
+    hsn_code: string | null
+    gst_rate: number | null
+    pack_size: number | null
+    pack_unit: string | null
+  }>
 }
 
 export interface DrugBatch {
-  id: string; drug_id: string; batch_no: string; expiry: string
+  id: string; batch_no: string; expiry: string
   qty_available: number; purchase_price: number | null; mrp: number
+  reorder_level?: number
+  drug_id?: string | null; drug_master_id?: string | null
+  // Brand / GRN fields (added in migration 0044)
+  drug_brand_id?: string | null
+  brand_name?: string | null
+  manufacturer?: string | null
+  pack_size?: number | null
+  pack_unit?: string | null
+  mfg_date?: string | null
+  hsn_code?: string | null
+  gst_rate?: number | null
+  supplier_name?: string | null
+  supplier_invoice_no?: string | null
+  purchase_date?: string | null
   drug?: Pick<Drug, 'id' | 'name' | 'form' | 'strength' | 'unit'>
 }
 
@@ -242,7 +284,8 @@ export interface DrugWithStock extends Drug {
 
 export interface Dispense {
   id: string; patient_id: string; prescription_id: string | null
-  drug_id: string; drug_batch_id: string; qty: number; price_snapshot: number
+  drug_id?: string | null; drug_master_id?: string | null
+  drug_batch_id: string; qty: number; price_snapshot: number
   billing_status: BillingStatus; dispensed_by: string | null; dispensed_at: string
   drug?: Pick<Drug, 'id' | 'name' | 'form' | 'strength'>
   batch?: Pick<DrugBatch, 'id' | 'batch_no' | 'expiry'>
@@ -340,7 +383,7 @@ export interface Bill {
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
-  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | null
+  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | null
   consolidated_by?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   items?: BillItem[]
@@ -386,6 +429,7 @@ export interface CombinedBillData {
   grandTotal: number
   totalPaid: number
   advanceCollected: number
+  advanceRefunded: number
   balanceDue: number
 }
 

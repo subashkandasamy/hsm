@@ -30,9 +30,10 @@ interface Props {
   onGenerated: (billId: string) => void
   preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   admissionId?: string
+  visitId?: string
 }
 
-export default function BillBuilderModal({ onClose, onGenerated, preselectedPatient, admissionId }: Props) {
+export default function BillBuilderModal({ onClose, onGenerated, preselectedPatient, admissionId, visitId }: Props) {
   const [step, setStep] = useState<'patient' | 'charges'>(preselectedPatient ? 'charges' : 'patient')
   const [patientSearch, setPatientSearch] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
@@ -53,7 +54,7 @@ export default function BillBuilderModal({ onClose, onGenerated, preselectedPati
   useEffect(() => {
     if (!preselectedPatient) return
     setLoadingCharges(true)
-    getUnbilledCharges({ patientId: preselectedPatient.id, admissionId: admissionId ?? null }).then((lines) => {
+    getUnbilledCharges({ patientId: preselectedPatient.id, admissionId: admissionId ?? null, visitId: visitId ?? null }).then((lines) => {
       setCharges(lines)
       setSelectedRefs(new Set(lines.map((l) => l.ref_id)))
       setLoadingCharges(false)
@@ -121,6 +122,7 @@ export default function BillBuilderModal({ onClose, onGenerated, preselectedPati
     const res = await generateBill({
       patient_id:    selectedPatient.id,
       admission_id:  admissionId ?? null,
+      visit_id:      visitId ?? null,
       selected_refs: Array.from(selectedRefs),
       manual_items:  manualItems,
     })

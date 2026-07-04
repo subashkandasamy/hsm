@@ -112,6 +112,23 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
+      // ── Plan-based route gating — block growth routes for starter tenants ───
+      const GROWTH_ONLY_ROUTES = [
+        '/ipd', '/wards', '/emergency', '/lab', '/radiology',
+        '/ot', '/blood', '/insurance', '/inventory', '/staff',
+      ]
+      if (tenant.plan === 'starter' && tenant.status !== 'trial') {
+        const isGrowthRoute = GROWTH_ONLY_ROUTES.some(
+          r => pathname === r || pathname.startsWith(r + '/')
+        )
+        if (isGrowthRoute) {
+          const upgradeUrl = request.nextUrl.clone()
+          upgradeUrl.pathname = '/account/subscription'
+          upgradeUrl.searchParams.set('upgrade', '1')
+          return NextResponse.redirect(upgradeUrl)
+        }
+      }
+
       // ── Inject tenant context headers ─────────────────────────────────────
       const requestHeaders = new Headers(request.headers)
       requestHeaders.set('x-tenant-id',     tenant.id)
@@ -119,6 +136,7 @@ export async function proxy(request: NextRequest) {
       requestHeaders.set('x-tenant-name',   tenant.name)
       requestHeaders.set('x-tenant-status', tenant.status)
       requestHeaders.set('x-tenant-plan',   tenant.plan)
+      requestHeaders.set('x-pathname',      pathname)
 
       let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
