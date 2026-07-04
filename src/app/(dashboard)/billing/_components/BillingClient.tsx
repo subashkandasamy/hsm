@@ -14,7 +14,7 @@ import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import Link from 'next/link'
 import { listBills, getBillingStats, cancelBill } from '@/app/actions/billing'
-import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
+import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch, issueAdvanceRefundBill } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
@@ -114,13 +114,45 @@ interface BillingStats {
   totalOutstanding: number
 }
 
-interface AdvanceSummary { totalCollected: number; totalApplied: number; netBalance: number }
+interface AdvanceSummary { totalCollected: number; totalApplied: number; netBalance: number; admissionStatus: string | null; hasRefundBill: boolean }
 
+function getMonthKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+function getMonthLabel(key: string): string {
+  const [yr, mo] = key.split('-')
+  return new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+}
+
+interface OpdSection {
+  bills: Bill[]
+  visitId: string | null
+  appointmentId: string | null
+  totalBilled: number
+  totalPaid: number
+  totalOutstanding: number
+}
+interface IpdSection {
+  admissionId: string
+  bills: Bill[]
+  deposits: AdvanceDepositRequest[]
+  advanceSummary: AdvanceSummary | null
+  totalBilled: number
+  totalPaid: number
+  totalOutstanding: number
+}
+interface MonthSection {
+  monthKey: string
+  monthLabel: string
+  opd: OpdSection | null
+  ipd: IpdSection[]
+}
 interface PatientGroup {
   patientId: string
   patientName: string
   uhid: string
-  bills: Bill[]
+  months: MonthSection[]
   deposits: AdvanceDepositRequest[]
   totalBilled: number
   totalPaid: number
@@ -157,6 +189,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [search, setSearch]     = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('patient')
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
+  const [expandedMonths,   setExpandedMonths]   = useState<Set<string>>(new Set())
+  const [expandedOPD,      setExpandedOPD]      = useState<Set<string>>(new Set())
+  const [expandedIPD,      setExpandedIPD]      = useState<Set<string>>(new Set())
   // Advance collection state
   const [collectingId, setCollectingId]     = useState<string | null>(null)
   // Top-up advance state
@@ -172,6 +207,23 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
   // Inline cancel state: null | billId being cancelled | `${billId}:confirm` awaiting confirm
   const [cancelState, setCancelState] = useState<string | null>(null)
+  // Refund state
+  const [refundAdmissionId, setRefundAdmissionId] = useState<string | null>(null)
+  const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
+  const [refundRef, setRefundRef]       = useState('')
+  const [refundPending, setRefundPending] = useState(false)
+  const [refundError, setRefundError]   = useState('')
+
+  async function handleRefund(admissionId: string) {
+    setRefundPending(true); setRefundError('')
+    const res = await issueAdvanceRefundBill({ admissionId, method: refundMethod, reference: refundRef || undefined })
+    setRefundPending(false)
+    if (!res.success) { setRefundError(res.error); return }
+    setRefundAdmissionId(null); setRefundRef('')
+    await refresh()
+    // Open the refund bill print page
+    window.open(`/billing/${res.billId}`, '_blank')
+  }
 
   async function refresh() {
     setLoading(true)
@@ -242,94 +294,154 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     }
   }
 
-  function togglePatient(id: string) {
-    setExpandedPatients((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
+  function toggle(set: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) {
+    set((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
+  function togglePatient(id: string) { toggle(setExpandedPatients, id) }
+  function toggleMonth(key: string)   { toggle(setExpandedMonths,   key) }
+  function toggleOPD(key: string)     { toggle(setExpandedOPD,      key) }
+  function toggleIPD(key: string)     { toggle(setExpandedIPD,      key) }
 
-  // ── Patient groups: merge bills + deposits keyed by patient_id ──────────────
+  // ── Patient groups: Patient → Month → OPD / IPD ─────────────────────────────
   const patientGroups = useMemo<PatientGroup[]>(() => {
-    const map = new Map<string, PatientGroup>()
+    const patMap = new Map<string, PatientGroup>()
 
+    function getPat(pid: string, name: string, uhid: string): PatientGroup {
+      if (!patMap.has(pid)) {
+        patMap.set(pid, {
+          patientId: pid, patientName: name, uhid,
+          months: [], deposits: [],
+          totalBilled: 0, totalPaid: 0, totalOutstanding: 0,
+          pendingAdvance: 0, admissionId: null, advanceSummary: null,
+        })
+      }
+      return patMap.get(pid)!
+    }
+
+    function getMonth(pat: PatientGroup, dateStr: string): MonthSection {
+      const key = getMonthKey(dateStr)
+      let m = pat.months.find((x) => x.monthKey === key)
+      if (!m) {
+        m = { monthKey: key, monthLabel: getMonthLabel(key), opd: null, ipd: [] }
+        pat.months.push(m)
+      }
+      return m
+    }
+
+    function getIpd(month: MonthSection, admissionId: string): IpdSection {
+      let ipd = month.ipd.find((x) => x.admissionId === admissionId)
+      if (!ipd) {
+        ipd = { admissionId, bills: [], deposits: [], advanceSummary: null,
+          totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
+        month.ipd.push(ipd)
+      }
+      return ipd
+    }
+
+    // Place bills
     for (const bill of bills) {
       const pid = (bill as unknown as { patient_id: string }).patient_id
       if (!pid) continue
       const isCancelled = bill.status === 'cancelled'
-      const g = map.get(pid)
-      if (g) {
-        g.bills.push(bill)
+      const pat = getPat(pid, bill.patient?.full_name ?? 'Unknown', bill.patient?.uhid ?? '')
+      const month = getMonth(pat, bill.created_at)
+
+      if (!isCancelled) {
+        pat.totalBilled      += bill.total
+        pat.totalPaid        += bill.paid
+        pat.totalOutstanding += Math.max(0, bill.total - bill.paid)
+      }
+      if (bill.admission_id && !pat.admissionId) pat.admissionId = bill.admission_id
+
+      if (bill.admission_id) {
+        const ipd = getIpd(month, bill.admission_id)
+        ipd.bills.push(bill)
         if (!isCancelled) {
-          g.totalBilled      += bill.total
-          g.totalPaid        += bill.paid
-          g.totalOutstanding += Math.max(0, bill.total - bill.paid)
+          ipd.totalBilled      += bill.total
+          ipd.totalPaid        += bill.paid
+          ipd.totalOutstanding += Math.max(0, bill.total - bill.paid)
         }
-        // Prefer admission_id from the most recent bill
-        if (bill.admission_id && !g.admissionId) g.admissionId = bill.admission_id
       } else {
-        map.set(pid, {
-          patientId:        pid,
-          patientName:      bill.patient?.full_name ?? 'Unknown',
-          uhid:             bill.patient?.uhid ?? '',
-          bills:            [bill],
-          deposits:         [],
-          totalBilled:      isCancelled ? 0 : bill.total,
-          totalPaid:        isCancelled ? 0 : bill.paid,
-          totalOutstanding: isCancelled ? 0 : Math.max(0, bill.total - bill.paid),
-          pendingAdvance:   0,
-          admissionId:      bill.admission_id ?? null,
-          advanceSummary:   null,
-        })
+        if (!month.opd) {
+          month.opd = { bills: [], visitId: null, appointmentId: null,
+            totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
+        }
+        month.opd.bills.push(bill)
+        if (bill.visit_id && !month.opd.visitId) month.opd.visitId = bill.visit_id
+        if (bill.appointment_id && !month.opd.appointmentId) month.opd.appointmentId = bill.appointment_id
+        if (!isCancelled) {
+          month.opd.totalBilled      += bill.total
+          month.opd.totalPaid        += bill.paid
+          month.opd.totalOutstanding += Math.max(0, bill.total - bill.paid)
+        }
       }
     }
 
-    // Attach deposits to matching patient group; create a group even if no bills yet
+    // Place deposits
     for (const dep of deposits) {
       const pid = dep.patient_id
       if (!pid) continue
-      const g = map.get(pid)
-      if (g) {
-        g.deposits.push(dep)
-        if (dep.status === 'pending') g.pendingAdvance += dep.amount
-        if (!g.admissionId && dep.admission_id) g.admissionId = dep.admission_id
-      } else {
-        map.set(pid, {
-          patientId:        pid,
-          patientName:      dep.patient?.full_name ?? 'Unknown',
-          uhid:             dep.patient?.uhid ?? '',
-          bills:            [],
-          deposits:         [dep],
-          totalBilled:      0,
-          totalPaid:        0,
-          totalOutstanding: 0,
-          pendingAdvance:   dep.status === 'pending' ? dep.amount : 0,
-          admissionId:      dep.admission_id ?? null,
-          advanceSummary:   null,
-        })
+      const pat = patMap.has(pid)
+        ? patMap.get(pid)!
+        : getPat(pid, dep.patient?.full_name ?? 'Unknown', dep.patient?.uhid ?? '')
+
+      pat.deposits.push(dep)
+      if (dep.status === 'pending') pat.pendingAdvance += dep.amount
+      if (!pat.admissionId && dep.admission_id) pat.admissionId = dep.admission_id
+
+      if (dep.admission_id) {
+        // Find existing IPD section for this admission across all months
+        let ipdSection: IpdSection | null = null
+        for (const m of pat.months) {
+          const found = m.ipd.find((x) => x.admissionId === dep.admission_id)
+          if (found) { ipdSection = found; break }
+        }
+        if (!ipdSection) {
+          // No bills for this admission yet — create month+section from deposit date
+          const month = getMonth(pat, dep.created_at)
+          ipdSection = getIpd(month, dep.admission_id)
+        }
+        ipdSection.deposits.push(dep)
       }
     }
 
-    // Attach advance summaries
-    for (const g of map.values()) {
-      if (g.admissionId && advanceSummaries[g.admissionId]) {
-        g.advanceSummary = advanceSummaries[g.admissionId]
+    // Attach advance summaries, sort bills, sort months desc
+    for (const pat of patMap.values()) {
+      if (pat.admissionId && advanceSummaries[pat.admissionId]) {
+        pat.advanceSummary = advanceSummaries[pat.admissionId]
       }
+      for (const month of pat.months) {
+        if (month.opd) {
+          month.opd.bills.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        }
+        for (const ipd of month.ipd) {
+          ipd.bills.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          if (advanceSummaries[ipd.admissionId]) {
+            ipd.advanceSummary = advanceSummaries[ipd.admissionId]
+          }
+        }
+      }
+      pat.months.sort((a, b) => b.monthKey.localeCompare(a.monthKey))
     }
 
-    return Array.from(map.values()).sort((a, b) => {
-      // Pending advance first, then outstanding bills, then cleared
+    return Array.from(patMap.values()).sort((a, b) => {
       const aUrgent = (a.pendingAdvance > 0 ? 2 : 0) + (a.totalOutstanding > 0 ? 1 : 0)
       const bUrgent = (b.pendingAdvance > 0 ? 2 : 0) + (b.totalOutstanding > 0 ? 1 : 0)
       return bUrgent - aUrgent || b.totalOutstanding - a.totalOutstanding
     })
   }, [bills, deposits, advanceSummaries])
 
+  function allGroupBills(g: PatientGroup): Bill[] {
+    return g.months.flatMap((m) => [
+      ...(m.opd?.bills ?? []),
+      ...m.ipd.flatMap((x) => x.bills),
+    ])
+  }
+
   const filteredGroups = useMemo(() => {
     const byStatus = statusFilter === 'all'
       ? patientGroups
-      : patientGroups.filter((g) => g.bills.some((b) => b.status === statusFilter))
+      : patientGroups.filter((g) => allGroupBills(g).some((b) => b.status === statusFilter))
     if (!search) return byStatus
     const q = search.toLowerCase()
     return byStatus.filter(
@@ -445,11 +557,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                 const advNetBalance     = adv?.netBalance ?? 0
                 const advCollected      = adv?.totalCollected ?? 0
                 const advExhausted      = advCollected > 0 && advNetBalance <= 0
-                const advHasBalance     = advNetBalance > 0
-                const sortedBills     = [...group.bills].sort(
-                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                )
-                const billCount  = group.bills.length
+                const billCount  = allGroupBills(group).length
                 const depCount   = group.deposits.length
                 const itemLabel  = billCount + depCount === 1 ? 'item' : 'items'
 
@@ -500,12 +608,6 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                 Adv {fmtCompact(group.pendingAdvance)} due
                               </span>
                             )}
-                            {advHasBalance && (
-                              <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
-                                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
-                                {fmtCompact(advNetBalance)} left
-                              </span>
-                            )}
                             {advExhausted && hasOutstanding && (
                               <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
                                 style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.2)' }}>
@@ -533,246 +635,377 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                       </div>
                     </button>
 
-                    {/* Expanded items */}
+                    {/* Expanded: Month → OPD / IPD */}
                     {expanded && (billCount > 0 || depCount > 0) && (
                       <div style={{ borderTop: '1px solid #F1F5F9' }}>
-
-                        {/* Advance deposit rows */}
-                        {group.deposits.map((dep) => {
-                          const isPending   = dep.status === 'pending'
-                          const isCollected = dep.status === 'collected'
-                          const isCollecting = collectingId === dep.id
-
+                        {group.months.map((month) => {
+                          const monthKey     = `${group.patientId}-${month.monthKey}`
+                          const monthOpen    = expandedMonths.has(monthKey)
+                          const opdKey       = `${monthKey}-opd`
+                          const opdOpen      = expandedOPD.has(opdKey)
                           return (
-                            <div key={dep.id}
-                              className="px-4 py-3"
-                              style={{
-                                background: isPending ? 'rgba(254,243,199,0.4)' : 'rgba(240,253,250,0.4)',
-                                borderBottom: '1px solid #F1F5F9',
-                              }}>
-                              <div className="flex items-center gap-3 flex-wrap">
-                                {/* Icon + label */}
-                                <BedDouble className="w-4 h-4 flex-shrink-0" style={{ color: isPending ? '#D97706' : '#0D9488' }} />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>
-                                      IPD Advance Deposit
-                                    </span>
-                                    <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                                      style={isPending
-                                        ? { background: '#FEF3C7', color: '#92400E' }
-                                        : isCollected
-                                          ? { background: 'rgba(16,185,129,0.1)', color: '#065F46' }
-                                          : { background: '#F1F5F9', color: '#64748B' }}>
-                                      {dep.status}
-                                    </span>
-                                    {dep.method && (
-                                      <span className="text-xs" style={{ color: '#94A3B8' }}>· {dep.method}</span>
-                                    )}
-                                  </div>
-                                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
-                                    {dep.admission?.ward?.name}{dep.admission?.bed?.bed_no ? ` — Bed ${dep.admission.bed.bed_no}` : ''}
-                                  </p>
-                                </div>
-                                <Money amount={dep.amount} className="font-bold flex-shrink-0"
-                                  style={{ color: isPending ? '#D97706' : '#0D9488', fontSize: '0.95rem' }} />
-
-                                {/* Print receipt for collected advance */}
-                                {isCollected && dep.admission_id && (
-                                  <Link
-                                    href={`/billing/advance-receipt/${dep.admission_id}`}
-                                    target="_blank"
-                                    className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                                    style={{ background: '#F0FDF4', color: '#0D9488', border: '1px solid #D1FAE5', textDecoration: 'none' }}>
-                                    🖨 Receipt
-                                  </Link>
-                                )}
-
-                                {/* Collect inline */}
-                                {isPending && canAdvance && (
-                                  isCollecting ? (
-                                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                                      {collectError && (
-                                        <span className="text-xs w-full" style={{ color: '#DC2626' }}>{collectError}</span>
-                                      )}
-                                      <Select
-                                        value={collectMethod}
-                                        onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)}
-                                        style={{ minWidth: '110px' }}
-                                      >
-                                        {PAYMENT_METHODS.map((m) => (
-                                          <option key={m.value} value={m.value}>{m.label}</option>
-                                        ))}
-                                      </Select>
-                                      <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                        {collectPending ? '…' : 'Confirm'}
-                                      </button>
-                                      <button onClick={() => { setCollectingId(null); setCollectError('') }}
-                                        className="px-2 py-1.5 rounded-lg text-xs"
-                                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
-                                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                                      style={{ background: '#D97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                      Collect
-                                    </button>
-                                  )
-                                )}
+                          <div key={month.monthKey}>
+                            {/* Month header — clickable */}
+                            <button
+                              onClick={() => toggleMonth(monthKey)}
+                              className="w-full px-4 py-2 flex items-center justify-between text-left"
+                              style={{ background: 'rgba(248,250,252,0.95)', border: 'none', borderBottom: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B', letterSpacing: '0.06em' }}>
+                                {month.monthLabel}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {/* Month-level summary chips */}
+                                {(() => {
+                                  const mo = (month.opd?.totalOutstanding ?? 0) + month.ipd.reduce((s, x) => s + x.totalOutstanding, 0)
+                                  const mb = (month.opd?.totalBilled ?? 0) + month.ipd.reduce((s, x) => s + x.totalBilled, 0)
+                                  if (mo > 0) return <span className="text-xs font-semibold" style={{ color: '#EF4444' }}><Money amount={mo} /> due</span>
+                                  if (mb > 0) return <span className="text-xs font-semibold" style={{ color: '#10B981' }}>Cleared</span>
+                                  return null
+                                })()}
+                                {monthOpen
+                                  ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                                  : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
                               </div>
-                            </div>
-                          )
-                        })}
+                            </button>
 
-                        {/* Combined Bill link — IPD > OPD visit > patient fallback */}
-                        {group.bills.length > 0 && (() => {
-                          const latestAdmissionId = group.bills.find((b) => b.admission_id)?.admission_id ?? null
-                          const latestVisitId = group.bills.find((b) => b.visit_id && !b.admission_id)?.visit_id ?? null
-                          const combinedHref = latestAdmissionId
-                            ? `/billing/combined/${latestAdmissionId}`
-                            : latestVisitId
-                              ? `/billing/combined/visit/${latestVisitId}`
-                              : `/billing/combined/patient/${group.patientId}`
-                          return (
-                            <div className="px-4 py-2 flex justify-end" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                              <Link
-                                href={combinedHref}
-                                className="flex items-center gap-1.5 text-xs font-semibold"
-                                style={{ color: '#7C3AED' }}
-                                onClick={(e) => e.stopPropagation()}>
-                                <FileText className="w-3.5 h-3.5" />
-                                View Combined Bill →
-                              </Link>
-                            </div>
-                          )
-                        })()}
-
-                        {canAdvance && group.admissionId && (
-                          <div className="px-4 py-2.5" style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9' }}>
-                            {topUpAdmissionId === group.admissionId ? (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-semibold" style={{ color: '#0D9488' }}>Top Up Advance</span>
-                                {topUpError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{topUpError}</span>}
-                                <input
-                                  type="number"
-                                  placeholder="Amount"
-                                  value={topUpAmount}
-                                  onChange={(e) => setTopUpAmount(e.target.value)}
-                                  className="px-2 py-1 rounded-lg text-xs"
-                                  style={{ width: '100px', border: '1px solid #CBD5E1', background: '#fff', outline: 'none' }}
-                                />
-                                <Select
-                                  value={topUpMethod}
-                                  onChange={(e) => setTopUpMethod(e.target.value as typeof topUpMethod)}
-                                  style={{ minWidth: '100px' }}
-                                >
-                                  {PAYMENT_METHODS.map((m) => (
-                                    <option key={m.value} value={m.value}>{m.label}</option>
-                                  ))}
-                                </Select>
-                                <button onClick={() => handleTopUp(group.admissionId!)} disabled={topUpPending}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                  {topUpPending ? '…' : 'Record'}
-                                </button>
-                                <button onClick={() => { setTopUpAdmissionId(null); setTopUpAmount(''); setTopUpError('') }}
-                                  className="px-2 py-1.5 rounded-lg text-xs"
-                                  style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => { setTopUpAdmissionId(group.admissionId!); setTopUpAmount(''); setTopUpError('') }}
-                                className="flex items-center gap-1.5 text-xs font-semibold"
-                                style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
-                                + Top Up Advance
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Bill rows */}
-                        {(() => {
-                          const hasCollectedAdvance = group.deposits.some((d) => d.status === 'collected') || advCollected > 0
-                          return sortedBills.map((bill, i) => {
-                            const balance = Math.max(0, bill.total - bill.paid)
-                            const canApply = canAdvance && hasCollectedAdvance
-                              && balance > 0
-                              && (bill.status === 'unpaid' || bill.status === 'partial' || bill.status === 'draft')
-                              && !!bill.admission_id
-                            return (
-                              <div key={bill.id}
-                                className="px-4 py-3 cursor-pointer"
-                                style={{
-                                  borderBottom: i < sortedBills.length - 1 ? '1px solid #F8FAFC' : 'none',
-                                  background: bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)',
-                                  opacity: bill.status === 'cancelled' ? 0.65 : 1,
-                                }}
-                                onClick={() => router.push(`/billing/${bill.id}`)}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)' }}>
-                                <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-                                  <span className="font-mono text-xs font-semibold"
-                                    style={{ color: '#0D9488', textDecoration: bill.status === 'cancelled' ? 'line-through' : 'none' }}>
-                                    {bill.bill_no}
-                                  </span>
-                                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                                    {canApply && (
-                                      <button
-                                        onClick={(e) => handleApplyAdvance(e, bill.id, bill.admission_id!)}
-                                        disabled={applyingBillId === bill.id}
-                                        className="text-xs px-2.5 py-1 rounded-lg font-semibold"
-                                        style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
-                                        {applyingBillId === bill.id ? 'Applying…' : '↳ Adjust Advance'}
-                                      </button>
-                                    )}
-                                    <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
-                                    {canManage && bill.status !== 'cancelled' && (
-                                      <button
-                                        onClick={(e) => handleCancelBill(e, bill.id)}
-                                        disabled={cancelState === bill.id}
-                                        className="text-xs px-2 py-0.5 rounded-lg font-semibold"
-                                        style={
-                                          cancelState === `${bill.id}:confirm`
-                                            ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }
-                                            : { background: 'transparent', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }
-                                        }>
-                                        {cancelState === bill.id ? '…' : cancelState === `${bill.id}:confirm` ? 'Confirm?' : '✕ Cancel'}
-                                      </button>
-                                    )}
-                                    <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs flex-wrap">
-                                  <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
-                                  {(() => {
-                                    const bl = getBillLabel(bill)
-                                    return bl ? (
-                                      <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
-                                        style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
-                                        {bl.label}
+                            {monthOpen && (
+                            <>
+                            {/* ── OPD section ── */}
+                            {month.opd && (
+                              <div>
+                                {/* OPD sub-header — clickable */}
+                                <button
+                                  onClick={() => toggleOPD(opdKey)}
+                                  className="w-full px-4 py-1.5 flex items-center justify-between"
+                                  style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9', border: 'none', cursor: 'pointer' }}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold px-2 py-0.5 rounded-md"
+                                      style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>OPD</span>
+                                    <span className="text-xs" style={{ color: '#94A3B8' }}>{month.opd.bills.length} bill{month.opd.bills.length !== 1 ? 's' : ''}</span>
+                                    {month.opd.totalOutstanding > 0 ? (
+                                      <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
+                                        <Money amount={month.opd.totalOutstanding} /> due
                                       </span>
-                                    ) : null
-                                  })()}
-                                  <span style={{ color: '#64748B' }}>
-                                    Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span>
-                                  </span>
-                                  {balance > 0 ? (
-                                    <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
-                                  ) : (
-                                    <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>
+                                    ) : month.opd.totalBilled > 0 ? (
+                                      <span className="text-xs font-semibold" style={{ color: '#10B981' }}>Cleared</span>
+                                    ) : null}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {(month.opd.visitId || month.opd.appointmentId) && (
+                                      <Link
+                                        href={month.opd.visitId
+                                          ? `/billing/combined/visit/${month.opd.visitId}`
+                                          : `/billing/combined/visit/${month.opd.appointmentId}`}
+                                        className="flex items-center gap-1 text-xs font-semibold"
+                                        style={{ color: '#7C3AED', textDecoration: 'none' }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <FileText className="w-3 h-3" /> Combined →
+                                      </Link>
+                                    )}
+                                    {opdOpen
+                                      ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                                      : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
+                                  </div>
+                                </button>
+                                {opdOpen && month.opd.bills.map((bill, i) => {
+                                  const balance = Math.max(0, bill.total - bill.paid)
+                                  return (
+                                    <div key={bill.id} className="px-4 py-3 cursor-pointer"
+                                      style={{
+                                        borderBottom: i < month.opd!.bills.length - 1 ? '1px solid #F8FAFC' : '1px solid #F1F5F9',
+                                        background: bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)',
+                                        opacity: bill.status === 'cancelled' ? 0.65 : 1,
+                                      }}
+                                      onClick={() => router.push(`/billing/${bill.id}`)}
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)' }}>
+                                      <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                                        <span className="font-mono text-xs font-semibold"
+                                          style={{ color: '#0D9488', textDecoration: bill.status === 'cancelled' ? 'line-through' : 'none' }}>
+                                          {bill.bill_no}
+                                        </span>
+                                        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                          <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                          {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && (
+                                            <button onClick={(e) => handleCancelBill(e, bill.id)} disabled={cancelState === bill.id}
+                                              className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                                              style={cancelState === `${bill.id}:confirm`
+                                                ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }
+                                                : { background: 'transparent', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                                              {cancelState === bill.id ? '…' : cancelState === `${bill.id}:confirm` ? 'Confirm?' : '✕ Cancel'}
+                                            </button>
+                                          )}
+                                          <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs flex-wrap">
+                                        <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
+                                        {(() => { const bl = getBillLabel(bill); return bl ? (
+                                          <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                            style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
+                                            {bl.label}
+                                          </span>
+                                        ) : null })()}
+                                        <span style={{ color: '#64748B' }}>Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span></span>
+                                        {balance > 0
+                                          ? <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
+                                          : <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {/* ── IPD section(s) ── */}
+                            {month.ipd.map((ipd) => {
+                              const ipdKey  = `${monthKey}-${ipd.admissionId}`
+                              const ipdOpen = expandedIPD.has(ipdKey)
+                              const ipdAdv = ipd.advanceSummary
+                              const ipdAdvNet = ipdAdv?.netBalance ?? 0
+                              const ipdAdvCollected = ipdAdv?.totalCollected ?? 0
+                              const ipdAdvExhausted = ipdAdvCollected > 0 && ipdAdvNet <= 0
+                              const ipdAdvHasBalance = ipdAdvNet > 0
+                              const hasCollectedAdv = ipd.deposits.some((d) => d.status === 'collected') || ipdAdvCollected > 0
+                              return (
+                                <div key={ipd.admissionId}>
+                                  {/* IPD sub-header — clickable button */}
+                                  <button
+                                    onClick={() => toggleIPD(ipdKey)}
+                                    className="w-full px-4 py-1.5 flex items-center justify-between flex-wrap gap-2 text-left"
+                                    style={{ background: 'rgba(239,246,255,0.6)', borderTop: '1px solid #F1F5F9', borderBottom: '1px solid #F1F5F9', cursor: 'pointer', border: 'none' }}>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-bold px-2 py-0.5 rounded-md"
+                                        style={{ background: 'rgba(37,99,235,0.1)', color: '#2563EB' }}>IPD</span>
+                                      <span className="text-xs" style={{ color: '#94A3B8' }}>
+                                        {ipd.bills.length + ipd.deposits.length} item{ipd.bills.length + ipd.deposits.length !== 1 ? 's' : ''}
+                                      </span>
+                                      {ipdAdvHasBalance && !ipdAdv?.hasRefundBill && (
+                                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md"
+                                          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
+                                          {fmtCompact(ipdAdvNet)} advance left
+                                        </span>
+                                      )}
+                                      {ipdAdvExhausted && ipd.totalOutstanding > 0 && (
+                                        <span className="text-xs font-semibold" style={{ color: '#DC2626' }}>Adv overdue</span>
+                                      )}
+                                      {ipd.totalOutstanding > 0 ? (
+                                        <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
+                                          <Money amount={ipd.totalOutstanding} /> due
+                                        </span>
+                                      ) : ipd.totalBilled > 0 ? (
+                                        <span className="text-xs font-semibold" style={{ color: '#10B981' }}>Cleared</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Link href={`/billing/combined/${ipd.admissionId}`}
+                                        className="flex items-center gap-1 text-xs font-semibold"
+                                        style={{ color: '#7C3AED', textDecoration: 'none' }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <FileText className="w-3 h-3" /> Combined →
+                                      </Link>
+                                      {ipdOpen
+                                        ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                                        : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
+                                    </div>
+                                  </button>
+
+                                  {ipdOpen && (
+                                    <>
+                                      {/* Top-Up Advance */}
+                                      {canAdvance && (
+                                        <div className="px-4 py-2" style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9' }}>
+                                          {topUpAdmissionId === ipd.admissionId ? (
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              {topUpError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{topUpError}</span>}
+                                              <input type="number" placeholder="Amount" value={topUpAmount}
+                                                onChange={(e) => setTopUpAmount(e.target.value)}
+                                                className="px-2 py-1 rounded-lg text-xs"
+                                                style={{ width: '80px', border: '1px solid #CBD5E1', background: '#fff', outline: 'none' }} />
+                                              <Select value={topUpMethod} onChange={(e) => setTopUpMethod(e.target.value as typeof topUpMethod)} style={{ minWidth: '90px' }}>
+                                                {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                                              </Select>
+                                              <button onClick={() => handleTopUp(ipd.admissionId)} disabled={topUpPending}
+                                                className="px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                {topUpPending ? '…' : 'Record'}
+                                              </button>
+                                              <button onClick={() => { setTopUpAdmissionId(null); setTopUpAmount(''); setTopUpError('') }}
+                                                className="px-2 py-1 rounded-lg text-xs"
+                                                style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>✕</button>
+                                            </div>
+                                          ) : (
+                                            <button onClick={() => { setTopUpAdmissionId(ipd.admissionId); setTopUpAmount(''); setTopUpError('') }}
+                                              className="flex items-center gap-1 text-xs font-semibold"
+                                              style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
+                                              + Top Up Advance
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Advance deposit rows */}
+                                      {ipd.deposits.map((dep) => {
+                                        const isPending   = dep.status === 'pending'
+                                        const isCollected = dep.status === 'collected'
+                                        const isCollecting = collectingId === dep.id
+                                        return (
+                                          <div key={dep.id} className="px-4 py-3"
+                                            style={{ background: isPending ? 'rgba(254,243,199,0.4)' : 'rgba(240,253,250,0.4)', borderBottom: '1px solid #F1F5F9' }}>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <BedDouble className="w-4 h-4 flex-shrink-0" style={{ color: isPending ? '#D97706' : '#0D9488' }} />
+                                              <span className="text-xs font-semibold flex-1" style={{ color: '#0F172A' }}>IPD Advance Deposit</span>
+                                              <span className="text-xs px-1.5 py-0.5 rounded-md font-medium flex-shrink-0"
+                                                style={isPending ? { background: '#FEF3C7', color: '#92400E' } : isCollected ? { background: 'rgba(16,185,129,0.1)', color: '#065F46' } : { background: '#F1F5F9', color: '#64748B' }}>
+                                                {dep.status}
+                                              </span>
+                                              <Money amount={dep.amount} className="font-bold flex-shrink-0"
+                                                style={{ color: isPending ? '#D97706' : '#0D9488', fontSize: '0.95rem' }} />
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap" style={{ paddingLeft: '20px' }}>
+                                              {dep.method && <span className="text-xs" style={{ color: '#94A3B8' }}>{dep.method}</span>}
+                                              {(dep.admission?.ward?.name || dep.admission?.bed?.bed_no) && (
+                                                <span className="text-xs" style={{ color: '#94A3B8' }}>
+                                                  · {dep.admission?.ward?.name}{dep.admission?.bed?.bed_no ? ` — Bed ${dep.admission.bed.bed_no}` : ''}
+                                                </span>
+                                              )}
+                                              {isCollected && dep.admission_id && (
+                                                <Link href={`/billing/advance-receipt/${dep.admission_id}`}
+                                                  className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                  style={{ background: '#F0FDF4', color: '#0D9488', border: '1px solid #D1FAE5', textDecoration: 'none' }}>
+                                                  🖨 Receipt
+                                                </Link>
+                                              )}
+                                              {isCollected && dep.admission_id && ipdAdv && (() => {
+                                                const isDischarged = ipdAdv.admissionStatus === 'discharged'
+                                                const refundDue = ipdAdv.netBalance
+                                                if (ipdAdv.hasRefundBill) return (
+                                                  <span className="text-xs px-2 py-1 rounded-md font-semibold flex-shrink-0"
+                                                    style={{ background: '#F0FDF4', color: '#16A34A', border: '1px solid #D1FAE5' }}>Refunded ✓</span>
+                                                )
+                                                if (isDischarged && refundDue > 0.01) {
+                                                  return refundAdmissionId === dep.admission_id ? (
+                                                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap w-full mt-2">
+                                                      <span className="text-xs font-semibold w-full" style={{ color: '#DC2626' }}>Issue Refund — <Money amount={refundDue} /></span>
+                                                      {refundError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{refundError}</span>}
+                                                      <Select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value as typeof refundMethod)} style={{ minWidth: '120px' }}>
+                                                        {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                                                      </Select>
+                                                      <input type="text" placeholder="Ref # (optional)" value={refundRef} onChange={(e) => setRefundRef(e.target.value)}
+                                                        className="px-2 py-1 rounded-lg text-xs" style={{ width: '130px', border: '1px solid #CBD5E1', background: '#fff', outline: 'none' }} />
+                                                      <button onClick={() => handleRefund(dep.admission_id!)} disabled={refundPending}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                        style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                        {refundPending ? '…' : 'Confirm Refund'}
+                                                      </button>
+                                                      <button onClick={() => { setRefundAdmissionId(null); setRefundError('') }}
+                                                        className="px-2 py-1.5 rounded-lg text-xs"
+                                                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                    </div>
+                                                  ) : (
+                                                    <button onClick={() => { setRefundAdmissionId(dep.admission_id!); setRefundError(''); setRefundMethod('cash'); setRefundRef('') }}
+                                                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                      style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
+                                                      Issue Refund <Money amount={refundDue} />
+                                                    </button>
+                                                  )
+                                                }
+                                                return null
+                                              })()}
+                                              {isPending && canAdvance && (
+                                                isCollecting ? (
+                                                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                                    {collectError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{collectError}</span>}
+                                                    <Select value={collectMethod} onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)} style={{ minWidth: '110px' }}>
+                                                      {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                                                    </Select>
+                                                    <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
+                                                      className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                      style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                      {collectPending ? '…' : 'Confirm'}
+                                                    </button>
+                                                    <button onClick={() => { setCollectingId(null); setCollectError('') }}
+                                                      className="px-2 py-1.5 rounded-lg text-xs"
+                                                      style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                  </div>
+                                                ) : (
+                                                  <button onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
+                                                    className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                    style={{ background: '#D97706', color: '#fff', border: 'none', cursor: 'pointer' }}>Collect</button>
+                                                )
+                                              )}
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+
+                                      {/* IPD bill rows */}
+                                      {ipd.bills.map((bill, i) => {
+                                        const balance = Math.max(0, bill.total - bill.paid)
+                                        const canApply = canAdvance && hasCollectedAdv && balance > 0
+                                          && (bill.status === 'unpaid' || bill.status === 'partial' || bill.status === 'draft')
+                                        return (
+                                          <div key={bill.id} className="px-4 py-3 cursor-pointer"
+                                            style={{
+                                              borderBottom: i < ipd.bills.length - 1 ? '1px solid #F8FAFC' : '1px solid #F1F5F9',
+                                              background: bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)',
+                                              opacity: bill.status === 'cancelled' ? 0.65 : 1,
+                                            }}
+                                            onClick={() => router.push(`/billing/${bill.id}`)}
+                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.9)' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.background = bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)' }}>
+                                            <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                                              <span className="font-mono text-xs font-semibold"
+                                                style={{ color: '#0D9488', textDecoration: bill.status === 'cancelled' ? 'line-through' : 'none' }}>
+                                                {bill.bill_no}
+                                              </span>
+                                              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                                {canApply && (
+                                                  <button onClick={(e) => handleApplyAdvance(e, bill.id, ipd.admissionId)} disabled={applyingBillId === bill.id}
+                                                    className="text-xs px-2.5 py-1 rounded-lg font-semibold"
+                                                    style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', cursor: 'pointer' }}>
+                                                    {applyingBillId === bill.id ? 'Applying…' : '↳ Adjust Advance'}
+                                                  </button>
+                                                )}
+                                                <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                                {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && (
+                                                  <button onClick={(e) => handleCancelBill(e, bill.id)} disabled={cancelState === bill.id}
+                                                    className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                                                    style={cancelState === `${bill.id}:confirm`
+                                                      ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }
+                                                      : { background: 'transparent', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                                                    {cancelState === bill.id ? '…' : cancelState === `${bill.id}:confirm` ? 'Confirm?' : '✕ Cancel'}
+                                                  </button>
+                                                )}
+                                                <span className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#475569' }}>View</span>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-3 text-xs flex-wrap">
+                                              <span style={{ color: '#94A3B8' }}><DateText date={bill.created_at} /></span>
+                                              {(() => { const bl = getBillLabel(bill); return bl ? (
+                                                <span className="px-1.5 py-0.5 rounded-md text-xs font-medium"
+                                                  style={BILL_SOURCE_COLORS[bl.colorKey] ?? { background: '#F1F5F9', color: '#475569' }}>
+                                                  {bl.label}
+                                                </span>
+                                              ) : null })()}
+                                              <span style={{ color: '#64748B' }}>Total: <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={bill.total} /></span></span>
+                                              {balance > 0
+                                                ? <span className="font-semibold" style={{ color: '#EF4444' }}><Money amount={balance} /> due</span>
+                                                : <span style={{ color: '#10B981', fontWeight: 600 }}>Cleared</span>}
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </>
                                   )}
                                 </div>
-                              </div>
-                            )
-                          })
-                        })()}
+                              )
+                            })}
+                            </>
+                            )}
+                          </div>
+                          )
+                        })}
                       </div>
                     )}
                   </GlassCard>

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { listAppointments } from '@/app/actions/appointments'
+import { listAppointments, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import AppointmentsClient from './_components/AppointmentsClient'
 
 export default async function AppointmentsPage() {
@@ -14,6 +14,7 @@ export default async function AppointmentsPage() {
   ])
 
   const admittedPatientIds = (admissionsRes.data ?? []).map((r) => r.patient_id as string)
+  const initialBillStatuses = await getAppointmentsBillStatuses(appts.map((a) => a.id))
 
   return (
     <AppointmentsClient
@@ -22,6 +23,7 @@ export default async function AppointmentsPage() {
       departments={(deptsRes.data ?? []) as { id: string; name: string }[]}
       initialDate={today}
       admittedPatientIds={admittedPatientIds}
+      initialBillStatuses={initialBillStatuses}
     />
   )
 }
