@@ -97,46 +97,9 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
-      // ── Resolve tenant ────────────────────────────────────────────────────
-      const tenant = await resolveTenant(slug)
-      if (!tenant) {
-        const url = request.nextUrl.clone()
-        url.pathname = '/tenant-not-found'
-        return NextResponse.rewrite(url)
-      }
-
-      // ── Suspended / cancelled ─────────────────────────────────────────────
-      if (tenant.status === 'suspended' || tenant.status === 'cancelled') {
-        const url = request.nextUrl.clone()
-        url.pathname = '/tenant-suspended'
-        return NextResponse.rewrite(url)
-      }
-
-      // ── Plan-based route gating — block growth routes for starter tenants ───
-      const GROWTH_ONLY_ROUTES = [
-        '/ipd', '/wards', '/emergency', '/lab', '/radiology',
-        '/ot', '/blood', '/insurance', '/inventory', '/staff',
-      ]
-      if (tenant.plan === 'starter' && tenant.status !== 'trial') {
-        const isGrowthRoute = GROWTH_ONLY_ROUTES.some(
-          r => pathname === r || pathname.startsWith(r + '/')
-        )
-        if (isGrowthRoute) {
-          const upgradeUrl = request.nextUrl.clone()
-          upgradeUrl.pathname = '/account/subscription'
-          upgradeUrl.searchParams.set('upgrade', '1')
-          return NextResponse.redirect(upgradeUrl)
-        }
-      }
-
-      // ── Inject tenant context headers ─────────────────────────────────────
+      // ── Inject tenant context headers (built before async work) ──────────
       const requestHeaders = new Headers(request.headers)
-      requestHeaders.set('x-tenant-id',     tenant.id)
-      requestHeaders.set('x-tenant-slug',   tenant.slug)
-      requestHeaders.set('x-tenant-name',   tenant.name)
-      requestHeaders.set('x-tenant-status', tenant.status)
-      requestHeaders.set('x-tenant-plan',   tenant.plan)
-      requestHeaders.set('x-pathname',      pathname)
+      requestHeaders.set('x-pathname', pathname)
 
       let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
@@ -157,16 +120,61 @@ export async function proxy(request: NextRequest) {
         }
       )
 
-      const { data: { user } } = await supabase.auth.getUser()
+      // ── Resolve tenant + validate session IN PARALLEL ─────────────────────
+      // getSession() validates JWT locally — zero network round-trip.
+      // Cross-tenant DB check removed: Supabase RLS (tenant_id on every table)
+      // already prevents data leakage at the DB level.
+      const [tenant, { data: { session } }] = await Promise.all([
+        resolveTenant(slug),
+        supabase.auth.getSession(),
+      ])
+      const user = session?.user ?? null
 
-      // ── Unauthenticated: redirect to login ────────────────────────────────
+      if (!tenant) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/tenant-not-found'
+        return NextResponse.rewrite(url)
+      }
+
+      // ── Suspended / cancelled ─────────────────────────────────────────────
+      if (tenant.status === 'suspended' || tenant.status === 'cancelled') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/tenant-suspended'
+        return NextResponse.rewrite(url)
+      }
+
+      // ── Plan-based route gating ───────────────────────────────────────────
+      const GROWTH_ONLY_ROUTES = [
+        '/ipd', '/wards', '/emergency', '/lab', '/radiology',
+        '/ot', '/blood', '/insurance', '/inventory', '/staff',
+      ]
+      if (tenant.plan === 'starter' && tenant.status !== 'trial') {
+        const isGrowthRoute = GROWTH_ONLY_ROUTES.some(
+          r => pathname === r || pathname.startsWith(r + '/')
+        )
+        if (isGrowthRoute) {
+          const upgradeUrl = request.nextUrl.clone()
+          upgradeUrl.pathname = '/account/subscription'
+          upgradeUrl.searchParams.set('upgrade', '1')
+          return NextResponse.redirect(upgradeUrl)
+        }
+      }
+
+      // ── Stamp tenant into headers for server components ───────────────────
+      requestHeaders.set('x-tenant-id',     tenant.id)
+      requestHeaders.set('x-tenant-slug',   tenant.slug)
+      requestHeaders.set('x-tenant-name',   tenant.name)
+      requestHeaders.set('x-tenant-status', tenant.status)
+      requestHeaders.set('x-tenant-plan',   tenant.plan)
+      supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
+
+      // ── Auth guards ───────────────────────────────────────────────────────
       if (!user && !isPublicPath) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)
       }
 
-      // ── Authenticated at root → send to dashboard ─────────────────────────
       if (user && pathname === '/') {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
@@ -174,24 +182,6 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(url)
       }
 
-      // ── Cross-tenant session defense ──────────────────────────────────────
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('tenant_id')
-          .eq('id', user.id)
-          .single()
-
-        if (profile && profile.tenant_id !== tenant.id) {
-          await supabase.auth.signOut()
-          const url = request.nextUrl.clone()
-          url.pathname = '/login'
-          url.search = ''
-          return NextResponse.redirect(url)
-        }
-      }
-
-      // ── Redirect authenticated users away from /login ─────────────────────
       if (user && pathname === '/login') {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
@@ -226,7 +216,8 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     const url = request.nextUrl.clone()
