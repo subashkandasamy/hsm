@@ -551,11 +551,19 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       </div>
 
       {/* ── By Patient (grouped) — DEFAULT ── */}
-      {viewMode === 'patient' && (
+      {viewMode === 'patient' && (() => {
+        const todayStr = new Date().toISOString().split('T')[0]
+        const isActiveToday = (g: PatientGroup) =>
+          g.totalOutstanding > 0 || allGroupBills(g).some(b => b.created_at.startsWith(todayStr))
+        const todayGroups   = filteredGroups.filter(isActiveToday)
+        const historyGroups = filteredGroups.filter(g => !isActiveToday(g))
+        const sorted = [...todayGroups, ...historyGroups]
+        const historyStart = todayGroups.length
+        return (
         <div className="space-y-3">
-          {filteredGroups.length === 0
+          {sorted.length === 0
             ? <GlassCard className="p-8"><EmptyBills /></GlassCard>
-            : filteredGroups.map((group) => {
+            : sorted.map((group, idx) => {
                 const expanded           = expandedPatients.has(group.patientId)
                 const hasOutstanding    = group.totalOutstanding > 0
                 const hasPendingAdv     = group.pendingAdvance > 0
@@ -567,7 +575,15 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                 const depCount   = group.deposits.length
                 const itemLabel  = billCount + depCount === 1 ? 'item' : 'items'
 
-                return (
+                return [
+                  idx === 0 && todayGroups.length > 0 && (
+                    <p key="__sec_today__" className="text-xs font-semibold uppercase tracking-widest px-1"
+                      style={{ color: '#0D9488' }}>Today &amp; Active</p>
+                  ),
+                  idx === historyStart && historyGroups.length > 0 && (
+                    <p key="__sec_history__" className="text-xs font-semibold uppercase tracking-widest px-1 mt-2"
+                      style={{ color: '#94A3B8' }}>History</p>
+                  ),
                   <GlassCard key={group.patientId} className="overflow-hidden">
                     {/* Patient header row */}
                     <button
@@ -1052,12 +1068,13 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                         })}
                       </div>
                     )}
-                  </GlassCard>
-                )
+                  </GlassCard>,
+                ]
               })
           }
         </div>
-      )}
+        )
+      })()}
 
       {/* ── All Bills flat list ── */}
       {viewMode === 'list' && (
