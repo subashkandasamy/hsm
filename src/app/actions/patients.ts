@@ -57,6 +57,7 @@ export async function createPatient(
     emergency_contact_phone: data.emergency_contact_phone || null,
     notify_whatsapp_consent: data.notify_whatsapp_consent ?? false,
     notify_sms_consent: data.notify_sms_consent ?? false,
+    aadhaar_no: data.aadhaar_no || null,
     created_by: actor.id,
   })
 

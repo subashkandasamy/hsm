@@ -26,6 +26,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     emergency_contact_name: '', emergency_contact_phone: '',
     notify_whatsapp_consent: false,
     notify_sms_consent: false,
+    aadhaar_no: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -45,8 +46,32 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     setForm((f) => ({ ...f, [field]: value }))
   }
 
+  function validatePhone(raw: string): string | null {
+    const digits = raw.replace(/[\s\-()+]/g, '').replace(/^91/, '')
+    if (!/^[6-9]\d{9}$/.test(digits)) return 'Enter a valid 10-digit Indian mobile number'
+    return null
+  }
+
+  function validateAadhaar(raw: string): string | null {
+    if (!raw) return null
+    if (!/^\d{12}$/.test(raw.replace(/\s/g, ''))) return 'Aadhaar must be exactly 12 digits'
+    return null
+  }
+
   async function handleSubmit(e: React.FormEvent, force = false) {
     e.preventDefault()
+
+    const phoneErr = validatePhone(form.phone)
+    const aadhaarErr = validateAadhaar(form.aadhaar_no)
+    if (phoneErr || aadhaarErr) {
+      setErrors((prev) => ({
+        ...prev,
+        ...(phoneErr ? { phone: phoneErr } : {}),
+        ...(aadhaarErr ? { aadhaar_no: aadhaarErr } : {}),
+      }))
+      return
+    }
+
     setLoading(true)
     setApiError(null)
 
@@ -63,6 +88,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       emergency_contact_phone: form.emergency_contact_phone || null,
       notify_whatsapp_consent: form.notify_whatsapp_consent,
       notify_sms_consent: form.notify_sms_consent,
+      aadhaar_no: form.aadhaar_no || null,
     }
 
     const result = await createPatient(input)
@@ -84,6 +110,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       address: '', blood_group: '', allergies: '',
       emergency_contact_name: '', emergency_contact_phone: '',
       notify_whatsapp_consent: false, notify_sms_consent: false,
+      aadhaar_no: '',
     })
     setDuplicate(null)
   }
@@ -129,10 +156,15 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
               placeholder="Patient full name" hasError={!!errors.full_name} required
             />
           </FormField>
-          <FormField label="Phone" htmlFor="phone" required error={errors.phone}>
+          <FormField label="Phone" htmlFor="phone" required error={errors.phone}
+            hint="10-digit Indian mobile number">
             <Input
-              id="phone" value={form.phone} onChange={(e) => set('phone', e.target.value)}
-              placeholder="+91 98765 43210" hasError={!!errors.phone} required
+              id="phone"
+              value={form.phone}
+              onChange={(e) => set('phone', e.target.value.replace(/[^\d\s\+\-()]/g, ''))}
+              placeholder="98765 43210"
+              hasError={!!errors.phone}
+              required
             />
           </FormField>
         </div>
@@ -158,10 +190,25 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
           </FormField>
         </div>
 
-        <FormField label="Email" htmlFor="email">
-          <Input id="email" type="email" value={form.email}
-            onChange={(e) => set('email', e.target.value)} placeholder="patient@email.com" />
-        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Email" htmlFor="email">
+            <Input id="email" type="email" value={form.email}
+              onChange={(e) => set('email', e.target.value)} placeholder="patient@email.com" />
+          </FormField>
+          <FormField label="Aadhaar Number" htmlFor="aadhaar_no" error={errors.aadhaar_no}
+            hint="12-digit number — optional">
+            <Input
+              id="aadhaar_no"
+              value={form.aadhaar_no}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^\d\s]/g, '').slice(0, 14)
+                set('aadhaar_no', val)
+              }}
+              placeholder="XXXX XXXX XXXX"
+              hasError={!!errors.aadhaar_no}
+            />
+          </FormField>
+        </div>
 
         <FormField label="Address" htmlFor="address">
           <Textarea id="address" value={form.address}

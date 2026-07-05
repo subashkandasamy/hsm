@@ -95,6 +95,7 @@ export interface Patient {
   address: string | null; blood_group: string | null; allergies: string | null
   emergency_contact_name: string | null; emergency_contact_phone: string | null
   notify_whatsapp_consent: boolean; notify_sms_consent: boolean
+  aadhaar_no?: string | null
   combined_bill_no?: string | null
   created_by: string | null; created_at: string
 }

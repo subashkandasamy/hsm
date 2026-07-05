@@ -27,7 +27,10 @@ export const PatientCreateSchema = z.object({
   full_name: z.string().min(1, 'Full name is required').max(200),
   dob: z.string().nullable().optional(),
   gender: z.enum(['male', 'female', 'other']).nullable().optional(),
-  phone: z.string().min(7, 'Valid phone number required').max(20),
+  phone: z.string()
+    .min(1, 'Phone number is required')
+    .transform((v) => v.replace(/[\s\-().]/g, '').replace(/^\+91/, ''))
+    .pipe(z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number')),
   email: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   blood_group: z.string().nullable().optional(),
@@ -36,6 +39,10 @@ export const PatientCreateSchema = z.object({
   emergency_contact_phone: z.string().nullable().optional(),
   notify_whatsapp_consent: z.boolean().optional().default(false),
   notify_sms_consent: z.boolean().optional().default(false),
+  aadhaar_no: z.string()
+    .transform((v) => v.replace(/\s/g, ''))
+    .pipe(z.string().regex(/^\d{12}$/, 'Aadhaar must be exactly 12 digits'))
+    .nullable().optional(),
 })
 export const PatientUpdateSchema = PatientCreateSchema.partial()
 
