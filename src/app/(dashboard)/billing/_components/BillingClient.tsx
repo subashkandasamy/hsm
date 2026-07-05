@@ -746,7 +746,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                           {isApptRefunded
                                             ? <StatusBadge status="success" label="Refunded" />
                                             : <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />}
-                                          {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && (
+                                          {/* OPD: never allow cancelling a bill that has any payment — must go through refund */}
+                                          {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && bill.paid === 0 && (
                                             <button onClick={(e) => handleCancelBill(e, bill.id)} disabled={cancelState === bill.id}
                                               className="text-xs px-2 py-0.5 rounded-lg font-semibold"
                                               style={cancelState === `${bill.id}:confirm`
