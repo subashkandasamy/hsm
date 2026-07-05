@@ -20,9 +20,10 @@ interface Props {
   patientId: string
   initialAllergies: PatientAllergy[]
   canWrite: boolean
+  freeText?: string | null
 }
 
-export default function AllergiesTab({ patientId, initialAllergies, canWrite }: Props) {
+export default function AllergiesTab({ patientId, initialAllergies, canWrite, freeText }: Props) {
   const [allergies, setAllergies] = useState<PatientAllergy[]>(initialAllergies)
   const [form, setForm] = useState({ allergen: '', reaction: '', severity: 'moderate' as AllergySeverity })
   const [saving, setSaving] = useState(false)
@@ -55,6 +56,20 @@ export default function AllergiesTab({ patientId, initialAllergies, canWrite }: 
 
   return (
     <div className="space-y-4">
+      {/* Free-text allergies from registration */}
+      {freeText && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+          style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#B45309' }} />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#B45309' }}>
+              Noted at Registration
+            </p>
+            <p className="text-sm" style={{ color: '#92400E' }}>{freeText}</p>
+          </div>
+        </div>
+      )}
+
       {/* Add form */}
       {canWrite && (
         <GlassCard className="p-4">

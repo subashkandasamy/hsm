@@ -269,7 +269,7 @@ export default function PatientProfile({
         <BillsTab bills={bills} admissions={admissions} visits={visits} outstanding={outstanding} />
       )}
       {tab === 'allergies'    && (
-        <AllergiesTab patientId={patient.id} initialAllergies={allergies} canWrite={canWriteAllergy} />
+        <AllergiesTab patientId={patient.id} initialAllergies={allergies} canWrite={canWriteAllergy} freeText={patient.allergies} />
       )}
       {tab === 'documents' && (
         <DocumentsTab
