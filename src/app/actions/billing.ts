@@ -757,8 +757,15 @@ export async function getBillingStats(): Promise<{
   const today = new Date().toISOString().split('T')[0]
 
   const [{ data: todayBills }, { data: todayPayments }, { data: unpaidBills }] = await Promise.all([
-    supabase.from('bills').select('total').gte('created_at', `${today}T00:00:00`).not('status', 'eq', 'cancelled'),
-    supabase.from('payments').select('amount').gte('received_at', `${today}T00:00:00`),
+    // Exclude refund bills (negative amounts) — they are reversals, not charges
+    supabase.from('bills').select('total, bill_source')
+      .gte('created_at', `${today}T00:00:00`)
+      .not('status', 'eq', 'cancelled')
+      .not('bill_source', 'in', '("appointment_refund","advance_refund")'),
+    // Only positive payment amounts — negative entries are refund outflows
+    supabase.from('payments').select('amount')
+      .gte('received_at', `${today}T00:00:00`)
+      .gt('amount', 0),
     supabase.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
   ])
 
