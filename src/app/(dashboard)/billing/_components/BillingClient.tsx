@@ -688,6 +688,16 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                     <span className="text-xs font-bold px-2 py-0.5 rounded-md"
                                       style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>OPD</span>
                                     <span className="text-xs" style={{ color: '#94A3B8' }}>{month.opd.bills.length} bill{month.opd.bills.length !== 1 ? 's' : ''}</span>
+                                    {month.opd.totalBilled !== 0 && (
+                                      <span className="text-xs" style={{ color: '#64748B' }}>
+                                        Billed <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={month.opd.totalBilled} /></span>
+                                      </span>
+                                    )}
+                                    {month.opd.totalPaid !== 0 && (
+                                      <span className="text-xs" style={{ color: '#64748B' }}>
+                                        Paid <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={month.opd.totalPaid} /></span>
+                                      </span>
+                                    )}
                                     {month.opd.totalOutstanding > 0 ? (
                                       <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
                                         <Money amount={month.opd.totalOutstanding} /> due
@@ -804,6 +814,16 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       <span className="text-xs" style={{ color: '#94A3B8' }}>
                                         {ipd.bills.length + ipd.deposits.length} item{ipd.bills.length + ipd.deposits.length !== 1 ? 's' : ''}
                                       </span>
+                                      {ipd.totalBilled !== 0 && (
+                                        <span className="text-xs" style={{ color: '#64748B' }}>
+                                          Billed <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={ipd.totalBilled} /></span>
+                                        </span>
+                                      )}
+                                      {ipd.totalPaid !== 0 && (
+                                        <span className="text-xs" style={{ color: '#64748B' }}>
+                                          Paid <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={ipd.totalPaid} /></span>
+                                        </span>
+                                      )}
                                       {ipdAdvHasBalance && !ipdAdv?.hasRefundBill && (
                                         <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md"
                                           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
