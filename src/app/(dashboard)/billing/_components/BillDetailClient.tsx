@@ -40,7 +40,7 @@ function inWords(n: number): string {
   return words(n).trim()
 }
 
-const SOURCE_LABELS: Record<BillItemSource | 'advance_refund', string> = {
+const SOURCE_LABELS: Record<BillItemSource | 'advance_refund' | 'appointment_refund', string> = {
   consultation: 'Consultation',
   bed: 'Bed Charges',
   lab: 'Laboratory',
@@ -54,6 +54,7 @@ const SOURCE_LABELS: Record<BillItemSource | 'advance_refund', string> = {
   dental: 'Dental',
   manual: 'Manual',
   advance_refund: 'Advance Refund',
+  appointment_refund: 'Appointment Refund',
   nursing: 'Nursing',
   nursing_morning: 'Nursing AM',
   nursing_night: 'Nursing Night',
@@ -477,12 +478,15 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               </div>
             </div>
 
-            {/* Refund acknowledgement — only for advance_refund bills */}
-            {bill.bill_source === 'advance_refund' && (() => {
+            {/* Refund acknowledgement — for advance_refund and appointment_refund bills */}
+            {(bill.bill_source === 'advance_refund' || bill.bill_source === 'appointment_refund') && (() => {
               const refundAmt = Math.abs(bill.total)
+              const isApptRefund = bill.bill_source === 'appointment_refund'
+              const refundDesc = isApptRefund
+                ? 'as refund of consultation fee for the cancelled appointment of'
+                : 'as refund of excess advance paid towards the treatment of'
               return (
                 <div style={{ borderTop: '2px dashed #CBD5E1', margin: '0 0' }}>
-                  {/* Cut-here hint */}
                   <div style={{ textAlign: 'center', marginTop: '-9px' }}>
                     <span style={{ background: '#fff', padding: '0 8px', fontSize: '10px', color: '#94A3B8', letterSpacing: '1px' }}>✂ CUT HERE</span>
                   </div>
@@ -495,7 +499,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
                     <p style={{ fontSize: '12.5px', color: '#334155', lineHeight: 1.8, margin: '0 0 20px' }}>
                       I/We hereby acknowledge that I/We have received{' '}
                       <strong>₹{refundAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ({inWords(Math.round(refundAmt))} Rupees only)</strong>{' '}
-                      as refund of excess advance paid towards the treatment of{' '}
+                      {refundDesc}{' '}
                       <strong>{bill.patient?.full_name}</strong>{' '}
                       (UHID: {bill.patient?.uhid}) at <strong>{p?.name ?? 'the Hospital'}</strong>.
                     </p>

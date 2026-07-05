@@ -384,7 +384,7 @@ export interface Bill {
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
-  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | null
+  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | 'appointment_refund' | null
   consolidated_by?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   items?: BillItem[]
