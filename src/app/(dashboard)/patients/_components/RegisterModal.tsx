@@ -218,10 +218,11 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
               id="aadhaar_no"
               value={form.aadhaar_no}
               onChange={(e) => {
-                const val = e.target.value.replace(/[^\d\s]/g, '').slice(0, 14)
+                const val = e.target.value.replace(/\D/g, '').slice(0, 12)
                 set('aadhaar_no', val)
               }}
-              placeholder="XXXX XXXX XXXX"
+              placeholder="XXXXXXXXXXXX"
+              maxLength={12}
               hasError={!!errors.aadhaar_no}
             />
           </FormField>
