@@ -308,16 +308,17 @@ export async function cancelAppointment(id: string): Promise<CancelResult> {
     .eq('id', id).in('status', ['booked', 'checked_in'])
   if (error) return { success: false, error: error.message }
 
-  // Find linked consultation bill (any non-cancelled, non-refund status)
+  // Find linked consultation bill (any non-cancelled status)
+  // Use neq+JS filter instead of NOT on nullable bill_source — NULL comparisons in PG
+  // cause .not('bill_source','eq','appointment_refund') to silently drop NULL rows.
   const { data: bill } = await supabase
     .from('bills')
-    .select('id, status, paid')
+    .select('id, status, paid, bill_source')
     .eq('appointment_id', id)
-    .not('status', 'in', '("cancelled")')
-    .not('bill_source', 'eq', 'appointment_refund')
+    .neq('status', 'cancelled')
     .maybeSingle()
 
-  if (bill) {
+  if (bill && bill.bill_source !== 'appointment_refund') {
     const paid = (bill.paid as number) ?? 0
     if (paid > 0) {
       // Bill has payments — cancel it and ask UI to issue a refund
