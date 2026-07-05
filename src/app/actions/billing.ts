@@ -751,27 +751,34 @@ export async function getBill(id: string): Promise<Bill | null> {
 export async function getBillingStats(): Promise<{
   todayBilled: number
   todayCollected: number
-  totalOutstanding: number
+  todayOutstanding: number
+  pastOutstanding: number
 }> {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  // IST-aware local date
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
-  const [{ data: todayBills }, { data: todayPayments }, { data: unpaidBills }] = await Promise.all([
-    // Exclude refund bills (negative amounts) — they are reversals, not charges
-    supabase.from('bills').select('total, bill_source')
+  const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }] = await Promise.all([
+    // Today's non-cancelled service bills — use OR to correctly include NULL bill_source rows
+    supabase.from('bills').select('total, paid')
       .gte('created_at', `${today}T00:00:00`)
       .not('status', 'eq', 'cancelled')
-      .not('bill_source', 'in', '("appointment_refund","advance_refund")'),
-    // Net payments today: positive collections minus negative refund outflows
-    supabase.from('payments').select('amount')
-      .gte('received_at', `${today}T00:00:00`),
-    supabase.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
+      .or('bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund)'),
+    // Today's unpaid/partial bills
+    supabase.from('bills').select('total, paid')
+      .in('status', ['unpaid', 'partial'])
+      .gte('created_at', `${today}T00:00:00`),
+    // Past unpaid/partial bills
+    supabase.from('bills').select('total, paid')
+      .in('status', ['unpaid', 'partial'])
+      .lt('created_at', `${today}T00:00:00`),
   ])
 
   return {
-    todayBilled:      (todayBills    ?? []).reduce((s, b) => s + (b.total  as number), 0),
-    todayCollected:   Math.max(0, (todayPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)),
-    totalOutstanding: (unpaidBills   ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    todayBilled:      (todayBills  ?? []).reduce((s, b) => s + (b.total as number), 0),
+    todayCollected:   (todayBills  ?? []).reduce((s, b) => s + (b.paid  as number), 0),
+    todayOutstanding: (todayUnpaid ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    pastOutstanding:  (pastUnpaid  ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
   }
 }
 

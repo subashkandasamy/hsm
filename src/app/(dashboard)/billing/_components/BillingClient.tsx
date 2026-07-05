@@ -115,7 +115,8 @@ const PAYMENT_METHODS = [
 interface BillingStats {
   todayBilled: number
   todayCollected: number
-  totalOutstanding: number
+  todayOutstanding: number
+  pastOutstanding: number
 }
 
 interface AdvanceSummary { totalCollected: number; totalApplied: number; netBalance: number; admissionStatus: string | null; hasRefundBill: boolean }
@@ -488,16 +489,23 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       />
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
-        <StatCard label="Today Billed"  value={stats.todayBilled}    icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />}   color="#0D9488" />
-        <StatCard label="Today Collected" value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}    color="#10B981" />
-        <StatCard
-          label="Outstanding"
-          value={stats.totalOutstanding}
-          icon={<AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
-          color={stats.totalOutstanding > 0 ? '#EF4444' : '#10B981'}
-        />
-      </div>
+      {(() => {
+        const totalOutstanding = stats.todayOutstanding + stats.pastOutstanding
+        const fmt = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+        return (
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
+            <StatCard label="Today Billed"    value={stats.todayBilled}    icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />} color="#0D9488" />
+            <StatCard label="Today Collected" value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}  color="#10B981" />
+            <StatCard
+              label="Outstanding"
+              value={totalOutstanding}
+              sub={`Today ${fmt(stats.todayOutstanding)} · Past ${fmt(stats.pastOutstanding)}`}
+              icon={<AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
+              color={totalOutstanding > 0 ? '#EF4444' : '#10B981'}
+            />
+          </div>
+        )
+      })()}
 
       {/* ── Controls ── */}
       <div className="flex flex-col gap-2 mb-4">
@@ -1210,8 +1218,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, icon, color }: {
-  label: string; value: number; icon: React.ReactNode; color: string
+function StatCard({ label, value, icon, color, sub }: {
+  label: string; value: number; icon: React.ReactNode; color: string; sub?: string
 }) {
   return (
     <div className="p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4"
@@ -1225,6 +1233,7 @@ function StatCard({ label, value, icon, color }: {
         <p className="text-base sm:text-xl font-bold mt-0.5 truncate" style={{ color }}>
           ₹{value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
         </p>
+        {sub && <p className="text-xs mt-0.5 truncate" style={{ color: '#94A3B8' }}>{sub}</p>}
       </div>
     </div>
   )
