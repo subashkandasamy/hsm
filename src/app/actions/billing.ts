@@ -762,16 +762,15 @@ export async function getBillingStats(): Promise<{
       .gte('created_at', `${today}T00:00:00`)
       .not('status', 'eq', 'cancelled')
       .not('bill_source', 'in', '("appointment_refund","advance_refund")'),
-    // Only positive payment amounts — negative entries are refund outflows
+    // Net payments today: positive collections minus negative refund outflows
     supabase.from('payments').select('amount')
-      .gte('received_at', `${today}T00:00:00`)
-      .gt('amount', 0),
+      .gte('received_at', `${today}T00:00:00`),
     supabase.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
   ])
 
   return {
     todayBilled:      (todayBills    ?? []).reduce((s, b) => s + (b.total  as number), 0),
-    todayCollected:   (todayPayments ?? []).reduce((s, p) => s + (p.amount as number), 0),
+    todayCollected:   Math.max(0, (todayPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)),
     totalOutstanding: (unpaidBills   ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
   }
 }

@@ -490,7 +490,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
         <StatCard label="Today Billed"  value={stats.todayBilled}    icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />}   color="#0D9488" />
-        <StatCard label="Collected"     value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}    color="#10B981" />
+        <StatCard label="Today Collected" value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}    color="#10B981" />
         <StatCard
           label="Outstanding"
           value={stats.totalOutstanding}
