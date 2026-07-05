@@ -18,43 +18,60 @@ interface Props {
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
+// Strip +91 prefix to get bare 10-digit number for the input
+function barePhone(phone: string) {
+  return phone.replace(/^\+91/, '').replace(/\D/g, '').slice(0, 10)
+}
+
 export default function EditPatientModal({ patient, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
-    full_name: patient.full_name ?? '',
-    dob: patient.dob ?? '',
-    gender: patient.gender ?? '',
-    phone: patient.phone ?? '',
-    email: patient.email ?? '',
-    address: patient.address ?? '',
-    blood_group: patient.blood_group ?? '',
-    allergies: patient.allergies ?? '',
-    emergency_contact_name: patient.emergency_contact_name ?? '',
+    full_name:               patient.full_name ?? '',
+    dob:                     patient.dob ?? '',
+    gender:                  patient.gender ?? '',
+    phone:                   barePhone(patient.phone ?? ''),
+    email:                   patient.email ?? '',
+    address:                 patient.address ?? '',
+    blood_group:             patient.blood_group ?? '',
+    allergies:               patient.allergies ?? '',
+    emergency_contact_name:  patient.emergency_contact_name ?? '',
     emergency_contact_phone: patient.emergency_contact_phone ?? '',
+    aadhaar_no:              patient.aadhaar_no ?? '',
   })
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function set(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
+    setErrors((e) => { const n = { ...e }; delete n[field]; return n })
     setError(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    const newErrors: Record<string, string> = {}
+    if (!/^[6-9]\d{9}$/.test(form.phone))
+      newErrors.phone = 'Must be a valid 10-digit mobile number starting with 6–9'
+    if (form.aadhaar_no && !/^\d{12}$/.test(form.aadhaar_no))
+      newErrors.aadhaar_no = 'Aadhaar must be exactly 12 digits'
+    if (Object.keys(newErrors).length) { setErrors(newErrors); return }
+
     setLoading(true)
     setError(null)
 
     const result = await updatePatient(patient.id, {
-      full_name: form.full_name,
-      phone: form.phone,
-      dob: form.dob || null,
-      gender: form.gender || null,
-      email: form.email || null,
-      address: form.address || null,
-      blood_group: form.blood_group || null,
-      allergies: form.allergies || null,
-      emergency_contact_name: form.emergency_contact_name || null,
+      full_name:               form.full_name,
+      phone:                   `+91${form.phone}`,
+      dob:                     form.dob || null,
+      gender:                  form.gender || null,
+      email:                   form.email || null,
+      address:                 form.address || null,
+      blood_group:             form.blood_group || null,
+      allergies:               form.allergies || null,
+      emergency_contact_name:  form.emergency_contact_name || null,
       emergency_contact_phone: form.emergency_contact_phone || null,
+      aadhaar_no:              form.aadhaar_no || null,
     })
 
     setLoading(false)
@@ -73,12 +90,35 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
               placeholder="Patient full name" required
             />
           </FormField>
-          <FormField label="Phone" htmlFor="phone" required>
-            <Input
-              id="phone" value={form.phone}
-              onChange={(e) => set('phone', e.target.value)}
-              placeholder="+91 98765 43210" required
-            />
+
+          <FormField label="Phone" htmlFor="phone" required error={errors.phone}>
+            <div className="flex rounded-xl overflow-hidden"
+              style={{ border: `1px solid ${errors.phone ? '#DC2626' : '#E2E8F0'}`, background: 'rgba(255,255,255,0.85)' }}>
+              <span className="flex items-center px-3 text-sm font-semibold flex-shrink-0"
+                style={{ background: 'rgba(13,148,136,0.07)', color: '#0D9488', borderRight: '1px solid #E2E8F0' }}>
+                +91
+              </span>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                value={form.phone}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                  set('phone', digits)
+                }}
+                placeholder="98765 43210"
+                maxLength={10}
+                style={{
+                  flex: 1, padding: '0.625rem 0.875rem', fontSize: '0.875rem',
+                  background: 'transparent', border: 'none', outline: 'none', color: '#0F172A',
+                }}
+              />
+              <span className="flex items-center pr-3 text-xs flex-shrink-0"
+                style={{ color: form.phone.length === 10 ? '#10B981' : '#94A3B8' }}>
+                {form.phone.length}/10
+              </span>
+            </div>
           </FormField>
         </div>
 
@@ -102,10 +142,23 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
           </FormField>
         </div>
 
-        <FormField label="Email" htmlFor="email">
-          <Input id="email" type="email" value={form.email}
-            onChange={(e) => set('email', e.target.value)} placeholder="patient@email.com" />
-        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Email" htmlFor="email">
+            <Input id="email" type="email" value={form.email}
+              onChange={(e) => set('email', e.target.value)} placeholder="patient@email.com" />
+          </FormField>
+          <FormField label="Aadhaar Number" htmlFor="aadhaar_no" error={errors.aadhaar_no}
+            hint="12-digit number — optional">
+            <Input
+              id="aadhaar_no"
+              value={form.aadhaar_no}
+              onChange={(e) => set('aadhaar_no', e.target.value.replace(/\D/g, '').slice(0, 12))}
+              placeholder="XXXXXXXXXXXX"
+              maxLength={12}
+              hasError={!!errors.aadhaar_no}
+            />
+          </FormField>
+        </div>
 
         <FormField label="Address" htmlFor="address">
           <Textarea id="address" value={form.address}
@@ -151,17 +204,12 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
             style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={loading}
+          <button type="submit" disabled={loading}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold"
             style={{
               background: loading ? '#94A3B8' : '#0D9488',
-              color: '#fff',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              border: 'none',
-            }}
-          >
+              color: '#fff', cursor: loading ? 'not-allowed' : 'pointer', border: 'none',
+            }}>
             {loading ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
