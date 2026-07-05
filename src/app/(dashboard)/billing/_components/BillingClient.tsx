@@ -490,12 +490,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
       {/* ── Stat cards ── */}
       {(() => {
-        const totalOutstanding = stats.todayOutstanding + stats.pastOutstanding
-        const fmt = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+        const totalOutstanding = (stats.todayOutstanding ?? 0) + (stats.pastOutstanding ?? 0)
+        const fmt = (v: number) => `₹${(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
         return (
           <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
-            <StatCard label="Today Billed"    value={stats.todayBilled}    icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />} color="#0D9488" />
-            <StatCard label="Today Collected" value={stats.todayCollected} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}  color="#10B981" />
+            <StatCard label="Today Billed"    value={stats.todayBilled    ?? 0} icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />} color="#0D9488" />
+            <StatCard label="Today Collected" value={stats.todayCollected ?? 0} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}  color="#10B981" />
             <StatCard
               label="Outstanding"
               value={totalOutstanding}
@@ -1218,8 +1218,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, icon, color, sub }: {
-  label: string; value: number; icon: React.ReactNode; color: string; sub?: string
+function StatCard({ label, value = 0, icon, color, sub }: {
+  label: string; value?: number; icon: React.ReactNode; color: string; sub?: string
 }) {
   return (
     <div className="p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4"
