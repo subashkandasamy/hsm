@@ -692,6 +692,7 @@ function InfoTab({ patient }: { patient: Patient }) {
     { label: 'Phone', value: patient.phone },
     { label: 'Email', value: patient.email },
     { label: 'Blood Group', value: patient.blood_group },
+    { label: 'Aadhaar Number', value: patient.aadhaar_no ?? null },
     { label: 'Address', value: patient.address },
     { label: 'Allergies (free text)', value: patient.allergies },
     { label: 'Emergency Contact', value: patient.emergency_contact_name },
