@@ -241,19 +241,28 @@ export default function BookingModal({ open, onClose, onSuccess, doctors, depart
           </FormField>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Date" required error={errors.scheduled_date}>
-            <Input type="date" value={form.scheduled_date}
-              min={new Date().toISOString().split('T')[0]}
-              onChange={(e) => { set('scheduled_date', e.target.value); setErrors((er) => { const n = { ...er }; delete n.scheduled_date; return n }) }}
-              hasError={!!errors.scheduled_date} required />
-          </FormField>
-          <FormField label="Time" required>
-            <Input type="time" value={form.scheduled_time}
-              onChange={(e) => set('scheduled_time', e.target.value)}
-              required />
-          </FormField>
-        </div>
+        {(() => {
+          const now = new Date()
+          const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+          const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+          const isToday = form.scheduled_date === todayLocal
+          return (
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Date" required error={errors.scheduled_date}>
+                <Input type="date" value={form.scheduled_date}
+                  min={todayLocal}
+                  onChange={(e) => { set('scheduled_date', e.target.value); setErrors((er) => { const n = { ...er }; delete n.scheduled_date; return n }) }}
+                  hasError={!!errors.scheduled_date} required />
+              </FormField>
+              <FormField label="Time" required>
+                <Input type="time" value={form.scheduled_time}
+                  min={isToday ? nowTime : undefined}
+                  onChange={(e) => set('scheduled_time', e.target.value)}
+                  required />
+              </FormField>
+            </div>
+          )
+        })()}
 
         <FormField label="Reason for Visit" htmlFor="reason">
           <Textarea id="reason" value={form.reason}
