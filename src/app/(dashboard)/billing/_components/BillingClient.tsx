@@ -36,14 +36,16 @@ function fmtCompact(amount: number): string {
 
 // Labels for auto-generated IPD bills (bill_source column)
 const BILL_SOURCE_LABELS: Record<string, string> = {
-  bed:              'Room Rent',
-  lab:              'Lab',
-  radiology:        'Radiology',
-  ipd_pharmacy:     'Pharmacy (Ward)',
-  nursing:          'Nursing',
-  nursing_morning:  'Nursing AM',
-  nursing_night:    'Nursing Night',
-  consolidated:     'Consolidated',
+  bed:                'Room Rent',
+  lab:                'Lab',
+  radiology:          'Radiology',
+  ipd_pharmacy:       'Pharmacy (Ward)',
+  nursing:            'Nursing',
+  nursing_morning:    'Nursing AM',
+  nursing_night:      'Nursing Night',
+  consolidated:       'Consolidated',
+  advance_refund:     'Advance Refund',
+  appointment_refund: 'Appt. Refund',
 }
 
 // Labels for individual bill_items sources (used to derive content of OPD bills)
@@ -79,8 +81,10 @@ const BILL_SOURCE_COLORS: Record<string, { background: string; color: string }> 
   ot:                { background: '#FEF9C3', color: '#A16207' },
   blood:             { background: '#FFF1F2', color: '#BE123C' },
   dental:            { background: '#F0F9FF', color: '#0369A1' },
-  manual:            { background: '#F8FAFC', color: '#475569' },
-  mixed:             { background: '#F1F5F9', color: '#475569' },
+  manual:             { background: '#F8FAFC', color: '#475569' },
+  mixed:              { background: '#F1F5F9', color: '#475569' },
+  advance_refund:     { background: '#F0FDF4', color: '#16A34A' },
+  appointment_refund: { background: '#F0FDF4', color: '#16A34A' },
 }
 
 // Derive a display label + color key from bill_source (IPD auto-bills)
@@ -707,8 +711,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
                                   </div>
                                 </button>
-                                {opdOpen && month.opd.bills.map((bill, i) => {
+                                {opdOpen && (() => {
+                                  const refundedApptIds = new Set(
+                                    month.opd!.bills
+                                      .filter(b => b.bill_source === 'appointment_refund')
+                                      .map(b => (b as unknown as { appointment_id: string | null }).appointment_id)
+                                      .filter(Boolean) as string[]
+                                  )
+                                  return month.opd!.bills.map((bill, i) => {
                                   const balance = Math.max(0, bill.total - bill.paid)
+                                  const apptId = (bill as unknown as { appointment_id: string | null }).appointment_id
+                                  const isApptRefunded = bill.status === 'cancelled' && !!apptId && refundedApptIds.has(apptId)
                                   return (
                                     <div key={bill.id} className="px-4 py-3 cursor-pointer"
                                       style={{
@@ -725,7 +738,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                           {bill.bill_no}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                                          <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />
+                                          {isApptRefunded
+                                            ? <StatusBadge status="success" label="Refunded" />
+                                            : <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />}
                                           {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && (
                                             <button onClick={(e) => handleCancelBill(e, bill.id)} disabled={cancelState === bill.id}
                                               className="text-xs px-2 py-0.5 rounded-lg font-semibold"
@@ -753,7 +768,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       </div>
                                     </div>
                                   )
-                                })}
+                                })
+                                })()}
                               </div>
                             )}
 
