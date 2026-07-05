@@ -721,7 +721,11 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                   return month.opd!.bills.map((bill, i) => {
                                   const balance = Math.max(0, bill.total - bill.paid)
                                   const apptId = (bill as unknown as { appointment_id: string | null }).appointment_id
-                                  const isApptRefunded = bill.status === 'cancelled' && !!apptId && refundedApptIds.has(apptId)
+                                  // Only mark cancelled consultation bills (null bill_source) as "Refunded",
+                                  // never the appointment_refund bill itself
+                                  const isApptRefunded = bill.status === 'cancelled'
+                                    && bill.bill_source !== 'appointment_refund'
+                                    && !!apptId && refundedApptIds.has(apptId)
                                   return (
                                     <div key={bill.id} className="px-4 py-3 cursor-pointer"
                                       style={{
