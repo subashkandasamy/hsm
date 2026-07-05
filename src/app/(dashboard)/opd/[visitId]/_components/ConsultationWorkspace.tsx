@@ -230,6 +230,7 @@ export default function ConsultationWorkspace({
 
   return (
     <div>
+      <div className="no-print">
       {/* Back + Print */}
       <div className="flex items-center justify-between mb-4">
         <Link href="/opd" className="inline-flex items-center gap-1.5 text-sm"
@@ -923,19 +924,14 @@ export default function ConsultationWorkspace({
         />
       )}
 
+      </div>{/* end .no-print */}
+
       {/* ── Print Prescription ── */}
       <style>{`
         @media screen { #rx-print-area { display: none; } }
         @media print {
-          body * { visibility: hidden !important; }
+          .no-print { display: none !important; }
           #rx-print-area { display: block !important; }
-          #rx-print-area, #rx-print-area * { visibility: visible !important; }
-          #rx-print-area {
-            position: absolute !important;
-            top: 0 !important; left: 0 !important;
-            width: 100% !important;
-            background: #fff !important;
-          }
           @page { size: A4 portrait; margin: 10mm; }
         }
       `}</style>
