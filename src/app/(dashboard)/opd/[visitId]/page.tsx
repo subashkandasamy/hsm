@@ -10,6 +10,7 @@ import { listWards } from '@/app/actions/wards'
 import { resolveVisitTemplate } from '@/lib/clinicalTemplates'
 import { getActorProfile } from '@/lib/server-utils'
 import { createClient } from '@/lib/supabase/server'
+import { getTenantProfile } from '@/app/actions/tenantProfile'
 import ConsultationWorkspace from './_components/ConsultationWorkspace'
 import type { ProcedureTariff } from '@/lib/types'
 
@@ -35,7 +36,7 @@ export default async function OpdVisitPage({ params }: Props) {
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
 
   const [patient, pastVisits, labCatalog, radiologyCatalog, drugs, allergies,
-         wards, doctorsRes, tariffsRes, tenantRes, generalRes] = await Promise.all([
+         wards, doctorsRes, tariffsRes, tenantRes, generalRes, tenantProfile] = await Promise.all([
     getPatient(visit.patient_id),
     getPatientVisits(visit.patient_id),
     listLabCatalog(),
@@ -47,6 +48,7 @@ export default async function OpdVisitPage({ params }: Props) {
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).neq('category', 'general').order('name'),
     supabase.from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single(),
     supabase.from('procedure_tariffs').select('default_price').eq('category', 'general').eq('is_active', true).limit(1).maybeSingle(),
+    getTenantProfile(),
   ])
 
   if (!patient) notFound()
@@ -93,6 +95,7 @@ export default async function OpdVisitPage({ params }: Props) {
       admitTariffs={(tariffsRes.data ?? []) as ProcedureTariff[]}
       admitGeneralTariffPrice={(generalRes.data?.default_price as number) ?? undefined}
       admitAdvancePercentage={(tenantRes.data?.advance_percentage as number) ?? 50}
+      tenantProfile={tenantProfile}
     />
   )
 }
