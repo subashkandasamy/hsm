@@ -925,8 +925,10 @@ export default function ConsultationWorkspace({
 
       {/* ── Print Prescription ── */}
       <style>{`
+        @media screen { #rx-print-area { display: none; } }
         @media print {
           body * { visibility: hidden !important; }
+          #rx-print-area { display: block !important; }
           #rx-print-area, #rx-print-area * { visibility: visible !important; }
           #rx-print-area {
             position: fixed !important;
@@ -938,7 +940,7 @@ export default function ConsultationWorkspace({
         }
       `}</style>
 
-      <div id="rx-print-area" style={{ display: 'none' }}>
+      <div id="rx-print-area">
         {(() => {
           const p = tenantProfile
           const hospName = p?.name || 'Hospital'
