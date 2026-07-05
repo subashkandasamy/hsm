@@ -196,6 +196,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [expandedMonths,   setExpandedMonths]   = useState<Set<string>>(new Set())
   const [expandedOPD,      setExpandedOPD]      = useState<Set<string>>(new Set())
   const [expandedIPD,      setExpandedIPD]      = useState<Set<string>>(new Set())
+  const [historyOpen,      setHistoryOpen]      = useState(false)
   // Advance collection state
   const [collectingId, setCollectingId]     = useState<string | null>(null)
   // Top-up advance state
@@ -575,14 +576,38 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                 const depCount   = group.deposits.length
                 const itemLabel  = billCount + depCount === 1 ? 'item' : 'items'
 
+                const isHistoryItem = idx >= historyStart
+                if (isHistoryItem && !historyOpen) return [
+                  idx === historyStart && historyGroups.length > 0 && (
+                    <button key="__sec_history__"
+                      onClick={() => setHistoryOpen(true)}
+                      className="w-full flex items-center justify-between px-1 py-1 mt-2"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#94A3B8' }}>
+                        History ({historyGroups.length})
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                    </button>
+                  ),
+                ]
+
                 return [
                   idx === 0 && todayGroups.length > 0 && (
-                    <p key="__sec_today__" className="text-xs font-semibold uppercase tracking-widest px-1"
-                      style={{ color: '#0D9488' }}>Today &amp; Active</p>
+                    <div key="__sec_today__" className="flex items-center justify-between px-1">
+                      <span className="text-xs font-semibold uppercase tracking-widest"
+                        style={{ color: '#0D9488' }}>Today &amp; Active ({todayGroups.length})</span>
+                    </div>
                   ),
                   idx === historyStart && historyGroups.length > 0 && (
-                    <p key="__sec_history__" className="text-xs font-semibold uppercase tracking-widest px-1 mt-2"
-                      style={{ color: '#94A3B8' }}>History</p>
+                    <button key="__sec_history__"
+                      onClick={() => setHistoryOpen(false)}
+                      className="w-full flex items-center justify-between px-1 py-1 mt-2"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#94A3B8' }}>
+                        History ({historyGroups.length})
+                      </span>
+                      <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                    </button>
                   ),
                   <GlassCard key={group.patientId} className="overflow-hidden">
                     {/* Patient header row */}
