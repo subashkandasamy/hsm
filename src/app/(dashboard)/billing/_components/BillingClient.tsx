@@ -648,7 +648,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                             {/* Month header — clickable */}
                             <button
                               onClick={() => toggleMonth(monthKey)}
-                              className="w-full px-4 py-2 flex items-center justify-between text-left"
+                              className="w-full px-4 py-3 flex items-center justify-between text-left"
                               style={{ background: 'rgba(248,250,252,0.95)', border: 'none', borderBottom: '1px solid #E2E8F0', cursor: 'pointer' }}>
                               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B', letterSpacing: '0.06em' }}>
                                 {month.monthLabel}
@@ -676,7 +676,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                 {/* OPD sub-header — clickable */}
                                 <button
                                   onClick={() => toggleOPD(opdKey)}
-                                  className="w-full px-4 py-1.5 flex items-center justify-between"
+                                  className="w-full px-4 py-3 flex items-center justify-between"
                                   style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9', border: 'none', cursor: 'pointer' }}>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-bold px-2 py-0.5 rounded-md"
@@ -772,7 +772,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                   {/* IPD sub-header — clickable button */}
                                   <button
                                     onClick={() => toggleIPD(ipdKey)}
-                                    className="w-full px-4 py-1.5 flex items-center justify-between flex-wrap gap-2 text-left"
+                                    className="w-full px-4 py-3 flex items-center justify-between flex-wrap gap-2 text-left"
                                     style={{ background: 'rgba(239,246,255,0.6)', borderTop: '1px solid #F1F5F9', borderBottom: '1px solid #F1F5F9', cursor: 'pointer', border: 'none' }}>
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-xs font-bold px-2 py-0.5 rounded-md"
