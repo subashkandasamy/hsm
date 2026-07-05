@@ -293,119 +293,86 @@ export async function checkIn(id: string): Promise<SimpleResult> {
   return { success: true }
 }
 
-type CancelResult =
-  | { success: true; refundRequired: false }
-  | { success: true; refundRequired: true; billId: string; paidAmount: number }
-  | { success: false; error: string }
-
-export async function cancelAppointment(id: string): Promise<CancelResult> {
+export async function cancelAppointment(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('appointments').update({ status: 'cancelled' })
+
+  // Fetch patient_id alongside cancelling the appointment
+  const { data: appt, error } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' })
     .eq('id', id).in('status', ['booked', 'checked_in'])
+    .select('patient_id')
+    .single()
   if (error) return { success: false, error: error.message }
 
-  // Find linked consultation bill (any non-cancelled status)
-  // Use neq+JS filter instead of NOT on nullable bill_source — NULL comparisons in PG
-  // cause .not('bill_source','eq','appointment_refund') to silently drop NULL rows.
+  // Find linked consultation bill (any non-cancelled status).
+  // JS-side bill_source check avoids NULL comparison bug:
+  // .not('bill_source','eq','appointment_refund') drops rows where bill_source IS NULL.
   const { data: bill } = await supabase
     .from('bills')
-    .select('id, status, paid, bill_source')
+    .select('id, paid, bill_source')
     .eq('appointment_id', id)
     .neq('status', 'cancelled')
     .maybeSingle()
 
   if (bill && bill.bill_source !== 'appointment_refund') {
+    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', bill.id)
+
     const paid = (bill.paid as number) ?? 0
     if (paid > 0) {
-      // Bill has payments — cancel it and ask UI to issue a refund
-      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', bill.id)
-      await logAudit(actor.id, 'cancel', 'appointment', id)
-      return { success: true, refundRequired: true, billId: bill.id, paidAmount: paid }
+      // Auto-create a refund bill so it surfaces in billing as acknowledgement
+      const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+      const refundBillId = crypto.randomUUID()
+      const today = new Date().toISOString().split('T')[0]
+
+      const { error: billErr } = await supabase.from('bills').insert({
+        id:             refundBillId,
+        tenant_id:      actor.tenant_id,
+        patient_id:     appt.patient_id as string,
+        appointment_id: id,
+        bill_no:        billNoData as string,
+        billing_date:   today,
+        subtotal:       -paid,
+        discount:       0,
+        tax:            0,
+        total:          -paid,
+        paid:           -paid,
+        status:         'paid',
+        bill_source:    'appointment_refund',
+        created_by:     actor.id,
+      })
+
+      if (!billErr) {
+        await supabase.from('bill_items').insert({
+          id:          crypto.randomUUID(),
+          tenant_id:   actor.tenant_id,
+          bill_id:     refundBillId,
+          source:      'manual',
+          description: 'Consultation Fee Refund (Appointment Cancelled)',
+          qty:         1,
+          unit_price:  -paid,
+          amount:      -paid,
+        })
+        await supabase.from('payments').insert({
+          id:          crypto.randomUUID(),
+          tenant_id:   actor.tenant_id,
+          bill_id:     refundBillId,
+          amount:      -paid,
+          method:      'cash',
+          reference:   null,
+          received_by: actor.id,
+        })
+      }
     }
-    // No payments — just cancel the bill
-    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', bill.id)
   }
 
   await logAudit(actor.id, 'cancel', 'appointment', id)
-  return { success: true, refundRequired: false }
+  return { success: true }
 }
 
-export async function issueAppointmentRefund(params: {
-  billId: string
-  patientId: string
-  appointmentId: string
-  amount: number
-  method: 'cash' | 'card' | 'upi' | 'bank_transfer'
-  reference?: string
-}): Promise<{ success: true; refundBillId: string } | { success: false; error: string }> {
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'billing:write')
-
-  const { billId, patientId, appointmentId, amount, method, reference } = params
-  if (amount <= 0) return { success: false, error: 'Refund amount must be greater than zero' }
-
-  // Guard: no double refund
-  const supabase = await createClient()
-  const { data: existing } = await supabase
-    .from('bills').select('id')
-    .eq('appointment_id', appointmentId)
-    .eq('bill_source', 'appointment_refund')
-    .maybeSingle()
-  if (existing) return { success: false, error: 'Refund has already been issued for this appointment' }
-
-  const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-  const billNo = billNoData as string
-  const refundBillId = crypto.randomUUID()
-  const today = new Date().toISOString().split('T')[0]
-
-  const { error: billErr } = await supabase.from('bills').insert({
-    id:             refundBillId,
-    tenant_id:      actor.tenant_id,
-    patient_id:     patientId,
-    appointment_id: appointmentId,
-    bill_no:        billNo,
-    billing_date:   today,
-    subtotal:       -amount,
-    discount:       0,
-    tax:            0,
-    total:          -amount,
-    paid:           -amount,
-    status:         'paid',
-    bill_source:    'appointment_refund',
-    created_by:     actor.id,
-  })
-  if (billErr) return { success: false, error: billErr.message }
-
-  const { error: itemErr } = await supabase.from('bill_items').insert({
-    id:          crypto.randomUUID(),
-    tenant_id:   actor.tenant_id,
-    bill_id:     refundBillId,
-    source:      'manual',
-    description: 'Consultation Fee Refund (Appointment Cancelled)',
-    qty:         1,
-    unit_price:  -amount,
-    amount:      -amount,
-  })
-  if (itemErr) return { success: false, error: itemErr.message }
-
-  const { error: payErr } = await supabase.from('payments').insert({
-    id:          crypto.randomUUID(),
-    tenant_id:   actor.tenant_id,
-    bill_id:     refundBillId,
-    amount:      -amount,
-    method,
-    reference:   reference ?? null,
-    received_by: actor.id,
-  })
-  if (payErr) return { success: false, error: payErr.message }
-
-  await logAudit(actor.id, 'refund', 'bill', billId, { appointmentId, amount, method })
-  return { success: true, refundBillId }
-}
 
 export async function markNoShow(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()

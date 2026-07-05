@@ -11,7 +11,6 @@ import EmptyState from '@/components/ui/EmptyState'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import {
   listAppointments, checkIn, cancelAppointment, markNoShow, getAppointmentsBillStatuses,
-  issueAppointmentRefund,
 } from '@/app/actions/appointments'
 import { startVisit } from '@/app/actions/opd'
 import { Pencil } from 'lucide-react'
@@ -51,15 +50,6 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
   const [billStatuses, setBillStatuses] = useState<BillStatusMap>(initialBillStatuses)
   const admittedSet = new Set(admittedPatientIds)
 
-  // Refund flow after cancelling a paid appointment
-  const [refundTarget, setRefundTarget] = useState<{
-    appointmentId: string; billId: string; paidAmount: number; patientName: string
-  } | null>(null)
-  const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
-  const [refundRef, setRefundRef] = useState('')
-  const [refundPending, setRefundPending] = useState(false)
-  const [refundError, setRefundError] = useState<string | null>(null)
-
   const refresh = useCallback(async (d: string, docId?: string) => {
     setLoading(true)
     const results = await listAppointments({
@@ -81,38 +71,10 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
 
   async function handleCancel(id: string) {
     setActionLoading(id)
-    const appt = appts.find((a) => a.id === id)
     const result = await cancelAppointment(id)
     setCancelTarget(null)
     setActionLoading(null)
     if (!result.success) { setActionError(result.error); return }
-    if (result.refundRequired) {
-      const patientName = (appt?.patient as unknown as { full_name?: string } | null)?.full_name ?? 'Patient'
-      setRefundTarget({ appointmentId: id, billId: result.billId, paidAmount: result.paidAmount, patientName })
-      setRefundMethod('cash')
-      setRefundRef('')
-      setRefundError(null)
-    }
-    await refresh(date, doctorFilter)
-  }
-
-  async function handleIssueRefund() {
-    if (!refundTarget) return
-    setRefundPending(true)
-    setRefundError(null)
-    const appt = appts.find((a) => a.id === refundTarget.appointmentId)
-    const patientId = appt?.patient_id as string ?? ''
-    const result = await issueAppointmentRefund({
-      billId:        refundTarget.billId,
-      patientId,
-      appointmentId: refundTarget.appointmentId,
-      amount:        refundTarget.paidAmount,
-      method:        refundMethod,
-      reference:     refundRef || undefined,
-    })
-    setRefundPending(false)
-    if (!result.success) { setRefundError(result.error); return }
-    setRefundTarget(null)
     await refresh(date, doctorFilter)
   }
 
@@ -479,78 +441,6 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         loading={actionLoading === cancelTarget}
       />
 
-      {/* Refund dialog — shown after cancelling a paid appointment */}
-      {refundTarget && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 50,
-            background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(2px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) setRefundTarget(null) }}>
-          <div style={{
-            background: 'rgba(255,255,255,0.98)', borderRadius: '1.25rem',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.18)', padding: '1.5rem',
-            width: '100%', maxWidth: '26rem',
-          }}>
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: '#FEF3C7' }}>
-                <span style={{ fontSize: '1.25rem' }}>↩</span>
-              </div>
-              <div>
-                <p className="font-bold text-base" style={{ color: '#0F172A' }}>Issue Refund</p>
-                <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>
-                  Appointment for <span className="font-semibold" style={{ color: '#0F172A' }}>{refundTarget.patientName}</span> was cancelled.
-                  A payment of <span className="font-semibold" style={{ color: '#DC2626' }}>
-                    ₹{refundTarget.paidAmount.toFixed(2)}
-                  </span> needs to be refunded.
-                </p>
-              </div>
-            </div>
-
-            {refundError && (
-              <div className="mb-3 px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                {refundError}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#475569' }}>Refund Method</label>
-                <Select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value as typeof refundMethod)}>
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="upi">UPI</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#475569' }}>Reference # <span style={{ fontWeight: 400, color: '#94A3B8' }}>(optional)</span></label>
-                <input type="text" value={refundRef} onChange={(e) => setRefundRef(e.target.value)}
-                  placeholder="Transaction ID, cheque no…"
-                  className="w-full px-3 py-2.5 rounded-xl text-sm"
-                  style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.85)', color: '#0F172A', outline: 'none' }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setRefundTarget(null)}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium"
-                style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                Skip for now
-              </button>
-              <button onClick={handleIssueRefund} disabled={refundPending}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: refundPending ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: refundPending ? 'not-allowed' : 'pointer' }}>
-                {refundPending ? 'Processing…' : `Refund ₹${refundTarget.paidAmount.toFixed(2)}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
