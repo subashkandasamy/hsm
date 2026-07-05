@@ -47,8 +47,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
   }
 
   function validatePhone(raw: string): string | null {
-    const digits = raw.replace(/[\s\-()+]/g, '').replace(/^91/, '')
-    if (!/^[6-9]\d{9}$/.test(digits)) return 'Enter a valid 10-digit Indian mobile number'
+    if (!/^[6-9]\d{9}$/.test(raw)) return 'Must be a valid 10-digit mobile number starting with 6–9'
     return null
   }
 
@@ -77,7 +76,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
 
     const input: Record<string, unknown> = {
       full_name: form.full_name,
-      phone: form.phone,
+      phone: `+91${form.phone}`,
       dob: form.dob || null,
       gender: form.gender || null,
       email: form.email || null,
@@ -156,16 +155,34 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
               placeholder="Patient full name" hasError={!!errors.full_name} required
             />
           </FormField>
-          <FormField label="Phone" htmlFor="phone" required error={errors.phone}
-            hint="10-digit Indian mobile number">
-            <Input
-              id="phone"
-              value={form.phone}
-              onChange={(e) => set('phone', e.target.value.replace(/[^\d\s\+\-()]/g, ''))}
-              placeholder="98765 43210"
-              hasError={!!errors.phone}
-              required
-            />
+          <FormField label="Phone" htmlFor="phone" required error={errors.phone}>
+            <div className="flex rounded-xl overflow-hidden"
+              style={{ border: `1px solid ${errors.phone ? '#DC2626' : '#E2E8F0'}`, background: 'rgba(255,255,255,0.85)' }}>
+              <span className="flex items-center px-3 text-sm font-semibold flex-shrink-0"
+                style={{ background: 'rgba(13,148,136,0.07)', color: '#0D9488', borderRight: '1px solid #E2E8F0' }}>
+                +91
+              </span>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                value={form.phone}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                  set('phone', digits)
+                }}
+                placeholder="98765 43210"
+                maxLength={10}
+                style={{
+                  flex: 1, padding: '0.625rem 0.875rem', fontSize: '0.875rem',
+                  background: 'transparent', border: 'none', outline: 'none', color: '#0F172A',
+                }}
+              />
+              <span className="flex items-center pr-3 text-xs flex-shrink-0"
+                style={{ color: form.phone.length === 10 ? '#10B981' : '#94A3B8' }}>
+                {form.phone.length}/10
+              </span>
+            </div>
           </FormField>
         </div>
 

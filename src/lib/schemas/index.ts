@@ -29,8 +29,8 @@ export const PatientCreateSchema = z.object({
   gender: z.enum(['male', 'female', 'other']).nullable().optional(),
   phone: z.string()
     .min(1, 'Phone number is required')
-    .transform((v) => v.replace(/[\s\-().]/g, '').replace(/^\+91/, ''))
-    .pipe(z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number')),
+    .transform((v) => v.replace(/[\s\-().]/g, ''))
+    .pipe(z.string().regex(/^(\+91)?[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number')),
   email: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   blood_group: z.string().nullable().optional(),
