@@ -931,7 +931,7 @@ export default function ConsultationWorkspace({
           #rx-print-area { display: block !important; }
           #rx-print-area, #rx-print-area * { visibility: visible !important; }
           #rx-print-area {
-            position: fixed !important;
+            position: absolute !important;
             top: 0 !important; left: 0 !important;
             width: 100% !important;
             background: #fff !important;
