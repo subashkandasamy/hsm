@@ -347,10 +347,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       const pid = (bill as unknown as { patient_id: string }).patient_id
       if (!pid) continue
       const isCancelled = bill.status === 'cancelled'
+      // Refund bills are accounting reversals — exclude from all summary totals
+      const isRefundBill = bill.bill_source === 'appointment_refund' || bill.bill_source === 'advance_refund'
       const pat = getPat(pid, bill.patient?.full_name ?? 'Unknown', bill.patient?.uhid ?? '')
       const month = getMonth(pat, bill.created_at)
 
-      if (!isCancelled) {
+      if (!isCancelled && !isRefundBill) {
         pat.totalBilled      += bill.total
         pat.totalPaid        += bill.paid
         pat.totalOutstanding += Math.max(0, bill.total - bill.paid)
@@ -360,7 +362,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       if (bill.admission_id) {
         const ipd = getIpd(month, bill.admission_id)
         ipd.bills.push(bill)
-        if (!isCancelled) {
+        if (!isCancelled && !isRefundBill) {
           ipd.totalBilled      += bill.total
           ipd.totalPaid        += bill.paid
           ipd.totalOutstanding += Math.max(0, bill.total - bill.paid)
@@ -373,7 +375,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         month.opd.bills.push(bill)
         if (bill.visit_id && !month.opd.visitId) month.opd.visitId = bill.visit_id
         if (bill.appointment_id && !month.opd.appointmentId) month.opd.appointmentId = bill.appointment_id
-        if (!isCancelled) {
+        if (!isCancelled && !isRefundBill) {
           month.opd.totalBilled      += bill.total
           month.opd.totalPaid        += bill.paid
           month.opd.totalOutstanding += Math.max(0, bill.total - bill.paid)
