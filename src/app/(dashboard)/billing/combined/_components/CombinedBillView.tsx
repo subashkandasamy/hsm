@@ -141,10 +141,10 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
             </div>
           </div>
 
-          {/* ── "COMBINED BILL" banner ── */}
+          {/* ── "SUMMARY BILL" banner ── */}
           <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '7px 0', textAlign: 'center' }}>
             <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>
-              Combined Bill
+              Summary Bill
             </span>
           </div>
 

@@ -778,7 +778,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                         className="flex items-center gap-1 text-xs font-semibold"
                                         style={{ color: '#7C3AED', textDecoration: 'none' }}
                                         onClick={(e) => e.stopPropagation()}>
-                                        <FileText className="w-3 h-3" /> Combined →
+                                        <FileText className="w-3 h-3" /> Summary →
                                       </Link>
                                     )}
                                     {ovOpen
@@ -907,7 +907,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                         className="flex items-center gap-1 text-xs font-semibold"
                                         style={{ color: '#7C3AED', textDecoration: 'none' }}
                                         onClick={(e) => e.stopPropagation()}>
-                                        <FileText className="w-3 h-3" /> Combined →
+                                        <FileText className="w-3 h-3" /> Summary →
                                       </Link>
                                       {ipdOpen
                                         ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
