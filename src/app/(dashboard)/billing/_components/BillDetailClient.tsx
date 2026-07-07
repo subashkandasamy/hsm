@@ -143,9 +143,9 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
   }
 
   async function handlePayment() {
-    const amt = parseFloat(payAmount)
+    const amt = Math.round(parseFloat(payAmount) * 100) / 100
     if (!amt || amt <= 0) { setPayError('Enter a valid amount'); return }
-    if (amt > balance) { setPayError(`Amount cannot exceed balance due (₹${balance.toFixed(2)})`); return }
+    if (Math.round(amt * 100) > Math.round(balance * 100)) { setPayError(`Amount cannot exceed balance due (₹${balance.toFixed(2)})`); return }
     setPaying(true)
     setPayError(null)
     const res = await recordPayment({
