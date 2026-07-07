@@ -588,7 +588,7 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 // ---- IPD daily charge generation (called from IPD ward board RSC) ----
 
 export async function generateMissingDailyCharges(
-  admissions: Array<{ id: string; patient_id: string; ward: { daily_rate: number } }>
+  admissions: Array<{ id: string; patient_id: string; ward: { name: string; daily_rate: number } }>
 ): Promise<void> {
   if (!admissions.length) return
   const actor = await getActorProfile()
@@ -617,6 +617,7 @@ export async function generateMissingDailyCharges(
     if (billedToday.get(adm.id)?.has('bed')) continue
     const rate = adm.ward?.daily_rate ?? 0
     if (rate <= 0) continue
+    const wardLabel = adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent'
     await autoIpdBill(supabase, actor.id, {
       tenantId: actor.tenant_id,
       admissionId: adm.id,
@@ -626,7 +627,7 @@ export async function generateMissingDailyCharges(
       lineItems: [{
         source: 'bed',
         ref_id: null,
-        description: 'Room Rent',
+        description: wardLabel,
         qty: 1,
         unit_price: rate,
       }],

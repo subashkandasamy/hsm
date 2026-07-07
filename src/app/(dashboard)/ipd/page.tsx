@@ -23,7 +23,7 @@ export default async function IpdPage() {
     admissions.map((a) => ({
       id: a.id,
       patient_id: a.patient_id,
-      ward: (a.ward as unknown as { daily_rate: number }) ?? { daily_rate: 0 },
+      ward: (a.ward as unknown as { name: string; daily_rate: number }) ?? { name: '', daily_rate: 0 },
     }))
   )
 

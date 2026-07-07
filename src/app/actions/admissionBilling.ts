@@ -310,7 +310,7 @@ export async function generateDailyAdmissionBills(): Promise<{
       items.push({
         source:      'bed',
         ref_id:      admission.id as string,
-        description: `Bed charge — ${ward?.name ?? 'Ward'} (${today})`,
+        description: `${ward?.name ?? 'Room'} — Room Rent`,
         qty:         1,
         unit_price:  ward!.daily_rate,
       })
