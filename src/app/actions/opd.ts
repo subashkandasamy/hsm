@@ -25,7 +25,11 @@ export async function startVisit(
     .eq('appointment_id', appointmentId)
     .maybeSingle()
 
-  if (existing) return { success: true, visitId: existing.id }
+  if (existing) {
+    // Ensure pre-existing appointment bills are linked (fixes visits started before this backfill)
+    await supabase.from('bills').update({ visit_id: existing.id }).eq('appointment_id', appointmentId).is('visit_id', null)
+    return { success: true, visitId: existing.id }
+  }
 
   // Fetch appointment to get patient_id + doctor_id
   const { data: appt, error: apptErr } = await supabase
@@ -73,6 +77,9 @@ export async function startVisit(
     status: 'open',
   })
   if (error) return { success: false, error: error.message }
+
+  // Backfill visit_id onto the consultation bill created at booking time (which only has appointment_id)
+  await supabase.from('bills').update({ visit_id: id }).eq('appointment_id', appointmentId).is('visit_id', null)
 
   await logAudit(actor.id, 'start', 'visit', id, { appointment_id: appointmentId })
   return { success: true, visitId: id }
