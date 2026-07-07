@@ -240,7 +240,23 @@ export default function ConsultationWorkspace({
           <ArrowLeft className="w-4 h-4" /> Back to OPD
         </Link>
         <button
-          onClick={() => window.print()}
+          onClick={() => {
+            const el = document.getElementById('rx-print-area')
+            if (!el) return
+            const w = window.open('', '_blank', 'width=900,height=700')
+            if (!w) return
+            w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Prescription</title><style>
+              *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+              body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #0F172A; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              table { border-collapse: collapse; width: 100%; }
+              td, th { vertical-align: top; }
+              @page { size: A4 portrait; margin: 10mm; }
+              @media print { body { margin: 0; } }
+            </style></head><body>${el.innerHTML}</body></html>`)
+            w.document.close()
+            w.focus()
+            setTimeout(() => { w.print(); w.close() }, 500)
+          }}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}
         >
