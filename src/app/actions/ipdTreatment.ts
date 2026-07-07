@@ -329,21 +329,47 @@ export async function getVisitPrescriptions(
   patientId: string
 ): Promise<Array<{ visitId: string; visitDate: string; prescriptions: Array<{ id: string; drug_name: string; dosage: string | null; frequency: string | null; instructions: string | null }> }>> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('visits')
-    .select('id, created_at, prescriptions(id, drug_name, dosage, frequency, instructions)')
-    .eq('patient_id', patientId)
-    .eq('status', 'closed')
-    .not('prescriptions', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(5)
 
-  return (data ?? [])
-    .filter((v) => (v.prescriptions as unknown[]).length > 0)
+  // visits is partitioned — FK from prescriptions was dropped, so embedded join
+  // via PostgREST doesn't work. Two separate queries instead.
+  const { data: visits } = await supabase
+    .from('visits')
+    .select('id, created_at')
+    .eq('patient_id', patientId)
+    .in('status', ['closed', 'open'])
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (!visits?.length) return []
+
+  const visitIds = visits.map((v) => v.id as string)
+  const { data: rxRows } = await supabase
+    .from('prescriptions')
+    .select('id, visit_id, drug_name, dosage, frequency, instructions')
+    .in('visit_id', visitIds)
+
+  if (!rxRows?.length) return []
+
+  // Group prescriptions by visit, preserving visit date order
+  const rxByVisit = new Map<string, Array<{ id: string; drug_name: string; dosage: string | null; frequency: string | null; instructions: string | null }>>()
+  for (const rx of rxRows) {
+    const vid = rx.visit_id as string
+    if (!rxByVisit.has(vid)) rxByVisit.set(vid, [])
+    rxByVisit.get(vid)!.push({
+      id: rx.id as string,
+      drug_name: rx.drug_name as string,
+      dosage: rx.dosage as string | null,
+      frequency: rx.frequency as string | null,
+      instructions: rx.instructions as string | null,
+    })
+  }
+
+  return visits
+    .filter((v) => rxByVisit.has(v.id as string))
     .map((v) => ({
       visitId:   v.id as string,
       visitDate: v.created_at as string,
-      prescriptions: v.prescriptions as Array<{ id: string; drug_name: string; dosage: string | null; frequency: string | null; instructions: string | null }>,
+      prescriptions: rxByVisit.get(v.id as string)!,
     }))
 }
 
