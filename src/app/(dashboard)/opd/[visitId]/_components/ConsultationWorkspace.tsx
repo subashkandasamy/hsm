@@ -895,6 +895,16 @@ export default function ConsultationWorkspace({
           {/* Action row: Admit to IPD + Close Visit */}
           {!isClosed && isDoctor && (
             <div className="flex items-center justify-end gap-3 flex-wrap">
+              {plan === 'starter' && tenantStatus !== 'trial' ? (
+                <a href="/account/subscription?upgrade=1"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: '#F1F5F9', color: '#94A3B8', border: '1px solid #E2E8F0', cursor: 'not-allowed', textDecoration: 'none' }}
+                  onClick={(e) => e.preventDefault()}
+                  title="Upgrade to Growth plan to admit patients to IPD">
+                  <Lock className="w-4 h-4" />
+                  Admit to IPD
+                </a>
+              ) : (
               <button
                 onClick={() => setShowAdmit(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
@@ -905,6 +915,7 @@ export default function ConsultationWorkspace({
                 <BedDouble className="w-4 h-4" />
                 Admit to IPD
               </button>
+              )}
               <button
                 onClick={() => setShowClose(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
