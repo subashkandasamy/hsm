@@ -9,14 +9,16 @@ interface Options {
 
 export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
   const [listening, setListening] = useState(false)
-  const [supported, setSupported] = useState(false)
-  const [interim, setInterim] = useState('')
+  const [supported, setSupported]  = useState(false)
+  const [interim, setInterim]      = useState('')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recRef       = useRef<any>(null)
-  const onAppendRef  = useRef(onAppend)
-  const listeningRef = useRef(false)   // mutable — avoids stale-state race in onend
-  const langRef      = useRef(lang)
+  const recRef          = useRef<any>(null)
+  const onAppendRef     = useRef(onAppend)
+  const listeningRef    = useRef(false)
+  const langRef         = useRef(lang)
+  // tracks how many final results we've committed — blocks Chrome Android's duplicate-fire bug
+  const processedCount  = useRef(0)
 
   useEffect(() => { onAppendRef.current = onAppend })
   useEffect(() => { langRef.current = lang }, [lang])
@@ -28,7 +30,6 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     )
   }, [])
 
-  // createSession is stable (empty deps) — refs keep it current
   const createSession = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
@@ -37,8 +38,12 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rec: any = new SR()
     rec.lang           = langRef.current
-    rec.continuous     = false  // one utterance per session — prevents mobile duplicate results
+    rec.continuous     = true   // no gaps — mic stays open the whole time
     rec.interimResults = true
+
+    rec.onstart = () => {
+      processedCount.current = 0  // fresh result list for this session
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (e: any) => {
@@ -46,6 +51,9 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i]
         if (result.isFinal) {
+          // skip if we already committed this index (Chrome Android duplicate-fire bug)
+          if (i < processedCount.current) continue
+          processedCount.current = i + 1
           onAppendRef.current(result[0].transcript.trim())
           setInterim('')
         } else {
@@ -59,11 +67,13 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     rec.onerror = (e: any) => {
       setInterim('')
       if (!listeningRef.current) { recRef.current = null; return }
-      if (e.error === 'no-speech') {
-        // silence timeout is normal on mobile — just restart
+      if (e.error === 'no-speech' || e.error === 'audio-capture') {
+        // transient errors — restart session
         recRef.current = null
+        processedCount.current = 0
         createSession()
       } else {
+        // aborted / network / not-allowed — stop
         listeningRef.current = false
         setListening(false)
         recRef.current = null
@@ -73,8 +83,10 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     rec.onend = () => {
       setInterim('')
       recRef.current = null
+      processedCount.current = 0
       if (listeningRef.current) {
-        createSession()   // still listening — spin up a fresh session for the next utterance
+        // session timed out (30-60s) — restart immediately, no gap
+        createSession()
       } else {
         setListening(false)
       }
@@ -94,6 +106,7 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     listeningRef.current = false
     recRef.current?.stop()
     recRef.current = null
+    processedCount.current = 0
     setListening(false)
     setInterim('')
   }, [])
