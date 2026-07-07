@@ -130,10 +130,12 @@ function getMonthLabel(key: string): string {
   return new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
 }
 
-interface OpdSection {
-  bills: Bill[]
+interface OpdVisitSection {
+  visitKey: string          // visit_id | appointment_id | date — dedup key
   visitId: string | null
   appointmentId: string | null
+  visitDate: string         // YYYY-MM-DD for display
+  bills: Bill[]
   totalBilled: number
   totalPaid: number
   totalOutstanding: number
@@ -150,7 +152,7 @@ interface IpdSection {
 interface MonthSection {
   monthKey: string
   monthLabel: string
-  opd: OpdSection | null
+  opdVisits: OpdVisitSection[]
   ipd: IpdSection[]
 }
 interface PatientGroup {
@@ -328,10 +330,20 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       const key = getMonthKey(dateStr)
       let m = pat.months.find((x) => x.monthKey === key)
       if (!m) {
-        m = { monthKey: key, monthLabel: getMonthLabel(key), opd: null, ipd: [] }
+        m = { monthKey: key, monthLabel: getMonthLabel(key), opdVisits: [], ipd: [] }
         pat.months.push(m)
       }
       return m
+    }
+
+    function getOpdVisit(month: MonthSection, visitId: string | null, appointmentId: string | null, dateStr: string): OpdVisitSection {
+      const visitKey = visitId ?? appointmentId ?? dateStr.slice(0, 10)
+      let v = month.opdVisits.find((x) => x.visitKey === visitKey)
+      if (!v) {
+        v = { visitKey, visitId, appointmentId, visitDate: dateStr.slice(0, 10), bills: [], totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
+        month.opdVisits.push(v)
+      }
+      return v
     }
 
     function getIpd(month: MonthSection, admissionId: string): IpdSection {
@@ -370,17 +382,14 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
           ipd.totalOutstanding += Math.max(0, bill.total - bill.paid)
         }
       } else {
-        if (!month.opd) {
-          month.opd = { bills: [], visitId: null, appointmentId: null,
-            totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
-        }
-        month.opd.bills.push(bill)
-        if (bill.visit_id && !month.opd.visitId) month.opd.visitId = bill.visit_id
-        if (bill.appointment_id && !month.opd.appointmentId) month.opd.appointmentId = bill.appointment_id
+        const bVisitId = bill.visit_id as string | null
+        const bApptId  = (bill as unknown as { appointment_id: string | null }).appointment_id
+        const opdVisit = getOpdVisit(month, bVisitId, bApptId, bill.created_at)
+        opdVisit.bills.push(bill)
         if (!isCancelled && !isRefundBill) {
-          month.opd.totalBilled      += bill.total
-          month.opd.totalPaid        += bill.paid
-          month.opd.totalOutstanding += Math.max(0, bill.total - bill.paid)
+          opdVisit.totalBilled      += bill.total
+          opdVisit.totalPaid        += bill.paid
+          opdVisit.totalOutstanding += Math.max(0, bill.total - bill.paid)
         }
       }
     }
@@ -419,9 +428,11 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         pat.advanceSummary = advanceSummaries[pat.admissionId]
       }
       for (const month of pat.months) {
-        if (month.opd) {
-          month.opd.bills.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        for (const ov of month.opdVisits) {
+          ov.bills.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         }
+        // Sort visits newest first (by visitDate)
+        month.opdVisits.sort((a, b) => b.visitDate.localeCompare(a.visitDate))
         for (const ipd of month.ipd) {
           ipd.bills.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           if (advanceSummaries[ipd.admissionId]) {
@@ -441,7 +452,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
   function allGroupBills(g: PatientGroup): Bill[] {
     return g.months.flatMap((m) => [
-      ...(m.opd?.bills ?? []),
+      ...m.opdVisits.flatMap((v) => v.bills),
       ...m.ipd.flatMap((x) => x.bills),
     ])
   }
@@ -711,8 +722,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                               <div className="flex items-center gap-2">
                                 {/* Month-level summary chips */}
                                 {(() => {
-                                  const mo = (month.opd?.totalOutstanding ?? 0) + month.ipd.reduce((s, x) => s + x.totalOutstanding, 0)
-                                  const mb = (month.opd?.totalBilled ?? 0) + month.ipd.reduce((s, x) => s + x.totalBilled, 0)
+                                  const mo = month.opdVisits.reduce((s, v) => s + v.totalOutstanding, 0) + month.ipd.reduce((s, x) => s + x.totalOutstanding, 0)
+                                  const mb = month.opdVisits.reduce((s, v) => s + v.totalBilled, 0) + month.ipd.reduce((s, x) => s + x.totalBilled, 0)
                                   if (mo > 0) return <span className="text-xs font-semibold" style={{ color: '#EF4444' }}><Money amount={mo} /> due</span>
                                   if (mb > 0) return <span className="text-xs font-semibold" style={{ color: '#10B981' }}>Cleared</span>
                                   return null
@@ -725,63 +736,66 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
                             {monthOpen && (
                             <>
-                            {/* ── OPD section ── */}
-                            {month.opd && (
-                              <div>
-                                {/* OPD sub-header — clickable */}
+                            {/* ── OPD visits (one sub-section per visit) ── */}
+                            {month.opdVisits.map((opdVisit) => {
+                              const ovKey  = `${monthKey}-opd-${opdVisit.visitKey}`
+                              const ovOpen = expandedOPD.has(ovKey)
+                              const ovDate = new Date(opdVisit.visitDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                              return (
+                              <div key={opdVisit.visitKey}>
+                                {/* OPD visit sub-header */}
                                 <button
-                                  onClick={() => toggleOPD(opdKey)}
+                                  onClick={() => toggleOPD(ovKey)}
                                   className="w-full px-4 py-3 flex items-center justify-between"
                                   style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9', border: 'none', cursor: 'pointer' }}>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-xs font-bold px-2 py-0.5 rounded-md"
                                       style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>OPD</span>
-                                    <span className="text-xs" style={{ color: '#94A3B8' }}>{month.opd.bills.length} bill{month.opd.bills.length !== 1 ? 's' : ''}</span>
-                                    {month.opd.totalBilled !== 0 && (
+                                    <span className="text-xs font-medium" style={{ color: '#475569' }}>{ovDate}</span>
+                                    <span className="text-xs" style={{ color: '#94A3B8' }}>{opdVisit.bills.length} bill{opdVisit.bills.length !== 1 ? 's' : ''}</span>
+                                    {opdVisit.totalBilled !== 0 && (
                                       <span className="text-xs" style={{ color: '#64748B' }}>
-                                        Billed <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={month.opd.totalBilled} /></span>
+                                        Billed <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={opdVisit.totalBilled} /></span>
                                       </span>
                                     )}
-                                    {month.opd.totalPaid !== 0 && (
+                                    {opdVisit.totalPaid !== 0 && (
                                       <span className="text-xs" style={{ color: '#64748B' }}>
-                                        Paid <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={month.opd.totalPaid} /></span>
+                                        Paid <span className="font-semibold" style={{ color: '#10B981' }}><Money amount={opdVisit.totalPaid} /></span>
                                       </span>
                                     )}
-                                    {month.opd.totalOutstanding > 0 ? (
+                                    {opdVisit.totalOutstanding > 0 ? (
                                       <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
-                                        <Money amount={month.opd.totalOutstanding} /> due
+                                        <Money amount={opdVisit.totalOutstanding} /> due
                                       </span>
-                                    ) : month.opd.totalBilled > 0 ? (
+                                    ) : opdVisit.totalBilled > 0 ? (
                                       <span className="text-xs font-semibold" style={{ color: '#10B981' }}>Cleared</span>
                                     ) : null}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {(month.opd.visitId || month.opd.appointmentId) && (
+                                    {(opdVisit.visitId || opdVisit.appointmentId) && (
                                       <Link
-                                        href={`/billing/combined/visit/${month.opd.visitId ?? month.opd.appointmentId}`}
+                                        href={`/billing/combined/visit/${opdVisit.visitId ?? opdVisit.appointmentId}`}
                                         className="flex items-center gap-1 text-xs font-semibold"
                                         style={{ color: '#7C3AED', textDecoration: 'none' }}
                                         onClick={(e) => e.stopPropagation()}>
                                         <FileText className="w-3 h-3" /> Combined →
                                       </Link>
                                     )}
-                                    {opdOpen
+                                    {ovOpen
                                       ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                                       : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
                                   </div>
                                 </button>
-                                {opdOpen && (() => {
+                                {ovOpen && (() => {
                                   const refundedApptIds = new Set(
-                                    month.opd!.bills
+                                    opdVisit.bills
                                       .filter(b => b.bill_source === 'appointment_refund')
                                       .map(b => (b as unknown as { appointment_id: string | null }).appointment_id)
                                       .filter(Boolean) as string[]
                                   )
-                                  return month.opd!.bills.map((bill, i) => {
+                                  return opdVisit.bills.map((bill, i) => {
                                   const balance = Math.max(0, bill.total - bill.paid)
                                   const apptId = (bill as unknown as { appointment_id: string | null }).appointment_id
-                                  // "Refunded" only when: cancelled + was actually paid + is a consultation
-                                  // bill (not the refund bill itself) + has a matching refund entry
                                   const isApptRefunded = bill.status === 'cancelled'
                                     && bill.paid > 0
                                     && bill.bill_source !== 'appointment_refund'
@@ -789,7 +803,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                   return (
                                     <div key={bill.id} className="px-4 py-3 cursor-pointer"
                                       style={{
-                                        borderBottom: i < month.opd!.bills.length - 1 ? '1px solid #F8FAFC' : '1px solid #F1F5F9',
+                                        borderBottom: i < opdVisit.bills.length - 1 ? '1px solid #F8FAFC' : '1px solid #F1F5F9',
                                         background: bill.status === 'cancelled' ? 'rgba(241,245,249,0.4)' : 'rgba(248,250,252,0.5)',
                                         opacity: bill.status === 'cancelled' ? 0.65 : 1,
                                       }}
@@ -805,7 +819,6 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                           {isApptRefunded
                                             ? <StatusBadge status="success" label="Refunded" />
                                             : <StatusBadge status={STATUS_MAP[bill.status] ?? 'info'} label={bill.status} />}
-                                          {/* OPD: never allow cancelling a bill that has any payment — must go through refund */}
                                           {canManage && bill.status !== 'cancelled' && bill.status !== 'paid' && bill.paid === 0 && (
                                             <button onClick={(e) => handleCancelBill(e, bill.id)} disabled={cancelState === bill.id}
                                               className="text-xs px-2 py-0.5 rounded-lg font-semibold"
@@ -833,10 +846,11 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       </div>
                                     </div>
                                   )
-                                })
-                                })()}
+                                  })
+                                  })()}
                               </div>
-                            )}
+                              )
+                            })}
 
                             {/* ── IPD section(s) ── */}
                             {month.ipd.map((ipd) => {
