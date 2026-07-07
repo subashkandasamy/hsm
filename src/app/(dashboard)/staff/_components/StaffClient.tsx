@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Plus, RefreshCw, Users, CalendarCheck, CalendarClock,
-  Edit2, UserX, Phone, Mail, Briefcase, Search,
+  Edit2, UserX, Phone, Mail, Briefcase, Search, Lock,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
@@ -97,10 +97,12 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
     : filtered
   const activeCount = staff.filter((s) => s.is_active).length
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  const isStarterLocked = plan === 'starter' && tenantStatus !== 'trial'
+
+  const TABS: { key: Tab; label: string; icon: React.ReactNode; locked?: boolean }[] = [
     { key: 'directory',  label: 'Directory',  icon: <Users className="w-4 h-4" /> },
-    { key: 'attendance', label: 'Attendance', icon: <CalendarCheck className="w-4 h-4" /> },
-    { key: 'roster',     label: 'Roster',     icon: <CalendarClock className="w-4 h-4" /> },
+    { key: 'attendance', label: 'Attendance', icon: <CalendarCheck className="w-4 h-4" />, locked: isStarterLocked },
+    { key: 'roster',     label: 'Roster',     icon: <CalendarClock className="w-4 h-4" />, locked: isStarterLocked },
   ]
 
   return (
@@ -132,14 +134,19 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
       <div className="overflow-x-auto -mx-4 px-4 mb-5">
         <div className="flex gap-1 p-1 rounded-xl w-max"
           style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-          {TABS.map(({ key, label, icon }) => (
-            <button key={key} onClick={() => setTab(key)}
+          {TABS.map(({ key, label, icon, locked }) => (
+            <button key={key}
+              onClick={() => { if (!locked) setTab(key) }}
+              title={locked ? 'Available on Growth plan' : undefined}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0"
-              style={tab === key
-                ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
-                : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+              style={locked
+                ? { background: 'transparent', color: '#CBD5E1', border: 'none', cursor: 'not-allowed' }
+                : tab === key
+                  ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }
+                  : { background: 'transparent', color: '#64748B', border: 'none', cursor: 'pointer' }}>
               {icon}
               {label}
+              {locked && <Lock className="w-3 h-3" />}
             </button>
           ))}
         </div>
@@ -389,20 +396,24 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
 
       {/* Attendance Tab */}
       {tab === 'attendance' && (
-        <AttendancePanel
-          staff={staff}
-          initialAttendance={initialAttendance}
-          currentMonth={currentMonth}
-        />
+        isStarterLocked ? <UpgradeCard feature="Attendance tracking" /> : (
+          <AttendancePanel
+            staff={staff}
+            initialAttendance={initialAttendance}
+            currentMonth={currentMonth}
+          />
+        )
       )}
 
       {/* Roster Tab */}
       {tab === 'roster' && (
-        <RosterPanel
-          staff={staff}
-          initialRoster={initialRoster}
-          weekStart={weekStart}
-        />
+        isStarterLocked ? <UpgradeCard feature="Duty roster management" /> : (
+          <RosterPanel
+            staff={staff}
+            initialRoster={initialRoster}
+            weekStart={weekStart}
+          />
+        )
       )}
 
       {/* Add Staff Modal */}
@@ -606,5 +617,26 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
         )}
       </form>
     </Modal>
+  )
+}
+
+function UpgradeCard({ feature }: { feature: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-6 text-center rounded-2xl"
+      style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+        style={{ background: 'rgba(13,148,136,0.08)' }}>
+        <Lock className="w-6 h-6" style={{ color: '#0D9488' }} />
+      </div>
+      <h3 className="text-base font-semibold mb-1" style={{ color: '#0F172A' }}>{feature}</h3>
+      <p className="text-sm mb-5" style={{ color: '#64748B' }}>
+        Available on the <strong>Growth plan</strong>. Upgrade to track attendance and manage duty rosters.
+      </p>
+      <a href="/account/subscription?upgrade=1"
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+        style={{ background: '#0D9488', color: '#fff', textDecoration: 'none' }}>
+        Upgrade to Growth
+      </a>
+    </div>
   )
 }
