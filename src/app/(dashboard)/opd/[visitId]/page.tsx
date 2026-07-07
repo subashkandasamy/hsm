@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import { getVisit, getPatientVisits } from '@/app/actions/opd'
 import { getPatient } from '@/app/actions/patients'
 import { listLabCatalog } from '@/app/actions/lab'
@@ -13,11 +14,16 @@ import { createClient } from '@/lib/supabase/server'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
 import ConsultationWorkspace from './_components/ConsultationWorkspace'
 import type { ProcedureTariff } from '@/lib/types'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 
 interface Props { params: Promise<{ visitId: string }> }
 
 export default async function OpdVisitPage({ params }: Props) {
   const { visitId } = await params
+
+  const hdrs = await headers()
+  const tenantPlan   = (hdrs.get('x-tenant-plan')   ?? 'starter') as PlanKey
+  const tenantStatus = (hdrs.get('x-tenant-status') ?? 'trial')   as TenantStatus
 
   const visit = await getVisit(visitId)
   if (!visit) notFound()
@@ -96,6 +102,8 @@ export default async function OpdVisitPage({ params }: Props) {
       admitGeneralTariffPrice={(generalRes.data?.default_price as number) ?? undefined}
       admitAdvancePercentage={(tenantRes.data?.advance_percentage as number) ?? 50}
       tenantProfile={tenantProfile}
+      plan={tenantPlan}
+      tenantStatus={tenantStatus}
     />
   )
 }

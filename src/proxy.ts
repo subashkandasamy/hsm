@@ -146,7 +146,8 @@ export async function proxy(request: NextRequest) {
       // ── Plan-based route gating ───────────────────────────────────────────
       const GROWTH_ONLY_ROUTES = [
         '/ipd', '/wards', '/emergency', '/lab', '/radiology',
-        '/ot', '/blood', '/insurance', '/inventory', '/staff',
+        '/ot', '/blood', '/insurance', '/inventory',
+        // /staff is accessible on starter with per-role limits
       ]
       if (tenant.plan === 'starter' && tenant.status !== 'trial') {
         const isGrowthRoute = GROWTH_ONLY_ROUTES.some(

@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { createStaff } from '@/app/actions/hr'
 import type { Role } from '@/lib/types'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 
 const ROLES: { value: Role; label: string }[] = [
   { value: 'doctor',       label: 'Doctor' },
@@ -23,9 +24,12 @@ interface Props {
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  plan?: PlanKey
+  tenantStatus?: TenantStatus
+  roleCountMap?: Record<string, number>
 }
 
-export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
+export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starter', tenantStatus = 'trial', roleCountMap = {} }: Props) {
   const [form, setForm] = useState({
     full_name: '',
     email: '',
@@ -142,9 +146,14 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
             style={{ background: '#F1F5F9', color: '#475569', border: 'none', cursor: 'pointer' }}>
             Cancel
           </button>
-          <button form="add-staff-form" type="submit" disabled={saving}
+          <button form="add-staff-form" type="submit"
+            disabled={saving || (plan === 'starter' && tenantStatus !== 'trial' && !!form.role && (roleCountMap[form.role] ?? 0) >= 1)}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: saving ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            style={{
+              background: saving || (plan === 'starter' && tenantStatus !== 'trial' && !!form.role && (roleCountMap[form.role] ?? 0) >= 1) ? '#94A3B8' : '#0D9488',
+              color: '#fff', border: 'none',
+              cursor: saving || (plan === 'starter' && tenantStatus !== 'trial' && !!form.role && (roleCountMap[form.role] ?? 0) >= 1) ? 'not-allowed' : 'pointer',
+            }}>
             {saving ? 'Creating…' : 'Create Account'}
           </button>
         </div>
@@ -154,6 +163,15 @@ export default function AddStaffModal({ open, onClose, onSuccess }: Props) {
         {error && (
           <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.15)' }}>
             {error}
+          </div>
+        )}
+        {plan === 'starter' && tenantStatus !== 'trial' && form.role && (roleCountMap[form.role] ?? 0) >= 1 && (
+          <div className="p-3 rounded-xl text-sm flex items-start gap-2" style={{ background: 'rgba(245,158,11,0.06)', color: '#92400E', border: '1px solid rgba(245,158,11,0.2)' }}>
+            <span>⚠</span>
+            <span>
+              Starter plan allows <strong>1 {ROLES.find((r) => r.value === form.role)?.label ?? form.role}</strong> per practice.{' '}
+              <a href="/account/subscription?upgrade=1" style={{ color: '#0D9488', textDecoration: 'underline', fontWeight: 600 }}>Upgrade to Growth</a> to add more.
+            </span>
           </div>
         )}
 

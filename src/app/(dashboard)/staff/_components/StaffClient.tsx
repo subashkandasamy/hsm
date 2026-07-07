@@ -19,6 +19,7 @@ import { setDoctorConsultationFee } from '@/app/actions/tariffs'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { StaffMember, StaffAttendance, DutyRoster, Role } from '@/lib/types'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 import AddStaffModal from './AddStaffModal'
 import AttendancePanel from './AttendancePanel'
 import RosterPanel from './RosterPanel'
@@ -43,9 +44,11 @@ interface Props {
   initialRoster: DutyRoster[]
   currentMonth: string
   weekStart: string
+  plan?: PlanKey
+  tenantStatus?: TenantStatus
 }
 
-export default function StaffClient({ initialStaff, initialAttendance, initialRoster, currentMonth, weekStart }: Props) {
+export default function StaffClient({ initialStaff, initialAttendance, initialRoster, currentMonth, weekStart, plan = 'starter', tenantStatus = 'trial' }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canManage    = !!role && hasPermission(role, 'hr:manage')
@@ -407,6 +410,9 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
         open={showAddStaff}
         onClose={() => setShowAddStaff(false)}
         onSuccess={refresh}
+        plan={plan}
+        tenantStatus={tenantStatus}
+        roleCountMap={Object.fromEntries(ROLES.map((r) => [r, staff.filter((s) => s.role === r && s.is_active !== false).length]))}
       />
 
       {/* Edit Staff Modal */}

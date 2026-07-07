@@ -3,7 +3,7 @@ export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'canc
 
 // Modules each paid plan includes (trial always gets everything)
 export const PLAN_MODULES: Record<PlanKey, readonly string[]> = {
-  starter:    ['opd', 'patients', 'appointments', 'billing', 'dashboard', 'pharmacy'],
+  starter:    ['opd', 'patients', 'appointments', 'billing', 'dashboard', 'pharmacy', 'hr'],
   growth:     ['opd', 'patients', 'appointments', 'billing', 'dashboard',
                'ipd', 'wards', 'emergency', 'lab', 'radiology', 'pharmacy',
                'ot', 'bloodbank', 'insurance', 'inventory', 'hr'],

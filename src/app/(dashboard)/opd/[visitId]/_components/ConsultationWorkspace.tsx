@@ -57,6 +57,8 @@ interface Props {
   admitGeneralTariffPrice?: number
   admitAdvancePercentage?: number
   tenantProfile?: TenantProfile | null
+  plan?: import('@/lib/plans').PlanKey
+  tenantStatus?: import('@/lib/plans').TenantStatus
 }
 
 function computeAge(dob: string | null) {
@@ -72,7 +74,7 @@ export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
-  tenantProfile = null,
+  tenantProfile = null, plan = 'starter', tenantStatus = 'trial',
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -830,47 +832,63 @@ export default function ConsultationWorkspace({
                     style={{ background: '#F1F5F9', color: '#64748B' }}>Read-only</span>
                 )}
               </h3>
-              <div className="flex gap-3 flex-wrap">
-                <button
-                  onClick={() => setShowLabOrder(true)}
-                  disabled={isClosed}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{
-                    background: labOrdered ? '#DCFCE7' : isClosed ? '#F1F5F9' : 'rgba(13,148,136,0.08)',
-                    color: labOrdered ? '#15803D' : isClosed ? '#94A3B8' : '#0D9488',
-                    border: `1px solid ${labOrdered ? '#BBF7D0' : isClosed ? '#E2E8F0' : 'rgba(13,148,136,0.2)'}`,
-                    cursor: isClosed ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <FlaskConical className="w-4 h-4" />
-                  {labOrdered ? 'Lab Tests Ordered ✓' : 'Order Lab Tests'}
-                  {labCatalog.length === 0 && !labOrdered && (
-                    <span className="text-xs opacity-60">(catalog empty)</span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowRadOrder(true)}
-                  disabled={isClosed}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{
-                    background: radOrdered ? '#DBEAFE' : isClosed ? '#F1F5F9' : 'rgba(29,78,216,0.06)',
-                    color: radOrdered ? '#1D4ED8' : isClosed ? '#94A3B8' : '#1D4ED8',
-                    border: `1px solid ${radOrdered ? '#BFDBFE' : isClosed ? '#E2E8F0' : 'rgba(29,78,216,0.15)'}`,
-                    cursor: isClosed ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <Scan className="w-4 h-4" />
-                  {radOrdered ? 'Imaging Ordered ✓' : 'Order Imaging'}
-                  {radiologyCatalog.length === 0 && !radOrdered && (
-                    <span className="text-xs opacity-60">(catalog empty)</span>
-                  )}
-                </button>
-              </div>
-              {(labCatalog.length === 0 || radiologyCatalog.length === 0) && !isClosed && (
-                <p className="mt-3 text-xs" style={{ color: '#94A3B8' }}>
-                  Ask an admin to add tests to the catalog before ordering.
-                </p>
-              )}
+              {(() => {
+                const isStarterLocked = plan === 'starter' && tenantStatus !== 'trial'
+                return (
+                  <>
+                    <div className="flex gap-3 flex-wrap">
+                      <button
+                        onClick={isStarterLocked ? undefined : () => setShowLabOrder(true)}
+                        disabled={isClosed || isStarterLocked}
+                        title={isStarterLocked ? 'Lab ordering requires Growth plan' : undefined}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{
+                          background: labOrdered ? '#DCFCE7' : (isClosed || isStarterLocked) ? '#F1F5F9' : 'rgba(13,148,136,0.08)',
+                          color: labOrdered ? '#15803D' : (isClosed || isStarterLocked) ? '#94A3B8' : '#0D9488',
+                          border: `1px solid ${labOrdered ? '#BBF7D0' : (isClosed || isStarterLocked) ? '#E2E8F0' : 'rgba(13,148,136,0.2)'}`,
+                          cursor: (isClosed || isStarterLocked) ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <FlaskConical className="w-4 h-4" />
+                        {labOrdered ? 'Lab Tests Ordered ✓' : 'Order Lab Tests'}
+                        {isStarterLocked && <Lock className="w-3 h-3 ml-1" />}
+                        {labCatalog.length === 0 && !labOrdered && !isStarterLocked && (
+                          <span className="text-xs opacity-60">(catalog empty)</span>
+                        )}
+                      </button>
+                      <button
+                        onClick={isStarterLocked ? undefined : () => setShowRadOrder(true)}
+                        disabled={isClosed || isStarterLocked}
+                        title={isStarterLocked ? 'Imaging ordering requires Growth plan' : undefined}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{
+                          background: radOrdered ? '#DBEAFE' : (isClosed || isStarterLocked) ? '#F1F5F9' : 'rgba(29,78,216,0.06)',
+                          color: radOrdered ? '#1D4ED8' : (isClosed || isStarterLocked) ? '#94A3B8' : '#1D4ED8',
+                          border: `1px solid ${radOrdered ? '#BFDBFE' : (isClosed || isStarterLocked) ? '#E2E8F0' : 'rgba(29,78,216,0.15)'}`,
+                          cursor: (isClosed || isStarterLocked) ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <Scan className="w-4 h-4" />
+                        {radOrdered ? 'Imaging Ordered ✓' : 'Order Imaging'}
+                        {isStarterLocked && <Lock className="w-3 h-3 ml-1" />}
+                        {radiologyCatalog.length === 0 && !radOrdered && !isStarterLocked && (
+                          <span className="text-xs opacity-60">(catalog empty)</span>
+                        )}
+                      </button>
+                    </div>
+                    {isStarterLocked && (
+                      <p className="mt-3 text-xs" style={{ color: '#94A3B8' }}>
+                        Lab and imaging ordering is available on the <strong style={{ color: '#0D9488' }}>Growth plan</strong>. <a href="/account/subscription?upgrade=1" style={{ color: '#0D9488', textDecoration: 'underline' }}>Upgrade</a>
+                      </p>
+                    )}
+                    {!isStarterLocked && (labCatalog.length === 0 || radiologyCatalog.length === 0) && !isClosed && (
+                      <p className="mt-3 text-xs" style={{ color: '#94A3B8' }}>
+                        Ask an admin to add tests to the catalog before ordering.
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
             </GlassCard>
           )}
 
