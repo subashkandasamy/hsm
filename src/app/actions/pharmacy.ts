@@ -382,12 +382,18 @@ export async function generatePharmacyBill(params: {
   // prior-session dispenses may be unbilled and must be included in the same bill)
   const { data: rows, error: rowErr } = await supabase
     .from('dispenses')
-    .select('id, qty, price_snapshot, master:drug_master(name, drug_brands(brand_name)), drug:drugs(name)')
+    .select('id, qty, price_snapshot, master:drug_master(name, drug_brands(brand_name)), drug:drugs(name), prescription:prescriptions(visit_id)')
     .eq('patient_id', patientId)
     .eq('billing_status', 'unbilled')
 
   if (rowErr) return { success: false, error: rowErr.message }
   if (!rows?.length) return { success: false, error: 'No unbilled dispenses found — they may already be billed' }
+
+  // Derive visit_id from the first dispense that has a prescription linked to an OPD visit
+  const visitId = (rows.find((r) => {
+    const rx = r.prescription as unknown as { visit_id: string | null } | null
+    return rx?.visit_id
+  })?.prescription as unknown as { visit_id: string | null } | null)?.visit_id ?? null
 
   const subtotal = rows.reduce((s, r) => s + (r.qty as number) * (r.price_snapshot as number), 0)
 
@@ -401,6 +407,7 @@ export async function generatePharmacyBill(params: {
     id: billId,
     tenant_id: actor.tenant_id,
     patient_id: patientId,
+    visit_id: visitId,
     bill_no: billNo,
     subtotal,
     discount: 0,

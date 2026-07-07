@@ -93,6 +93,7 @@ export async function createRadiologyOrder(
         id: billId,
         tenant_id: actor.tenant_id,
         patient_id,
+        visit_id: visit_id ?? null,
         bill_no: billNoData as string,
         subtotal: priceSnapshot,
         discount: 0, tax: 0, total: priceSnapshot, paid: 0,

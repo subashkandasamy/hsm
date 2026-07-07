@@ -99,6 +99,7 @@ export async function createLabOrder(
         id: billId,
         tenant_id: actor.tenant_id,
         patient_id,
+        visit_id: visit_id ?? null,
         bill_no: billNoData as string,
         subtotal: totalAmount,
         discount: 0, tax: 0, total: totalAmount, paid: 0,
