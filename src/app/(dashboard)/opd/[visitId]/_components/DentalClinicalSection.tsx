@@ -6,6 +6,8 @@ import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
+import MicButton from '@/components/ui/MicButton'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
 import ToothChart from './ToothChart'
 import {
   setToothStatus, addTreatment, listTreatmentHistory,
@@ -70,6 +72,10 @@ export default function DentalClinicalSection({
   })
   const [treatError, setTreatError] = useState('')
 
+  const speechTreatNotes = useSpeechInput({
+    onAppend: (t) => setTreatForm((f) => ({ ...f, notes: f.notes ? `${f.notes} ${t}` : t })),
+  })
+
   // Status update form (inside tooth panel)
   const [statusUpdating, setStatusUpdating] = useState(false)
 
@@ -82,6 +88,7 @@ export default function DentalClinicalSection({
   function openTooth(n: number) {
     if (disabled) return
     const tooth = teeth.find((t) => t.tooth_number === n)
+    speechTreatNotes.stop()
     setActivePanel({ toothNumber: n, currentStatus: tooth?.current_status ?? 'healthy' })
     setTreatForm((f) => ({ ...f, toothNumber: String(n), procedure: 'filling', notes: '', priceSnapshot: '' }))
     setTreatError('')
@@ -162,7 +169,7 @@ export default function DentalClinicalSection({
             <h4 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
               Tooth #{activePanel.toothNumber}
             </h4>
-            <button onClick={() => setActivePanel(null)}
+            <button onClick={() => { speechTreatNotes.stop(); setActivePanel(null) }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
               <X className="w-4 h-4" />
             </button>
@@ -223,15 +230,28 @@ export default function DentalClinicalSection({
               </div>
               <div>
                 <label className="block text-xs mb-1" style={{ color: '#64748B' }}>Notes</label>
-                <input
-                  type="text"
-                  value={treatForm.notes}
-                  onChange={(e) => setTreatForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="Optional"
-                  style={inputStyle}
-                  onFocus={(e) => Object.assign(e.currentTarget.style, focusStyle)}
-                  onBlur={(e) => Object.assign(e.currentTarget.style, { borderColor: '#E2E8F0', boxShadow: 'none' })}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={treatForm.notes}
+                    onChange={(e) => setTreatForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Optional"
+                    style={{
+                      ...inputStyle,
+                      paddingRight: speechTreatNotes.supported ? '2.25rem' : undefined,
+                    }}
+                    onFocus={(e) => Object.assign(e.currentTarget.style, focusStyle)}
+                    onBlur={(e) => Object.assign(e.currentTarget.style, { borderColor: '#E2E8F0', boxShadow: 'none' })}
+                  />
+                  {speechTreatNotes.supported && (
+                    <div className="absolute top-1/2 right-2 -translate-y-1/2">
+                      <MicButton listening={speechTreatNotes.listening} onToggle={speechTreatNotes.toggle} />
+                    </div>
+                  )}
+                </div>
+                {speechTreatNotes.interim && (
+                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechTreatNotes.interim}…</p>
+                )}
               </div>
             </div>
             {treatError && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{treatError}</p>}
