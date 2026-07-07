@@ -824,17 +824,15 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     .from('tenants').select('name').eq('id', actor.tenant_id).single()
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
-  // 1. Fetch admission — includes combined_bill_no and admitted_at
+  // 1. Fetch admission
   const { data: admission } = await supabase
     .from('admissions')
-    .select('id, patient_id, combined_bill_no, admitted_at, discharged_at')
+    .select('id, patient_id, combined_bill_no')
     .eq('id', admissionId)
     .single()
   if (!admission) return null
 
   const patientId = admission.patient_id as string
-  const admittedAt = admission.admitted_at as string
-  const dischargedAt = (admission as Record<string, unknown>).discharged_at as string | null | undefined
 
   // 2. Get-or-create combined bill number (lazy generation for old admissions)
   let combinedBillNo = 'COMBINED'
@@ -871,35 +869,8 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     .order('billing_date', { ascending: true })
     .order('created_at', { ascending: true })
 
-  // 5. Fetch OPD/standalone bills for this patient with no admission_id,
-  //    created on or after the admission date — captures same-day OPD bills
-  //    (Lab, Consultation etc. ordered before/during admission).
-  //    Note: .neq('bill_source','consolidated') drops NULL rows in PG — filter in JS.
-  const admissionDateStart = admittedAt.slice(0, 10) + 'T00:00:00'
-  let opdQuery = supabase
-    .from('bills')
-    .select(BILL_SELECT)
-    .eq('patient_id', patientId)
-    .is('admission_id', null)
-    .neq('status', 'cancelled')
-    .gte('created_at', admissionDateStart)
-    .order('created_at', { ascending: true })
-  if (dischargedAt) {
-    opdQuery = opdQuery.lte('created_at', dischargedAt)
-  }
-  const { data: opdBills } = await opdQuery
-
-  const seenIds = new Set<string>()
-  const allBills = [
-    ...((admBills ?? []) as unknown as RawBill[]),
-    ...((opdBills ?? []) as unknown as RawBill[]),
-  ]
-    .filter((b) => {
-      if (b.bill_source === 'consolidated') return false
-      if (seenIds.has(b.id)) return false
-      seenIds.add(b.id)
-      return true
-    })
+  const allBills = ((admBills ?? []) as unknown as RawBill[])
+    .filter((b) => b.bill_source !== 'consolidated')
 
   // 6. Advance collected for this admission only
   const { data: advRows } = await supabase
