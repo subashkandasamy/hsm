@@ -13,12 +13,15 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
   const [interim, setInterim]      = useState('')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recRef          = useRef<any>(null)
-  const onAppendRef     = useRef(onAppend)
-  const listeningRef    = useRef(false)
-  const langRef         = useRef(lang)
-  // tracks how many final results we've committed — blocks Chrome Android's duplicate-fire bug
-  const processedCount  = useRef(0)
+  const recRef         = useRef<any>(null)
+  const onAppendRef    = useRef(onAppend)
+  const listeningRef   = useRef(false)
+  const langRef        = useRef(lang)
+  // Mobile Chrome sends cumulative final results ("to", "to let", "to let me"…).
+  // We track the last committed text and only append the delta.
+  const lastCommitted  = useRef('')
+  // Also track processed indices to block same-index duplicate fires (desktop Chrome bug).
+  const processedCount = useRef(0)
 
   useEffect(() => { onAppendRef.current = onAppend })
   useEffect(() => { langRef.current = lang }, [lang])
@@ -30,6 +33,11 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     )
   }, [])
 
+  const resetSession = useCallback(() => {
+    lastCommitted.current  = ''
+    processedCount.current = 0
+  }, [])
+
   const createSession = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
@@ -38,12 +46,10 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rec: any = new SR()
     rec.lang           = langRef.current
-    rec.continuous     = true   // no gaps — mic stays open the whole time
+    rec.continuous     = true
     rec.interimResults = true
 
-    rec.onstart = () => {
-      processedCount.current = 0  // fresh result list for this session
-    }
+    rec.onstart = () => { resetSession() }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (e: any) => {
@@ -51,11 +57,23 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i]
         if (result.isFinal) {
-          // skip if we already committed this index (Chrome Android duplicate-fire bug)
+          // block same-index duplicate fires
           if (i < processedCount.current) continue
           processedCount.current = i + 1
-          onAppendRef.current(result[0].transcript.trim())
-          setInterim('')
+
+          const fullText = result[0].transcript.trim()
+
+          // Mobile sends cumulative text — extract only the new part
+          let delta = fullText
+          if (lastCommitted.current && fullText.startsWith(lastCommitted.current)) {
+            delta = fullText.slice(lastCommitted.current.length).trim()
+          }
+          lastCommitted.current = fullText
+
+          if (delta) {
+            onAppendRef.current(delta)
+            setInterim('')
+          }
         } else {
           interimText += result[0].transcript
         }
@@ -68,12 +86,10 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
       setInterim('')
       if (!listeningRef.current) { recRef.current = null; return }
       if (e.error === 'no-speech' || e.error === 'audio-capture') {
-        // transient errors — restart session
         recRef.current = null
-        processedCount.current = 0
+        resetSession()
         createSession()
       } else {
-        // aborted / network / not-allowed — stop
         listeningRef.current = false
         setListening(false)
         recRef.current = null
@@ -83,9 +99,8 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     rec.onend = () => {
       setInterim('')
       recRef.current = null
-      processedCount.current = 0
+      resetSession()
       if (listeningRef.current) {
-        // session timed out (30-60s) — restart immediately, no gap
         createSession()
       } else {
         setListening(false)
@@ -100,16 +115,16 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
       setListening(false)
       recRef.current = null
     }
-  }, [])
+  }, [resetSession])
 
   const stop = useCallback(() => {
     listeningRef.current = false
     recRef.current?.stop()
     recRef.current = null
-    processedCount.current = 0
+    resetSession()
     setListening(false)
     setInterim('')
-  }, [])
+  }, [resetSession])
 
   const start = useCallback(() => {
     if (listeningRef.current) return
