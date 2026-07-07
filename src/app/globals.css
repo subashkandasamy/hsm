@@ -179,3 +179,15 @@ body {
 /* Drawer transition */
 .drawer-enter  { transform: translateX(-100%); }
 .drawer-active { transform: translateX(0); transition: transform 0.25s ease; }
+
+/* ── Print styles ── */
+@media print {
+  .no-print { display: none !important; }
+  #rx-print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    background: #fff !important;
+  }
+  @page { size: A4 portrait; margin: 10mm; }
+}
