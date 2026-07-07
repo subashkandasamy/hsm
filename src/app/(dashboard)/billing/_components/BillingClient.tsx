@@ -756,9 +756,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                     ) : null}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {month.opd.visitId && (
+                                    {(month.opd.visitId || month.opd.appointmentId) && (
                                       <Link
-                                        href={`/billing/combined/visit/${month.opd.visitId}`}
+                                        href={`/billing/combined/visit/${month.opd.visitId ?? month.opd.appointmentId}`}
                                         className="flex items-center gap-1 text-xs font-semibold"
                                         style={{ color: '#7C3AED', textDecoration: 'none' }}
                                         onClick={(e) => e.stopPropagation()}>

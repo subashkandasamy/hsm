@@ -964,13 +964,13 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
   // 1. Fetch visit — try by visit id, then by appointment_id as fallback
-  type VisitRow = { id: string; patient_id: string; combined_bill_no: string | null }
+  type VisitRow = { id: string; patient_id: string; combined_bill_no: string | null; appointment_id: string | null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let visitRow: VisitRow | null = null
   {
     const { data, error } = await supabase
       .from('visits')
-      .select('id, patient_id, combined_bill_no')
+      .select('id, patient_id, combined_bill_no, appointment_id')
       .eq('id', visitId)
       .maybeSingle()
     if (error) console.error('[getOpdCombinedBillData] visit lookup error:', error.message)
@@ -981,7 +981,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   if (!visitRow) {
     const { data, error } = await supabase
       .from('visits')
-      .select('id, patient_id, combined_bill_no')
+      .select('id, patient_id, combined_bill_no, appointment_id')
       .eq('appointment_id', visitId)
       .maybeSingle()
     if (error) console.error('[getOpdCombinedBillData] appt fallback error:', error.message)
@@ -992,6 +992,8 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
 
   const resolvedVisitId = visitRow.id
   const patientId = visitRow.patient_id
+  // Appointment-stage bills (created before OPD visit start) carry appointment_id but no visit_id
+  const visitApptId = visitRow.appointment_id
 
   // 2. Get-or-create combined bill number
   let combinedBillNo = 'COMBINED'
@@ -1018,15 +1020,34 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   }
 
   // 4. Fetch all non-cancelled bills for this visit (filter consolidated in JS — PG neq drops NULLs)
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)'
   const { data: visitBills } = await supabase
     .from('bills')
-    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+    .select(BILL_SELECT)
     .eq('visit_id', resolvedVisitId)
     .neq('status', 'cancelled')
     .order('billing_date', { ascending: true })
     .order('created_at', { ascending: true })
 
-  const allBills = ((visitBills ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
+  // Also include appointment-stage bills (created at booking time before the visit was started)
+  // These carry appointment_id but have visit_id = null, so they're missed by the visit_id query above
+  let preVisitBills: RawBill[] = []
+  if (visitApptId) {
+    const { data: pb } = await supabase
+      .from('bills')
+      .select(BILL_SELECT)
+      .eq('appointment_id', visitApptId)
+      .is('visit_id', null)
+      .neq('status', 'cancelled')
+      .order('billing_date', { ascending: true })
+      .order('created_at', { ascending: true })
+    preVisitBills = ((pb ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
+  }
+
+  const allBills = [
+    ...preVisitBills,
+    ...((visitBills ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated'),
+  ]
 
   // 5. Group items into sections
   const sections: import('@/lib/types').CombinedBillSection[] = []
