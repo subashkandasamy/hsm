@@ -11,10 +11,15 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
   const [listening, setListening] = useState(false)
   const [supported, setSupported] = useState(false)
   const [interim, setInterim] = useState('')
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recRef = useRef<any>(null)
-  const onAppendRef = useRef(onAppend)
+  const recRef       = useRef<any>(null)
+  const onAppendRef  = useRef(onAppend)
+  const listeningRef = useRef(false)   // mutable — avoids stale-state race in onend
+  const langRef      = useRef(lang)
+
   useEffect(() => { onAppendRef.current = onAppend })
+  useEffect(() => { langRef.current = lang }, [lang])
 
   useEffect(() => {
     setSupported(
@@ -23,23 +28,17 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
     )
   }, [])
 
-  const stop = useCallback(() => {
-    recRef.current?.stop()
-    recRef.current = null
-    setListening(false)
-    setInterim('')
-  }, [])
-
-  const start = useCallback(() => {
+  // createSession is stable (empty deps) — refs keep it current
+  const createSession = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
-    if (!SR) return
+    if (!SR || !listeningRef.current) return
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rec: any = new SR()
-    rec.lang = lang
-    rec.continuous = true
-    rec.interimResults = true   // real-time partial results
+    rec.lang           = langRef.current
+    rec.continuous     = false  // one utterance per session — prevents mobile duplicate results
+    rec.interimResults = true
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (e: any) => {
@@ -55,17 +54,60 @@ export function useSpeechInput({ onAppend, lang = 'en-IN' }: Options) {
       }
       if (interimText) setInterim(interimText)
     }
-    rec.onerror = () => { setListening(false); setInterim(''); recRef.current = null }
-    rec.onend   = () => { setListening(false); setInterim(''); recRef.current = null }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (e: any) => {
+      setInterim('')
+      if (!listeningRef.current) { recRef.current = null; return }
+      if (e.error === 'no-speech') {
+        // silence timeout is normal on mobile — just restart
+        recRef.current = null
+        createSession()
+      } else {
+        listeningRef.current = false
+        setListening(false)
+        recRef.current = null
+      }
+    }
+
+    rec.onend = () => {
+      setInterim('')
+      recRef.current = null
+      if (listeningRef.current) {
+        createSession()   // still listening — spin up a fresh session for the next utterance
+      } else {
+        setListening(false)
+      }
+    }
 
     recRef.current = rec
-    rec.start()
+    try {
+      rec.start()
+    } catch {
+      listeningRef.current = false
+      setListening(false)
+      recRef.current = null
+    }
+  }, [])
+
+  const stop = useCallback(() => {
+    listeningRef.current = false
+    recRef.current?.stop()
+    recRef.current = null
+    setListening(false)
+    setInterim('')
+  }, [])
+
+  const start = useCallback(() => {
+    if (listeningRef.current) return
+    listeningRef.current = true
     setListening(true)
-  }, [lang])
+    createSession()
+  }, [createSession])
 
   const toggle = useCallback(() => {
-    if (listening) stop(); else start()
-  }, [listening, start, stop])
+    if (listeningRef.current) stop(); else start()
+  }, [stop, start])
 
   return { listening, supported, toggle, stop, interim }
 }

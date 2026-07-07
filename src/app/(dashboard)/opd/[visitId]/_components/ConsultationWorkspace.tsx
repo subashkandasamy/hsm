@@ -243,19 +243,28 @@ export default function ConsultationWorkspace({
           onClick={() => {
             const el = document.getElementById('rx-print-area')
             if (!el) return
-            const w = window.open('', '_blank', 'width=900,height=700')
-            if (!w) return
-            w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Prescription</title><style>
+            const old = document.getElementById('rx-print-iframe')
+            if (old) old.remove()
+            const iframe = document.createElement('iframe')
+            iframe.id = 'rx-print-iframe'
+            iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;'
+            document.body.appendChild(iframe)
+            const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+            if (!doc) { iframe.remove(); return }
+            doc.open()
+            doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Prescription</title><style>
               *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
               body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #0F172A; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               table { border-collapse: collapse; width: 100%; }
               td, th { vertical-align: top; }
               @page { size: A4 portrait; margin: 10mm; }
-              @media print { body { margin: 0; } }
             </style></head><body>${el.innerHTML}</body></html>`)
-            w.document.close()
-            w.focus()
-            setTimeout(() => { w.print(); w.close() }, 500)
+            doc.close()
+            iframe.contentWindow?.focus()
+            setTimeout(() => {
+              iframe.contentWindow?.print()
+              iframe.addEventListener('afterprint', () => iframe.remove())
+            }, 500)
           }}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}
@@ -949,6 +958,7 @@ export default function ConsultationWorkspace({
           const hospName = p?.name || 'Hospital'
           const addrParts = [p?.address_line1, p?.address_line2, [p?.city, p?.state].filter(Boolean).join(', '), p?.pincode && `- ${p.pincode}`].filter(Boolean)
           const contactParts = [p?.phone1 && `Phone: ${p.phone1}`, p?.phone2 && p.phone2, p?.email && `Email: ${p.email}`, p?.website && `Web: ${p.website}`].filter(Boolean)
+          const legalParts = [p?.cin_no && `CIN No: ${p.cin_no}`, p?.gst_no && `GST: ${p.gst_no}`].filter(Boolean)
 
           const templateLabel: Record<string, string> = {
             general: 'General Consultation',
@@ -1006,6 +1016,7 @@ export default function ConsultationWorkspace({
                     )}
                     {addrParts.length > 0 && <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 0', lineHeight: 1.5 }}>{addrParts.join(', ')}</p>}
                     {contactParts.length > 0 && <p style={{ fontSize: '11px', color: '#475569', margin: '2px 0 0' }}>{contactParts.join('  |  ')}</p>}
+                    {legalParts.length > 0 && <p style={{ fontSize: '10px', color: '#94A3B8', margin: '3px 0 0', letterSpacing: '0.3px' }}>{legalParts.join('  |  ')}</p>}
                   </div>
                   <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '90px' }}>
                     <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0 }}>Visit Date</p>
