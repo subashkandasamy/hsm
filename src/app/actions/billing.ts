@@ -963,26 +963,46 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     .from('tenants').select('name').eq('id', actor.tenant_id).single()
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
-  // 1. Fetch visit
-  const { data: visit } = await supabase
-    .from('visits')
-    .select('patient_id, combined_bill_no')
-    .eq('id', visitId)
-    .single()
-  if (!visit) return null
+  // 1. Fetch visit — try by visit id, then by appointment_id as fallback
+  type VisitRow = { id: string; patient_id: string; combined_bill_no: string | null }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let visitRow: VisitRow | null = null
+  {
+    const { data, error } = await supabase
+      .from('visits')
+      .select('id, patient_id, combined_bill_no')
+      .eq('id', visitId)
+      .maybeSingle()
+    if (error) console.error('[getOpdCombinedBillData] visit lookup error:', error.message)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (data) visitRow = data as any as VisitRow
+  }
+  // Fallback: visitId might actually be an appointment_id
+  if (!visitRow) {
+    const { data, error } = await supabase
+      .from('visits')
+      .select('id, patient_id, combined_bill_no')
+      .eq('appointment_id', visitId)
+      .maybeSingle()
+    if (error) console.error('[getOpdCombinedBillData] appt fallback error:', error.message)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (data) visitRow = data as any as VisitRow
+  }
+  if (!visitRow) return null
 
-  const patientId = visit.patient_id as string
+  const resolvedVisitId = visitRow.id
+  const patientId = visitRow.patient_id
 
   // 2. Get-or-create combined bill number
   let combinedBillNo = 'COMBINED'
-  const existingNo = (visit as Record<string, unknown>).combined_bill_no as string | null | undefined
+  const existingNo = visitRow.combined_bill_no
   if (existingNo) {
     combinedBillNo = existingNo
   } else {
     const { data: billNoData } = await supabase.rpc('get_next_bill_no')
     if (billNoData) {
       combinedBillNo = billNoData as string
-      await supabase.from('visits').update({ combined_bill_no: combinedBillNo }).eq('id', visitId)
+      await supabase.from('visits').update({ combined_bill_no: combinedBillNo }).eq('id', resolvedVisitId)
     }
   }
 
@@ -1001,7 +1021,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   const { data: visitBills } = await supabase
     .from('bills')
     .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
-    .eq('visit_id', visitId)
+    .eq('visit_id', resolvedVisitId)
     .neq('status', 'cancelled')
     .order('billing_date', { ascending: true })
     .order('created_at', { ascending: true })
