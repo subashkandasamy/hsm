@@ -253,29 +253,37 @@ export default function AdmissionDetail({
             </div>
           </div>
 
-          {!isClosed && canWrite && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {canPrintWristband && (
-                <button onClick={() => setShowWristband(true)}
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            <button
+              onClick={() => window.open(`/print/ipd/${adm.id}`, '_blank')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
+              <Printer className="w-4 h-4" /> Print
+            </button>
+            {!isClosed && canWrite && (
+              <>
+                {canPrintWristband && (
+                  <button onClick={() => setShowWristband(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                    style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)', cursor: 'pointer' }}>
+                    <Printer className="w-4 h-4" /> Wristband
+                  </button>
+                )}
+                <button onClick={() => setShowTransfer(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
-                  style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)', cursor: 'pointer' }}>
-                  <Printer className="w-4 h-4" /> Wristband
+                  style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
+                  <ArrowRightLeft className="w-4 h-4" /> Transfer
                 </button>
-              )}
-              <button onClick={() => setShowTransfer(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
-                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
-                <ArrowRightLeft className="w-4 h-4" /> Transfer
-              </button>
-              <button onClick={() => setShowDischarge(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
-                style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#B91C1C' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '#DC2626' }}>
-                <LogOut className="w-4 h-4" /> Discharge
-              </button>
-            </div>
-          )}
+                <button onClick={() => setShowDischarge(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+                  style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#B91C1C' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#DC2626' }}>
+                  <LogOut className="w-4 h-4" /> Discharge
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {adm.status === 'discharged' && (
