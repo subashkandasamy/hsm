@@ -7,6 +7,8 @@ import type { Patient } from '@/lib/types'
 interface Props {
   patient: Patient
   onClose: () => void
+  /** When true, hides the "Done — Go to Patient" label (use when already on the patient page) */
+  inline?: boolean
 }
 
 function computeAge(dob: string | null): string {
@@ -15,7 +17,7 @@ function computeAge(dob: string | null): string {
   return `${Math.floor(diff / 31557600000)}y`
 }
 
-export default function PatientBarcodeModal({ patient, onClose }: Props) {
+export default function PatientBarcodeModal({ patient, onClose, inline }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -95,7 +97,7 @@ export default function PatientBarcodeModal({ patient, onClose }: Props) {
             onClick={onClose}
             className="w-full py-2.5 rounded-xl text-sm font-semibold"
             style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-            Done — Go to Patient
+            {inline ? 'Close' : 'Done — Go to Patient'}
           </button>
         </div>
       </div>

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Droplet, User, Phone, Mail, Clock,
-  Stethoscope, Pencil, Receipt, BadgeIndianRupee, BedDouble, ChevronDown, ChevronUp,
+  Stethoscope, Pencil, Receipt, BadgeIndianRupee, BedDouble, ChevronDown, ChevronUp, ScanBarcode,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -15,6 +15,7 @@ import Money from '@/components/ui/Money'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import EditPatientModal from './EditPatientModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
+import PatientBarcodeModal from '@/components/barcode/PatientBarcodeModal'
 import AllergiesTab from './AllergiesTab'
 import TimelineTab from './TimelineTab'
 import DocumentsTab from './DocumentsTab'
@@ -103,6 +104,7 @@ export default function PatientProfile({
   const [tab, setTab] = useState<Tab>('timeline')
   const [showEdit, setShowEdit] = useState(false)
   const [showBillBuilder, setShowBillBuilder] = useState(false)
+  const [showBarcode, setShowBarcode] = useState(false)
   const router = useRouter()
 
   const outstanding = bills
@@ -199,6 +201,15 @@ export default function PatientProfile({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowBarcode(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[36px]"
+              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
+            >
+              <ScanBarcode className="w-3.5 h-3.5" /> Barcode
+            </button>
             <button
               onClick={() => setShowEdit(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[36px]"
@@ -302,6 +313,13 @@ export default function PatientProfile({
         />
       )}
 
+      {showBarcode && (
+        <PatientBarcodeModal
+          patient={patient}
+          inline
+          onClose={() => setShowBarcode(false)}
+        />
+      )}
 
     </div>
   )
