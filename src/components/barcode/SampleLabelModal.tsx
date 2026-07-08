@@ -35,31 +35,7 @@ export default function SampleLabelModal({ order, onClose }: Props) {
   const handlePrint = useCallback(async () => {
     setPrinting(true)
     stampSampleLabelPrinted(order.id)
-
-    // Print all stickers — inject CSS that shows only the sticker containers
-    const style = document.createElement('style')
-    style.id = 'sample-label-print-css'
-    style.textContent = `
-      @media print {
-        @page { size: 50mm 30mm; margin: 0; }
-        body > * { visibility: hidden !important; }
-        .sample-sticker-wrap, .sample-sticker-wrap * { visibility: visible !important; }
-        .sample-sticker-wrap {
-          position: relative !important;
-          page-break-after: always;
-          width: 50mm; height: 30mm;
-          overflow: hidden;
-          box-shadow: none !important;
-          border: none !important;
-          padding: 3px !important;
-        }
-        .sample-sticker-wrap:last-child { page-break-after: auto; }
-      }
-    `
-    document.head.appendChild(style)
-    window.print()
-    document.head.removeChild(style)
-
+    window.open(`/print/sample-labels/${order.id}`, '_blank')
     setPrinting(false)
   }, [order.id])
 
