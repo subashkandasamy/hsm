@@ -26,17 +26,17 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
       patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null,
     ].filter(Boolean).join(' · ')
 
-    // ── Full-screen white overlay (max z-index) covers the modal on Android's
-    //    visual capture — mobile browsers screenshot before @media print fires ──
-    const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647;display:flex;align-items:flex-start;justify-content:flex-start;'
-    document.body.appendChild(overlay)
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
-    // ── Card lives inside the overlay (position:relative, not fixed) ──────────
+    // ── Card node ─────────────────────────────────────────────────────────────
     const root = document.createElement('div')
     root.id = '__id-card-root'
     Object.assign(root.style, {
-      position: 'relative',
+      // On desktop: off-screen until @media print moves it to 0,0 (no visual flash)
+      // On mobile: placed in overlay so Android's visual capture sees it
+      position: isMobile ? 'relative' : 'fixed',
+      left: isMobile ? 'auto' : '-9999px',
+      top: isMobile ? 'auto' : '-9999px',
       width: '85.6mm', height: '54mm',
       fontFamily: 'system-ui, -apple-system, Arial, sans-serif',
       background: '#fff',
@@ -100,8 +100,6 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
     barcodeWrap.appendChild(svg)
     root.appendChild(barcodeWrap)
 
-    overlay.appendChild(root)
-
     try {
       JsBarcode(svg, patient.uhid, {
         format: 'CODE128', width: 1.6, height: 36,
@@ -110,32 +108,56 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
       })
     } catch {}
 
-    // ── Also hide all other body children so they don't appear in print ───────
-    const hidden: { el: HTMLElement; prev: string }[] = []
-    Array.from(document.body.children).forEach((child) => {
-      if (child === overlay) return
-      const el = child as HTMLElement
-      hidden.push({ el, prev: el.style.display })
-      el.style.display = 'none'
-    })
+    if (isMobile) {
+      // ── Mobile: full-screen white overlay covers the modal before Android
+      //    screenshots the page. No @media print CSS needed — what's on screen is
+      //    what gets printed. ──────────────────────────────────────────────────
+      const overlay = document.createElement('div')
+      overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647;display:flex;align-items:flex-start;justify-content:flex-start;'
+      overlay.appendChild(root)
+      document.body.appendChild(overlay)
 
-    const style = document.createElement('style')
-    style.textContent = `@media print { @page { size: 85.6mm 54mm landscape; margin: 0; } }`
-    document.head.appendChild(style)
+      const hiddenMobile: { el: HTMLElement; prev: string }[] = []
+      Array.from(document.body.children).forEach((child) => {
+        if (child === overlay) return
+        const el = child as HTMLElement
+        hiddenMobile.push({ el, prev: el.style.display })
+        el.style.display = 'none'
+      })
 
-    // Small delay so the DOM paint completes on mobile before print captures
-    const cleanup = () => {
-      document.head.removeChild(style)
-      hidden.forEach(({ el, prev }) => { el.style.display = prev })
-      document.body.removeChild(overlay)
-    }
-    window.addEventListener('afterprint', cleanup, { once: true })
+      const cleanupMobile = () => {
+        hiddenMobile.forEach(({ el, prev }) => { el.style.display = prev })
+        if (overlay.parentNode) document.body.removeChild(overlay)
+      }
+      window.addEventListener('afterprint', cleanupMobile, { once: true })
+      setTimeout(() => {
+        window.print()
+        setTimeout(cleanupMobile, 500) // fallback for browsers that skip afterprint
+      }, 80)
 
-    setTimeout(() => {
+    } else {
+      // ── Desktop: card stays off-screen; @media print moves it to 0,0.
+      //    Hide other body children via JS so nothing else prints. No visual flash. ──
+      document.body.appendChild(root)
+
+      const hiddenDesktop: { el: HTMLElement; prev: string }[] = []
+      Array.from(document.body.children).forEach((child) => {
+        if (child.id === '__id-card-root') return
+        const el = child as HTMLElement
+        hiddenDesktop.push({ el, prev: el.style.display })
+        el.style.display = 'none'
+      })
+
+      const style = document.createElement('style')
+      style.textContent = `@media print { @page { size: 85.6mm 54mm landscape; margin: 0; } #__id-card-root { position:fixed!important;left:0!important;top:0!important;width:85.6mm!important;height:54mm!important; } }`
+      document.head.appendChild(style)
+
       window.print()
-      // Fallback cleanup for browsers that don't fire afterprint (e.g. some Android)
-      setTimeout(cleanup, 500)
-    }, 80)
+
+      document.head.removeChild(style)
+      hiddenDesktop.forEach(({ el, prev }) => { el.style.display = prev })
+      document.body.removeChild(root)
+    }
   }
 
   const age = computeAge(patient.dob)
