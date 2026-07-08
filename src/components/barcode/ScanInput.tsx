@@ -2,54 +2,72 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ScanBarcode, X } from 'lucide-react'
+import { ScanBarcode, X, User, CalendarPlus, BedDouble, ExternalLink } from 'lucide-react'
 import { resolveBarcodeScan } from '@/app/actions/barcode'
+
+interface ResolvedPatient {
+  id: string
+  name: string
+  uhid: string
+}
 
 export default function ScanInput() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'resolving' | 'not_found'>('idle')
+  const [resolving, setResolving] = useState(false)
+  const [notFound, setNotFound] = useState(false)
+  const [patient, setPatient] = useState<ResolvedPatient | null>(null)
 
-  // Keyboard-wedge scanners fire chars rapidly then send Enter.
-  // This component captures that naturally — just needs to be focused.
+  // Close panel on outside click
+  useEffect(() => {
+    if (!patient) return
+    function handler(e: MouseEvent) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
+      ) {
+        setPatient(null)
+        setValue('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [patient])
 
   const handleSubmit = useCallback(async (raw: string) => {
     const trimmed = raw.trim()
     if (!trimmed) return
-    setStatus('resolving')
+    setResolving(true)
+    setNotFound(false)
+    setPatient(null)
+
     const result = await resolveBarcodeScan(trimmed)
+
     if (result.type === 'patient') {
-      setValue('')
-      setStatus('idle')
-      router.push(`/patients/${result.id}`)
+      setPatient({ id: result.id, name: result.name, uhid: result.uhid })
+      setResolving(false)
     } else if (result.type === 'lab_order') {
       setValue('')
-      setStatus('idle')
+      setResolving(false)
       router.push(`/lab?highlight=${result.id}`)
     } else {
-      setStatus('not_found')
-      setTimeout(() => {
-        setStatus('idle')
-        setValue('')
-      }, 2500)
+      setNotFound(true)
+      setResolving(false)
+      setTimeout(() => { setNotFound(false); setValue('') }, 2500)
     }
   }, [router])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleSubmit(value)
-    }
-    if (e.key === 'Escape') {
-      setValue('')
-      setStatus('idle')
-      inputRef.current?.blur()
-    }
+    if (e.key === 'Enter') { e.preventDefault(); handleSubmit(value) }
+    if (e.key === 'Escape') { setValue(''); setPatient(null); setNotFound(false); inputRef.current?.blur() }
   }
 
-  // Global shortcut: / or Ctrl+K focuses the scan input
+  function dismiss() { setPatient(null); setValue('') }
+
+  // ⌘K / Ctrl+K global focus shortcut
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -61,58 +79,116 @@ export default function ScanInput() {
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  const isNotFound = status === 'not_found'
-  const isResolving = status === 'resolving'
-
   return (
-    <div className="relative" style={{ width: '220px' }}>
+    <div className="relative">
+      {/* Scan input field */}
       <div
         className="flex items-center gap-2 px-3 rounded-xl transition-all"
         style={{
+          width: '220px',
           height: '36px',
-          border: isNotFound
+          border: notFound
             ? '1px solid #FCA5A5'
-            : focused
+            : focused || patient
             ? '1px solid rgba(13,148,136,0.5)'
             : '1px solid #E2E8F0',
-          background: isNotFound
-            ? '#FEF2F2'
-            : focused
-            ? 'rgba(13,148,136,0.04)'
-            : '#F8FAFC',
+          background: notFound ? '#FEF2F2' : focused || patient ? 'rgba(13,148,136,0.04)' : '#F8FAFC',
         }}
       >
-        <ScanBarcode
-          className="w-3.5 h-3.5 flex-shrink-0"
-          style={{ color: isNotFound ? '#DC2626' : '#94A3B8' }}
-        />
+        <ScanBarcode className="w-3.5 h-3.5 flex-shrink-0"
+          style={{ color: notFound ? '#DC2626' : patient ? '#0D9488' : '#94A3B8' }} />
         <input
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => { setValue(e.target.value); setStatus('idle') }}
+          onChange={(e) => { setValue(e.target.value); setNotFound(false); setPatient(null) }}
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
-          onBlur={() => { setFocused(false); if (!isNotFound) setStatus('idle') }}
-          placeholder={isResolving ? 'Looking up…' : isNotFound ? 'Not found' : 'Scan or ⌘K'}
-          disabled={isResolving}
-          className="flex-1 bg-transparent outline-none text-sm"
-          style={{
-            color: isNotFound ? '#DC2626' : '#0F172A',
-            fontSize: '13px',
-            minWidth: 0,
-          }}
-          aria-label="Barcode scan input — scan a patient wristband or lab sample sticker"
+          onBlur={() => setFocused(false)}
+          placeholder={resolving ? 'Looking up…' : notFound ? 'Not found' : 'Scan barcode · ⌘K'}
+          disabled={resolving}
+          className="flex-1 bg-transparent outline-none"
+          style={{ fontSize: '13px', color: notFound ? '#DC2626' : '#0F172A', minWidth: 0 }}
+          aria-label="Scan patient wristband or lab sample barcode"
         />
-        {value && !isResolving && (
-          <button
-            onClick={() => { setValue(''); setStatus('idle') }}
-            style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
-          >
+        {(value || patient) && (
+          <button onClick={dismiss}
+            style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
             <X className="w-3 h-3" />
           </button>
         )}
       </div>
+
+      {/* Patient quick-action panel */}
+      {patient && (
+        <div
+          ref={panelRef}
+          className="absolute top-full mt-2 left-0 rounded-2xl shadow-xl z-50"
+          style={{
+            width: '280px',
+            background: '#fff',
+            border: '1px solid #E2E8F0',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Patient header */}
+          <div className="px-4 py-3 flex items-center gap-3"
+            style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1' }}>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(13,148,136,0.15)' }}>
+              <User className="w-4 h-4" style={{ color: '#0D9488' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{patient.name}</p>
+              <p className="text-xs font-mono font-semibold" style={{ color: '#0D9488' }}>{patient.uhid}</p>
+            </div>
+            <button onClick={dismiss}
+              style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Quick actions */}
+          <div className="p-3 space-y-1.5">
+            <p className="text-xs font-medium px-1 mb-2" style={{ color: '#94A3B8', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Quick Actions
+            </p>
+
+            <button
+              onClick={() => { dismiss(); router.push(`/appointments?patient=${patient.id}`) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors"
+              style={{ background: '#F0FDF9', color: '#0D9488', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#CCFBF1' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#F0FDF9' }}
+            >
+              <CalendarPlus className="w-4 h-4 flex-shrink-0" />
+              Book Appointment
+            </button>
+
+            <button
+              onClick={() => { dismiss(); router.push(`/ipd?admit=${patient.id}`) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors"
+              style={{ background: '#EFF6FF', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#DBEAFE' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#EFF6FF' }}
+            >
+              <BedDouble className="w-4 h-4 flex-shrink-0" />
+              Admit to IPD
+            </button>
+
+            <button
+              onClick={() => { dismiss(); router.push(`/patients/${patient.id}`) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors"
+              style={{ background: '#F8FAFC', color: '#475569', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#F1F5F9' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#F8FAFC' }}
+            >
+              <ExternalLink className="w-4 h-4 flex-shrink-0" />
+              View Full Profile
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

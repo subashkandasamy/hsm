@@ -11,6 +11,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { searchPatients } from '@/app/actions/patients'
 import type { Patient } from '@/lib/types'
 import RegisterModal from './RegisterModal'
+import PatientBarcodeModal from '@/components/barcode/PatientBarcodeModal'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -32,6 +33,7 @@ export default function PatientsClient({ initialPatients }: Props) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
+  const [newPatient, setNewPatient] = useState<Patient | null>(null)
 
   const doSearch = useCallback(async (q: string) => {
     setSearching(true)
@@ -152,9 +154,19 @@ export default function PatientsClient({ initialPatients }: Props) {
         onSuccess={(patient) => {
           setPatients((prev) => [patient, ...prev])
           setShowRegister(false)
-          router.push(`/patients/${patient.id}`)
+          setNewPatient(patient)
         }}
       />
+
+      {newPatient && (
+        <PatientBarcodeModal
+          patient={newPatient}
+          onClose={() => {
+            router.push(`/patients/${newPatient.id}`)
+            setNewPatient(null)
+          }}
+        />
+      )}
     </div>
   )
 }
