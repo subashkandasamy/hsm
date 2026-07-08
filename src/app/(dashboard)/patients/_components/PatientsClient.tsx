@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, Search } from 'lucide-react'
+import { UserPlus, Search, ScanBarcode } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -34,6 +34,7 @@ export default function PatientsClient({ initialPatients }: Props) {
   const [searching, setSearching] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
   const [newPatient, setNewPatient] = useState<Patient | null>(null)
+  const [barcodePatient, setBarcodePatient] = useState<Patient | null>(null)
 
   const doSearch = useCallback(async (q: string) => {
     setSearching(true)
@@ -93,21 +94,32 @@ export default function PatientsClient({ initialPatients }: Props) {
             {/* ── MOBILE CARDS (< md) ── */}
             <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
               {patients.map((p) => (
-                <button key={p.id} onClick={() => router.push(`/patients/${p.id}`)}
-                  className="w-full text-left px-4 py-3.5"
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{p.full_name}</p>
-                    <span className="font-mono text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
-                      style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: '#64748B' }}>
-                    {p.gender && <span className="capitalize">{p.gender}</span>}
-                    <span>{computeAge(p.dob)}</span>
-                    {p.phone && <span>{p.phone}</span>}
-                    <DateText date={p.created_at} />
-                  </div>
-                </button>
+                <div key={p.id} className="flex items-center"
+                  style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <button onClick={() => router.push(`/patients/${p.id}`)}
+                    className="flex-1 text-left px-4 py-3.5"
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{p.full_name}</p>
+                      <span className="font-mono text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: '#64748B' }}>
+                      {p.gender && <span className="capitalize">{p.gender}</span>}
+                      <span>{computeAge(p.dob)}</span>
+                      {p.phone && <span>{p.phone}</span>}
+                      <DateText date={p.created_at} />
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBarcodePatient(p) }}
+                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl mx-2"
+                    style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}
+                    title="View barcode / Print ID card"
+                  >
+                    <ScanBarcode className="w-4 h-4" />
+                  </button>
+                </div>
               ))}
             </div>
 
@@ -118,6 +130,7 @@ export default function PatientsClient({ initialPatients }: Props) {
                   {['UHID', 'Name', 'Age', 'Gender', 'Phone', 'Registered'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: '#475569' }}>{h}</th>
                   ))}
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -140,6 +153,19 @@ export default function PatientsClient({ initialPatients }: Props) {
                     </td>
                     <td className="px-4 py-3" style={{ color: '#475569' }}>{p.phone}</td>
                     <td className="px-4 py-3" style={{ color: '#475569' }}><DateText date={p.created_at} /></td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setBarcodePatient(p) }}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}
+                        onMouseEnter={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
+                        onMouseLeave={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
+                        title="View barcode / Print ID card"
+                      >
+                        <ScanBarcode className="w-3.5 h-3.5" />
+                        ID Card
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -165,6 +191,14 @@ export default function PatientsClient({ initialPatients }: Props) {
             router.push(`/patients/${newPatient.id}`)
             setNewPatient(null)
           }}
+        />
+      )}
+
+      {barcodePatient && (
+        <PatientBarcodeModal
+          patient={barcodePatient}
+          inline
+          onClose={() => setBarcodePatient(null)}
         />
       )}
     </div>
