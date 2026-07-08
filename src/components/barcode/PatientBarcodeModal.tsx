@@ -107,23 +107,26 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
       })
     } catch {}
 
-    // ── @media print: hide everything except the card ─────────────────────────
+    // ── Hide every other body child via JS (works on Android Chrome where
+    //    @media print visibility rules don't suppress fixed-position modals) ──
+    const hidden: { el: HTMLElement; prev: string }[] = []
+    Array.from(document.body.children).forEach((child) => {
+      if (child.id === '__id-card-root') return
+      const el = child as HTMLElement
+      hidden.push({ el, prev: el.style.display })
+      el.style.display = 'none'
+    })
+
+    // Position the card at the origin in print
     const style = document.createElement('style')
-    style.textContent = `
-      @media print {
-        @page { size: 85.6mm 54mm landscape; margin: 0; }
-        body * { visibility: hidden !important; }
-        #__id-card-root, #__id-card-root * { visibility: visible !important; }
-        #__id-card-root {
-          position: fixed !important;
-          left: 0 !important; top: 0 !important;
-          width: 85.6mm !important; height: 54mm !important;
-        }
-      }
-    `
+    style.textContent = `@media print { @page { size: 85.6mm 54mm landscape; margin: 0; } #__id-card-root { position: fixed !important; left: 0 !important; top: 0 !important; width: 85.6mm !important; height: 54mm !important; } }`
     document.head.appendChild(style)
+
     window.print()
+
+    // ── Restore ───────────────────────────────────────────────────────────────
     document.head.removeChild(style)
+    hidden.forEach(({ el, prev }) => { el.style.display = prev })
     document.body.removeChild(root)
   }
 
