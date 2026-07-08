@@ -1,0 +1,124 @@
+'use client'
+
+import { useEffect, useRef } from 'react'
+import JsBarcode from 'jsbarcode'
+import { ArrowLeft, Printer } from 'lucide-react'
+import type { Patient } from '@/lib/types'
+
+function computeAge(dob: string | null): string {
+  if (!dob) return '—'
+  return `${Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000)}y`
+}
+
+export default function PrintCard({ patient }: { patient: Patient }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    if (!svgRef.current) return
+    try {
+      JsBarcode(svgRef.current, patient.uhid, {
+        format: 'CODE128',
+        width: 1.6,
+        height: 36,
+        displayValue: true,
+        fontSize: 9,
+        margin: 0,
+        background: '#ffffff',
+        lineColor: '#000000',
+      })
+    } catch {}
+
+    // Small delay so the barcode SVG paint completes before print dialog opens
+    const t = setTimeout(() => window.print(), 350)
+    return () => clearTimeout(t)
+  }, [patient.uhid])
+
+  const age = computeAge(patient.dob)
+  const meta = [age !== '—' ? age : null, patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null].filter(Boolean).join(' · ')
+
+  return (
+    <>
+      <style>{`
+        @page { size: 85.6mm 54mm landscape; margin: 0; }
+
+        @media print {
+          html, body { width: 85.6mm; height: 54mm; margin: 0; padding: 0; overflow: hidden; }
+          .screen-only { display: none !important; }
+          .card { box-shadow: none !important; }
+        }
+
+        @media screen {
+          body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; }
+        }
+      `}</style>
+
+      {/* Screen-only controls */}
+      <div className="screen-only" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <button
+          onClick={() => window.history.back()}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #E2E8F0', background: '#fff', color: '#475569', cursor: 'pointer', fontSize: '14px', fontFamily: 'system-ui' }}
+        >
+          <ArrowLeft size={15} /> Back
+        </button>
+        <button
+          onClick={() => window.print()}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#0D9488', color: '#fff', cursor: 'pointer', fontSize: '14px', fontFamily: 'system-ui', fontWeight: 600 }}
+        >
+          <Printer size={15} /> Print
+        </button>
+      </div>
+
+      {/* The card — same design, shown on screen as preview and printed */}
+      <div
+        className="card"
+        style={{
+          width: '85.6mm',
+          height: '54mm',
+          background: '#ffffff',
+          fontFamily: 'system-ui, -apple-system, Arial, sans-serif',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '3.5mm 4mm 3mm',
+          boxSizing: 'border-box',
+          border: '0.5mm solid #CBD5E1',
+          borderRadius: '3mm',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ fontSize: '6.5pt', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#0D9488', marginBottom: '1.5mm' }}>
+          ID Card
+        </div>
+
+        <div style={{ height: '0.4mm', background: '#E2E8F0', marginBottom: '2mm' }} />
+
+        {/* Name + badges row */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '2mm', marginBottom: '1mm' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13pt', fontWeight: 700, color: '#0F172A', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {patient.full_name}
+            </div>
+            {meta && (
+              <div style={{ fontSize: '7pt', color: '#64748B', marginTop: '0.8mm' }}>{meta}</div>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1mm', flexShrink: 0 }}>
+            <div style={{ fontSize: '7.5pt', fontWeight: 700, fontFamily: 'monospace', color: '#0D9488', background: 'rgba(13,148,136,0.08)', padding: '0.8mm 2mm', borderRadius: '1.5mm', border: '0.3mm solid rgba(13,148,136,0.3)', whiteSpace: 'nowrap' }}>
+              {patient.uhid}
+            </div>
+            {patient.blood_group && (
+              <div style={{ fontSize: '7.5pt', fontWeight: 700, color: '#DC2626', background: '#FEF2F2', padding: '0.5mm 2mm', borderRadius: '1.5mm', border: '0.3mm solid #FECACA', whiteSpace: 'nowrap' }}>
+                {patient.blood_group}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Barcode */}
+        <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'center' }}>
+          <svg ref={svgRef} style={{ maxWidth: '62mm' }} />
+        </div>
+      </div>
+    </>
+  )
+}

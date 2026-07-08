@@ -1,163 +1,24 @@
 'use client'
 
 import { X, Printer } from 'lucide-react'
-import JsBarcode from 'jsbarcode'
 import BarcodeRenderer from './BarcodeRenderer'
 import type { Patient } from '@/lib/types'
 
 interface Props {
   patient: Patient
   onClose: () => void
-  /** When true, changes footer button label to "Close" (use when already on the patient page) */
+  /** When true, changes footer button label to "Close" (already on patient page) */
   inline?: boolean
 }
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
-  const diff = Date.now() - new Date(dob).getTime()
-  return `${Math.floor(diff / 31557600000)}y`
+  return `${Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000)}y`
 }
 
 export default function PatientBarcodeModal({ patient, onClose, inline }: Props) {
   function printIdCard() {
-    const age = computeAge(patient.dob)
-    const meta = [
-      age !== '—' ? age : null,
-      patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null,
-    ].filter(Boolean).join(' · ')
-
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-
-    // ── Card node ─────────────────────────────────────────────────────────────
-    const root = document.createElement('div')
-    root.id = '__id-card-root'
-    Object.assign(root.style, {
-      // On desktop: off-screen until @media print moves it to 0,0 (no visual flash)
-      // On mobile: placed in overlay so Android's visual capture sees it
-      position: isMobile ? 'relative' : 'fixed',
-      left: isMobile ? 'auto' : '-9999px',
-      top: isMobile ? 'auto' : '-9999px',
-      width: '85.6mm', height: '54mm',
-      fontFamily: 'system-ui, -apple-system, Arial, sans-serif',
-      background: '#fff',
-      display: 'flex', flexDirection: 'column',
-      padding: '3.5mm 4mm 3mm', boxSizing: 'border-box',
-      border: '0.5mm solid #CBD5E1', borderRadius: '3mm',
-      overflow: 'hidden',
-    })
-
-    const label = document.createElement('div')
-    Object.assign(label.style, { fontSize: '6.5pt', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#0D9488', marginBottom: '1.5mm' })
-    label.textContent = 'ID Card'
-    root.appendChild(label)
-
-    const divider = document.createElement('div')
-    Object.assign(divider.style, { height: '0.4mm', background: '#E2E8F0', marginBottom: '2mm' })
-    root.appendChild(divider)
-
-    const row = document.createElement('div')
-    Object.assign(row.style, { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '2mm', marginBottom: '1mm' })
-
-    const infoCol = document.createElement('div')
-    Object.assign(infoCol.style, { flex: '1', minWidth: '0' })
-
-    const nameEl = document.createElement('div')
-    Object.assign(nameEl.style, { fontSize: '13pt', fontWeight: '700', color: '#0F172A', lineHeight: '1.15', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
-    nameEl.textContent = patient.full_name
-    infoCol.appendChild(nameEl)
-
-    if (meta) {
-      const metaEl = document.createElement('div')
-      Object.assign(metaEl.style, { fontSize: '7pt', color: '#64748B', marginTop: '0.8mm' })
-      metaEl.textContent = meta
-      infoCol.appendChild(metaEl)
-    }
-    row.appendChild(infoCol)
-
-    const badgesCol = document.createElement('div')
-    Object.assign(badgesCol.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1mm', flexShrink: '0' })
-
-    const uhidBadge = document.createElement('div')
-    Object.assign(uhidBadge.style, { fontSize: '7.5pt', fontWeight: '700', fontFamily: 'monospace', color: '#0D9488', background: 'rgba(13,148,136,0.08)', padding: '0.8mm 2mm', borderRadius: '1.5mm', border: '0.3mm solid rgba(13,148,136,0.3)', whiteSpace: 'nowrap' })
-    uhidBadge.textContent = patient.uhid
-    badgesCol.appendChild(uhidBadge)
-
-    if (patient.blood_group) {
-      const bloodBadge = document.createElement('div')
-      Object.assign(bloodBadge.style, { fontSize: '7.5pt', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', padding: '0.5mm 2mm', borderRadius: '1.5mm', border: '0.3mm solid #FECACA', whiteSpace: 'nowrap' })
-      bloodBadge.textContent = patient.blood_group
-      badgesCol.appendChild(bloodBadge)
-    }
-    row.appendChild(badgesCol)
-    root.appendChild(row)
-
-    const barcodeWrap = document.createElement('div')
-    Object.assign(barcodeWrap.style, { marginTop: 'auto', display: 'flex', justifyContent: 'center' })
-
-    // createElementNS is required — jsbarcode needs a proper SVG namespace element
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.style.maxWidth = '62mm'
-    barcodeWrap.appendChild(svg)
-    root.appendChild(barcodeWrap)
-
-    try {
-      JsBarcode(svg, patient.uhid, {
-        format: 'CODE128', width: 1.6, height: 36,
-        displayValue: true, fontSize: 9, margin: 0,
-        background: '#ffffff', lineColor: '#000000',
-      })
-    } catch {}
-
-    if (isMobile) {
-      // ── Mobile: full-screen white overlay covers the modal before Android
-      //    screenshots the page. No @media print CSS needed — what's on screen is
-      //    what gets printed. ──────────────────────────────────────────────────
-      const overlay = document.createElement('div')
-      overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647;display:flex;align-items:flex-start;justify-content:flex-start;'
-      overlay.appendChild(root)
-      document.body.appendChild(overlay)
-
-      const hiddenMobile: { el: HTMLElement; prev: string }[] = []
-      Array.from(document.body.children).forEach((child) => {
-        if (child === overlay) return
-        const el = child as HTMLElement
-        hiddenMobile.push({ el, prev: el.style.display })
-        el.style.display = 'none'
-      })
-
-      const cleanupMobile = () => {
-        hiddenMobile.forEach(({ el, prev }) => { el.style.display = prev })
-        if (overlay.parentNode) document.body.removeChild(overlay)
-      }
-      window.addEventListener('afterprint', cleanupMobile, { once: true })
-      setTimeout(() => {
-        window.print()
-        setTimeout(cleanupMobile, 500) // fallback for browsers that skip afterprint
-      }, 80)
-
-    } else {
-      // ── Desktop: card stays off-screen; @media print moves it to 0,0.
-      //    Hide other body children via JS so nothing else prints. No visual flash. ──
-      document.body.appendChild(root)
-
-      const hiddenDesktop: { el: HTMLElement; prev: string }[] = []
-      Array.from(document.body.children).forEach((child) => {
-        if (child.id === '__id-card-root') return
-        const el = child as HTMLElement
-        hiddenDesktop.push({ el, prev: el.style.display })
-        el.style.display = 'none'
-      })
-
-      const style = document.createElement('style')
-      style.textContent = `@media print { @page { size: 85.6mm 54mm landscape; margin: 0; } #__id-card-root { position:fixed!important;left:0!important;top:0!important;width:85.6mm!important;height:54mm!important; } }`
-      document.head.appendChild(style)
-
-      window.print()
-
-      document.head.removeChild(style)
-      hiddenDesktop.forEach(({ el, prev }) => { el.style.display = prev })
-      document.body.removeChild(root)
-    }
+    window.open(`/print/id-card/${patient.id}`, '_blank')
   }
 
   const age = computeAge(patient.dob)
