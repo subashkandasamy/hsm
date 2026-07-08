@@ -104,45 +104,45 @@ export default function SampleLabelModal({ order, onClose }: Props) {
                 padding: '6px 8px',
                 background: '#fff',
                 fontFamily: 'system-ui, sans-serif',
+                overflow: 'hidden',
               }}
             >
-              {/* Sample type banner */}
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                marginBottom: '4px',
-              }}>
+              {/* Sample type + date */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span style={{
                   fontSize: '9px', fontWeight: 800, textTransform: 'uppercase',
                   letterSpacing: '0.08em', color: '#7C3AED',
                   background: '#F3E8FF', padding: '1px 5px', borderRadius: '3px',
+                  whiteSpace: 'nowrap',
                 }}>
                   {sampleType}
                 </span>
-                <span style={{ fontSize: '8px', color: '#94A3B8' }}>{orderedDate}</span>
+                <span style={{ fontSize: '8px', color: '#94A3B8', whiteSpace: 'nowrap' }}>{orderedDate}</span>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                {/* Barcode — encodes the full lab_order UUID */}
-                <div style={{ flexShrink: 0 }}>
-                  <BarcodeRenderer
-                    value={order.id}
-                    height={32}
-                    width={0.9}
-                    displayValue={false}
-                  />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', overflow: 'hidden' }}>
+                {/* Barcode */}
+                <div style={{ flexShrink: 0, maxWidth: '55%' }}>
+                  <BarcodeRenderer value={order.id} height={32} width={0.9} displayValue={false} />
                 </div>
 
-                {/* Text content */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* Text — clipped to remaining space */}
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 700, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {patient?.full_name ?? '—'}
                   </p>
-                  <p style={{ fontSize: '9px', color: '#0D9488', fontWeight: 600, margin: '1px 0' }}>
+                  <p style={{ fontSize: '9px', color: '#0D9488', fontWeight: 600, margin: '1px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {patient?.uhid ?? '—'}
                   </p>
-                  <p style={{ fontSize: '9px', color: '#475569', margin: 0, lineHeight: 1.3 }}>
-                    {testNames.join(' · ')}
-                  </p>
+                  {/* One test per line, max 3 shown */}
+                  {testNames.slice(0, 3).map((name) => (
+                    <p key={name} style={{ fontSize: '8px', color: '#475569', margin: 0, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {name}
+                    </p>
+                  ))}
+                  {testNames.length > 3 && (
+                    <p style={{ fontSize: '8px', color: '#94A3B8', margin: 0 }}>+{testNames.length - 3} more</p>
+                  )}
                 </div>
               </div>
             </div>
