@@ -44,7 +44,7 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
     style.id = '__id-card-print'
     style.textContent = `
       @media print {
-        @page { size: 85.6mm 54mm landscape; margin: 0; }
+        @page { size: 85.6mm 54mm landscape; margin: 2mm; }
         body > * { visibility: hidden !important; }
         #__patient-id-card,
         #__patient-id-card * { visibility: visible !important; }
@@ -55,8 +55,8 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
           top: 0 !important;
           display: flex !important;
           flex-direction: column !important;
-          width: 85.6mm !important;
-          height: 54mm !important;
+          width: 100% !important;
+          height: 100% !important;
         }
       }
     `
@@ -87,6 +87,8 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
           padding: '3.5mm 4mm 3mm',
           boxSizing: 'border-box',
           overflow: 'hidden',
+          border: '0.5mm solid #CBD5E1',
+          borderRadius: '3mm',
         }}
       >
         {/* Card header */}
