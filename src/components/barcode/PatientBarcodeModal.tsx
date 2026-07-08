@@ -22,14 +22,14 @@ function computeAge(dob: string | null): string {
 export default function PatientBarcodeModal({ patient, onClose, inline }: Props) {
   const printSvgRef = useRef<SVGSVGElement>(null)
 
-  // Render barcode on the hidden print card SVG
+  // Pre-render barcode on the off-screen SVG so we can grab outerHTML for iframe print
   useEffect(() => {
     if (!printSvgRef.current || !patient.uhid) return
     try {
       JsBarcode(printSvgRef.current, patient.uhid, {
         format: 'CODE128',
-        width: 1.4,
-        height: 34,
+        width: 1.6,
+        height: 36,
         displayValue: true,
         fontSize: 9,
         margin: 0,
@@ -40,108 +40,106 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
   }, [patient.uhid])
 
   function printIdCard() {
-    const style = document.createElement('style')
-    style.id = '__id-card-print'
-    style.textContent = `
-      @media print {
-        @page { size: 85.6mm 54mm landscape; margin: 2mm; }
-        body > * { visibility: hidden !important; }
-        #__patient-id-card,
-        #__patient-id-card * { visibility: visible !important; }
-        #__patient-id-card {
-          position: fixed !important;
-          inset: 0 !important;
-          left: 0 !important;
-          top: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-          width: 100% !important;
-          height: 100% !important;
-        }
-      }
-    `
-    document.head.appendChild(style)
-    window.print()
-    document.head.removeChild(style)
+    const svgContent = printSvgRef.current?.outerHTML ?? ''
+    const age = computeAge(patient.dob)
+    const meta = [
+      age !== '—' ? age : null,
+      patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null,
+    ].filter(Boolean).join(' · ')
+
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:85.6mm;height:54mm;border:none;'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentDocument!
+    doc.open()
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: 85.6mm 54mm landscape; margin: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 85.6mm; height: 54mm; overflow: hidden; }
+  body { font-family: system-ui, -apple-system, Arial, sans-serif; background: #fff; }
+  .card {
+    width: 85.6mm;
+    height: 54mm;
+    padding: 3.5mm 4mm 3mm;
+    display: flex;
+    flex-direction: column;
+    border: 0.5mm solid #CBD5E1;
+    border-radius: 3mm;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .label {
+    font-size: 6.5pt;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #0D9488;
+    margin-bottom: 1.5mm;
+  }
+  .divider { height: 0.4mm; background: #E2E8F0; margin-bottom: 2mm; }
+  .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 2mm; margin-bottom: 1mm; }
+  .name {
+    font-size: 13pt; font-weight: 700; color: #0F172A; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta { font-size: 7pt; color: #64748B; margin-top: 0.8mm; }
+  .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 1mm; flex-shrink: 0; }
+  .uhid-badge {
+    font-size: 7.5pt; font-weight: 700; font-family: monospace;
+    color: #0D9488; background: rgba(13,148,136,0.08);
+    padding: 0.8mm 2mm; border-radius: 1.5mm;
+    border: 0.3mm solid rgba(13,148,136,0.3); white-space: nowrap;
+  }
+  .blood-badge {
+    font-size: 7.5pt; font-weight: 700; color: #DC2626;
+    background: #FEF2F2; padding: 0.5mm 2mm; border-radius: 1.5mm;
+    border: 0.3mm solid #FECACA; white-space: nowrap;
+  }
+  .barcode-wrap { margin-top: auto; display: flex; justify-content: center; }
+  .barcode-wrap svg { max-width: 62mm; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="label">ID Card</div>
+  <div class="divider"></div>
+  <div class="row">
+    <div style="flex:1;min-width:0">
+      <div class="name">${patient.full_name}</div>
+      ${meta ? `<div class="meta">${meta}</div>` : ''}
+    </div>
+    <div class="badges">
+      <div class="uhid-badge">${patient.uhid}</div>
+      ${patient.blood_group ? `<div class="blood-badge">${patient.blood_group}</div>` : ''}
+    </div>
+  </div>
+  <div class="barcode-wrap">${svgContent}</div>
+</div>
+</body>
+</html>`)
+    doc.close()
+
+    iframe.contentWindow!.addEventListener('afterprint', () => {
+      document.body.removeChild(iframe)
+    })
+
+    // Allow the iframe document to fully paint before printing
+    setTimeout(() => {
+      iframe.contentWindow!.print()
+    }, 150)
   }
 
   const age = computeAge(patient.dob)
-  const meta = [age !== '—' ? age : null, patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null].filter(Boolean).join(' · ')
 
   return (
     <>
-      {/* ── Hidden print card — off-screen so jsbarcode renders, visible only in @media print ── */}
-      <div
-        id="__patient-id-card"
-        aria-hidden="true"
-        style={{
-          position: 'fixed',
-          left: '-9999px',
-          top: '-9999px',
-          width: '85.6mm',
-          height: '54mm',
-          background: '#ffffff',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '3.5mm 4mm 3mm',
-          boxSizing: 'border-box',
-          overflow: 'hidden',
-          border: '0.5mm solid #CBD5E1',
-          borderRadius: '3mm',
-        }}
-      >
-        {/* Card header */}
-        <div style={{ marginBottom: '1.5mm' }}>
-          <span style={{
-            fontSize: '6.5pt', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#0D9488',
-          }}>
-            ID Card
-          </span>
-        </div>
-
-        <div style={{ height: '0.4mm', background: '#E2E8F0', marginBottom: '2mm' }} />
-
-        {/* Name + UHID row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '2mm', marginBottom: '1mm' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: '13pt', fontWeight: 700, color: '#0F172A', lineHeight: 1.15,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {patient.full_name}
-            </div>
-            {meta && (
-              <div style={{ fontSize: '7pt', color: '#64748B', marginTop: '0.8mm' }}>{meta}</div>
-            )}
-          </div>
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1mm' }}>
-            <div style={{
-              fontSize: '7.5pt', fontWeight: 700, fontFamily: 'monospace',
-              background: 'rgba(13,148,136,0.08)', color: '#0D9488',
-              padding: '0.8mm 2mm', borderRadius: '1.5mm',
-              border: '0.3mm solid rgba(13,148,136,0.3)',
-              whiteSpace: 'nowrap',
-            }}>
-              {patient.uhid}
-            </div>
-            {patient.blood_group && (
-              <div style={{
-                fontSize: '7.5pt', fontWeight: 700, color: '#DC2626',
-                background: '#FEF2F2', padding: '0.5mm 2mm', borderRadius: '1.5mm',
-                border: '0.3mm solid #FECACA', whiteSpace: 'nowrap',
-              }}>
-                {patient.blood_group}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Barcode */}
-        <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'center' }}>
-          <svg ref={printSvgRef} style={{ maxWidth: '62mm' }} />
-        </div>
-      </div>
+      {/* Off-screen SVG — jsbarcode renders here; outerHTML is copied into iframe on print */}
+      <svg ref={printSvgRef} style={{ position: 'fixed', left: '-9999px', top: '-9999px' }} aria-hidden="true" />
 
       {/* ── Modal UI ── */}
       <div
