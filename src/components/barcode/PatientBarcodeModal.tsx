@@ -28,8 +28,8 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
     try {
       JsBarcode(printSvgRef.current, patient.uhid, {
         format: 'CODE128',
-        width: 2,
-        height: 38,
+        width: 1.4,
+        height: 34,
         displayValue: true,
         fontSize: 9,
         margin: 0,
@@ -90,14 +90,11 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
         }}
       >
         {/* Card header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5mm' }}>
+        <div style={{ marginBottom: '1.5mm' }}>
           <span style={{
             fontSize: '6.5pt', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#0D9488',
           }}>
-            Patient ID Card
-          </span>
-          <span style={{ fontSize: '6pt', color: '#94A3B8', letterSpacing: '0.03em' }}>
-            Hospital Management
+            ID Card
           </span>
         </div>
 
@@ -140,7 +137,7 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
 
         {/* Barcode */}
         <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'center' }}>
-          <svg ref={printSvgRef} style={{ maxWidth: '100%' }} />
+          <svg ref={printSvgRef} style={{ maxWidth: '62mm' }} />
         </div>
       </div>
 
