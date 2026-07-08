@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import React from 'react'
 import { X, Printer } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import BarcodeRenderer from './BarcodeRenderer'
@@ -20,27 +20,7 @@ function computeAge(dob: string | null): string {
 }
 
 export default function PatientBarcodeModal({ patient, onClose, inline }: Props) {
-  const printSvgRef = useRef<SVGSVGElement>(null)
-
-  // Pre-render barcode on the off-screen SVG so we can grab outerHTML for iframe print
-  useEffect(() => {
-    if (!printSvgRef.current || !patient.uhid) return
-    try {
-      JsBarcode(printSvgRef.current, patient.uhid, {
-        format: 'CODE128',
-        width: 1.6,
-        height: 36,
-        displayValue: true,
-        fontSize: 9,
-        margin: 0,
-        background: '#ffffff',
-        lineColor: '#000000',
-      })
-    } catch {}
-  }, [patient.uhid])
-
   function printIdCard() {
-    const svgContent = printSvgRef.current?.outerHTML ?? ''
     const age = computeAge(patient.dob)
     const meta = [
       age !== '—' ? age : null,
@@ -63,45 +43,24 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
   html, body { width: 85.6mm; height: 54mm; overflow: hidden; }
   body { font-family: system-ui, -apple-system, Arial, sans-serif; background: #fff; }
   .card {
-    width: 85.6mm;
-    height: 54mm;
+    width: 85.6mm; height: 54mm;
     padding: 3.5mm 4mm 3mm;
-    display: flex;
-    flex-direction: column;
+    display: flex; flex-direction: column;
     border: 0.5mm solid #CBD5E1;
     border-radius: 3mm;
     overflow: hidden;
     background: #ffffff;
   }
-  .label {
-    font-size: 6.5pt;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #0D9488;
-    margin-bottom: 1.5mm;
-  }
+  .label { font-size: 6.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #0D9488; margin-bottom: 1.5mm; }
   .divider { height: 0.4mm; background: #E2E8F0; margin-bottom: 2mm; }
   .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 2mm; margin-bottom: 1mm; }
-  .name {
-    font-size: 13pt; font-weight: 700; color: #0F172A; line-height: 1.15;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
+  .name { font-size: 13pt; font-weight: 700; color: #0F172A; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 7pt; color: #64748B; margin-top: 0.8mm; }
   .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 1mm; flex-shrink: 0; }
-  .uhid-badge {
-    font-size: 7.5pt; font-weight: 700; font-family: monospace;
-    color: #0D9488; background: rgba(13,148,136,0.08);
-    padding: 0.8mm 2mm; border-radius: 1.5mm;
-    border: 0.3mm solid rgba(13,148,136,0.3); white-space: nowrap;
-  }
-  .blood-badge {
-    font-size: 7.5pt; font-weight: 700; color: #DC2626;
-    background: #FEF2F2; padding: 0.5mm 2mm; border-radius: 1.5mm;
-    border: 0.3mm solid #FECACA; white-space: nowrap;
-  }
+  .uhid-badge { font-size: 7.5pt; font-weight: 700; font-family: monospace; color: #0D9488; background: rgba(13,148,136,0.08); padding: 0.8mm 2mm; border-radius: 1.5mm; border: 0.3mm solid rgba(13,148,136,0.3); white-space: nowrap; }
+  .blood-badge { font-size: 7.5pt; font-weight: 700; color: #DC2626; background: #FEF2F2; padding: 0.5mm 2mm; border-radius: 1.5mm; border: 0.3mm solid #FECACA; white-space: nowrap; }
   .barcode-wrap { margin-top: auto; display: flex; justify-content: center; }
-  .barcode-wrap svg { max-width: 62mm; }
+  #barcode-svg { max-width: 62mm; }
 </style>
 </head>
 <body>
@@ -118,17 +77,33 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
       ${patient.blood_group ? `<div class="blood-badge">${patient.blood_group}</div>` : ''}
     </div>
   </div>
-  <div class="barcode-wrap">${svgContent}</div>
+  <div class="barcode-wrap"><svg id="barcode-svg"></svg></div>
 </div>
 </body>
 </html>`)
     doc.close()
 
+    // Render barcode directly into the iframe's SVG — avoids namespace issues with outerHTML injection
+    const iframeSvg = doc.getElementById('barcode-svg') as SVGSVGElement | null
+    if (iframeSvg) {
+      try {
+        JsBarcode(iframeSvg, patient.uhid, {
+          format: 'CODE128',
+          width: 1.6,
+          height: 36,
+          displayValue: true,
+          fontSize: 9,
+          margin: 0,
+          background: '#ffffff',
+          lineColor: '#000000',
+        })
+      } catch {}
+    }
+
     iframe.contentWindow!.addEventListener('afterprint', () => {
       document.body.removeChild(iframe)
     })
 
-    // Allow the iframe document to fully paint before printing
     setTimeout(() => {
       iframe.contentWindow!.print()
     }, 150)
@@ -138,9 +113,6 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
 
   return (
     <>
-      {/* Off-screen SVG — jsbarcode renders here; outerHTML is copied into iframe on print */}
-      <svg ref={printSvgRef} style={{ position: 'fixed', left: '-9999px', top: '-9999px' }} aria-hidden="true" />
-
       {/* ── Modal UI ── */}
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
