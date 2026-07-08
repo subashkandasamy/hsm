@@ -27,6 +27,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'ophthalmology:write',
     'tariffs:manage', 'billing:advance', 'pharmacy:sale',
     'ipd:config', 'ipd:nursing',
+    'barcode:print:patient', 'barcode:print:sample',
     'dashboard:read',
   ],
   doctor: [
@@ -62,6 +63,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'inventory:read',
     'emr:read', 'emr:allergy:write', 'emr:document:upload',
     'dental:read', 'dental:write',
+    'barcode:print:patient', 'barcode:print:sample',
     'dashboard:read',
   ],
   receptionist: [
@@ -74,6 +76,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'notifications:send',
     'emr:document:upload',
     'pharmacy:read',
+    'barcode:print:patient',
     'dashboard:read',
   ],
   lab_tech: [
@@ -82,6 +85,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'radiology:read', 'radiology:process',
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:issue',
     'emr:read',
+    'barcode:print:sample',
     'dashboard:read',
   ],
   pharmacist: [

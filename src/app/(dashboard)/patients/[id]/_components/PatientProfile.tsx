@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Droplet, User, Phone, Mail, Clock,
-  Stethoscope, Pencil, Receipt, BadgeIndianRupee, BedDouble, ChevronDown, ChevronUp,
+  Stethoscope, Pencil, Receipt, BadgeIndianRupee, BedDouble, ChevronDown, ChevronUp, Printer,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -23,6 +23,7 @@ import type {
   PatientAllergy, PatientDocument, TimelineEvent, DiagnosisSummary, Role,
 } from '@/lib/types'
 import { hasPermission } from '@/lib/rbac'
+import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -103,6 +104,7 @@ export default function PatientProfile({
   const [tab, setTab] = useState<Tab>('timeline')
   const [showEdit, setShowEdit] = useState(false)
   const [showBillBuilder, setShowBillBuilder] = useState(false)
+  const [showWristband, setShowWristband] = useState(false)
   const router = useRouter()
 
   const outstanding = bills
@@ -217,6 +219,17 @@ export default function PatientProfile({
             >
               <Receipt className="w-3.5 h-3.5" /> Generate Bill
             </button>
+            {hasPermission(role, 'barcode:print:patient') && (
+              <button
+                onClick={() => setShowWristband(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all min-h-[36px]"
+                style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(124,58,237,0.15)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(124,58,237,0.08)' }}
+              >
+                <Printer className="w-3.5 h-3.5" /> Print Wristband
+              </button>
+            )}
             {patient.blood_group && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold"
                 style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
@@ -299,6 +312,13 @@ export default function PatientProfile({
             setShowBillBuilder(false)
             router.push(`/billing/${billId}`)
           }}
+        />
+      )}
+
+      {showWristband && (
+        <WristbandLabelModal
+          patient={patient}
+          onClose={() => setShowWristband(false)}
         />
       )}
     </div>

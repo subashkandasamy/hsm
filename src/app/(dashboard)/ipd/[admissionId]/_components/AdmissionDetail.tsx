@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
-  Plus, ArrowRightLeft, LogOut, Receipt,
+  Plus, ArrowRightLeft, LogOut, Receipt, Printer,
   Pill, IndianRupee, Stethoscope,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -23,6 +23,7 @@ import { addProgressNote, transferBed, dischargePatient, updateDischargeSummary 
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
+import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
 import NursingPanel from './NursingPanel'
 
@@ -59,9 +60,10 @@ export default function AdmissionDetail({
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
-  const canWrite   = profile && hasPermission(profile.role, 'ipd:write')
-  const canNote    = profile && hasPermission(profile.role, 'ipd:notes')
-  const canNursing = profile && hasPermission(profile.role, 'ipd:nursing')
+  const canWrite        = profile && hasPermission(profile.role, 'ipd:write')
+  const canNote         = profile && hasPermission(profile.role, 'ipd:notes')
+  const canNursing      = profile && hasPermission(profile.role, 'ipd:nursing')
+  const canPrintWristband = profile && hasPermission(profile.role, 'barcode:print:patient')
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
@@ -74,6 +76,7 @@ export default function AdmissionDetail({
   const [noteError, setNoteError] = useState<string | null>(null)
 
   // Transfer
+  const [showWristband, setShowWristband] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
   const [transferWardId, setTransferWardId] = useState('')
   const [transferBedId, setTransferBedId] = useState('')
@@ -252,6 +255,13 @@ export default function AdmissionDetail({
 
           {!isClosed && canWrite && (
             <div className="flex items-center gap-2 flex-shrink-0">
+              {canPrintWristband && (
+                <button onClick={() => setShowWristband(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                  style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)', cursor: 'pointer' }}>
+                  <Printer className="w-4 h-4" /> Wristband
+                </button>
+              )}
               <button onClick={() => setShowTransfer(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
                 style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
@@ -658,6 +668,13 @@ export default function AdmissionDetail({
             setShowBillingPrompt(false)
             router.push(`/billing/${billId}`)
           }}
+        />
+      )}
+
+      {showWristband && adm.patient && (
+        <WristbandLabelModal
+          patient={adm.patient as import('@/lib/types').Patient}
+          onClose={() => setShowWristband(false)}
         />
       )}
     </div>

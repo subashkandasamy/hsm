@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, FlaskConical, Settings } from 'lucide-react'
+import { Plus, RefreshCw, FlaskConical, Settings, Printer } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -14,6 +14,7 @@ import { hasPermission } from '@/lib/rbac'
 import OrderLabModal from './OrderLabModal'
 import ResultEntryModal from './ResultEntryModal'
 import AddLabTestModal from './AddLabTestModal'
+import SampleLabelModal from '@/components/barcode/SampleLabelModal'
 
 const STATUS_MAP: Record<string, string> = {
   ordered: 'pending', collected: 'info', processing: 'info',
@@ -40,7 +41,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order')
-  const canProcess = !!role && hasPermission(role, 'lab:process')
+  const canProcess      = !!role && hasPermission(role, 'lab:process')
+  const canPrintSample  = !!role && hasPermission(role, 'barcode:print:sample')
   const isAdmin    = !!role && hasPermission(role, 'lab:manage')
   const [tab, setTab] = useState<TabKey>('collect')
   const [toCollect, setToCollect] = useState<LabOrder[]>(initCollect)
@@ -53,6 +55,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [resultOrder, setResultOrder] = useState<LabOrder | null>(null)
+  const [labelOrder, setLabelOrder] = useState<LabOrder | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -201,14 +204,26 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {tab === 'collect' && canProcess && (
-                    <button
-                      onClick={() => handleCollect(order.id)}
-                      disabled={actionId === order.id}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                      style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
-                      {actionId === order.id ? 'Collecting…' : 'Collect Sample'}
-                    </button>
+                  {tab === 'collect' && (
+                    <>
+                      {canPrintSample && (
+                        <button
+                          onClick={() => setLabelOrder(order)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"
+                          style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)', cursor: 'pointer' }}>
+                          <Printer className="w-3 h-3" /> Label
+                        </button>
+                      )}
+                      {canProcess && (
+                        <button
+                          onClick={() => handleCollect(order.id)}
+                          disabled={actionId === order.id}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
+                          {actionId === order.id ? 'Collecting…' : 'Collect Sample'}
+                        </button>
+                      )}
+                    </>
                   )}
                   {tab === 'results' && canProcess && (
                     <>
@@ -261,6 +276,13 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
         onClose={() => setShowAddTest(false)}
         onSuccess={() => { setShowAddTest(false); refresh() }}
       />
+
+      {labelOrder && (
+        <SampleLabelModal
+          order={labelOrder}
+          onClose={() => setLabelOrder(null)}
+        />
+      )}
     </div>
   )
 }

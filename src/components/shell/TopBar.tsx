@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Menu, ChevronDown } from 'lucide-react'
+import { LogOut, User, Menu } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/lib/types'
+import ScanInput from '@/components/barcode/ScanInput'
 
 const ROLE_LABELS: Record<Role, string> = {
   admin:        'Administrator',
@@ -51,7 +52,7 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
     <header className="glass-topbar fixed top-0 left-0 lg:left-60 right-0 z-30"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="h-14 flex items-center justify-between px-4 md:px-6">
-      {/* Left: hamburger on mobile, empty on desktop */}
+      {/* Left: hamburger on mobile + scan input on desktop */}
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -63,6 +64,10 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
         </button>
         {/* Short title on mobile only */}
         <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>{tenantName}</span>
+        {/* Global barcode scan input — desktop only */}
+        <div className="hidden lg:block">
+          <ScanInput />
+        </div>
       </div>
 
       {/* Right: user info + logout */}

@@ -97,6 +97,7 @@ export interface Patient {
   notify_whatsapp_consent: boolean; notify_sms_consent: boolean
   aadhaar_no?: string | null
   combined_bill_no?: string | null
+  wristband_printed_at?: string | null
   created_by: string | null; created_at: string
 }
 
@@ -198,6 +199,7 @@ export interface LabOrder {
   status: LabOrderStatus; billing_status: BillingStatus
   priority: OrderPriority; scheduled_for: string | null
   ordered_at: string; reported_at: string | null
+  sample_label_printed_at?: string | null
   items?: LabOrderItem[]
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
@@ -628,6 +630,7 @@ export type Permission =
   | 'ophthalmology:write'
   | 'tariffs:manage' | 'pharmacy:sale'
   | 'ipd:config' | 'ipd:nursing'
+  | 'barcode:print:patient' | 'barcode:print:sample'
 
 export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
 export interface NavGroup { label: string; items: NavItem[] }
