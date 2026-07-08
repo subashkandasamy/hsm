@@ -103,6 +103,12 @@ export async function proxy(request: NextRequest) {
 
       let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
+      // Capture any cookies Supabase writes during token refresh so we can
+      // re-apply them after stamping tenant headers (which creates a new response).
+      // Without this, refreshed session cookies are silently discarded, causing
+      // ERR_TOO_MANY_REDIRECTS on the very next request.
+      let refreshedCookies: { name: string; value: string; options: Record<string, unknown> }[] = []
+
       const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -110,6 +116,7 @@ export async function proxy(request: NextRequest) {
           cookies: {
             getAll() { return request.cookies.getAll() },
             setAll(cookiesToSet) {
+              refreshedCookies = cookiesToSet as typeof refreshedCookies
               cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
               supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
               cookiesToSet.forEach(({ name, value, options }) =>
@@ -168,6 +175,12 @@ export async function proxy(request: NextRequest) {
       requestHeaders.set('x-tenant-status', tenant.status)
       requestHeaders.set('x-tenant-plan',   tenant.plan)
       supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
+
+      // Re-apply any cookies Supabase wrote during token refresh — the line
+      // above creates a fresh response so we must copy them across manually.
+      refreshedCookies.forEach(({ name, value, options }) =>
+        supabaseResponse.cookies.set(name, value, options)
+      )
 
       // ── Auth guards ───────────────────────────────────────────────────────
       if (!user && !isPublicPath) {
