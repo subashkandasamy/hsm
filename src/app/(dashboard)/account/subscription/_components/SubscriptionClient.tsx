@@ -159,20 +159,6 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
             </div>
           )}
 
-          {/* Payment methods */}
-          <div>
-            <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: '#94A3B8' }}>
-              Accepted payment methods
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {PAYMENT_METHODS.map(m => (
-                <span key={m} className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                  style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid rgba(13,148,136,0.2)' }}>
-                  {m}
-                </span>
-              ))}
-            </div>
-          </div>
 
           {/* Cancel */}
           {hasActiveSub && (
