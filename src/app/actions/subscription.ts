@@ -22,8 +22,8 @@ export async function getSubscription(): Promise<Subscription | null> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'account:subscription')
 
-  const supabase = await createClient()
-  const { data } = await supabase
+  const service = createServiceClient()
+  const { data } = await service
     .from('subscriptions')
     .select('*')
     .eq('tenant_id', actor.tenant_id)
