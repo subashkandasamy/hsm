@@ -195,8 +195,10 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
                 </div>
               ) : (
                 <button onClick={handleCancel} disabled={isPending}
-                  className="flex items-center gap-2 text-sm"
-                  style={{ color: '#94A3B8', transition: 'color 0.2s' }}>
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
+                  style={{ background: '#fff', color: '#DC2626', border: '1px solid rgba(220,38,38,0.35)', cursor: 'pointer', transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#FEF2F2' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff' }}>
                   <XCircle className="w-4 h-4" /> Cancel subscription
                 </button>
               )}
