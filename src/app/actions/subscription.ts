@@ -188,8 +188,8 @@ export async function cancelSubscription(): Promise<
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'account:subscription')
 
-  const supabase = await createClient()
-  const { data: sub } = await supabase
+  const service = createServiceClient()
+  const { data: sub } = await service
     .from('subscriptions')
     .select('stripe_subscription_id, status')
     .eq('tenant_id', actor.tenant_id)
