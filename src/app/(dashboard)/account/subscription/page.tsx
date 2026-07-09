@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/rbac'
 import { getSubscription, getTenant, syncSubscription } from '@/app/actions/subscription'
 import SubscriptionClient from './_components/SubscriptionClient'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Subscription — Uyirly' }
 
 export default async function SubscriptionPage({
