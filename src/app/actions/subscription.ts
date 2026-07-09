@@ -8,13 +8,13 @@ import type { Subscription } from '@/lib/types'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 
-function mapRazorpayStatus(rzpStatus: string): string {
+function mapRazorpayStatus(rzpStatus: string): string | null {
   switch (rzpStatus) {
     case 'active':    return 'active'
     case 'halted':    return 'past_due'
     case 'cancelled': return 'cancelled'
     case 'completed': return 'cancelled'
-    default:          return 'trial'
+    default:          return null  // unknown status — don't overwrite DB
   }
 }
 
@@ -144,7 +144,8 @@ export async function syncSubscription(): Promise<{ success: boolean }> {
     // If the stored sub is not yet paid, the user tested checkout but a newer
     // unactivated sub_id was saved over the real active one.
     // Fall back: list recent subs for the account and match by notes.tenant_id.
-    if (rzpSub.status === 'created' || rzpSub.status === 'pending') {
+    // 'authenticated' = mandate approved but first charge not collected yet.
+    if (rzpSub.status === 'created' || rzpSub.status === 'pending' || rzpSub.status === 'authenticated') {
       const list = await (razorpay.subscriptions as any).all({ count: 100 }) as any
       const activeSub = (list?.items ?? []).find(
         (s: any) => s.status === 'active' && s.notes?.tenant_id === actor.tenant_id
@@ -158,6 +159,9 @@ export async function syncSubscription(): Promise<{ success: boolean }> {
     const periodEnd = rzpSub.current_end
       ? new Date((rzpSub.current_end as number) * 1000).toISOString()
       : null
+
+    // Unknown Razorpay status — don't touch the DB, preserving last known good state
+    if (status === null) return { success: false }
 
     // Also store the correct active subscription ID if we found a different one
     await service.from('subscriptions').update({
