@@ -260,6 +260,14 @@ export default function AdmissionDetail({
               style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
               <Printer className="w-4 h-4" /> Print
             </button>
+            {adm.discharge_summary && (
+              <button
+                onClick={() => window.open(`/print/ipd/${adm.id}/discharge`, '_blank')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                style={{ background: 'rgba(21,128,61,0.08)', color: '#15803D', border: '1px solid rgba(21,128,61,0.25)', cursor: 'pointer' }}>
+                <Printer className="w-4 h-4" /> Discharge Summary
+              </button>
+            )}
             {!isClosed && canWrite && (
               <>
                 {canPrintWristband && (
