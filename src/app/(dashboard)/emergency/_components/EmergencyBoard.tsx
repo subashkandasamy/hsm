@@ -1,22 +1,21 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
-import Textarea from '@/components/ui/Textarea'
 import Select from '@/components/ui/Select'
 import EmptyState from '@/components/ui/EmptyState'
 import {
   listEmergencyCases, setTriage, attendCase,
-  resolveEmergency, admitFromEmergency,
+  resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit,
 } from '@/app/actions/emergency'
 import { admitPatient } from '@/app/actions/ipd'
-import type { EmergencyCase, TriageLevel } from '@/lib/types'
+import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
 import RegisterEmergencyModal from './RegisterEmergencyModal'
 import AdmitModal from '../../wards/_components/AdmitModal'
 
@@ -47,9 +46,12 @@ interface Props {
   initialCases: EmergencyCase[]
   wardOptions: WardOption[]
   doctors: { id: string; full_name: string }[]
+  admitTariffs?: ProcedureTariff[]
+  admitGeneralTariffPrice?: number
+  admitAdvancePercentage?: number
 }
 
-export default function EmergencyBoard({ initialCases, wardOptions, doctors }: Props) {
+export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50 }: Props) {
   const router = useRouter()
   const [cases, setCases] = useState<EmergencyCase[]>(initialCases)
   const [loading, setLoading] = useState(false)
@@ -65,6 +67,13 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
 
   // Admit from ER
   const [admitErCase, setAdmitErCase] = useState<EmergencyCase | null>(null)
+
+  const [consultingId, setConsultingId] = useState<string | null>(null)
+
+  // Attend + doctor assign modal
+  const [attendCase_, setAttendCase] = useState<EmergencyCase | null>(null)
+  const [selectedDoctor, setSelectedDoctor] = useState('')
+  const [attending, setAttending] = useState(false)
 
   // Triage modal
   const [triageCase, setTriageCase] = useState<EmergencyCase | null>(null)
@@ -84,11 +93,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
     setLoading(false)
   }
 
-  async function handleAttend(caseId: string) {
-    setActionId(caseId)
-    await attendCase(caseId)
+  async function handleAttend() {
+    if (!attendCase_) return
+    setAttending(true)
+    await attendCase(attendCase_.id, selectedDoctor || undefined)
+    setAttendCase(null)
+    setSelectedDoctor('')
+    setAttending(false)
     await refresh()
-    setActionId(null)
   }
 
   async function handleSetTriage() {
@@ -98,6 +110,13 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
     setTriageCase(null)
     await refresh()
     setActionId(null)
+  }
+
+  async function handleConsult(caseId: string) {
+    setConsultingId(caseId)
+    const r = await getOrCreateEmergencyVisit(caseId)
+    if (!r.success) { setConsultingId(null); return }
+    router.push(`/opd/${r.visitId}`)
   }
 
   async function handleResolve() {
@@ -200,11 +219,20 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
                   <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                     {ec.status === 'waiting' && (
                       <button
-                        onClick={() => handleAttend(ec.id)}
-                        disabled={actionId === ec.id}
+                        onClick={() => { setAttendCase(ec); setSelectedDoctor(doctors[0]?.id ?? '') }}
                         className="px-2.5 py-1.5 rounded-lg text-xs font-semibold"
                         style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
                         Attend
+                      </button>
+                    )}
+                    {ec.status === 'in_treatment' && (
+                      <button
+                        onClick={() => handleConsult(ec.id)}
+                        disabled={consultingId === ec.id}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid rgba(21,128,61,0.25)', cursor: 'pointer', opacity: consultingId === ec.id ? 0.6 : 1 }}>
+                        <ClipboardList className="w-3 h-3" />
+                        {consultingId === ec.id ? 'Opening…' : 'Consult'}
                       </button>
                     )}
                     {(ec.status === 'waiting' || ec.status === 'in_treatment') && (
@@ -237,6 +265,35 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
         onClose={() => setShowRegister(false)}
         onSuccess={() => { setShowRegister(false); refresh() }}
       />
+
+      {/* Attend — assign doctor modal */}
+      <Modal open={!!attendCase_} onClose={() => setAttendCase(null)} title="Attend Case" maxWidth="24rem">
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: '#475569' }}>
+            Patient: <strong>{attendCase_?.patient?.full_name}</strong>
+          </p>
+          <FormField label="Assign Consulting Doctor">
+            <Select value={selectedDoctor} onChange={(e) => setSelectedDoctor(e.target.value)}>
+              <option value="">— Self (current user) —</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.full_name}</option>
+              ))}
+            </Select>
+          </FormField>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setAttendCase(null)}
+              className="px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button onClick={handleAttend} disabled={attending}
+              className="px-5 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: attending ? '#94A3B8' : '#1D4ED8', color: '#fff', border: 'none', cursor: attending ? 'not-allowed' : 'pointer' }}>
+              {attending ? 'Attending…' : 'Confirm Attend'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Triage change modal */}
       <Modal open={!!triageCase} onClose={() => setTriageCase(null)} title="Update Triage Level" maxWidth="24rem">
@@ -314,6 +371,9 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors }: P
           }}
           doctors={doctors}
           wards={wardOptions}
+          procedureTariffs={admitTariffs}
+          generalTariffPrice={admitGeneralTariffPrice}
+          advancePercentage={admitAdvancePercentage}
           preselectedPatient={admitErCase.patient ? {
             id: admitErCase.patient.id,
             full_name: admitErCase.patient.full_name,

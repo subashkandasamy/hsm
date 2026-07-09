@@ -18,7 +18,8 @@ export const GROWTH_ONLY_ROUTES = [
 
 export function planHasModule(plan: PlanKey, status: TenantStatus, moduleKey: string): boolean {
   if (status === 'trial') return true
-  if (status === 'cancelled' || status === 'suspended') return false
+  // suspended = hard block. cancelled = still on grace period (proxy blocks after expiry)
+  if (status === 'suspended') return false
   const modules = PLAN_MODULES[plan] ?? PLAN_MODULES.starter
   return modules.includes('*') || modules.includes(moduleKey)
 }

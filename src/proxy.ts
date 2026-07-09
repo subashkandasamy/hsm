@@ -3,10 +3,10 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 // ── Tenant cache (in-process, 5-min TTL) ──────────────────────────────────────
 interface CachedTenant {
-  id: string; name: string; slug: string; status: string; plan: string; cachedAt: number
+  id: string; name: string; slug: string; status: string; plan: string; current_period_end: string | null; cachedAt: number
 }
 const tenantCache = new Map<string, CachedTenant>()
-const CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_TTL_MS = 60 * 1000  // 1 min — shorter TTL so cancellation state is picked up quickly
 
 const RESERVED_SLUGS = new Set([
   'admin', 'app', 'api', 'www', 'platform', 'static', 'assets', 'default',
@@ -21,13 +21,23 @@ async function resolveTenant(slug: string): Promise<CachedTenant | null> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll: () => [], setAll: () => {} } }
   )
-  const { data } = await supabase
+  const { data: tenantData } = await supabase
     .from('tenants')
     .select('id, name, slug, status, plan')
     .eq('slug', slug)
     .single()
 
-  if (!data) return null
+  if (!tenantData) return null
+
+  // Fetch current_period_end from subscriptions so we can allow cancelled
+  // tenants through during their grace period
+  const { data: subData } = await supabase
+    .from('subscriptions')
+    .select('current_period_end')
+    .eq('tenant_id', tenantData.id)
+    .maybeSingle()
+
+  const data = { ...tenantData, current_period_end: subData?.current_period_end ?? null }
   const entry: CachedTenant = { ...data, cachedAt: Date.now() }
   tenantCache.set(slug, entry)
   return entry
@@ -143,11 +153,22 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
-      // ── Suspended / cancelled ─────────────────────────────────────────────
-      if (tenant.status === 'suspended' || tenant.status === 'cancelled') {
+      // ── Suspended ─────────────────────────────────────────────────────────
+      if (tenant.status === 'suspended') {
         const url = request.nextUrl.clone()
         url.pathname = '/tenant-suspended'
         return NextResponse.rewrite(url)
+      }
+
+      // ── Cancelled — allow through during grace period, block after expiry ──
+      if (tenant.status === 'cancelled') {
+        const periodEnd = tenant.current_period_end ? new Date(tenant.current_period_end) : null
+        if (!periodEnd || periodEnd <= new Date()) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/tenant-suspended'
+          return NextResponse.rewrite(url)
+        }
+        // Grace period still active — allow access but only to non-growth routes
       }
 
       // ── Plan-based route gating ───────────────────────────────────────────

@@ -12,7 +12,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 
 // Helper: resolve the consultation fee for a given doctor.
 // Priority: staff_profiles.consultation_fee → tariffs.default_consultation_fee
-async function resolveConsultationFee(
+export async function resolveConsultationFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   doctorId: string
 ): Promise<number> {

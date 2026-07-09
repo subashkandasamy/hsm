@@ -174,10 +174,19 @@ export interface EmergencyCase {
 
 // ---- Phase 3: Lab ----
 
+export interface LabTestMaster {
+  id: string; name: string; code: string | null; category: string
+  sample_type: string | null; unit: string | null
+  ref_low: number | null; ref_high: number | null
+  reference_range: string | null; is_active: boolean
+}
+
 export interface LabTestCatalog {
-  id: string; name: string; code: string | null; sample_type: string | null
-  unit: string | null; ref_low: number | null; ref_high: number | null
+  id: string; name: string; code: string | null; category: string
+  sample_type: string | null; unit: string | null
+  ref_low: number | null; ref_high: number | null
   reference_range: string | null; price: number; is_active: boolean
+  lab_master_id?: string | null
 }
 
 export type LabFlag = 'pending' | 'normal' | 'high' | 'low'

@@ -60,13 +60,24 @@ export async function createCheckoutSession(
   // Reuse existing Razorpay customer if already created
   const { data: existingSub } = await service
     .from('subscriptions')
-    .select('stripe_customer_id, status, current_period_end')
+    .select('stripe_customer_id, status, current_period_end, plan')
     .eq('tenant_id', actor.tenant_id)
     .maybeSingle()
 
   // Block re-subscription if already active — user must cancel first
   if (existingSub?.status === 'active') {
     return { success: false, error: 'You already have an active subscription. Cancel it first to switch plans.' }
+  }
+
+  // Block re-subscribing to the same plan during the grace period after cancellation
+  if (
+    existingSub?.status === 'cancelled' &&
+    existingSub.plan === plan &&
+    existingSub.current_period_end &&
+    new Date(existingSub.current_period_end) > new Date()
+  ) {
+    const endDate = new Date(existingSub.current_period_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+    return { success: false, error: `Your ${plan} plan is active until ${endDate}. You can upgrade to a higher plan now, or re-subscribe after your access expires.` }
   }
 
   let customerId: string
@@ -111,7 +122,8 @@ export async function createCheckoutSession(
     stripe_customer_id:      customerId,
     stripe_subscription_id:  sub.id,
     plan,
-    status:                  existingSub?.status      ?? 'trial',
+    // Reset cancelled to trial so syncSubscription isn't blocked after re-payment
+    status:                  (existingSub?.status === 'cancelled' ? 'trial' : existingSub?.status) ?? 'trial',
     current_period_end:      existingSub?.current_period_end ?? null,
   }, { onConflict: 'tenant_id' })
 
@@ -132,11 +144,16 @@ export async function syncSubscription(): Promise<{ success: boolean }> {
 
   const { data: row } = await service
     .from('subscriptions')
-    .select('stripe_subscription_id, stripe_customer_id')
+    .select('stripe_subscription_id, stripe_customer_id, status')
     .eq('tenant_id', actor.tenant_id)
     .maybeSingle()
 
   if (!row?.stripe_subscription_id) return { success: false }
+
+  // If we already recorded a cancellation, don't let Razorpay's 'active' status
+  // overwrite it. Razorpay keeps the subscription active until the billing cycle
+  // ends even after cancel-at-period-end — DB is the source of truth here.
+  if (row.status === 'cancelled') return { success: false }
 
   try {
     // Fetch the stored subscription first
@@ -155,11 +172,15 @@ export async function syncSubscription(): Promise<{ success: boolean }> {
       rzpSub = activeSub
     }
 
-    const plan      = (rzpSub.notes?.plan as string) ?? 'starter'
-    const status    = mapRazorpayStatus(rzpSub.status as string)
+    const plan = (rzpSub.notes?.plan as string) ?? 'starter'
     const periodEnd = rzpSub.current_end
       ? new Date((rzpSub.current_end as number) * 1000).toISOString()
       : null
+
+    // Razorpay keeps status='active' even after cancel-at-period-end is requested.
+    // Check cancel_at_cycle_end flag as a secondary guard.
+    const isCancelAtEnd = (rzpSub as any).cancel_at_cycle_end === 1 || (rzpSub as any).cancel_at_cycle_end === true
+    const status = isCancelAtEnd ? 'cancelled' : mapRazorpayStatus(rzpSub.status as string)
 
     // Unknown Razorpay status — don't touch the DB, preserving last known good state
     if (status === null) return { success: false }

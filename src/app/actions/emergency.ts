@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { EmergencyRegisterSchema, ConsultationSchema } from '@/lib/schemas'
+import { resolveConsultationFee } from '@/app/actions/appointments'
 import type { EmergencyCase, TriageLevel } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -84,53 +85,102 @@ export async function setTriage(
   return { success: true }
 }
 
-export async function attendCase(caseId: string): Promise<SimpleResult> {
+export async function attendCase(caseId: string, doctorId?: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
   const supabase = await createClient()
   const { error } = await supabase
     .from('emergency_cases')
-    .update({ status: 'in_treatment', attended_by: actor.id })
+    .update({ status: 'in_treatment', attended_by: doctorId ?? actor.id })
     .eq('id', caseId)
     .eq('status', 'waiting')
   if (error) return { success: false, error: error.message }
 
-  await logAudit(actor.id, 'attend', 'emergency_case', caseId)
+  await logAudit(actor.id, 'attend', 'emergency_case', caseId, { doctor_id: doctorId ?? actor.id })
   return { success: true }
 }
 
-export async function recordEmergencyVisit(
-  caseId: string,
-  input: Record<string, unknown>
+// Returns existing open emergency visit for this case, or creates a fresh one.
+// The doctor fills in all consultation details in the full OPD workspace (/opd/[visitId]).
+export async function getOrCreateEmergencyVisit(
+  caseId: string
 ): Promise<{ success: true; visitId: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
-  const parsed = ConsultationSchema.safeParse(input)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-
   const supabase = await createClient()
 
-  // Get case patient_id
   const { data: ec } = await supabase
-    .from('emergency_cases').select('patient_id').eq('id', caseId).single()
+    .from('emergency_cases')
+    .select('patient_id, complaint, attended_by')
+    .eq('id', caseId)
+    .single()
   if (!ec) return { success: false, error: 'Emergency case not found' }
+
+  // Reuse existing open emergency visit so the doctor resumes where they left off
+  const { data: existing } = await supabase
+    .from('visits')
+    .select('id')
+    .eq('patient_id', ec.patient_id)
+    .eq('type', 'emergency')
+    .eq('status', 'open')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) return { success: true, visitId: existing.id }
+
+  // Use the assigned doctor (attended_by) — falls back to whoever clicked Consult
+  const doctorId = ec.attended_by ?? actor.id
 
   const visitId = crypto.randomUUID()
   const { error } = await supabase.from('visits').insert({
     id:         visitId,
     tenant_id:  actor.tenant_id,
     patient_id: ec.patient_id,
-    doctor_id:  actor.id,
+    doctor_id:  doctorId,
     type:       'emergency',
     status:     'open',
-    complaint:  parsed.data.complaint ?? null,
-    diagnosis:  parsed.data.diagnosis ?? null,
-    icd_code:   parsed.data.icd_code  ?? null,
-    notes:      parsed.data.notes     ?? null,
+    complaint:  ec.complaint ?? null,
   })
   if (error) return { success: false, error: error.message }
+
+  // Auto-generate consultation bill — same logic as appointment booking
+  const consultFee = await resolveConsultationFee(supabase, doctorId)
+  if (consultFee > 0) {
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    if (billNoData) {
+      const billId = crypto.randomUUID()
+      const { error: billErr } = await supabase.from('bills').insert({
+        id:         billId,
+        tenant_id:  actor.tenant_id,
+        patient_id: ec.patient_id,
+        visit_id:   visitId,
+        bill_no:    billNoData as string,
+        subtotal:   consultFee,
+        discount:   0,
+        tax:        0,
+        total:      consultFee,
+        paid:       0,
+        status:     'unpaid',
+        created_by: actor.id,
+      })
+      if (!billErr) {
+        await supabase.from('bill_items').insert({
+          id:         crypto.randomUUID(),
+          tenant_id:  actor.tenant_id,
+          bill_id:    billId,
+          source:     'consultation',
+          ref_id:     visitId,
+          description: 'Emergency consultation fee',
+          qty:        1,
+          unit_price: consultFee,
+          amount:     consultFee,
+        })
+      }
+    }
+  }
 
   await logAudit(actor.id, 'visit', 'emergency_case', caseId, { visit_id: visitId })
   return { success: true, visitId }

@@ -110,7 +110,14 @@ export async function POST(request: NextRequest) {
           .from('subscriptions').select('tenant_id').eq('stripe_subscription_id', subId).maybeSingle()
         if (!row?.tenant_id) break
 
-        await service.from('subscriptions').update({ status: 'cancelled' }).eq('stripe_subscription_id', subId)
+        // Use end_at if present (Razorpay sends it on cancel), fall back to current_end
+        const endTimestamp = subEntity?.end_at ?? subEntity?.current_end
+        const periodEnd = endTimestamp ? new Date(endTimestamp * 1000).toISOString() : null
+
+        await service.from('subscriptions').update({
+          status: 'cancelled',
+          ...(periodEnd ? { current_period_end: periodEnd } : {}),
+        }).eq('stripe_subscription_id', subId)
         await service.from('tenants').update({ status: 'cancelled' }).eq('id', row.tenant_id)
         break
       }

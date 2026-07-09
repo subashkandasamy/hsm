@@ -145,6 +145,25 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
             </div>
           )}
 
+          {/* Cancelled notice */}
+          {status === 'cancelled' && (
+            <div className="flex items-start gap-3 p-4 rounded-xl"
+              style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#64748B' }} />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#334155' }}>Subscription cancelled</p>
+                <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                  Your subscription has been cancelled.{' '}
+                  {subscription?.current_period_end
+                    ? <>Full access continues until <strong style={{ color: '#0F172A' }}>
+                        {new Date(subscription.current_period_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </strong>. After that, your account will revert to limited access.</>
+                    : 'You can subscribe to a new plan below to restore full access.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Past due alert */}
           {status === 'past_due' && (
             <div className="flex items-start gap-3 p-4 rounded-xl"
@@ -208,6 +227,10 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
           {(Object.entries(PLANS) as [PlanKey, typeof PLANS[PlanKey]][]).map(([key, plan], i) => {
             const isCurrent = currentPlan === key && status === 'active'
             const isGrowth  = key === 'growth'
+            // Block re-subscribing to the same plan while still in the grace period
+            const gracePeriodEnd = subscription?.current_period_end ? new Date(subscription.current_period_end) : null
+            const inGracePeriod  = status === 'cancelled' && !!gracePeriodEnd && gracePeriodEnd > new Date()
+            const isBlocked      = inGracePeriod && currentPlan === key
 
             return (
               <div key={key} className="rounded-2xl flex flex-col overflow-hidden"
@@ -276,19 +299,19 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
                 <div className="px-6 pb-6">
                   <button
                     onClick={() => handleSubscribe(key)}
-                    disabled={isCurrent || isPending}
+                    disabled={isCurrent || isBlocked || isPending}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold"
                     style={{
-                      background: isCurrent
+                      background: isCurrent || isBlocked
                         ? '#F1F5F9'
                         : isGrowth
                           ? 'linear-gradient(135deg, #0D9488, #0891B2)'
                           : '#0F172A',
-                      color:  isCurrent ? '#94A3B8' : '#fff',
-                      cursor: isCurrent ? 'default' : 'pointer',
+                      color:  isCurrent || isBlocked ? '#94A3B8' : '#fff',
+                      cursor: isCurrent || isBlocked ? 'default' : 'pointer',
                       opacity: isPending && pendingPlan === key ? 0.75 : 1,
                       minHeight: '48px',
-                      boxShadow: isCurrent ? 'none' : isGrowth
+                      boxShadow: isCurrent || isBlocked ? 'none' : isGrowth
                         ? '0 4px 16px rgba(13,148,136,0.35)'
                         : '0 4px 12px rgba(15,23,42,0.2)',
                       transition: 'opacity 0.2s',
@@ -297,7 +320,9 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirecting…</>
                       : isCurrent
                         ? 'Current plan'
-                        : <>Subscribe <ArrowRight className="w-4 h-4" /></>
+                        : isBlocked
+                          ? `Active until ${gracePeriodEnd!.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                          : <>Subscribe <ArrowRight className="w-4 h-4" /></>
                     }
                   </button>
                 </div>

@@ -5,9 +5,61 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
-import type { LabOrder, LabTestCatalog, LabOrderItem, LabFlag } from '@/lib/types'
+import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+// ---- Master catalog (global, platform-managed) ----
+
+export async function listLabMaster(): Promise<LabTestMaster[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_tests_master').select('*').eq('is_active', true).order('name')
+  return (data ?? []) as LabTestMaster[]
+}
+
+export async function activateFromMaster(
+  masterTestId: string,
+  price: number
+): Promise<{ success: true; test: LabTestCatalog } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+  const supabase = await createClient()
+
+  // Guard: don't duplicate if already activated by this tenant
+  const { data: existing } = await supabase
+    .from('lab_tests_catalog')
+    .select('id')
+    .eq('lab_master_id', masterTestId)
+    .eq('tenant_id', actor.tenant_id)
+    .maybeSingle()
+  if (existing?.id) return { success: false, error: 'This test is already in your catalog' }
+
+  const { data: master } = await supabase
+    .from('lab_tests_master').select('*').eq('id', masterTestId).single()
+  if (!master) return { success: false, error: 'Master test not found' }
+
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('lab_tests_catalog').insert({
+    id,
+    tenant_id:       actor.tenant_id,
+    lab_master_id:   masterTestId,
+    name:            master.name,
+    code:            master.code ?? null,
+    sample_type:     master.sample_type ?? null,
+    unit:            master.unit ?? null,
+    ref_low:         master.ref_low ?? null,
+    ref_high:        master.ref_high ?? null,
+    reference_range: master.reference_range ?? null,
+    price,
+    is_active:       true,
+  })
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'activate', 'lab_test', id, { master_id: masterTestId, price })
+  const { data: test } = await supabase.from('lab_tests_catalog').select('*').eq('id', id).single()
+  return { success: true, test: test as LabTestCatalog }
+}
 
 // ---- Catalog ----
 

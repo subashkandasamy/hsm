@@ -135,6 +135,7 @@ interface OpdVisitSection {
   visitId: string | null
   appointmentId: string | null
   visitDate: string         // YYYY-MM-DD for display
+  isEmergency: boolean
   bills: Bill[]
   totalBilled: number
   totalPaid: number
@@ -336,11 +337,11 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       return m
     }
 
-    function getOpdVisit(month: MonthSection, visitId: string | null, appointmentId: string | null, dateStr: string): OpdVisitSection {
+    function getOpdVisit(month: MonthSection, visitId: string | null, appointmentId: string | null, dateStr: string, isEmergency = false): OpdVisitSection {
       const visitKey = visitId ?? appointmentId ?? dateStr.slice(0, 10)
       let v = month.opdVisits.find((x) => x.visitKey === visitKey)
       if (!v) {
-        v = { visitKey, visitId, appointmentId, visitDate: dateStr.slice(0, 10), bills: [], totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
+        v = { visitKey, visitId, appointmentId, visitDate: dateStr.slice(0, 10), isEmergency, bills: [], totalBilled: 0, totalPaid: 0, totalOutstanding: 0 }
         month.opdVisits.push(v)
       }
       return v
@@ -384,7 +385,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       } else {
         const bVisitId = bill.visit_id as string | null
         const bApptId  = (bill as unknown as { appointment_id: string | null }).appointment_id
-        const opdVisit = getOpdVisit(month, bVisitId, bApptId, bill.created_at)
+        const isEmergencyVisit = (bill as any).visit?.type === 'emergency'
+        const opdVisit = getOpdVisit(month, bVisitId, bApptId, bill.created_at, isEmergencyVisit)
         opdVisit.bills.push(bill)
         if (!isCancelled && !isRefundBill) {
           opdVisit.totalBilled      += bill.total
@@ -749,8 +751,13 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                   className="w-full px-4 py-3 flex items-center justify-between"
                                   style={{ background: 'rgba(240,253,250,0.5)', borderBottom: '1px solid #F1F5F9', border: 'none', cursor: 'pointer' }}>
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-md"
-                                      style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>OPD</span>
+                                    {opdVisit.isEmergency ? (
+                                      <span className="text-xs font-bold px-2 py-0.5 rounded-md"
+                                        style={{ background: 'rgba(220,38,38,0.1)', color: '#DC2626' }}>ER</span>
+                                    ) : (
+                                      <span className="text-xs font-bold px-2 py-0.5 rounded-md"
+                                        style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>OPD</span>
+                                    )}
                                     <span className="text-xs font-medium" style={{ color: '#475569' }}>{ovDate}</span>
                                     <span className="text-xs" style={{ color: '#94A3B8' }}>{opdVisit.bills.length} bill{opdVisit.bills.length !== 1 ? 's' : ''}</span>
                                     {opdVisit.totalBilled !== 0 && (
