@@ -181,7 +181,7 @@ export default function SubscriptionClient({ subscription, tenant, success }: Pr
                 <div className="flex items-center gap-3 p-3 rounded-xl"
                   style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.2)' }}>
                   <p className="text-xs flex-1" style={{ color: '#B91C1C' }}>
-                    Cancel at end of current billing period?
+                    Your subscription will be cancelled at the end of the current billing period. Access continues until then. <strong>The remaining amount is non-refundable.</strong>
                   </p>
                   <button onClick={handleCancel} disabled={isPending}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
