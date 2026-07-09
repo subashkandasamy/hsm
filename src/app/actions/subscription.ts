@@ -33,8 +33,9 @@ export async function getSubscription(): Promise<Subscription | null> {
 
 export async function getTenant() {
   const actor = await getActorProfile()
-  const supabase = await createClient()
-  const { data } = await supabase
+  // Use service client — tenants RLS blocks the anon/user client for this read
+  const service = createServiceClient()
+  const { data } = await service
     .from('tenants')
     .select('*')
     .eq('id', actor.tenant_id)
