@@ -59,8 +59,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [resultOrder, setResultOrder] = useState<LabOrder | null>(null)
   const [labelOrder, setLabelOrder] = useState<LabOrder | null>(null)
 
-  const closeAddTest = useCallback(() => setShowAddTest(false), [])
-  const successAddTest = useCallback(() => { setShowAddTest(false); refresh() }, [])
+  const closeAddTest = useCallback(() => { setShowAddTest(false); refresh() }, [])
 
   async function refresh() {
     setLoading(true)
@@ -281,7 +280,6 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
       <AddLabTestModal
         open={showAddTest}
         onClose={closeAddTest}
-        onSuccess={successAddTest}
       />
 
       {labelOrder && (

@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 
-interface Props { open: boolean; onClose: () => void; onSuccess: () => void }
+interface Props { open: boolean; onClose: () => void }
 
 const SAMPLE_TYPES = ['Blood', 'Urine', 'Swab', 'Stool', 'CSF', 'Tissue', 'Sputum', 'Other']
 
@@ -35,8 +35,10 @@ function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
 
 type Tab = 'catalog' | 'master' | 'custom'
 
-export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
+export default function AddLabTestModal({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('catalog')
+  const catalogFetched = useRef(false)
+  const masterFetched  = useRef(false)
 
   // ── Catalog tab ──────────────────────────────────────────────────────────────
   const [tests, setTests]           = useState<LabTestCatalog[]>([])
@@ -66,38 +68,42 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
   const [customSaving, setCustomSaving] = useState(false)
 
   useEffect(() => {
-    if (!open) return
-    if (tab === 'catalog') loadCatalog()
-    if (tab === 'master')  loadMaster()
+    if (!open) {
+      catalogFetched.current = false
+      masterFetched.current  = false
+      return
+    }
+    if (tab === 'catalog' && !catalogFetched.current) {
+      catalogFetched.current = true
+      loadCatalog()
+    }
+    if (tab === 'master' && !masterFetched.current) {
+      masterFetched.current = true
+      loadMaster()
+    }
   }, [open, tab])
 
   async function loadCatalog() {
-    // Only show full loading spinner when there's no data yet; subsequent
-    // refreshes update in the background so the popup doesn't flash/reset.
-    const firstLoad = tests.length === 0
-    if (firstLoad) setLoading(true)
+    setLoading(true)
     const data = await listAllLabCatalog()
     setTests(data)
-    // Only auto-expand all groups on the very first load, not on refreshes
-    // (preserves the user's collapse/expand choices).
-    if (firstLoad) {
-      const cats = [...new Set(data.map(t => t.category))]
-      setCatExpanded(new Set(cats))
-    }
+    setCatExpanded(prev => {
+      if (prev.size > 0) return prev
+      return new Set(data.map(t => t.category))
+    })
     setLoading(false)
   }
 
   async function loadMaster() {
-    const firstLoad = masterTests.length === 0
-    if (firstLoad) setMasterLoading(true)
+    setMasterLoading(true)
     const [masterList, catalogList] = await Promise.all([listLabMaster(), listAllLabCatalog()])
     const activatedIds = new Set(catalogList.map(t => t.lab_master_id).filter(Boolean))
     const available = masterList.filter(m => !activatedIds.has(m.id))
     setMasterTests(available)
-    if (firstLoad) {
-      const cats = [...new Set(available.map(m => m.category))]
-      setMasterExpanded(new Set(cats))
-    }
+    setMasterExpanded(prev => {
+      if (prev.size > 0) return prev
+      return new Set(available.map(m => m.category))
+    })
     setMasterLoading(false)
   }
 
@@ -122,7 +128,9 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
     const res = await updateLabTest(editId, formToPayload(editForm))
     setEditSaving(false)
     if (!res.success) { setEditErr(res.error); return }
-    setEditId(null); await loadCatalog(); onSuccess()
+    const payload = formToPayload(editForm)
+    setTests(prev => prev.map(t => t.id === editId ? { ...t, ...payload } : t))
+    setEditId(null)
   }
 
   async function toggleActive(t: LabTestCatalog) {
@@ -168,7 +176,7 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
     setActivating(null)
     if (!res.success) { setMasterErrors(prev => ({ ...prev, [master.id]: res.error })); return }
     setMasterTests(prev => prev.filter(m => m.id !== master.id))
-    onSuccess()
+    catalogFetched.current = false  // so switching to My Catalog tab reloads it
   }
 
   async function handleActivateGroup(cat: string) {
@@ -188,7 +196,7 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
     )
     setMasterTests(prev => prev.filter(m => m.category !== cat))
     setActivatingGroup(null)
-    onSuccess()
+    catalogFetched.current = false  // so switching to My Catalog tab reloads it
   }
 
   // ── Custom ───────────────────────────────────────────────────────────────────
@@ -200,8 +208,9 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
     const res = await createLabTest(formToPayload(customForm))
     setCustomSaving(false)
     if (!res.success) { setCustomErr(res.error); return }
-    setCustomForm(BLANK); onSuccess()
-    await loadCatalog(); setTab('catalog')
+    setCustomForm(BLANK)
+    catalogFetched.current = false  // force fresh load on catalog tab
+    setTab('catalog')
   }
 
   // ── UI helpers ────────────────────────────────────────────────────────────────
