@@ -226,10 +226,19 @@ export async function cancelSubscription(): Promise<
 
   try {
     // cancel at end of current billing period (true = at cycle end)
-    await (razorpay.subscriptions as any).cancel(sub.stripe_subscription_id, true)
+    const rzpSub = await (razorpay.subscriptions as any).cancel(sub.stripe_subscription_id, true) as any
 
-    const service = createServiceClient()
-    await service.from('subscriptions').update({ status: 'cancelled' }).eq('tenant_id', actor.tenant_id)
+    // Use the response's current_end to set the grace-period end immediately —
+    // the webhook may arrive later but this ensures the proxy doesn't hard-block
+    // between now and when the webhook fires.
+    const periodEnd = rzpSub?.current_end
+      ? new Date((rzpSub.current_end as number) * 1000).toISOString()
+      : null
+
+    await service.from('subscriptions').update({
+      status: 'cancelled',
+      ...(periodEnd ? { current_period_end: periodEnd } : {}),
+    }).eq('tenant_id', actor.tenant_id)
     await service.from('tenants').update({ status: 'cancelled' }).eq('id', actor.tenant_id)
     return { success: true }
   } catch (err: any) {

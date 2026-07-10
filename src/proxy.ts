@@ -160,15 +160,16 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
-      // ── Cancelled — allow through during grace period, block after expiry ──
+      // ── Cancelled — block only after confirmed period expiry ──────────────
+      // If current_period_end is unknown (null) we let the tenant through so
+      // they can reach the subscription page; never hard-block on missing data.
       if (tenant.status === 'cancelled') {
         const periodEnd = tenant.current_period_end ? new Date(tenant.current_period_end) : null
-        if (!periodEnd || periodEnd <= new Date()) {
+        if (periodEnd && periodEnd <= new Date()) {
           const url = request.nextUrl.clone()
           url.pathname = '/tenant-suspended'
           return NextResponse.rewrite(url)
         }
-        // Grace period still active — allow access but only to non-growth routes
       }
 
       // ── Plan-based route gating ───────────────────────────────────────────
