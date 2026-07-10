@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Plus, RefreshCw, FlaskConical, Settings, Printer } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -58,6 +58,9 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [showAddTest, setShowAddTest] = useState(false)
   const [resultOrder, setResultOrder] = useState<LabOrder | null>(null)
   const [labelOrder, setLabelOrder] = useState<LabOrder | null>(null)
+
+  const closeAddTest = useCallback(() => setShowAddTest(false), [])
+  const successAddTest = useCallback(() => { setShowAddTest(false); refresh() }, [])
 
   async function refresh() {
     setLoading(true)
@@ -277,8 +280,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
 
       <AddLabTestModal
         open={showAddTest}
-        onClose={() => setShowAddTest(false)}
-        onSuccess={() => { setShowAddTest(false); refresh() }}
+        onClose={closeAddTest}
+        onSuccess={successAddTest}
       />
 
       {labelOrder && (

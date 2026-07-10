@@ -72,24 +72,32 @@ export default function AddLabTestModal({ open, onClose, onSuccess }: Props) {
   }, [open, tab])
 
   async function loadCatalog() {
-    setLoading(true)
+    // Only show full loading spinner when there's no data yet; subsequent
+    // refreshes update in the background so the popup doesn't flash/reset.
+    const firstLoad = tests.length === 0
+    if (firstLoad) setLoading(true)
     const data = await listAllLabCatalog()
     setTests(data)
-    // Expand all groups initially
-    const cats = [...new Set(data.map(t => t.category))]
-    setCatExpanded(new Set(cats))
+    // Only auto-expand all groups on the very first load, not on refreshes
+    // (preserves the user's collapse/expand choices).
+    if (firstLoad) {
+      const cats = [...new Set(data.map(t => t.category))]
+      setCatExpanded(new Set(cats))
+    }
     setLoading(false)
   }
 
   async function loadMaster() {
-    setMasterLoading(true)
+    const firstLoad = masterTests.length === 0
+    if (firstLoad) setMasterLoading(true)
     const [masterList, catalogList] = await Promise.all([listLabMaster(), listAllLabCatalog()])
     const activatedIds = new Set(catalogList.map(t => t.lab_master_id).filter(Boolean))
     const available = masterList.filter(m => !activatedIds.has(m.id))
     setMasterTests(available)
-    // Expand all groups initially
-    const cats = [...new Set(available.map(m => m.category))]
-    setMasterExpanded(new Set(cats))
+    if (firstLoad) {
+      const cats = [...new Set(available.map(m => m.category))]
+      setMasterExpanded(new Set(cats))
+    }
     setMasterLoading(false)
   }
 
