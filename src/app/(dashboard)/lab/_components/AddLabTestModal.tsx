@@ -123,7 +123,8 @@ export default function AddLabTestModal({ open, onClose }: Props) {
 
   const filteredCatalog = catQuery.trim()
     ? tests.filter(t => t.name.toLowerCase().includes(catQuery.toLowerCase()) ||
-        (t.code ?? '').toLowerCase().includes(catQuery.toLowerCase()))
+        (t.code ?? '').toLowerCase().includes(catQuery.toLowerCase()) ||
+        t.category.toLowerCase().includes(catQuery.toLowerCase()))
     : tests
 
   const catalogGroups = groupBy(filteredCatalog, t => t.category)
@@ -162,7 +163,8 @@ export default function AddLabTestModal({ open, onClose }: Props) {
 
   const filteredMaster = masterQuery.trim()
     ? masterTests.filter(m => m.name.toLowerCase().includes(masterQuery.toLowerCase()) ||
-        (m.code ?? '').toLowerCase().includes(masterQuery.toLowerCase()))
+        (m.code ?? '').toLowerCase().includes(masterQuery.toLowerCase()) ||
+        m.category.toLowerCase().includes(masterQuery.toLowerCase()))
     : masterTests
 
   const masterGroups = groupBy(filteredMaster, m => m.category)

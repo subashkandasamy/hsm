@@ -472,7 +472,10 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   }
 
   const filtered = query.trim()
-    ? catalog.filter((t) => t.name.toLowerCase().includes(query.toLowerCase()) || (t.code ?? '').toLowerCase().includes(query.toLowerCase()))
+    ? catalog.filter((t) =>
+        t.name.toLowerCase().includes(query.toLowerCase()) ||
+        (t.code ?? '').toLowerCase().includes(query.toLowerCase()) ||
+        (t.category ?? '').toLowerCase().includes(query.toLowerCase()))
     : catalog
 
   return (

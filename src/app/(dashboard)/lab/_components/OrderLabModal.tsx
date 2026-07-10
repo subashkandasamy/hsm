@@ -55,7 +55,10 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
   }, [catalog])
 
   const filteredCatalog = catalog.filter((t) =>
-    testSearch === '' || t.name.toLowerCase().includes(testSearch.toLowerCase()) || t.code?.toLowerCase().includes(testSearch.toLowerCase())
+    testSearch === '' ||
+    t.name.toLowerCase().includes(testSearch.toLowerCase()) ||
+    (t.code ?? '').toLowerCase().includes(testSearch.toLowerCase()) ||
+    (t.category ?? '').toLowerCase().includes(testSearch.toLowerCase())
   )
 
   const catalogGroups = groupBy(catalog, t => t.category || 'General')
