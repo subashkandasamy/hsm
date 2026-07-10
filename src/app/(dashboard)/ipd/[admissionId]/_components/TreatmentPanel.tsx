@@ -66,6 +66,12 @@ import type {
   RadiologyOrder, RadiologyCatalog, RadiologyOrderStatus,
 } from '@/lib/types'
 
+function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
+  return arr.reduce<Record<string, T[]>>((acc, item) => {
+    const k = key(item); (acc[k] ??= []).push(item); return acc
+  }, {})
+}
+
 interface Props {
   admissionId: string
   patientId: string
@@ -416,6 +422,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   const [saving, setSaving]             = useState(false)
   const [err, setErr]                   = useState('')
   const [cancelingId, setCancelingId]   = useState<string | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     listIpdLabOrders(admissionId).then((o) => { setOrders(o); setLoading(false) })
@@ -426,9 +433,26 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
     setPriority('routine'); setScheduledFor(todayStr)
     if (catalog.length === 0) {
       setCatalogLoading(true)
-      setCatalog(await listLabCatalogForIpd())
+      const data = await listLabCatalogForIpd()
+      setCatalog(data)
+      setExpandedGroups(new Set(data.map(t => t.category || 'General')))
       setCatalogLoading(false)
     }
+  }
+
+  const catalogGroups = groupBy(catalog, t => t.category || 'General')
+  const groupNames = Object.keys(catalogGroups).sort()
+
+  function toggleGroup(cat: string) {
+    const group = catalogGroups[cat] ?? []
+    const allSelected = group.every(t => selected.has(t.id))
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (allSelected) group.forEach(t => next.delete(t.id))
+      else group.forEach(t => next.add(t.id))
+      return next
+    })
+    if (!allSelected) setExpandedGroups(prev => new Set(prev).add(cat))
   }
 
   async function submitOrder() {
@@ -596,31 +620,78 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
               </div>
             </div>
             {/* List */}
-            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-1">
+            <div className="flex-1 overflow-y-auto pb-2" style={{ borderTop: '1px solid #F1F5F9' }}>
               {catalogLoading ? (
                 <p className="text-xs text-center py-6" style={{ color: '#94A3B8' }}>Loading tests…</p>
-              ) : filtered.length === 0 ? (
-                <p className="text-xs text-center py-6" style={{ color: '#94A3B8' }}>No tests found.</p>
+              ) : query.trim() ? (
+                /* Flat list when searching */
+                filtered.length === 0 ? (
+                  <p className="text-xs text-center py-6" style={{ color: '#94A3B8' }}>No tests found.</p>
+                ) : (
+                  <div className="px-5 py-2 space-y-1">
+                    {filtered.map((test) => (
+                      <IpdLabTestRow key={test.id} test={test} selected={selected.has(test.id)}
+                        onToggle={() => setSelected(prev => {
+                          const n = new Set(prev); n.has(test.id) ? n.delete(test.id) : n.add(test.id); return n
+                        })} />
+                    ))}
+                  </div>
+                )
               ) : (
-                filtered.map((test) => (
-                  <label key={test.id}
-                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
-                    style={{
-                      background: selected.has(test.id) ? 'rgba(37,99,235,0.06)' : '#F8FAFC',
-                      border: `1px solid ${selected.has(test.id) ? 'rgba(37,99,235,0.2)' : '#E2E8F0'}`,
-                    }}>
-                    <input type="checkbox" checked={selected.has(test.id)}
-                      onChange={(e) => setSelected((prev) => {
-                        const n = new Set(prev)
-                        if (e.target.checked) n.add(test.id); else n.delete(test.id); return n
-                      })} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium" style={{ color: '#0F172A' }}>{test.name}</p>
-                      {test.sample_type && <p className="text-xs" style={{ color: '#94A3B8' }}>{test.sample_type}</p>}
+                /* Grouped view */
+                groupNames.map(cat => {
+                  const group = catalogGroups[cat]
+                  const expanded = expandedGroups.has(cat)
+                  const selectedCount = group.filter(t => selected.has(t.id)).length
+                  const allSelected = selectedCount === group.length
+                  const someSelected = selectedCount > 0 && !allSelected
+                  return (
+                    <div key={cat}>
+                      <div className="flex items-center"
+                        style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                        {/* Group checkbox */}
+                        <button type="button" onClick={() => toggleGroup(cat)}
+                          className="flex items-center justify-center flex-shrink-0 w-10 h-9"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
+                          <div className="w-4 h-4 rounded flex items-center justify-center"
+                            style={{
+                              background: allSelected ? '#2563EB' : someSelected ? 'rgba(37,99,235,0.12)' : '#F1F5F9',
+                              border: `1.5px solid ${allSelected || someSelected ? '#2563EB' : '#CBD5E1'}`,
+                            }}>
+                            {allSelected && <Check className="w-2.5 h-2.5" style={{ color: '#fff' }} />}
+                            {someSelected && <div className="w-2 h-0.5 rounded" style={{ background: '#2563EB' }} />}
+                          </div>
+                        </button>
+                        {/* Expand/collapse + label */}
+                        <button type="button"
+                          onClick={() => setExpandedGroups(prev => {
+                            const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n
+                          })}
+                          className="flex items-center gap-1.5 flex-1 min-w-0 py-2 pr-4 text-left"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
+                          {expanded
+                            ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />
+                            : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />}
+                          <span className="text-xs font-semibold flex-1 truncate" style={{ color: '#0F172A' }}>{cat}</span>
+                          <span className="text-xs flex-shrink-0 font-medium"
+                            style={{ color: selectedCount > 0 ? '#2563EB' : '#94A3B8' }}>
+                            {selectedCount > 0 ? `${selectedCount}/` : ''}{group.length}
+                          </span>
+                        </button>
+                      </div>
+                      {expanded && (
+                        <div className="px-5 py-1.5 space-y-1">
+                          {group.map((test) => (
+                            <IpdLabTestRow key={test.id} test={test} selected={selected.has(test.id)}
+                              onToggle={() => setSelected(prev => {
+                                const n = new Set(prev); n.has(test.id) ? n.delete(test.id) : n.add(test.id); return n
+                              })} />
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {test.code && <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{test.code}</span>}
-                  </label>
-                ))
+                  )
+                })
               )}
             </div>
             {/* Footer */}
@@ -656,6 +727,27 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
         </div>
       )}
     </>
+  )
+}
+
+// ─── IpdLabTestRow ────────────────────────────────────────────────────────────
+
+function IpdLabTestRow({ test, selected, onToggle }: {
+  test: LabTestCatalog; selected: boolean; onToggle: () => void
+}) {
+  return (
+    <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
+      style={{
+        background: selected ? 'rgba(37,99,235,0.06)' : '#F8FAFC',
+        border: `1px solid ${selected ? 'rgba(37,99,235,0.2)' : '#E2E8F0'}`,
+      }}>
+      <input type="checkbox" checked={selected} onChange={onToggle} style={{ cursor: 'pointer' }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium" style={{ color: '#0F172A' }}>{test.name}</p>
+        {test.sample_type && <p className="text-xs" style={{ color: '#94A3B8' }}>{test.sample_type}</p>}
+      </div>
+      {test.code && <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{test.code}</span>}
+    </label>
   )
 }
 

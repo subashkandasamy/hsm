@@ -72,6 +72,19 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
     })
   }
 
+  function toggleGroup(cat: string) {
+    const group = catalogGroups[cat] ?? []
+    const allSelected = group.every(t => selected.has(t.id))
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (allSelected) group.forEach(t => next.delete(t.id))
+      else group.forEach(t => next.add(t.id))
+      return next
+    })
+    // Always expand the group when selecting from it
+    if (!allSelected) setExpandedGroups(prev => new Set(prev).add(cat))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const patId = prefill?.patientId ?? patient?.id
@@ -166,26 +179,42 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
                 const group = catalogGroups[cat]
                 const expanded = expandedGroups.has(cat)
                 const selectedCount = group.filter(t => selected.has(t.id)).length
+                const allSelected = selectedCount === group.length
+                const someSelected = selectedCount > 0 && !allSelected
                 return (
                   <div key={cat}>
-                    <button type="button"
-                      onClick={() => setExpandedGroups(prev => {
-                        const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n
-                      })}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left"
-                      style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                      {expanded
-                        ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />
-                        : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />}
-                      <span className="text-xs font-semibold flex-1 truncate" style={{ color: '#0F172A' }}>{cat}</span>
-                      {selectedCount > 0 && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
-                          style={{ background: 'rgba(13,148,136,0.12)', color: '#0D9488' }}>
-                          {selectedCount} selected
+                    <div className="flex items-center"
+                      style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                      {/* Group checkbox */}
+                      <button type="button" onClick={() => toggleGroup(cat)}
+                        className="flex items-center justify-center flex-shrink-0 w-9 h-9"
+                        style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
+                        <div className="w-4 h-4 rounded flex items-center justify-center"
+                          style={{
+                            background: allSelected ? '#0D9488' : someSelected ? 'rgba(13,148,136,0.15)' : '#F1F5F9',
+                            border: `1.5px solid ${allSelected || someSelected ? '#0D9488' : '#CBD5E1'}`,
+                          }}>
+                          {allSelected && <Check className="w-2.5 h-2.5" style={{ color: '#fff' }} />}
+                          {someSelected && <div className="w-2 h-0.5 rounded" style={{ background: '#0D9488' }} />}
+                        </div>
+                      </button>
+                      {/* Expand/collapse + label */}
+                      <button type="button"
+                        onClick={() => setExpandedGroups(prev => {
+                          const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n
+                        })}
+                        className="flex items-center gap-1.5 flex-1 min-w-0 py-2 pr-3 text-left"
+                        style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
+                        {expanded
+                          ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />
+                          : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#64748B' }} />}
+                        <span className="text-xs font-semibold flex-1 truncate" style={{ color: '#0F172A' }}>{cat}</span>
+                        <span className="text-xs flex-shrink-0 font-medium"
+                          style={{ color: selectedCount > 0 ? '#0D9488' : '#94A3B8' }}>
+                          {selectedCount > 0 ? `${selectedCount}/` : ''}{group.length}
                         </span>
-                      )}
-                      <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{group.length}</span>
-                    </button>
+                      </button>
+                    </div>
                     {expanded && group.map((test, i) => (
                       <TestRow key={test.id} test={test} selected={selected.has(test.id)}
                         onToggle={() => toggleTest(test.id)}
