@@ -56,7 +56,7 @@ export async function proxy(request: NextRequest) {
 
   // Public paths — no auth needed
   const PUBLIC_PATHS = [
-    '/login', '/signup', '/tenant-not-found', '/tenant-suspended',
+    '/login', '/signup', '/tenant-not-found', '/tenant-suspended', '/tenant-expired',
     '/auth/callback', '/forgot-password', '/reset-password',
     '/native-entry',
   ]
@@ -163,12 +163,21 @@ export async function proxy(request: NextRequest) {
       // ── Cancelled — block only after confirmed period expiry ──────────────
       // If current_period_end is unknown (null) we let the tenant through so
       // they can reach the subscription page; never hard-block on missing data.
+      // /login and /account/subscription are always reachable so the user can
+      // authenticate and renew without needing support intervention.
       if (tenant.status === 'cancelled') {
         const periodEnd = tenant.current_period_end ? new Date(tenant.current_period_end) : null
         if (periodEnd && periodEnd <= new Date()) {
-          const url = request.nextUrl.clone()
-          url.pathname = '/tenant-suspended'
-          return NextResponse.rewrite(url)
+          const isRenewalPath =
+            pathname === '/login' ||
+            pathname.startsWith('/login/') ||
+            pathname === '/account/subscription' ||
+            pathname.startsWith('/account/subscription/')
+          if (!isRenewalPath) {
+            const url = request.nextUrl.clone()
+            url.pathname = '/tenant-expired'
+            return NextResponse.rewrite(url)
+          }
         }
       }
 
