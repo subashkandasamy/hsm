@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Select from '@/components/ui/Select'
+import Textarea from '@/components/ui/Textarea'
 import EmptyState from '@/components/ui/EmptyState'
 import {
   listEmergencyCases, setTriage, attendCase,
