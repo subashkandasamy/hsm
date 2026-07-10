@@ -80,8 +80,8 @@ export async function scheduleSurgery(
 export async function rescheduleSurgery(
   id: string,
   input: { start: string; end: string; otRoomId: string }
-  await requireWriteAccess()
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:schedule')
   const supabase = await createClient()

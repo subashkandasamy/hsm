@@ -595,8 +595,8 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
 export async function generateMissingDailyCharges(
   admissions: Array<{ id: string; patient_id: string; ward: { name: string; daily_rate: number } }>
-  await requireWriteAccess()
 ): Promise<void> {
+  await requireWriteAccess()
   if (!admissions.length) return
   const actor = await getActorProfile()
   const supabase = await createClient()

@@ -148,8 +148,8 @@ export async function bookAppointment(
 export async function updateAppointment(
   id: string,
   input: { doctor_id: string; department_id?: string | null; scheduled_at: string; reason?: string | null }
-  await requireWriteAccess()
 ): Promise<{ success: true; appointment: Appointment } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 
