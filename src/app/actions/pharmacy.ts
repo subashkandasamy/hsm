@@ -43,6 +43,40 @@ export async function updateDrug(id: string, input: Record<string, unknown>): Pr
   return { success: true }
 }
 
+export async function updateBatch(
+  batchId: string,
+  input: { batch_no?: string; expiry?: string; qty_available?: number; mrp?: number; purchase_price?: number | null }
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  const supabase = await createClient()
+  const { error } = await supabase.from('drug_batches').update(input).eq('id', batchId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'drug_batch', batchId, input)
+  return { success: true }
+}
+
+export async function updateDrugReorderLevel(drugId: string, reorderLevel: number): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  const supabase = await createClient()
+  // drug_master rows (is_global) have no tenant-scoped reorder_level column on drug_master;
+  // they store it on drug_batches. For tenant drugs, update the drugs table directly.
+  const { data: drug } = await supabase.from('drugs').select('id').eq('id', drugId).maybeSingle()
+  if (drug) {
+    const { error } = await supabase.from('drugs').update({ reorder_level: reorderLevel }).eq('id', drugId)
+    if (error) return { success: false, error: error.message }
+  } else {
+    // Global drug — store reorder_level on the drug_master row (it has this column)
+    const { error } = await supabase.from('drug_master').update({ reorder_level: reorderLevel }).eq('id', drugId)
+    if (error) return { success: false, error: error.message }
+  }
+  await logAudit(actor.id, 'update', 'drug', drugId, { reorder_level: reorderLevel })
+  return { success: true }
+}
+
 // Adds a stock batch. Accepts drug_master_id (global drug) OR drug_id (tenant custom drug).
 export async function addBatch(
   input: Record<string, unknown>

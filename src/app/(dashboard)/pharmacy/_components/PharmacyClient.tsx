@@ -4,7 +4,7 @@ import { useState } from 'react'
 import {
   Plus, RefreshCw, AlertTriangle, Package,
   CheckCircle2, Circle, User2, ChevronDown, ChevronRight,
-  X, Loader2, Truck, CreditCard, Search, BedDouble, Check,
+  X, Loader2, Truck, CreditCard, Search, BedDouble, Check, Pencil,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -15,6 +15,7 @@ import {
   listPendingPrescriptions, getStock, getAlerts,
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
   dispense as dispenseDrug, listPackedAwaitingDispatch,
+  updateBatch, updateDrugReorderLevel,
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
@@ -261,7 +262,7 @@ export default function PharmacyClient({
           onDispense={handleIpdDispense}
         />
       )}
-      {tab === 'stock' && <StockView stock={stock} />}
+      {tab === 'stock' && <StockView stock={stock} canManage={canManage} onRefresh={refresh} />}
       {tab === 'alerts' && <AlertsView alerts={alerts} />}
 
       {dispenseRx && (
@@ -787,8 +788,17 @@ function DispenseQueue({
 
 // ---- Stock View ----
 
-function StockView({ stock }: { stock: DrugWithStock[] }) {
+type BatchDraft = { batch_no: string; expiry: string; qty_available: string; mrp: string; purchase_price: string }
+
+function StockView({ stock, canManage, onRefresh }: {
+  stock: DrugWithStock[]; canManage: boolean; onRefresh: () => void
+}) {
   const [query, setQuery] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [reorderDraft, setReorderDraft] = useState('')
+  const [batchDrafts, setBatchDrafts] = useState<Record<string, BatchDraft>>({})
+  const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
 
   const filtered = query.trim()
     ? stock.filter((d) => {
@@ -803,21 +813,71 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
       })
     : stock
 
+  function openEdit(drug: DrugWithStock) {
+    setEditId(drug.id)
+    setReorderDraft(String(drug.reorder_level ?? 0))
+    const drafts: Record<string, BatchDraft> = {}
+    drug.batches.forEach(b => {
+      drafts[b.id] = {
+        batch_no: b.batch_no,
+        expiry: b.expiry,
+        qty_available: String(b.qty_available),
+        mrp: String(b.mrp),
+        purchase_price: b.purchase_price != null ? String(b.purchase_price) : '',
+      }
+    })
+    setBatchDrafts(drafts)
+    setSaveErr('')
+  }
+
+  async function saveEdit(drug: DrugWithStock) {
+    setSaving(true); setSaveErr('')
+    const reorder = parseInt(reorderDraft, 10)
+    if (isNaN(reorder) || reorder < 0) { setSaveErr('Reorder level must be 0 or more'); setSaving(false); return }
+
+    // Save reorder level if changed
+    if (reorder !== (drug.reorder_level ?? 0)) {
+      const res = await updateDrugReorderLevel(drug.id, reorder)
+      if (!res.success) { setSaveErr(res.error); setSaving(false); return }
+    }
+
+    // Save each modified batch
+    for (const b of drug.batches) {
+      const d = batchDrafts[b.id]
+      if (!d) continue
+      const qty = parseInt(d.qty_available, 10)
+      const mrp = parseFloat(d.mrp)
+      const pp  = d.purchase_price ? parseFloat(d.purchase_price) : null
+      if (!d.batch_no.trim()) { setSaveErr(`Batch number required for ${b.batch_no}`); setSaving(false); return }
+      if (!d.expiry)           { setSaveErr(`Expiry required for ${b.batch_no}`); setSaving(false); return }
+      if (isNaN(qty) || qty < 0) { setSaveErr(`Invalid qty for ${b.batch_no}`); setSaving(false); return }
+      if (isNaN(mrp) || mrp < 0) { setSaveErr(`Invalid MRP for ${b.batch_no}`); setSaving(false); return }
+      const changed = d.batch_no !== b.batch_no || d.expiry !== b.expiry ||
+        qty !== b.qty_available || mrp !== b.mrp || pp !== b.purchase_price
+      if (changed) {
+        const res = await updateBatch(b.id, { batch_no: d.batch_no.trim(), expiry: d.expiry, qty_available: qty, mrp, purchase_price: pp })
+        if (!res.success) { setSaveErr(res.error); setSaving(false); return }
+      }
+    }
+
+    setSaving(false); setEditId(null)
+    onRefresh()
+  }
+
+  const inp = 'px-2 py-1.5 rounded-lg text-xs border w-full'
+  const bdr = { borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }
+
   return (
     <div className="space-y-3">
       {/* Search bar */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
-        <input
-          type="text"
-          placeholder="Search by drug name, generic, form or strength…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+        <input type="text" placeholder="Search by drug name, generic, form or strength…"
+          value={query} onChange={(e) => setQuery(e.target.value)}
           className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm"
           style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '44px' }}
           onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
-        />
+          onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
         {query && (
           <button type="button" onClick={() => setQuery('')}
             className="absolute right-3 top-1/2 -translate-y-1/2"
@@ -840,10 +900,12 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
         const primaryBrand = (drug.brand_aliases ?? [])[0]
         const displayName = primaryBrand ?? drug.name
         const genericLabel = primaryBrand ? drug.name : drug.generic_name
+        const isEditing = editId === drug.id
+
         return (
           <GlassCard key={drug.id} className="p-4">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-semibold" style={{ color: '#0F172A' }}>{displayName}</p>
                   {genericLabel && <span className="text-xs" style={{ color: '#64748B' }}>({genericLabel})</span>}
@@ -859,11 +921,13 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
                 <p className="text-sm mt-1">
                   <span className="font-bold" style={{ color: isLow ? '#DC2626' : '#0D9488' }}>{drug.total_qty}</span>
                   <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{drug.unit ?? 'units'} available</span>
-                  {(drug.reorder_level ?? 0) > 0 && (
+                  {(drug.reorder_level ?? 0) > 0 && !isEditing && (
                     <span className="ml-2 text-xs" style={{ color: '#94A3B8' }}>Reorder at {drug.reorder_level}</span>
                   )}
                 </p>
-                {drug.batches.length > 0 && (
+
+                {/* ── View mode: batch chips ── */}
+                {!isEditing && drug.batches.length > 0 && (
                   <div className="flex gap-2 mt-2 flex-wrap">
                     {drug.batches.map((b) => (
                       <span key={b.id} className="text-xs px-2 py-0.5 rounded-lg"
@@ -873,7 +937,72 @@ function StockView({ stock }: { stock: DrugWithStock[] }) {
                     ))}
                   </div>
                 )}
+
+                {/* ── Edit mode ── */}
+                {isEditing && (
+                  <div className="mt-3 space-y-3">
+                    {/* Reorder level */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Reorder level</label>
+                      <input type="number" min={0} step={1} value={reorderDraft}
+                        onChange={e => setReorderDraft(e.target.value)}
+                        className={inp} style={{ ...bdr, maxWidth: 100 }} />
+                    </div>
+
+                    {/* Batch rows */}
+                    {drug.batches.length > 0 && (
+                      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                        <div className="grid text-xs font-semibold px-3 py-2"
+                          style={{ background: '#F8FAFC', color: '#64748B', gridTemplateColumns: '1fr 1fr 80px 90px 90px' }}>
+                          <span>Batch No.</span><span>Expiry</span><span>Qty</span><span>MRP (₹)</span><span>Cost (₹)</span>
+                        </div>
+                        {drug.batches.map((b, i) => {
+                          const d = batchDrafts[b.id] ?? { batch_no: b.batch_no, expiry: b.expiry, qty_available: String(b.qty_available), mrp: String(b.mrp), purchase_price: '' }
+                          return (
+                            <div key={b.id} className="grid items-center gap-2 px-3 py-2"
+                              style={{ gridTemplateColumns: '1fr 1fr 80px 90px 90px', borderTop: i === 0 ? 'none' : '1px solid #F1F5F9' }}>
+                              <input value={d.batch_no} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], batch_no: e.target.value } }))}
+                                className={inp} style={bdr} />
+                              <input type="date" value={d.expiry} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], expiry: e.target.value } }))}
+                                className={inp} style={bdr} />
+                              <input type="number" min={0} step={1} value={d.qty_available} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], qty_available: e.target.value } }))}
+                                className={inp} style={bdr} />
+                              <input type="number" min={0} step="0.01" value={d.mrp} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], mrp: e.target.value } }))}
+                                className={inp} style={bdr} />
+                              <input type="number" min={0} step="0.01" value={d.purchase_price} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], purchase_price: e.target.value } }))}
+                                placeholder="optional" className={inp} style={{ ...bdr, color: '#94A3B8' }} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {saveErr && <p className="text-xs" style={{ color: '#DC2626' }}>{saveErr}</p>}
+
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(drug)} disabled={saving}
+                        className="px-4 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: saving ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                        {saving ? 'Saving…' : 'Save Changes'}
+                      </button>
+                      <button onClick={() => setEditId(null)} disabled={saving}
+                        className="px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Edit button */}
+              {canManage && !isEditing && (
+                <button onClick={() => openEdit(drug)}
+                  className="p-1.5 rounded-lg flex-shrink-0"
+                  style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </GlassCard>
         )
