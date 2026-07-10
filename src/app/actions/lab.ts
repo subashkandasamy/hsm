@@ -47,6 +47,7 @@ export async function activateFromMaster(
     lab_master_id:   masterTestId,
     name:            master.name,
     code:            master.code ?? null,
+    category:        (master as Record<string, unknown>).category as string ?? 'General',
     sample_type:     master.sample_type ?? null,
     unit:            master.unit ?? null,
     ref_low:         master.ref_low ?? null,

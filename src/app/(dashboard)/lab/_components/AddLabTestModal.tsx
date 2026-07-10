@@ -9,21 +9,33 @@ import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 interface Props { open: boolean; onClose: () => void }
 
 const SAMPLE_TYPES = ['Blood', 'Urine', 'Swab', 'Stool', 'CSF', 'Tissue', 'Sputum', 'Other']
+const LAB_CATEGORIES = [
+  'Allergy & Immunology', 'Autoimmune & Rheumatology', 'Blood Glucose & Diabetes',
+  'Body Fluid Analysis', 'CSF Analysis', 'Cardiac Markers', 'Coagulation Profile',
+  'Complete Blood Count', 'Electrolytes & Minerals', 'Genetics & Molecular',
+  'HIV & STI Panel', 'Hepatitis Panel', 'Hormones & Endocrinology',
+  'Inflammatory Markers', 'Kidney Function Tests', 'Lipid Profile',
+  'Liver Function Tests', 'Microbiology – Culture & Sensitivity', 'Neonatal & Paediatric',
+  'Parasitology', 'Respiratory Pathogens', 'Semen Analysis', 'Stool & GI Tests',
+  'Thrombophilia', 'Thyroid Function Tests', 'Tuberculosis & AFB', 'Tumour Markers',
+  'Urine Analysis', 'Virology & Serology', 'Vitamins & Nutrition', 'General',
+]
 
 type TestForm = {
-  name: string; code: string; sample_type: string; unit: string
+  name: string; code: string; category: string; sample_type: string; unit: string
   ref_low: string; ref_high: string; reference_range: string; price: string
 }
-const BLANK: TestForm = { name: '', code: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '' }
+const BLANK: TestForm = { name: '', code: '', category: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '' }
 
 function parseNum(s: string): number | null { const n = parseFloat(s); return isNaN(n) ? null : n }
 function testToForm(t: LabTestCatalog): TestForm {
-  return { name: t.name, code: t.code ?? '', sample_type: t.sample_type ?? '', unit: t.unit ?? '',
+  return { name: t.name, code: t.code ?? '', category: t.category ?? '', sample_type: t.sample_type ?? '', unit: t.unit ?? '',
     ref_low: t.ref_low != null ? String(t.ref_low) : '', ref_high: t.ref_high != null ? String(t.ref_high) : '',
     reference_range: t.reference_range ?? '', price: String(t.price) }
 }
 function formToPayload(f: TestForm) {
-  return { name: f.name.trim(), code: f.code.trim() || null, sample_type: f.sample_type.toLowerCase() || null,
+  return { name: f.name.trim(), code: f.code.trim() || null, category: f.category.trim() || 'General',
+    sample_type: f.sample_type.toLowerCase() || null,
     unit: f.unit.trim() || null, ref_low: parseNum(f.ref_low), ref_high: parseNum(f.ref_high),
     reference_range: f.reference_range.trim() || null, price: parseFloat(f.price) || 0 }
 }
@@ -511,6 +523,15 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Code</label>
           <input value={form.code} onChange={e => onSet('code', e.target.value)} className={inp} style={bdr} placeholder="CBC" />
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Category *</label>
+        <input list="lab-categories" value={form.category} onChange={e => onSet('category', e.target.value)}
+          className={inp} style={bdr} placeholder="e.g. Hematology" />
+        <datalist id="lab-categories">
+          {LAB_CATEGORIES.map(c => <option key={c} value={c} />)}
+        </datalist>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

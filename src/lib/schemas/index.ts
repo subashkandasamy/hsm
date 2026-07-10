@@ -107,6 +107,7 @@ export const EmergencyRegisterSchema = z.object({
 export const LabTestCatalogSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   code: z.string().nullable().optional(),
+  category: z.string().min(1).optional().default('General'),
   sample_type: z.string().nullable().optional(),
   unit: z.string().nullable().optional(),
   ref_low: z.number().nullable().optional(),
