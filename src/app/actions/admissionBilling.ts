@@ -35,11 +35,11 @@ export async function suggestAdvance(params: {
 // ---- Record advance ----
 
 export async function recordAdvance(params: {
-  await requireWriteAccess()
   admissionId: string
   amount: number
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
 }): Promise<{ success: true; advanceId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -266,10 +266,10 @@ export async function collectAdvanceDeposit(
 // ---- Generate daily bills for all admitted patients (called by cron/scheduler) ----
 
 export async function generateDailyAdmissionBills(): Promise<{
-  await requireWriteAccess()
   processed: number
   errors: string[]
 }> {
+  await requireWriteAccess()
   const supabase = await createClient()
   const errors: string[] = []
   let processed = 0
@@ -516,11 +516,11 @@ export async function listAdvanceSummariesBatch(
 // ---- Advance refund ----
 
 export async function recordAdvanceRefund(params: {
-  await requireWriteAccess()
   admissionId: string
   amount: number
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
 }): Promise<{ success: true; refundId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -648,11 +648,11 @@ export async function getAdmissionAdvanceReceipt(
 // ---- Issue advance refund as a negative bill ----
 
 export async function issueAdvanceRefundBill(params: {
-  await requireWriteAccess()
   admissionId: string
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
   reference?: string
 }): Promise<{ success: true; billId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:write')
 

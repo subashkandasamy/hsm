@@ -200,9 +200,9 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
 // ---- Issue ----
 
 export async function issueUnit(input: {
-  await requireWriteAccess()
   requestId: string; bloodUnitId: string; priceSnapshot: number
 }): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:issue')
 

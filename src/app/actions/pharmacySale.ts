@@ -11,10 +11,10 @@ type SimpleResult = { success: true } | { success: false; error: string }
 // ---- Cart lifecycle ----
 
 export async function startPharmacySale(params: {
-  await requireWriteAccess()
   patientId: string
   visitId?: string | null
 }): Promise<{ success: true; saleId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 
@@ -35,12 +35,12 @@ export async function startPharmacySale(params: {
 }
 
 export async function addSaleItem(params: {
-  await requireWriteAccess()
   saleId: string
   prescriptionId?: string | null
   drugId: string
   qty: number
 }): Promise<{ success: true; itemId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 

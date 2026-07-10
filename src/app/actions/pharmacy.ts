@@ -371,10 +371,10 @@ export async function dispense(
 
 // Auto-generate one combined bill for all dispenses of a patient (called after "All Packed").
 export async function generatePharmacyBill(params: {
-  await requireWriteAccess()
   patientId: string
   dispenseIds: string[]
 }): Promise<{ success: true; billId: string; billNo: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
 
@@ -481,11 +481,11 @@ export async function checkBillStatus(
 }
 
 export async function dispatchMedicines(params: {
-  await requireWriteAccess()
   patientId: string
   dispenseIds: string[]
   billId: string
 }): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
   const { patientId, dispenseIds, billId } = params

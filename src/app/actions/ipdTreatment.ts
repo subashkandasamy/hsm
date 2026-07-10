@@ -83,7 +83,6 @@ export async function listOrders(admissionId: string): Promise<IpdMedicationOrde
 export async function createOrder(
   admissionId: string,
   input: {
-  await requireWriteAccess()
     type: IpdMedicationOrder['type']
     drug_name?: string
     dose?: number
@@ -100,6 +99,7 @@ export async function createOrder(
     notes?: string
   }
 ): Promise<{ success: true; order: IpdMedicationOrder } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
