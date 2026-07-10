@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Building2, Users, UserCheck, ShieldAlert, ExternalLink, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
-import { listTenants, suspendTenant, reactivateTenant, impersonateTenant } from '@/app/actions/platform'
+import { Building2, Users, UserCheck, ShieldAlert, ExternalLink, RefreshCw, Loader2, AlertTriangle, CalendarClock } from 'lucide-react'
+import { listTenants, suspendTenant, reactivateTenant, impersonateTenant, setTenantAccessOverride } from '@/app/actions/platform'
 import type { TenantWithStats } from '@/lib/types'
 import type { TenantStatus } from '@/lib/types'
 
@@ -21,6 +21,8 @@ export default function PlatformAdminClient({ initialTenants }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [suspendId, setSuspendId] = useState<string | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
+  const [overrideId, setOverrideId] = useState<string | null>(null)
+  const [overrideDate, setOverrideDate] = useState('')
   const [impersonateResult, setImpersonateResult] = useState<{ targetUrl: string; adminEmail: string } | null>(null)
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
@@ -55,6 +57,16 @@ export default function PlatformAdminClient({ initialTenants }: Props) {
     startTransition(async () => {
       const res = await reactivateTenant(id)
       if (res.success) reload(statusFilter)
+      else setError(res.error)
+    })
+  }
+
+  const handleSetOverride = () => {
+    if (!overrideId) return
+    startTransition(async () => {
+      const until = overrideDate ? new Date(overrideDate).toISOString() : null
+      const res = await setTenantAccessOverride(overrideId, until)
+      if (res.success) { setOverrideId(null); setOverrideDate(''); reload(statusFilter) }
       else setError(res.error)
     })
   }
@@ -156,6 +168,15 @@ export default function PlatformAdminClient({ initialTenants }: Props) {
                   >
                     <ExternalLink className="w-3.5 h-3.5" /> View
                   </button>
+                  <button
+                    onClick={() => { setOverrideId(t.id); setOverrideDate('') }}
+                    disabled={isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+                    title="Extend trial or grant free access"
+                    style={{ background: 'rgba(217,119,6,0.12)', color: '#FCD34D', border: '1px solid rgba(217,119,6,0.2)' }}
+                  >
+                    <CalendarClock className="w-3.5 h-3.5" /> Extend
+                  </button>
                   {t.status === 'suspended' ? (
                     <button
                       onClick={() => handleReactivate(t.id)}
@@ -216,6 +237,52 @@ export default function PlatformAdminClient({ initialTenants }: Props) {
               >
                 {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Confirm suspend
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend access / override modal */}
+      {overrideId && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6"
+            style={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.12)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <CalendarClock className="w-5 h-5" style={{ color: '#FCD34D' }} />
+              <h3 className="font-semibold" style={{ color: '#F8FAFC' }}>Extend access</h3>
+            </div>
+            <p className="text-sm mb-4" style={{ color: '#94A3B8' }}>
+              Grant this tenant full write access until a specific date, regardless of their subscription status. Leave blank to clear any existing override.
+            </p>
+            <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>
+              Access until (leave blank to clear)
+            </label>
+            <input
+              type="date"
+              value={overrideDate}
+              onChange={e => setOverrideDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none mb-4"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC', colorScheme: 'dark' }}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setOverrideId(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.06)', color: '#94A3B8' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSetOverride}
+                disabled={isPending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ background: 'rgba(217,119,6,0.8)', color: '#fff', opacity: isPending ? 0.7 : 1 }}
+              >
+                {isPending && <span className="animate-spin text-xs">⟳</span>}
+                {overrideDate ? 'Set override' : 'Clear override'}
               </button>
             </div>
           </div>

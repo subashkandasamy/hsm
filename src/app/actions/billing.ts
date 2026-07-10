@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
@@ -21,6 +21,7 @@ export async function listTariffs(): Promise<Tariff[]> {
 }
 
 export async function updateTariff(id: string, amount: number): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:manage')
   const supabase = await createClient()
@@ -272,6 +273,7 @@ export async function getUnbilledCharges(params: {
 export async function generateBill(
   input: Record<string, unknown>
 ): Promise<{ success: true; billId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:write')
 
@@ -456,6 +458,7 @@ export async function generateBill(
 export async function applyDiscount(
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:manage')
 
@@ -482,6 +485,7 @@ export async function applyDiscount(
 export async function setTax(
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:manage')
 
@@ -508,6 +512,7 @@ export async function setTax(
 // ---- Finalize / cancel ----
 
 export async function finalizeBill(billId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:write')
 
@@ -527,6 +532,7 @@ export async function finalizeBill(billId: string): Promise<SimpleResult> {
 }
 
 export async function cancelBill(billId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:manage')
 
@@ -589,6 +595,7 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
 export async function generateMissingDailyCharges(
   admissions: Array<{ id: string; patient_id: string; ward: { name: string; daily_rate: number } }>
+  await requireWriteAccess()
 ): Promise<void> {
   if (!admissions.length) return
   const actor = await getActorProfile()
@@ -692,6 +699,7 @@ export async function generateMissingDailyCharges(
 export async function recordPayment(
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:write')
 
@@ -1156,6 +1164,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
 }
 
 export async function updateWardDailyRate(wardId: string, dailyRate: number): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:manage')
   const supabase = await createClient()

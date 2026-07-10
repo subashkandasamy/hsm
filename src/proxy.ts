@@ -1,12 +1,14 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// ── Tenant cache (in-process, 5-min TTL) ──────────────────────────────────────
+// ── Tenant cache (in-process, 1-min TTL) ──────────────────────────────────────
 interface CachedTenant {
-  id: string; name: string; slug: string; status: string; plan: string; current_period_end: string | null; cachedAt: number
+  id: string; name: string; slug: string; status: string; plan: string
+  trial_ends_at: string | null; override_access_until: string | null
+  current_period_end: string | null; cachedAt: number
 }
 const tenantCache = new Map<string, CachedTenant>()
-const CACHE_TTL_MS = 60 * 1000  // 1 min — shorter TTL so cancellation state is picked up quickly
+const CACHE_TTL_MS = 60 * 1000
 
 const RESERVED_SLUGS = new Set([
   'admin', 'app', 'api', 'www', 'platform', 'static', 'assets', 'default',
@@ -23,24 +25,46 @@ async function resolveTenant(slug: string): Promise<CachedTenant | null> {
   )
   const { data: tenantData } = await supabase
     .from('tenants')
-    .select('id, name, slug, status, plan')
+    .select('id, name, slug, status, plan, trial_ends_at, override_access_until')
     .eq('slug', slug)
     .single()
 
   if (!tenantData) return null
 
-  // Fetch current_period_end from subscriptions so we can allow cancelled
-  // tenants through during their grace period
   const { data: subData } = await supabase
     .from('subscriptions')
     .select('current_period_end')
     .eq('tenant_id', tenantData.id)
     .maybeSingle()
 
-  const data = { ...tenantData, current_period_end: subData?.current_period_end ?? null }
-  const entry: CachedTenant = { ...data, cachedAt: Date.now() }
+  const entry: CachedTenant = {
+    ...tenantData,
+    current_period_end: subData?.current_period_end ?? null,
+    cachedAt: Date.now(),
+  }
   tenantCache.set(slug, entry)
   return entry
+}
+
+function computeIsReadOnly(tenant: CachedTenant): boolean {
+  const now = new Date()
+
+  // Admin override — full access regardless of subscription state
+  if (tenant.override_access_until && new Date(tenant.override_access_until) > now) return false
+
+  // Hard-suspended — handled separately (hard block, not read-only)
+  if (tenant.status === 'suspended') return false
+
+  // Trial expired
+  if (tenant.status === 'trial' && tenant.trial_ends_at && new Date(tenant.trial_ends_at) <= now) return true
+
+  // Paid subscription cancelled and grace period over
+  if (tenant.status === 'cancelled') {
+    const periodEnd = tenant.current_period_end ? new Date(tenant.current_period_end) : null
+    if (periodEnd && periodEnd <= now) return true
+  }
+
+  return false
 }
 
 function isValidUrl(s: string | undefined): boolean {
@@ -56,7 +80,7 @@ export async function proxy(request: NextRequest) {
 
   // Public paths — no auth needed
   const PUBLIC_PATHS = [
-    '/login', '/signup', '/tenant-not-found', '/tenant-suspended', '/tenant-expired',
+    '/login', '/signup', '/tenant-not-found', '/tenant-suspended',
     '/auth/callback', '/forgot-password', '/reset-password',
     '/native-entry',
   ]
@@ -153,33 +177,18 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
-      // ── Suspended ─────────────────────────────────────────────────────────
+      // ── Suspended — hard block ────────────────────────────────────────────
       if (tenant.status === 'suspended') {
         const url = request.nextUrl.clone()
         url.pathname = '/tenant-suspended'
         return NextResponse.rewrite(url)
       }
 
-      // ── Cancelled — block only after confirmed period expiry ──────────────
-      // If current_period_end is unknown (null) we let the tenant through so
-      // they can reach the subscription page; never hard-block on missing data.
-      // /login and /account/subscription are always reachable so the user can
-      // authenticate and renew without needing support intervention.
-      if (tenant.status === 'cancelled') {
-        const periodEnd = tenant.current_period_end ? new Date(tenant.current_period_end) : null
-        if (periodEnd && periodEnd <= new Date()) {
-          const isRenewalPath =
-            pathname === '/login' ||
-            pathname.startsWith('/login/') ||
-            pathname === '/account/subscription' ||
-            pathname.startsWith('/account/subscription/')
-          if (!isRenewalPath) {
-            const url = request.nextUrl.clone()
-            url.pathname = '/tenant-expired'
-            return NextResponse.rewrite(url)
-          }
-        }
-      }
+      // ── Compute read-only mode ────────────────────────────────────────────
+      // Expired trial or lapsed subscription → all pages accessible but
+      // no writes allowed. The header is always stamped so server actions
+      // can read it without a second DB query.
+      const isReadOnly = computeIsReadOnly(tenant)
 
       // ── Plan-based route gating ───────────────────────────────────────────
       const GROWTH_ONLY_ROUTES = [
@@ -200,11 +209,12 @@ export async function proxy(request: NextRequest) {
       }
 
       // ── Stamp tenant into headers for server components ───────────────────
-      requestHeaders.set('x-tenant-id',     tenant.id)
-      requestHeaders.set('x-tenant-slug',   tenant.slug)
-      requestHeaders.set('x-tenant-name',   tenant.name)
-      requestHeaders.set('x-tenant-status', tenant.status)
-      requestHeaders.set('x-tenant-plan',   tenant.plan)
+      requestHeaders.set('x-tenant-id',       tenant.id)
+      requestHeaders.set('x-tenant-slug',     tenant.slug)
+      requestHeaders.set('x-tenant-name',     tenant.name)
+      requestHeaders.set('x-tenant-status',   tenant.status)
+      requestHeaders.set('x-tenant-plan',     tenant.plan)
+      requestHeaders.set('x-tenant-readonly', isReadOnly ? '1' : '0')
       supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
       // Re-apply any cookies Supabase wrote during token refresh — the line

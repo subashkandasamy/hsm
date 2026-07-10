@@ -70,7 +70,7 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
 
   const service = createServiceClient()
   const tenantId = crypto.randomUUID()
-  const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+  const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
   // 1. Create tenant row
   const { error: tenantErr } = await service.from('tenants').insert({

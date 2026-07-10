@@ -12,6 +12,7 @@ import { searchPatients } from '@/app/actions/patients'
 import type { Patient } from '@/lib/types'
 import RegisterModal from './RegisterModal'
 import PatientBarcodeModal from '@/components/barcode/PatientBarcodeModal'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -29,6 +30,7 @@ interface Props { initialPatients: Patient[] }
 
 export default function PatientsClient({ initialPatients }: Props) {
   const router = useRouter()
+  const isReadOnly = useIsReadOnly()
   const [patients, setPatients] = useState<Patient[]>(initialPatients)
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -55,10 +57,12 @@ export default function PatientsClient({ initialPatients }: Props) {
         subtitle={`${patients.length} record${patients.length !== 1 ? 's' : ''}`}
         action={
           <button
-            onClick={() => setShowRegister(true)}
+            onClick={() => !isReadOnly && setShowRegister(true)}
+            disabled={isReadOnly}
+            title={isReadOnly ? 'Renew subscription to register patients' : undefined}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+            onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#0F766E' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}
           >
             <UserPlus className="w-4 h-4" />

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import type { PharmacySale } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -11,6 +11,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 // ---- Cart lifecycle ----
 
 export async function startPharmacySale(params: {
+  await requireWriteAccess()
   patientId: string
   visitId?: string | null
 }): Promise<{ success: true; saleId: string } | { success: false; error: string }> {
@@ -34,6 +35,7 @@ export async function startPharmacySale(params: {
 }
 
 export async function addSaleItem(params: {
+  await requireWriteAccess()
   saleId: string
   prescriptionId?: string | null
   drugId: string
@@ -86,6 +88,7 @@ export async function updateSaleItemQty(
   itemId: string,
   qty: number
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
   if (qty <= 0) return { success: false, error: 'Quantity must be at least 1' }
@@ -114,6 +117,7 @@ export async function updateSaleItemQty(
 }
 
 export async function removeSaleItem(itemId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 
@@ -138,6 +142,7 @@ export async function removeSaleItem(itemId: string): Promise<SimpleResult> {
 export async function finalizeSale(
   saleId: string
 ): Promise<{ success: true; billId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 
@@ -211,6 +216,7 @@ export async function finalizeSale(
 }
 
 export async function cancelSale(saleId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 
@@ -240,6 +246,7 @@ export async function cancelSale(saleId: string): Promise<SimpleResult> {
 }
 
 export async function fulfillSale(saleId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 

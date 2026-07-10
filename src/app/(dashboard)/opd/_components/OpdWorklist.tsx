@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { getTodaysQueue, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import { startVisit } from '@/app/actions/opd'
 import type { Appointment } from '@/lib/types'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 type BillStatus = { id: string; status: string; total: number; paid: number }
 
@@ -24,6 +25,7 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
   const [billStatuses, setBillStatuses] = useState(initialBillStatuses)
   const [loading, setLoading]           = useState(false)
   const [actionId, setActionId]         = useState<string | null>(null)
+  const isReadOnly = useIsReadOnly()
 
   async function refresh() {
     setLoading(true)
@@ -143,12 +145,14 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                   {/* Action button — desktop only (inline) */}
                   <button
                     onClick={() => handleStart(a)}
-                    disabled={busy}
+                    disabled={busy || isReadOnly}
+                    title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
                     className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0"
                     style={{
-                      background: busy ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
+                      background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
                       color: '#fff', border: 'none',
-                      cursor: busy ? 'not-allowed' : 'pointer',
+                      cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
+                      opacity: isReadOnly ? 0.6 : 1,
                     }}>
                     {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
                     {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}
@@ -158,12 +162,14 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                 {/* Action button — mobile full-width */}
                 <button
                   onClick={() => handleStart(a)}
-                  disabled={busy}
+                  disabled={busy || isReadOnly}
+                  title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
                   className="mt-3 sm:hidden w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold"
                   style={{
-                    background: busy ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
+                    background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
                     color: '#fff', border: 'none',
-                    cursor: busy ? 'not-allowed' : 'pointer',
+                    cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
+                    opacity: isReadOnly ? 0.6 : 1,
                   }}>
                   {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
                   {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}

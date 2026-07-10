@@ -5,7 +5,9 @@ import { getCachedUser } from '@/lib/supabase/cached-user'
 import { createServiceClient } from '@/lib/supabase/service'
 import { AuthProvider } from '@/context/AuthContext'
 import { TenantProvider } from '@/context/TenantContext'
+import { ReadOnlyProvider } from '@/context/ReadOnlyContext'
 import AppShell from '@/components/shell/AppShell'
+import ReadOnlyBanner from '@/components/ui/ReadOnlyBanner'
 import PushRegistration from '@/components/native/PushRegistration'
 import type { Profile } from '@/lib/types'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
@@ -27,6 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const tenantName   = hdrs.get('x-tenant-name')   ?? 'Hospital'
   const tenantPlan   = (hdrs.get('x-tenant-plan')   ?? 'starter') as PlanKey
   const tenantStatus = (hdrs.get('x-tenant-status') ?? 'trial')   as TenantStatus
+  const isReadOnly   = hdrs.get('x-tenant-readonly') === '1'
 
   const service = createServiceClient()
   const { data: tenant } = await service
@@ -42,16 +45,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <AuthProvider initialProfile={profile as Profile}>
       <TenantProvider plan={tenantPlan} status={tenantStatus}>
-        <AppShell
-          role={profile.role}
-          fullName={profile.full_name}
-          tenantName={tenantName}
-          enabledModules={enabledModules}
-          plan={tenantPlan}
-          status={tenantStatus}
-        >
-          {children}
-        </AppShell>
+        <ReadOnlyProvider isReadOnly={isReadOnly}>
+          <ReadOnlyBanner />
+          <AppShell
+            role={profile.role}
+            fullName={profile.full_name}
+            tenantName={tenantName}
+            enabledModules={enabledModules}
+            plan={tenantPlan}
+            status={tenantStatus}
+          >
+            {children}
+          </AppShell>
+        </ReadOnlyProvider>
       </TenantProvider>
       <PushRegistration />
     </AuthProvider>

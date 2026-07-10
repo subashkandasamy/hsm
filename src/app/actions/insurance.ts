@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   InsurancePolicySchema, InsuranceClaimSchema, AdvanceClaimSchema,
 } from '@/lib/schemas'
@@ -25,6 +25,7 @@ const VALID_TRANSITIONS: Record<InsuranceClaimStatus, InsuranceClaimStatus[]> = 
 export async function addPolicy(
   input: Record<string, unknown>
 ): Promise<{ success: true; policy: InsurancePolicy } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 
@@ -71,6 +72,7 @@ export async function listPolicies(patientId: string): Promise<InsurancePolicy[]
 export async function createClaim(
   input: Record<string, unknown>
 ): Promise<{ success: true; claimId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 
@@ -99,6 +101,7 @@ export async function advanceClaim(
   id: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 

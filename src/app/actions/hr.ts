@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   CreateStaffSchema, UpdateStaffSchema,
   MarkAttendanceSchema, SetRosterSchema,
@@ -42,6 +42,7 @@ export async function getStaff(profileId: string): Promise<StaffMember | null> {
 export async function createStaff(
   input: Record<string, unknown>
 ): Promise<{ success: true; profileId: string; tempPassword: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
 
@@ -94,6 +95,7 @@ export async function createStaff(
 }
 
 export async function updateStaff(profileId: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
 
@@ -139,6 +141,7 @@ export async function getStaffEmail(profileId: string): Promise<string | null> {
 }
 
 export async function updateStaffEmail(profileId: string, newEmail: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
   const trimmed = newEmail.trim().toLowerCase()
@@ -151,6 +154,7 @@ export async function updateStaffEmail(profileId: string, newEmail: string): Pro
 }
 
 export async function deactivateStaff(profileId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
   const supabase = await createClient()
@@ -163,6 +167,7 @@ export async function deactivateStaff(profileId: string): Promise<SimpleResult> 
 // ---- Attendance ----
 
 export async function markAttendance(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:attendance')
 
@@ -228,6 +233,7 @@ export async function getAllAttendanceForDate(date: string): Promise<StaffAttend
 // ---- Roster ----
 
 export async function setRoster(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
 

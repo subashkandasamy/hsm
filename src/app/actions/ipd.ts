@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
 import type { Admission, IpdProgressNote } from '@/lib/types'
@@ -13,6 +13,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function admitPatient(
   input: Record<string, unknown>
 ): Promise<{ success: true; admissionId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -146,6 +147,7 @@ export async function addProgressNote(
   admissionId: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
@@ -171,6 +173,7 @@ export async function transferBed(
   admissionId: string,
   newBedId: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -266,6 +269,7 @@ export async function updateDischargeSummary(
   admissionId: string,
   summary: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 

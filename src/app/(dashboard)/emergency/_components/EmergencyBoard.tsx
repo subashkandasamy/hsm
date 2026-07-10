@@ -18,6 +18,7 @@ import { admitPatient } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
 import RegisterEmergencyModal from './RegisterEmergencyModal'
 import AdmitModal from '../../wards/_components/AdmitModal'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 // Triage level colors
 const TRIAGE = {
@@ -53,6 +54,7 @@ interface Props {
 
 export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50 }: Props) {
   const router = useRouter()
+  const isReadOnly = useIsReadOnly()
   const [cases, setCases] = useState<EmergencyCase[]>(initialCases)
   const [loading, setLoading] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
@@ -145,10 +147,12 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
               style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button onClick={() => setShowRegister(true)}
+            <button onClick={() => !isReadOnly && setShowRegister(true)}
+              disabled={isReadOnly}
+              title={isReadOnly ? 'Renew subscription to register emergency cases' : undefined}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#B91C1C' }}
+              style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+              onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#B91C1C' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = '#DC2626' }}>
               <Plus className="w-4 h-4" /> Register Emergency
             </button>

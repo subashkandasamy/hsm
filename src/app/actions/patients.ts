@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { PatientCreateSchema, PatientUpdateSchema } from '@/lib/schemas'
 import type { Patient } from '@/lib/types'
 
@@ -16,6 +16,7 @@ export type CreatePatientResult =
 export async function createPatient(
   input: Record<string, unknown>
 ): Promise<CreatePatientResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'patients:write')
 
@@ -78,6 +79,7 @@ export async function updatePatient(
   id: string,
   input: Record<string, unknown>
 ): Promise<{ success: true } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'patients:write')
 

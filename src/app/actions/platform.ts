@@ -105,6 +105,35 @@ export async function reactivateTenant(
   return { success: true }
 }
 
+// Sets override_access_until so the tenant gets full access until that date,
+// regardless of their subscription or trial status.
+// Pass null to clear the override (return to normal enforcement).
+export async function setTenantAccessOverride(
+  tenantId: string,
+  until: string | null
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+
+  const { error } = await service
+    .from('tenants')
+    .update({ override_access_until: until })
+    .eq('id', tenantId)
+
+  if (error) return { success: false, error: error.message }
+
+  await service.from('audit_logs').insert({
+    id: crypto.randomUUID(),
+    actor_id: actor.id,
+    action: 'access_override',
+    entity: 'tenant',
+    entity_id: tenantId,
+    meta: { override_access_until: until },
+    tenant_id: tenantId,
+  })
+  return { success: true }
+}
+
 export interface ImpersonateResult {
   success: true; targetUrl: string; adminEmail: string
 }

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 
@@ -16,6 +16,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function createDrug(
   input: Record<string, unknown>
 ): Promise<{ success: true; drug: Drug } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:manage')
   const parsed = DrugSchema.safeParse(input)
@@ -30,6 +31,7 @@ export async function createDrug(
 }
 
 export async function updateDrug(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:manage')
   const parsed = DrugSchema.safeParse(input)
@@ -45,6 +47,7 @@ export async function updateDrug(id: string, input: Record<string, unknown>): Pr
 export async function addBatch(
   input: Record<string, unknown>
 ): Promise<{ success: true; batch: DrugBatch } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:manage')
   const parsed = DrugBatchSchema.safeParse(input)
@@ -307,6 +310,7 @@ export async function listPendingPrescriptions(): Promise<PrescriptionWithVisit[
 export async function dispense(
   input: Record<string, unknown>
 ): Promise<{ success: true; dispenseId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
 
@@ -367,6 +371,7 @@ export async function dispense(
 
 // Auto-generate one combined bill for all dispenses of a patient (called after "All Packed").
 export async function generatePharmacyBill(params: {
+  await requireWriteAccess()
   patientId: string
   dispenseIds: string[]
 }): Promise<{ success: true; billId: string; billNo: string } | { success: false; error: string }> {
@@ -476,6 +481,7 @@ export async function checkBillStatus(
 }
 
 export async function dispatchMedicines(params: {
+  await requireWriteAccess()
   patientId: string
   dispenseIds: string[]
   billId: string

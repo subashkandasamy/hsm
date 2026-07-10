@@ -12,6 +12,7 @@ import { listAdmissions } from '@/app/actions/ipd'
 import { getWardBoard } from '@/app/actions/wards'
 import AdmitModal from '../../wards/_components/AdmitModal'
 import type { Admission, Ward, WardWithBeds, ProcedureTariff } from '@/lib/types'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 function daysAdmitted(admittedAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(admittedAt).getTime()) / 86400000))
@@ -28,6 +29,7 @@ interface Props {
 
 export default function IpdClient({ initialAdmissions, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
   const router = useRouter()
+  const isReadOnly = useIsReadOnly()
   const [admissions, setAdmissions] = useState<Admission[]>(initialAdmissions)
   const [statusFilter, setStatusFilter] = useState<'admitted' | 'discharged' | 'all'>('admitted')
   const [loading, setLoading] = useState(false)
@@ -67,10 +69,12 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
               style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button onClick={openAdmitModal}
+            <button onClick={() => !isReadOnly && openAdmitModal()}
+              disabled={isReadOnly}
+              title={isReadOnly ? 'Renew subscription to admit patients' : undefined}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+              onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#0F766E' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}>
               <UserPlus className="w-4 h-4" /> Admit Patient
             </button>

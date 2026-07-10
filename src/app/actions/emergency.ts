@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { EmergencyRegisterSchema, ConsultationSchema } from '@/lib/schemas'
 import { resolveConsultationFee } from '@/app/actions/appointments'
 import type { EmergencyCase, TriageLevel } from '@/lib/types'
@@ -13,6 +13,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function registerEmergency(
   input: Record<string, unknown>
 ): Promise<{ success: true; caseId: string; patientId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:register')
 
@@ -71,6 +72,7 @@ export async function setTriage(
   caseId: string,
   level: TriageLevel
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
@@ -86,6 +88,7 @@ export async function setTriage(
 }
 
 export async function attendCase(caseId: string, doctorId?: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
@@ -191,6 +194,7 @@ export async function resolveEmergency(
   outcome: 'discharge' | 'refer',
   outcomeNote: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 
@@ -223,6 +227,7 @@ export async function resolveEmergency(
 export async function admitFromEmergency(
   caseId: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emergency:triage')
 

@@ -16,6 +16,7 @@ import { startVisit } from '@/app/actions/opd'
 import { Pencil } from 'lucide-react'
 import type { Appointment } from '@/lib/types'
 import BookingModal from './BookingModal'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 interface Doctor { id: string; full_name: string; role: string }
 interface Department { id: string; name: string }
@@ -48,6 +49,7 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [billStatuses, setBillStatuses] = useState<BillStatusMap>(initialBillStatuses)
+  const isReadOnly = useIsReadOnly()
   const admittedSet = new Set(admittedPatientIds)
 
   const refresh = useCallback(async (d: string, docId?: string) => {
@@ -108,10 +110,12 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         subtitle="Schedule and manage patient appointments"
         action={
           <button
-            onClick={() => setShowBook(true)}
+            onClick={() => !isReadOnly && setShowBook(true)}
+            disabled={isReadOnly}
+            title={isReadOnly ? 'Renew subscription to book appointments' : undefined}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+            onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#0F766E' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}
           >
             <CalendarPlus className="w-4 h-4" />
@@ -246,24 +250,25 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                     <div className="flex gap-2 mt-3">
                       {a.status === 'booked' && (
                         <>
-                          <button onClick={() => handleCheckIn(a.id)} disabled={actionLoading === a.id}
+                          <button onClick={() => handleCheckIn(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                            title={isReadOnly ? 'Renew subscription to check in patients' : undefined}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                            style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
+                            style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                             <CheckCircle className="w-3.5 h-3.5" /> Check In
                           </button>
-                          <button onClick={() => setEditTarget(a)} disabled={actionLoading === a.id}
-                            className="p-2 rounded-xl" title="Edit"
-                            style={{ background: '#F0FDF4', color: '#15803D', border: 'none', cursor: 'pointer' }}>
+                          <button onClick={() => !isReadOnly && setEditTarget(a)} disabled={actionLoading === a.id || isReadOnly}
+                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to edit' : 'Edit'}
+                            style={{ background: '#F0FDF4', color: '#15803D', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                             <Pencil className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleNoShow(a.id)} disabled={actionLoading === a.id}
-                            className="p-2 rounded-xl" title="No Show"
-                            style={{ background: '#FEF3C7', color: '#B45309', border: 'none', cursor: 'pointer' }}>
+                          <button onClick={() => handleNoShow(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to mark no-show' : 'No Show'}
+                            style={{ background: '#FEF3C7', color: '#B45309', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                             <Clock className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
-                            className="p-2 rounded-xl" title="Cancel"
-                            style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                          <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to cancel' : 'Cancel'}
+                            style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                             <XCircle className="w-4 h-4" />
                           </button>
                         </>
@@ -277,14 +282,15 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                             </span>
                           ) : (
                             <>
-                              <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
+                              <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                                title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                                 Start OPD
                               </button>
-                              <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
-                                className="p-2 rounded-xl" title="Cancel"
-                                style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                              <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                                className="p-2 rounded-xl" title={isReadOnly ? 'Renew to cancel' : 'Cancel'}
+                                style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                                 <XCircle className="w-4 h-4" />
                               </button>
                             </>

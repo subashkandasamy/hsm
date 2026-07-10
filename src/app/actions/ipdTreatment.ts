@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, IpdPharmacyRequest,
   LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
@@ -83,6 +83,7 @@ export async function listOrders(admissionId: string): Promise<IpdMedicationOrde
 export async function createOrder(
   admissionId: string,
   input: {
+  await requireWriteAccess()
     type: IpdMedicationOrder['type']
     drug_name?: string
     dose?: number
@@ -168,6 +169,7 @@ export async function createOrder(
 }
 
 export async function stopOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -218,6 +220,7 @@ export async function updateSlotStatus(
   status: 'given' | 'missed' | 'held',
   notes?: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
 
@@ -267,6 +270,7 @@ export async function updateSlotStatus(
 }
 
 export async function restoreSlotToPending(scheduleId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
 
@@ -282,11 +286,13 @@ export async function restoreSlotToPending(scheduleId: string): Promise<SimpleRe
 }
 
 export async function markGiven(scheduleId: string, notes?: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   return updateSlotStatus(scheduleId, 'given', notes)
 }
 
 // Extend schedule by 3 more days (called when page loads and latest slot < today+1)
 export async function extendSchedule(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   const supabase = await createClient()
 
@@ -378,6 +384,7 @@ export async function copyPrescriptionsToIPD(
   visitId: string,
   prescriptionIds: string[]
 ): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -468,6 +475,7 @@ export async function dispenseIpdRequest(
   pricePerUnit: number,
   notes?: string
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
 
@@ -540,6 +548,7 @@ export async function createIpdLabOrder(
   priority: 'stat' | 'routine' = 'routine',
   scheduledFor: string | null = null,
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
 
@@ -572,6 +581,7 @@ export async function createIpdLabOrder(
 }
 
 export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
   const supabase = await createClient()
@@ -607,6 +617,7 @@ export async function createIpdRadiologyOrder(
   priority: 'stat' | 'routine' = 'routine',
   scheduledFor: string | null = null,
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
 
@@ -632,6 +643,7 @@ export async function createIpdRadiologyOrder(
 }
 
 export async function cancelIpdRadiologyOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
   const supabase = await createClient()

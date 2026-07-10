@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema } from '@/lib/schemas'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent } from '@/lib/types'
 
@@ -17,6 +17,7 @@ const BLOOD_COMPONENTS: BloodComponent[] = ['whole','prbc','plasma','platelets']
 export async function addDonor(
   input: Record<string, unknown>
 ): Promise<{ success: true; donor: BloodDonor } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:manage')
   const parsed = BloodDonorSchema.safeParse(input)
@@ -41,6 +42,7 @@ export async function listDonors(): Promise<BloodDonor[]> {
 export async function addBloodUnit(
   input: Record<string, unknown>
 ): Promise<{ success: true; unit: BloodUnit } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:manage')
   const parsed = BloodUnitSchema.safeParse(input)
@@ -62,6 +64,7 @@ export async function addBloodUnit(
 }
 
 export async function discardUnit(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:manage')
   const supabase = await createClient()
@@ -136,6 +139,7 @@ export async function expireOldUnits(): Promise<{ expired: number }> {
 export async function raiseRequest(
   input: Record<string, unknown>
 ): Promise<{ success: true; requestId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:request')
   const parsed = BloodRequestSchema.safeParse(input)
@@ -158,6 +162,7 @@ export async function raiseRequest(
 }
 
 export async function crossMatch(requestId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:issue')
   const supabase = await createClient()
@@ -169,6 +174,7 @@ export async function crossMatch(requestId: string): Promise<SimpleResult> {
 }
 
 export async function cancelRequest(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:request')
   const supabase = await createClient()
@@ -194,6 +200,7 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
 // ---- Issue ----
 
 export async function issueUnit(input: {
+  await requireWriteAccess()
   requestId: string; bloodUnitId: string; priceSnapshot: number
 }): Promise<SimpleResult> {
   const actor = await getActorProfile()

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
 
@@ -30,6 +30,7 @@ export async function updateRadiologyTest(
   id: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:manage')
   const supabase = await createClient()
@@ -42,6 +43,7 @@ export async function updateRadiologyTest(
 export async function createRadiologyTest(
   input: Record<string, unknown>
 ): Promise<{ success: true; test: RadiologyCatalog } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:manage')
   const parsed = RadiologyCatalogSchema.safeParse(input)
@@ -60,6 +62,7 @@ export async function createRadiologyTest(
 export async function createRadiologyOrder(
   input: Record<string, unknown>
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
   const parsed = RadiologyOrderSchema.safeParse(input)
@@ -125,6 +128,7 @@ export async function createRadiologyOrder(
 }
 
 export async function markPerformed(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:process')
   const supabase = await createClient()
@@ -194,6 +198,7 @@ export async function uploadReport(
   report: string,
   imageUrl: string | null
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:process')
   const supabase = await createClient()
@@ -209,6 +214,7 @@ export async function uploadReport(
 }
 
 export async function cancelRadiologyOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
   const supabase = await createClient()

@@ -15,6 +15,7 @@ import OrderLabModal from './OrderLabModal'
 import ResultEntryModal from './ResultEntryModal'
 import AddLabTestModal from './AddLabTestModal'
 import SampleLabelModal from '@/components/barcode/SampleLabelModal'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 const STATUS_MAP: Record<string, string> = {
   ordered: 'pending', collected: 'info', processing: 'info',
@@ -44,6 +45,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const canProcess      = !!role && hasPermission(role, 'lab:process')
   const canPrintSample  = !!role && hasPermission(role, 'barcode:print:sample')
   const isAdmin    = !!role && hasPermission(role, 'lab:manage')
+  const isReadOnly = useIsReadOnly()
   const [tab, setTab] = useState<TabKey>('collect')
   const [toCollect, setToCollect] = useState<LabOrder[]>(initCollect)
   const [resultQueue, setResultQueue] = useState<LabOrder[]>(initQueue)
@@ -123,10 +125,12 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
               </button>
             )}
             {canOrder && (
-              <button onClick={() => setShowOrder(true)}
+              <button onClick={() => !isReadOnly && setShowOrder(true)}
+                disabled={isReadOnly}
+                title={isReadOnly ? 'Renew subscription to place lab orders' : undefined}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+                onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#0F766E' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}>
                 <Plus className="w-4 h-4" /> New Order
               </button>

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schemas'
 import type { OtRoom, OtSchedule, OtConsumable, Profile } from '@/lib/types'
 
@@ -12,6 +12,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 // ---- Rooms ----
 
 export async function createRoom(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:manage')
   const parsed = OtRoomSchema.safeParse(input)
@@ -25,6 +26,7 @@ export async function createRoom(input: Record<string, unknown>): Promise<Simple
 }
 
 export async function updateRoom(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:manage')
   const parsed = OtRoomSchema.safeParse(input)
@@ -47,6 +49,7 @@ export async function listRooms(): Promise<OtRoom[]> {
 export async function scheduleSurgery(
   input: Record<string, unknown>
 ): Promise<{ success: true; scheduleId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:schedule')
   const parsed = OtScheduleSchema.safeParse(input)
@@ -77,6 +80,7 @@ export async function scheduleSurgery(
 export async function rescheduleSurgery(
   id: string,
   input: { start: string; end: string; otRoomId: string }
+  await requireWriteAccess()
 ): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:schedule')
@@ -98,6 +102,7 @@ export async function rescheduleSurgery(
 }
 
 export async function cancelSurgery(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:schedule')
   const supabase = await createClient()
@@ -112,6 +117,7 @@ export async function setOtStatus(
   id: string,
   status: 'in_progress' | 'completed'
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const supabase = await createClient()
@@ -122,6 +128,7 @@ export async function setOtStatus(
 }
 
 export async function saveOtNotes(id: string, notes: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const supabase = await createClient()
@@ -176,6 +183,7 @@ export async function listSchedules(filters?: {
 export async function addConsumable(
   input: Record<string, unknown>
 ): Promise<{ success: true; consumable: OtConsumable } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const parsed = OtConsumableSchema.safeParse(input)
@@ -190,6 +198,7 @@ export async function addConsumable(
 }
 
 export async function removeConsumable(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const supabase = await createClient()

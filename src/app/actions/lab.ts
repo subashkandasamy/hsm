@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag } from '@/lib/types'
 
@@ -22,6 +22,7 @@ export async function activateFromMaster(
   masterTestId: string,
   price: number
 ): Promise<{ success: true; test: LabTestCatalog } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
   const supabase = await createClient()
@@ -81,6 +82,7 @@ export async function updateLabTest(
   id: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
   const supabase = await createClient()
@@ -93,6 +95,7 @@ export async function updateLabTest(
 export async function createLabTest(
   input: Record<string, unknown>
 ): Promise<{ success: true; test: LabTestCatalog } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
   const parsed = LabTestCatalogSchema.safeParse(input)
@@ -111,6 +114,7 @@ export async function createLabTest(
 export async function createLabOrder(
   input: Record<string, unknown>
 ): Promise<{ success: true; orderId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
   const parsed = LabOrderSchema.safeParse(input)
@@ -186,6 +190,7 @@ export async function createLabOrder(
 }
 
 export async function collectSample(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
@@ -254,6 +259,7 @@ export async function enterResults(
   orderId: string,
   items: Record<string, unknown>[]
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
@@ -294,6 +300,7 @@ export async function enterResults(
 }
 
 export async function reportOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
@@ -306,6 +313,7 @@ export async function reportOrder(orderId: string): Promise<SimpleResult> {
 }
 
 export async function cancelLabOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
   const supabase = await createClient()

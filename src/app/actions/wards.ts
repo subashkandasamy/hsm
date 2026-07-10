@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { WardCreateSchema } from '@/lib/schemas'
 import type { Ward, Bed, BedStatus, WardWithBeds } from '@/lib/types'
 
@@ -12,6 +12,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function createWard(
   input: Record<string, unknown>
 ): Promise<{ success: true; ward: Ward } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'wards:manage')
 
@@ -39,6 +40,7 @@ export async function updateWard(
   id: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'wards:manage')
 
@@ -57,6 +59,7 @@ export async function addBeds(
   wardId: string,
   bedNumbers: string[]
 ): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'wards:manage')
 
@@ -82,6 +85,7 @@ export async function setBedStatus(
   bedId: string,
   status: 'available' | 'maintenance'
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'wards:manage')
 

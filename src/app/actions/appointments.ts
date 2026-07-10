@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AppointmentCreateSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Appointment } from '@/lib/types'
@@ -37,6 +37,7 @@ export async function resolveConsultationFee(
 export async function bookAppointment(
   input: Record<string, unknown>
 ): Promise<{ success: true; appointment: Appointment } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 
@@ -147,6 +148,7 @@ export async function bookAppointment(
 export async function updateAppointment(
   id: string,
   input: { doctor_id: string; department_id?: string | null; scheduled_at: string; reason?: string | null }
+  await requireWriteAccess()
 ): Promise<{ success: true; appointment: Appointment } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
@@ -255,6 +257,7 @@ export async function updateAppointment(
 }
 
 export async function checkIn(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 
@@ -294,6 +297,7 @@ export async function checkIn(id: string): Promise<SimpleResult> {
 }
 
 export async function cancelAppointment(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 
@@ -375,6 +379,7 @@ export async function cancelAppointment(id: string): Promise<SimpleResult> {
 
 
 export async function markNoShow(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'appointments:write')
 

@@ -19,6 +19,7 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
+import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 const STATUS_MAP: Record<string, string> = {
   draft:     'info',
@@ -185,6 +186,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const canWrite   = !!role && hasPermission(role, 'billing:write')
   const canAdvance = !!role && hasPermission(role, 'billing:advance')
   const canManage  = !!role && hasPermission(role, 'billing:manage')
+  const isReadOnly = useIsReadOnly()
   const router = useRouter()
 
   const [bills, setBills]       = useState(initialBills)
@@ -490,10 +492,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         actions={
           canWrite ? (
             <button
-              onClick={() => setShowBuilder(true)}
+              onClick={() => !isReadOnly && setShowBuilder(true)}
+              disabled={isReadOnly}
+              title={isReadOnly ? 'Renew subscription to create bills' : undefined}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ background: '#0D9488', color: '#fff', minHeight: '44px', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
+              style={{ background: '#0D9488', color: '#fff', minHeight: '44px', border: 'none', cursor: isReadOnly ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}
+              onMouseEnter={(e) => { if (!isReadOnly) e.currentTarget.style.background = '#0F766E' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}>
               <Plus className="w-4 h-4" /> New Bill
             </button>

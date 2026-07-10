@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Visit, Prescription } from '@/lib/types'
@@ -13,6 +13,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function startVisit(
   appointmentId: string
 ): Promise<{ success: true; visitId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:read')
 
@@ -89,6 +90,7 @@ export async function saveVitals(
   visitId: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:vitals')
 
@@ -108,6 +110,7 @@ export async function saveConsultation(
   visitId: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 
@@ -134,6 +137,7 @@ export async function addPrescription(
   visitId: string,
   input: Record<string, unknown>
 ): Promise<{ success: true; prescription: Prescription } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 
@@ -169,6 +173,7 @@ export async function addPrescription(
 }
 
 export async function removePrescription(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 
@@ -181,6 +186,7 @@ export async function removePrescription(id: string): Promise<SimpleResult> {
 }
 
 export async function closeVisit(visitId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 
@@ -207,6 +213,7 @@ export async function closeVisit(visitId: string): Promise<SimpleResult> {
 }
 
 export async function reopenVisit(visitId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 
@@ -271,6 +278,7 @@ export async function saveClinicalData(
   visitId: string,
   clinicalData: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'opd:write')
 

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   SupplierSchema, InventoryItemSchema, CreatePOSchema,
   ReceivePOSchema, StockIssueSchema, StockAdjustSchema,
@@ -21,6 +21,7 @@ export async function listSuppliers(): Promise<Supplier[]> {
 }
 
 export async function createSupplier(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = SupplierSchema.safeParse(input)
@@ -34,6 +35,7 @@ export async function createSupplier(input: Record<string, unknown>): Promise<Si
 }
 
 export async function updateSupplier(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = SupplierSchema.partial().safeParse(input)
@@ -55,6 +57,7 @@ export async function listItems(): Promise<InventoryItem[]> {
 }
 
 export async function createItem(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = InventoryItemSchema.safeParse(input)
@@ -68,6 +71,7 @@ export async function createItem(input: Record<string, unknown>): Promise<Simple
 }
 
 export async function updateItem(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = InventoryItemSchema.partial().safeParse(input)
@@ -112,6 +116,7 @@ export async function listPurchaseOrders(): Promise<PurchaseOrder[]> {
 export async function createPO(
   input: Record<string, unknown>
 ): Promise<{ success: true; poId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = CreatePOSchema.safeParse(input)
@@ -147,6 +152,7 @@ export async function createPO(
 }
 
 export async function markOrdered(poId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const supabase = await createClient()
@@ -158,6 +164,7 @@ export async function markOrdered(poId: string): Promise<SimpleResult> {
 }
 
 export async function receivePO(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = ReceivePOSchema.safeParse(input)
@@ -222,6 +229,7 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
 // ---- Issue stock (concurrency-safe decrement) ----
 
 export async function issueStock(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = StockIssueSchema.safeParse(input)
@@ -265,6 +273,7 @@ export async function issueStock(input: Record<string, unknown>): Promise<Simple
 // ---- Manual adjustment ----
 
 export async function adjustStock(input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'inventory:manage')
   const parsed = StockAdjustSchema.safeParse(input)
