@@ -35,9 +35,9 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 function addDays(dateStr: string, n: number) {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d + n))
+  return date.toISOString().split('T')[0]
 }
 
 export default function OtClient({ initialSchedules, rooms: initRooms, doctors, initialDate }: Props) {
