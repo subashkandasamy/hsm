@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
 import RadiologyClient from './_components/RadiologyClient'
 

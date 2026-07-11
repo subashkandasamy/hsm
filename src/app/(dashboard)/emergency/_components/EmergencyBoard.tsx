@@ -42,7 +42,7 @@ const STATUS_MAP: Record<string, string> = {
   admitted: 'success', discharged: 'success', referred: 'info',
 }
 
-interface WardOption { id: string; name: string; availableBeds: { id: string; bed_no: string }[] }
+interface WardOption { id: string; name: string; is_temp: boolean; is_multi_bed: boolean; room_type_id: string | null; room_type_name: string | null; availableBeds: { id: string; bed_no: string }[] }
 
 interface Props {
   initialCases: EmergencyCase[]
@@ -162,10 +162,10 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
       />
 
       {/* Triage legend */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <div className="flex items-center gap-x-3 gap-y-1.5 mb-5 flex-wrap">
         {([1, 2, 3, 4, 5] as TriageLevel[]).map((level) => (
-          <div key={level} className="flex items-center gap-1.5 text-xs">
-            <div className="w-4 h-4 rounded-md"
+          <div key={level} className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+            <div className="w-3.5 h-3.5 rounded flex-shrink-0"
               style={{ background: TRIAGE[level].bg, border: `2px solid ${TRIAGE[level].border}` }} />
             <span style={{ color: '#64748B' }}>{level} — {TRIAGE[level].label}</span>
           </div>
@@ -181,80 +181,90 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
           {cases.map((ec) => {
             const t = TRIAGE[ec.triage_level as TriageLevel] ?? TRIAGE[3]
             return (
-              <GlassCard key={ec.id} className="p-4">
-                <div className="flex items-center gap-4">
-                  {/* Triage badge */}
-                  <div
-                    className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 cursor-pointer"
-                    style={{ background: t.bg, border: `2px solid ${t.border}` }}
+              <GlassCard key={ec.id} style={{ padding: 0, overflow: 'hidden' }}>
+                {/* Triage colour strip + content */}
+                <div className="flex items-stretch">
+                  {/* Left severity strip — click to change triage */}
+                  <button
                     onClick={() => { setTriageCase(ec); setNewLevel(ec.triage_level as TriageLevel) }}
-                    title="Click to change triage level"
-                  >
-                    <span className="text-xl font-bold" style={{ color: t.text }}>{ec.triage_level}</span>
-                    <span className="text-xs" style={{ color: t.text, lineHeight: 1 }}>T{ec.triage_level}</span>
-                  </div>
+                    title="Change triage level"
+                    className="flex flex-col items-center justify-center gap-0.5 flex-shrink-0"
+                    style={{ width: 48, background: t.bg, border: 'none', borderRight: `3px solid ${t.border}`, cursor: 'pointer', padding: '12px 0' }}>
+                    <span className="text-2xl font-black leading-none" style={{ color: t.text }}>{ec.triage_level}</span>
+                    <span className="text-xs font-bold" style={{ color: t.text, letterSpacing: '0.05em' }}>T{ec.triage_level}</span>
+                  </button>
 
-                  {/* Main info */}
-                  <div className="flex-1 min-w-0">
+                  {/* Main content */}
+                  <div className="flex-1 min-w-0 p-3">
+                    {/* Name + UHID on first line */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold" style={{ color: '#0F172A' }}>
+                      <p className="font-bold text-sm" style={{ color: '#0F172A' }}>
                         {ec.patient?.full_name ?? '—'}
                       </p>
-                      <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>
+                      <span className="font-mono text-xs whitespace-nowrap" style={{ color: '#94A3B8' }}>
                         {ec.patient?.uhid}
                       </span>
+                    </div>
+                    {/* Status badge on second line to avoid inline crowding */}
+                    <div className="mt-1">
                       <StatusBadge status={STATUS_MAP[ec.status] ?? 'pending'}
                         label={ec.status.replace('_', ' ')} />
                     </div>
-                    <p className="text-sm mt-0.5 truncate" style={{ color: '#475569' }}>
-                      {ec.complaint ?? 'No complaint recorded'}
+
+                    {/* Complaint */}
+                    <p className="text-xs mt-1" style={{ color: '#475569' }}>
+                      {ec.complaint ?? <span style={{ color: '#CBD5E1', fontStyle: 'italic' }}>No complaint recorded</span>}
                     </p>
-                    <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: '#94A3B8' }}>
-                      {ec.arrival_mode && <span className="capitalize">{ec.arrival_mode.replace('_', ' ')}</span>}
-                      <span className="flex items-center gap-1">
+
+                    {/* Meta */}
+                    <div className="flex items-center gap-x-2 gap-y-0.5 mt-1 flex-wrap text-xs" style={{ color: '#94A3B8' }}>
+                      {ec.arrival_mode && (
+                        <span className="capitalize whitespace-nowrap">{ec.arrival_mode.replace('_', ' ')}</span>
+                      )}
+                      <span className="flex items-center gap-0.5 whitespace-nowrap">
                         <Clock className="w-3 h-3" /> {waitTime(ec.arrived_at)} wait
                       </span>
                       {ec.attended_by && ec.attendant && (
-                        <span>Attending: {ec.attendant.full_name}</span>
+                        <span className="whitespace-nowrap" style={{ color: '#0D9488' }}>
+                          👨‍⚕️ {ec.attendant.full_name}
+                        </span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-                    {ec.status === 'waiting' && (
-                      <button
-                        onClick={() => { setAttendCase(ec); setSelectedDoctor(doctors[0]?.id ?? '') }}
-                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
-                        Attend
-                      </button>
-                    )}
-                    {ec.status === 'in_treatment' && (
-                      <button
-                        onClick={() => handleConsult(ec.id)}
-                        disabled={consultingId === ec.id}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid rgba(21,128,61,0.25)', cursor: 'pointer', opacity: consultingId === ec.id ? 0.6 : 1 }}>
-                        <ClipboardList className="w-3 h-3" />
-                        {consultingId === ec.id ? 'Opening…' : 'Consult'}
-                      </button>
-                    )}
+                    {/* Action buttons */}
                     {(ec.status === 'waiting' || ec.status === 'in_treatment') && (
-                      <>
+                      <div className="flex items-center gap-2 mt-2.5 flex-wrap" style={{ borderTop: '1px solid #F1F5F9', paddingTop: '0.5rem' }}>
+                        {ec.status === 'waiting' && (
+                          <button
+                            onClick={() => { setAttendCase(ec); setSelectedDoctor(doctors[0]?.id ?? '') }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
+                            Attend
+                          </button>
+                        )}
+                        {ec.status === 'in_treatment' && (
+                          <button
+                            onClick={() => handleConsult(ec.id)}
+                            disabled={consultingId === ec.id}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid rgba(21,128,61,0.25)', cursor: 'pointer', opacity: consultingId === ec.id ? 0.6 : 1 }}>
+                            <ClipboardList className="w-3 h-3" />
+                            {consultingId === ec.id ? 'Opening…' : 'Consult'}
+                          </button>
+                        )}
                         <button
                           onClick={() => { setAdmitErCase(ec) }}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                           Admit to IPD
                         </button>
                         <button
                           onClick={() => { setResolveCase(ec); setResolveType(''); setOutcomeNote('') }}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium ml-auto"
                           style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                           Resolve
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>

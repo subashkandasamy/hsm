@@ -20,7 +20,7 @@ export async function admitPatient(
   const parsed = AdmitPatientSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, admitting_doctor_id, bed_id, reason, procedure_tariff_id } = parsed.data
+  const { patient_id, admitting_doctor_id, bed_id, ward_id, reason, procedure_tariff_id, direct_ot, is_temp_ward, temp_slot } = parsed.data
   const admissionId = crypto.randomUUID()
   const supabase = await createClient()
 
@@ -34,19 +34,72 @@ export async function admitPatient(
     return { success: false, error: 'This patient is already admitted. Discharge the existing admission before admitting again.' }
   }
 
-  // Concurrency-safe claim: Postgres function does UPDATE WHERE status='available'
-  const { data: result, error: rpcErr } = await supabase.rpc('claim_bed_and_admit', {
-    p_admission_id: admissionId,
-    p_patient_id:   patient_id,
-    p_doctor_id:    admitting_doctor_id,
-    p_bed_id:       bed_id,
-    p_reason:       reason ?? null,
-  })
+  if (direct_ot) {
+    // Direct OT: no bed assigned — insert admission row directly (no concurrency claim needed)
+    const { error: insertErr } = await supabase.from('admissions').insert({
+      id:                  admissionId,
+      tenant_id:           actor.tenant_id,
+      patient_id,
+      admitting_doctor_id,
+      ward_id:             null,
+      bed_id:              null,
+      direct_ot:           true,
+      reason:              reason ?? null,
+      status:              'admitted',
+      admitted_at:         new Date().toISOString(),
+    })
+    if (insertErr) return { success: false, error: insertErr.message }
+  } else if (is_temp_ward) {
+    // Temp/overflow ward: create a slot on-the-fly, no concurrency claim needed
+    if (!ward_id) return { success: false, error: 'Please select a ward' }
 
-  if (rpcErr) return { success: false, error: rpcErr.message }
+    // Auto-number the slot if the user left it blank
+    let slotLabel = temp_slot?.trim() || null
+    if (!slotLabel) {
+      const { count } = await supabase
+        .from('beds').select('id', { count: 'exact', head: true }).eq('ward_id', ward_id)
+      slotLabel = `Slot-${(count ?? 0) + 1}`
+    }
 
-  const rpcResult = result as { ok: boolean; error?: string }
-  if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Bed no longer available' }
+    const tempBedId = crypto.randomUUID()
+    const { error: bedErr } = await supabase.from('beds').insert({
+      id:        tempBedId,
+      tenant_id: actor.tenant_id,
+      ward_id,
+      bed_no:    slotLabel,
+      status:    'occupied',
+    })
+    if (bedErr) return { success: false, error: bedErr.message }
+
+    const { error: insertErr } = await supabase.from('admissions').insert({
+      id:                  admissionId,
+      tenant_id:           actor.tenant_id,
+      patient_id,
+      admitting_doctor_id,
+      ward_id,
+      bed_id:              tempBedId,
+      reason:              reason ?? null,
+      status:              'admitted',
+      admitted_at:         new Date().toISOString(),
+    })
+    if (insertErr) {
+      await supabase.from('beds').delete().eq('id', tempBedId)
+      return { success: false, error: insertErr.message }
+    }
+  } else {
+    if (!bed_id) return { success: false, error: 'Please select a bed' }
+    // Normal admission: concurrency-safe claim via Postgres function
+    const { data: result, error: rpcErr } = await supabase.rpc('claim_bed_and_admit', {
+      p_admission_id: admissionId,
+      p_patient_id:   patient_id,
+      p_doctor_id:    admitting_doctor_id,
+      p_bed_id:       bed_id,
+      p_reason:       reason ?? null,
+    })
+    if (rpcErr) return { success: false, error: rpcErr.message }
+    const rpcResult = result as { ok: boolean; error?: string }
+    if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Bed no longer available' }
+  }
 
   // Fetch tenant advance percentage (default 50 if not set)
   const { data: tenantRow } = await supabase
@@ -169,6 +222,83 @@ export async function addProgressNote(
   return { success: true }
 }
 
+// Post-OT ward assignment: handles direct_ot (no old bed) and temp ward (old bed to delete)
+export async function postOpTransferToWard(
+  admissionId: string,
+  input: {
+    ward_id: string
+    bed_id?: string | null
+    is_temp_ward?: boolean
+    temp_slot?: string | null
+  }
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:write')
+
+  const { ward_id, bed_id, is_temp_ward, temp_slot } = input
+  const supabase = await createClient()
+
+  const { data: admission } = await supabase
+    .from('admissions')
+    .select('bed_id, ward_id, direct_ot, status')
+    .eq('id', admissionId)
+    .single()
+
+  if (!admission || admission.status !== 'admitted') {
+    return { success: false, error: 'Admission not active' }
+  }
+
+  let newBedId: string
+
+  if (is_temp_ward) {
+    // Create a slot in the target temp ward
+    const { count } = await supabase
+      .from('beds').select('id', { count: 'exact', head: true }).eq('ward_id', ward_id)
+    const slotLabel = temp_slot?.trim() || `Slot-${(count ?? 0) + 1}`
+    const tempBedId = crypto.randomUUID()
+    const { error: bedErr } = await supabase.from('beds').insert({
+      id: tempBedId, tenant_id: actor.tenant_id, ward_id, bed_no: slotLabel, status: 'occupied',
+    })
+    if (bedErr) return { success: false, error: bedErr.message }
+    newBedId = tempBedId
+  } else {
+    // Regular bed: claim it optimistically
+    if (!bed_id) return { success: false, error: 'Please select a bed' }
+    const { data: claimed } = await supabase
+      .from('beds')
+      .update({ status: 'occupied' })
+      .eq('id', bed_id)
+      .eq('status', 'available')
+      .select('id')
+    if (!claimed || claimed.length === 0) {
+      return { success: false, error: 'Bed is no longer available — please choose another' }
+    }
+    newBedId = bed_id
+  }
+
+  // Free the old bed (delete if temp, mark available if regular)
+  if (admission.bed_id) {
+    const { data: oldWard } = await supabase
+      .from('wards').select('is_temp').eq('id', admission.ward_id).single()
+    if (oldWard?.is_temp) {
+      await supabase.from('beds').delete().eq('id', admission.bed_id)
+    } else {
+      await supabase.from('beds').update({ status: 'available' }).eq('id', admission.bed_id)
+    }
+  }
+
+  // Update the admission
+  const { error: updateErr } = await supabase
+    .from('admissions')
+    .update({ ward_id, bed_id: newBedId, direct_ot: false })
+    .eq('id', admissionId)
+  if (updateErr) return { success: false, error: updateErr.message }
+
+  await logAudit(actor.id, 'post_op_transfer', 'admission', admissionId, { ward_id, bed_id: newBedId })
+  return { success: true }
+}
+
 export async function transferBed(
   admissionId: string,
   newBedId: string
@@ -230,7 +360,7 @@ export async function dischargePatient(
 
   const { data: admission } = await supabase
     .from('admissions')
-    .select('bed_id, status')
+    .select('bed_id, ward_id, status')
     .eq('id', admissionId)
     .single()
 
@@ -247,8 +377,16 @@ export async function dischargePatient(
     }
   }
 
-  // Free the bed
-  await supabase.from('beds').update({ status: 'available' }).eq('id', admission.bed_id)
+  // Free the bed — delete temp slots, mark regular beds available
+  if (admission.bed_id) {
+    const { data: wardRow } = await supabase
+      .from('wards').select('is_temp').eq('id', admission.ward_id).single()
+    if (wardRow?.is_temp) {
+      await supabase.from('beds').delete().eq('id', admission.bed_id)
+    } else {
+      await supabase.from('beds').update({ status: 'available' }).eq('id', admission.bed_id)
+    }
+  }
 
   const { error } = await supabase
     .from('admissions')

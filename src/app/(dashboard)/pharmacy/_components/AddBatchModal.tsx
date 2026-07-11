@@ -20,6 +20,7 @@ interface Props {
 interface BatchState {
   batch_no: string; expiry: string; qty_available: string
   purchase_price: string; mrp: string; reorder_level: string
+  storage_location: string
   brand_name: string; manufacturer: string; pack_size: string; pack_unit: string
   mfg_date: string; hsn_code: string; gst_rate: string
   supplier_name: string; supplier_invoice_no: string; purchase_date: string
@@ -41,6 +42,7 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
   const [newDrug, setNewDrug] = useState({ name: '', generic_name: '', form: '', strength: '', unit: '', reorder_level: '10' })
   const [batch, setBatch] = useState<BatchState>({
     batch_no: '', expiry: '', qty_available: '', purchase_price: '', mrp: '', reorder_level: '0',
+    storage_location: '',
     brand_name: '', manufacturer: '', pack_size: '', pack_unit: 'strip',
     mfg_date: '', hsn_code: '30049099', gst_rate: '12',
     supplier_name: '', supplier_invoice_no: '', purchase_date: '',
@@ -116,6 +118,7 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
       supplier_name:       batch.supplier_name || null,
       supplier_invoice_no: batch.supplier_invoice_no || null,
       purchase_date:       batch.purchase_date || null,
+      storage_location:    batch.storage_location.trim() || null,
     }
 
     if (mode === 'new') {
@@ -297,6 +300,9 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
             <FormField label="Purchase Price (₹)"><Input type="number" min={0} step="0.01" value={batch.purchase_price} onChange={e => setF('purchase_price', e.target.value)} placeholder="8.00" /></FormField>
             <FormField label="Reorder Level"><Input type="number" min={0} value={batch.reorder_level} onChange={e => setF('reorder_level', e.target.value)} placeholder="0" /></FormField>
           </div>
+          <FormField label="Storage Location" hint="e.g. Rack A / Shelf 2 / Bin 3">
+            <Input value={batch.storage_location} onChange={e => setF('storage_location', e.target.value)} placeholder="Rack A / Shelf 2 / Bin 3" />
+          </FormField>
         </div>
 
         {/* Brand / GRN section — collapsible */}

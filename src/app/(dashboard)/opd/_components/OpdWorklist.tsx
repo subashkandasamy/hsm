@@ -43,7 +43,6 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
     if (result.success) {
       router.push(`/opd/${result.visitId}`)
     } else {
-      // Re-fetch bill statuses in case status changed (e.g., paid elsewhere)
       const bs = await getAppointmentsBillStatuses(queue.map((a) => a.id))
       setBillStatuses(bs)
     }
@@ -83,98 +82,113 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
             const isPaid = !bill || bill.status === 'paid'
             const isUnpaid = bill && bill.status !== 'paid'
             const busy = actionId === a.id
+            const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
             return (
-              <GlassCard key={a.id} className="p-4"
-                style={isUnpaid ? { borderLeft: '3px solid #EF4444' } : undefined}>
+              <div key={a.id} className="rounded-2xl overflow-hidden"
+                style={{
+                  background: 'rgba(255,255,255,0.92)',
+                  border: `1px solid ${isUnpaid ? 'rgba(239,68,68,0.25)' : '#E2E8F0'}`,
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                }}>
+                <div className="flex items-stretch">
+                  {/* Left accent strip — red if unpaid, teal if clear */}
+                  <div className="w-1 flex-shrink-0 rounded-l-2xl"
+                    style={{ background: isUnpaid ? '#EF4444' : '#0D9488' }} />
 
-                {/* Top row: token + info + desktop button */}
-                <div className="flex items-start gap-3">
-                  {/* Token badge */}
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-base"
-                    style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
-                    {a.token_no ?? i + 1}
-                  </div>
+                  <div className="flex-1 min-w-0 p-4">
+                    {/* Top section: token + info + desktop button */}
+                    <div className="flex items-start gap-3">
+                      {/* Token badge */}
+                      <div className="w-12 h-12 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
+                        style={{ background: isUnpaid ? 'rgba(239,68,68,0.08)' : 'rgba(13,148,136,0.1)', border: `1px solid ${isUnpaid ? 'rgba(239,68,68,0.2)' : 'rgba(13,148,136,0.2)'}` }}>
+                        <span className="font-black text-lg leading-none" style={{ color: isUnpaid ? '#DC2626' : '#0D9488' }}>
+                          {a.token_no ?? i + 1}
+                        </span>
+                        <span className="text-xs font-semibold leading-none mt-0.5" style={{ color: isUnpaid ? '#DC2626' : '#0D9488', opacity: 0.7 }}>token</span>
+                      </div>
 
-                  {/* Patient info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>
-                        {a.patient?.full_name ?? 'Unknown'}
-                      </p>
-                      {isUnpaid && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
-                          style={{ background: 'rgba(239,68,68,0.1)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.2)' }}>
-                          <CreditCard className="w-3 h-3" />
-                          Unpaid ₹{bill.total.toFixed(0)}
-                        </span>
-                      )}
-                      {isPaid && bill && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
-                          style={{ background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1px solid rgba(16,185,129,0.2)' }}>
-                          Paid
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs mt-0.5 truncate" style={{ color: '#64748B' }}>
-                      {a.patient?.uhid}{a.patient?.phone ? ` · ${a.patient.phone}` : ''}
-                    </p>
-                    {a.reason && (
-                      <p className="text-xs mt-0.5 truncate" style={{ color: '#94A3B8' }}>{a.reason}</p>
-                    )}
-                    {isUnpaid && (
+                      {/* Patient info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>
+                            {a.patient?.full_name ?? 'Unknown'}
+                          </p>
+                          {isUnpaid && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                              style={{ background: 'rgba(239,68,68,0.1)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.2)' }}>
+                              <CreditCard className="w-3 h-3" />
+                              ₹{bill.total.toFixed(0)} due
+                            </span>
+                          )}
+                          {isPaid && bill && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                              style={{ background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1px solid rgba(16,185,129,0.2)' }}>
+                              Paid
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                          {a.patient?.uhid}{a.patient?.phone ? ` · ${a.patient.phone}` : ''}
+                        </p>
+                        {/* Doctor + time — visible on both mobile and desktop */}
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          {a.doctor?.full_name && (
+                            <span className="text-xs" style={{ color: '#475569' }}>{a.doctor.full_name}</span>
+                          )}
+                          <span className="inline-flex items-center gap-1 text-xs" style={{ color: '#94A3B8' }}>
+                            <Clock className="w-3 h-3" />{time}
+                          </span>
+                          {a.reason && (
+                            <span className="text-xs truncate max-w-40" style={{ color: '#94A3B8' }}>{a.reason}</span>
+                          )}
+                        </div>
+                        {isUnpaid && (
+                          <button
+                            onClick={() => router.push('/billing')}
+                            className="flex items-center gap-1 mt-1.5 text-xs font-medium"
+                            style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
+                            <CreditCard className="w-3 h-3" />
+                            Collect payment before starting →
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Action button — desktop only (inline) */}
                       <button
-                        onClick={() => router.push('/billing')}
-                        className="flex items-center gap-1 mt-1 text-xs font-medium"
-                        style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
-                        <CreditCard className="w-3 h-3" />
-                        Collect payment before starting →
+                        onClick={() => handleStart(a)}
+                        disabled={busy || isReadOnly}
+                        title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
+                        className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0"
+                        style={{
+                          background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
+                          color: '#fff', border: 'none',
+                          cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
+                          opacity: isReadOnly ? 0.6 : 1,
+                        }}>
+                        {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
+                        {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}
                       </button>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Doctor + time — desktop only */}
-                  <div className="text-right hidden sm:block flex-shrink-0">
-                    <p className="text-sm" style={{ color: '#475569' }}>{a.doctor?.full_name}</p>
-                    <p className="text-xs flex items-center justify-end gap-1 mt-0.5" style={{ color: '#94A3B8' }}>
-                      <Clock className="w-3 h-3" />
-                      {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                    {/* Action button — mobile full-width */}
+                    <button
+                      onClick={() => handleStart(a)}
+                      disabled={busy || isReadOnly}
+                      title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
+                      className="mt-3 sm:hidden w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold"
+                      style={{
+                        background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
+                        color: '#fff', border: 'none',
+                        cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
+                        opacity: isReadOnly ? 0.6 : 1,
+                      }}>
+                      {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
+                      {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}
+                    </button>
                   </div>
-
-                  {/* Action button — desktop only (inline) */}
-                  <button
-                    onClick={() => handleStart(a)}
-                    disabled={busy || isReadOnly}
-                    title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0"
-                    style={{
-                      background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
-                      color: '#fff', border: 'none',
-                      cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
-                      opacity: isReadOnly ? 0.6 : 1,
-                    }}>
-                    {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
-                    {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}
-                  </button>
                 </div>
-
-                {/* Action button — mobile full-width */}
-                <button
-                  onClick={() => handleStart(a)}
-                  disabled={busy || isReadOnly}
-                  title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
-                  className="mt-3 sm:hidden w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{
-                    background: (busy || isReadOnly) ? '#94A3B8' : isUnpaid ? '#EF4444' : '#0D9488',
-                    color: '#fff', border: 'none',
-                    cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer',
-                    opacity: isReadOnly ? 0.6 : 1,
-                  }}>
-                  {isUnpaid ? <CreditCard className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
-                  {busy ? 'Starting…' : isUnpaid ? 'Payment Pending' : 'Start Consultation'}
-                </button>
-              </GlassCard>
+              </div>
             )
           })}
         </div>

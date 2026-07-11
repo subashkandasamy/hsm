@@ -35,6 +35,10 @@ import EyeClinicalSection from './EyeClinicalSection'
 interface WardOption {
   id: string
   name: string
+  is_temp: boolean
+  is_multi_bed: boolean
+  room_type_id: string | null
+  room_type_name: string | null
   availableBeds: { id: string; bed_no: string }[]
 }
 

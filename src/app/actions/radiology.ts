@@ -5,7 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
-import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
+import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -266,4 +266,58 @@ export async function listRadiologyOrders(filters?: {
 
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as RadiologyOrder[]
+}
+
+// ---- Master Catalog ----
+
+export async function listRadiologyMaster(): Promise<RadiologyMaster[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('radiology_master')
+    .select('*')
+    .eq('is_active', true)
+    .order('modality')
+    .order('body_part')
+    .order('name')
+  return (data ?? []) as RadiologyMaster[]
+}
+
+export async function activateRadiologyFromMaster(
+  masterTestId: string,
+  price: number,
+): Promise<{ success: true; test: RadiologyCatalog } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:manage')
+  const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from('radiology_catalog')
+    .select('id')
+    .eq('radiology_master_id', masterTestId)
+    .maybeSingle()
+  if (existing) return { success: false, error: 'Already in your catalog' }
+
+  const { data: master } = await supabase
+    .from('radiology_master')
+    .select('*')
+    .eq('id', masterTestId)
+    .single()
+  if (!master) return { success: false, error: 'Procedure not found in master catalog' }
+
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('radiology_catalog').insert({
+    id,
+    tenant_id: actor.tenant_id,
+    name: master.name as string,
+    modality: master.modality as string,
+    body_part: (master.body_part as string) || 'General',
+    price,
+    is_active: true,
+    radiology_master_id: masterTestId,
+  })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'activate', 'radiology_test', id, { name: master.name })
+  const { data: test } = await supabase.from('radiology_catalog').select('*').eq('id', id).single()
+  return { success: true, test: test as RadiologyCatalog }
 }

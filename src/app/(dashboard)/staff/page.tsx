@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { headers } from 'next/headers'
 import { listStaff, getAttendance, getRoster } from '@/app/actions/hr'
 import StaffClient from './_components/StaffClient'

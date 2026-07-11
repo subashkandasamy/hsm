@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import { getAdmissionAdvanceReceipt } from '@/app/actions/admissionBilling'
 import { getTenantProfile } from '@/app/actions/tenantProfile'

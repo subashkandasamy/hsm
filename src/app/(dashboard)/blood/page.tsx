@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { getInventory, listUnits, listRequests, listDonors } from '@/app/actions/blood'
 import BloodClient from './_components/BloodClient'
 

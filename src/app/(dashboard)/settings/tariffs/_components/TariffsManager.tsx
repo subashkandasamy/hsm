@@ -1,62 +1,32 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Pencil, Check, X, BadgeDollarSign, Bed, Stethoscope } from 'lucide-react'
+import { Plus, Pencil, Check, X, Stethoscope } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import Money from '@/components/ui/Money'
 import {
-  updateWardRate,
   createProcedureTariff,
   updateProcedureTariff,
 } from '@/app/actions/tariffs'
-import type { Ward, ProcedureTariff } from '@/lib/types'
+import type { ProcedureTariff } from '@/lib/types'
 
 interface Props {
-  initialWards: Ward[]
   initialTariffs: ProcedureTariff[]
 }
 
 const CATEGORIES = ['general', 'surgery', 'procedure', 'package'] as const
 
-export default function TariffsManager({ initialWards, initialTariffs }: Props) {
-  const [wards, setWards]       = useState(initialWards)
+export default function TariffsManager({ initialTariffs }: Props) {
   const [tariffs, setTariffs]   = useState(initialTariffs)
   const [isPending, startTransition] = useTransition()
   const [error, setError]       = useState('')
 
-  // Ward rate editing
-  const [editingWardId, setEditingWardId] = useState<string | null>(null)
-  const [wardRateInput, setWardRateInput] = useState('')
-
-  // Procedure tariff editing
   const [editingTariffId, setEditingTariffId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [tariffForm, setTariffForm] = useState({
     name: '', category: '' as '' | 'general' | 'surgery' | 'procedure' | 'package', default_price: '',
   })
-
-  // ---- Ward rate actions ----
-
-  function startEditWard(w: Ward & { daily_rate?: number }) {
-    setEditingWardId(w.id)
-    setWardRateInput(String((w as unknown as { daily_rate: number }).daily_rate ?? 0))
-    setError('')
-  }
-
-  function saveWardRate(id: string) {
-    const rate = parseFloat(wardRateInput)
-    if (isNaN(rate) || rate < 0) { setError('Enter a valid rate'); return }
-    setError('')
-    startTransition(async () => {
-      const res = await updateWardRate(id, rate)
-      if (!res.success) { setError(res.error); return }
-      setWards((ws) => ws.map((w) => w.id === id ? { ...w, daily_rate: rate } as unknown as Ward : w))
-      setEditingWardId(null)
-    })
-  }
-
-  // ---- Procedure tariff actions ----
 
   function openCreate() {
     setEditingTariffId(null)
@@ -123,96 +93,16 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
     c ? c.charAt(0).toUpperCase() + c.slice(1) : '—'
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>
           {error}
         </div>
       )}
 
-      {/* ---- Ward Room Rates ---- */}
-      <GlassCard>
-        <div className="p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Bed className="w-5 h-5" style={{ color: '#0D9488' }} />
-            <h2 className="text-base font-semibold" style={{ color: '#0F172A' }}>Ward Room Rates</h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                  <th className="text-left pb-2 font-medium" style={{ color: '#64748B' }}>Ward</th>
-                  <th className="text-right pb-2 font-medium" style={{ color: '#64748B' }}>Daily Rate (₹)</th>
-                  <th className="w-24 pb-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {wards.map((ward) => {
-                  const dailyRate = (ward as unknown as { daily_rate: number }).daily_rate ?? 0
-                  const isEditing = editingWardId === ward.id
-                  return (
-                    <tr key={ward.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td className="py-3 font-medium" style={{ color: '#0F172A' }}>{ward.name}</td>
-                      <td className="py-3 text-right">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            value={wardRateInput}
-                            onChange={(e) => setWardRateInput(e.target.value)}
-                            className="w-32 px-2 py-1 text-right text-sm rounded border"
-                            style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
-                            autoFocus
-                          />
-                        ) : (
-                          <Money amount={dailyRate} style={{ color: '#0F172A' }} />
-                        )}
-                      </td>
-                      <td className="py-3 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => saveWardRate(ward.id)}
-                              disabled={isPending}
-                              className="p-1.5 rounded-lg"
-                              style={{ background: '#DCFCE7', color: '#16A34A' }}
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setEditingWardId(null)}
-                              className="p-1.5 rounded-lg"
-                              style={{ background: '#F1F5F9', color: '#64748B' }}
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => startEditWard(ward as unknown as Ward & { daily_rate: number })}
-                            className="p-1.5 rounded-lg"
-                            style={{ background: '#F1F5F9', color: '#64748B' }}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-                {!wards.length && (
-                  <tr>
-                    <td colSpan={3} className="py-6 text-center text-sm" style={{ color: '#94A3B8' }}>
-                      No wards set up yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </GlassCard>
+      <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.15)', color: '#0F766E' }}>
+        Room rent rates are managed per ward on the <strong>Ward Board</strong> page — set the daily rate on each room type there.
+      </div>
 
       {/* ---- Procedure Tariffs ---- */}
       <GlassCard>
@@ -231,7 +121,6 @@ export default function TariffsManager({ initialWards, initialTariffs }: Props) 
             </button>
           </div>
 
-          {/* Create form */}
           {showCreate && (
             <div className="mb-4 p-4 rounded-xl border" style={{ background: '#F8FAFC', borderColor: '#E2E8F0' }}>
               <p className="text-sm font-medium mb-3" style={{ color: '#0F172A' }}>New Procedure Tariff</p>

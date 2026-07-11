@@ -66,6 +66,7 @@ const BILL_SOURCE_LABELS: Record<string, string> = {
   radiology: 'Radiology',
   ipd_pharmacy: 'Pharmacy (Ward)',
   nursing: 'Nursing',
+  ot: 'Surgery (OT)',
 }
 
 const STATUS_MAP: Record<string, string> = {

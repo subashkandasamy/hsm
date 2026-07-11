@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listBills, getBillingStats } from '@/app/actions/billing'
 import { listAllAdvanceDeposits, listAdvanceSummariesBatch } from '@/app/actions/admissionBilling'
 import BillingClient from './_components/BillingClient'

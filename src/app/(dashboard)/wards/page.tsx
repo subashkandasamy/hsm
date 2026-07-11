@@ -1,13 +1,16 @@
-import { getWardBoard, listWards } from '@/app/actions/wards'
-import { listAdmissions } from '@/app/actions/ipd'
+export const dynamic = 'force-dynamic'
+import { getWardBoard, listWards, listWardRoomTypes } from '@/app/actions/wards'
+import { listAllOtRooms } from '@/app/actions/ot'
 import { createClient } from '@/lib/supabase/server'
 import WardsClient from './_components/WardsClient'
 
 export default async function WardsPage() {
   const supabase = await createClient()
-  const [board, wards, deptsRes, doctorsRes] = await Promise.all([
+  const [board, wards, otRooms, roomTypes, deptsRes, doctorsRes] = await Promise.all([
     getWardBoard(),
     listWards(),
+    listAllOtRooms(),
+    listWardRoomTypes(),
     supabase.from('departments').select('id, name').order('name'),
     supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
   ])
@@ -16,6 +19,8 @@ export default async function WardsPage() {
     <WardsClient
       initialBoard={board}
       wards={wards}
+      initialOtRooms={otRooms}
+      initialRoomTypes={roomTypes}
       departments={(deptsRes.data ?? []) as { id: string; name: string }[]}
       doctors={(doctorsRes.data ?? []) as { id: string; full_name: string }[]}
     />

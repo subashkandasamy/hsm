@@ -227,7 +227,7 @@ export default function PharmacyClient({
       </div>
 
       {tab === 'cart' && canSale && (
-        <SaleCartBuilder drugs={drugs} initialReadySales={initialReadySales} allPatients={allPatients} />
+        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} allPatients={allPatients} />
       )}
       {tab === 'cart' && !canSale && (
         <p className="text-sm p-4" style={{ color: '#64748B' }}>You don&apos;t have permission to manage sale carts.</p>
@@ -788,7 +788,7 @@ function DispenseQueue({
 
 // ---- Stock View ----
 
-type BatchDraft = { batch_no: string; expiry: string; qty_available: string; mrp: string; purchase_price: string }
+type BatchDraft = { batch_no: string; expiry: string; qty_available: string; mrp: string; purchase_price: string; storage_location: string }
 
 function StockView({ stock, canManage, onRefresh }: {
   stock: DrugWithStock[]; canManage: boolean; onRefresh: () => void
@@ -824,6 +824,7 @@ function StockView({ stock, canManage, onRefresh }: {
         qty_available: String(b.qty_available),
         mrp: String(b.mrp),
         purchase_price: b.purchase_price != null ? String(b.purchase_price) : '',
+        storage_location: b.storage_location ?? '',
       }
     })
     setBatchDrafts(drafts)
@@ -852,10 +853,12 @@ function StockView({ stock, canManage, onRefresh }: {
       if (!d.expiry)           { setSaveErr(`Expiry required for ${b.batch_no}`); setSaving(false); return }
       if (isNaN(qty) || qty < 0) { setSaveErr(`Invalid qty for ${b.batch_no}`); setSaving(false); return }
       if (isNaN(mrp) || mrp < 0) { setSaveErr(`Invalid MRP for ${b.batch_no}`); setSaving(false); return }
+      const loc = d.storage_location.trim() || null
       const changed = d.batch_no !== b.batch_no || d.expiry !== b.expiry ||
-        qty !== b.qty_available || mrp !== b.mrp || pp !== b.purchase_price
+        qty !== b.qty_available || mrp !== b.mrp || pp !== b.purchase_price ||
+        loc !== (b.storage_location ?? null)
       if (changed) {
-        const res = await updateBatch(b.id, { batch_no: d.batch_no.trim(), expiry: d.expiry, qty_available: qty, mrp, purchase_price: pp })
+        const res = await updateBatch(b.id, { batch_no: d.batch_no.trim(), expiry: d.expiry, qty_available: qty, mrp, purchase_price: pp, storage_location: loc })
         if (!res.success) { setSaveErr(res.error); setSaving(false); return }
       }
     }
@@ -933,6 +936,11 @@ function StockView({ stock, canManage, onRefresh }: {
                       <span key={b.id} className="text-xs px-2 py-0.5 rounded-lg"
                         style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
                         {b.batch_no} · exp <DateText date={b.expiry} /> · {b.qty_available} · <Money amount={b.mrp} />
+                        {b.storage_location && (
+                          <span className="ml-1.5 font-medium" style={{ color: '#7C3AED' }}>
+                            📍 {b.storage_location}
+                          </span>
+                        )}
                       </span>
                     ))}
                   </div>
@@ -949,28 +957,48 @@ function StockView({ stock, canManage, onRefresh }: {
                         className={inp} style={{ ...bdr, maxWidth: 100 }} />
                     </div>
 
-                    {/* Batch rows */}
+                    {/* Batch rows — card layout on mobile, grid on desktop */}
                     {drug.batches.length > 0 && (
-                      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
-                        <div className="grid text-xs font-semibold px-3 py-2"
-                          style={{ background: '#F8FAFC', color: '#64748B', gridTemplateColumns: '1fr 1fr 80px 90px 90px' }}>
-                          <span>Batch No.</span><span>Expiry</span><span>Qty</span><span>MRP (₹)</span><span>Cost (₹)</span>
-                        </div>
+                      <div className="space-y-2">
                         {drug.batches.map((b, i) => {
-                          const d = batchDrafts[b.id] ?? { batch_no: b.batch_no, expiry: b.expiry, qty_available: String(b.qty_available), mrp: String(b.mrp), purchase_price: '' }
+                          const d = batchDrafts[b.id] ?? { batch_no: b.batch_no, expiry: b.expiry, qty_available: String(b.qty_available), mrp: String(b.mrp), purchase_price: '', storage_location: '' }
                           return (
-                            <div key={b.id} className="grid items-center gap-2 px-3 py-2"
-                              style={{ gridTemplateColumns: '1fr 1fr 80px 90px 90px', borderTop: i === 0 ? 'none' : '1px solid #F1F5F9' }}>
-                              <input value={d.batch_no} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], batch_no: e.target.value } }))}
-                                className={inp} style={bdr} />
-                              <input type="date" value={d.expiry} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], expiry: e.target.value } }))}
-                                className={inp} style={bdr} />
-                              <input type="number" min={0} step={1} value={d.qty_available} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], qty_available: e.target.value } }))}
-                                className={inp} style={bdr} />
-                              <input type="number" min={0} step="0.01" value={d.mrp} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], mrp: e.target.value } }))}
-                                className={inp} style={bdr} />
-                              <input type="number" min={0} step="0.01" value={d.purchase_price} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], purchase_price: e.target.value } }))}
-                                placeholder="optional" className={inp} style={{ ...bdr, color: '#94A3B8' }} />
+                            <div key={b.id} className="rounded-xl p-3 space-y-2"
+                              style={{ border: '1px solid #E2E8F0', background: i % 2 === 0 ? '#FAFCFF' : '#fff' }}>
+                              <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                                <div>
+                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Batch No.</p>
+                                  <input value={d.batch_no} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], batch_no: e.target.value } }))}
+                                    className={inp} style={bdr} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Expiry</p>
+                                  <input type="date" value={d.expiry} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], expiry: e.target.value } }))}
+                                    className={inp} style={bdr} />
+                                </div>
+                              </div>
+                              <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+                                <div>
+                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Qty</p>
+                                  <input type="number" min={0} step={1} value={d.qty_available} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], qty_available: e.target.value } }))}
+                                    className={inp} style={bdr} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>MRP (₹)</p>
+                                  <input type="number" min={0} step="0.01" value={d.mrp} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], mrp: e.target.value } }))}
+                                    className={inp} style={bdr} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Cost (₹)</p>
+                                  <input type="number" min={0} step="0.01" value={d.purchase_price} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], purchase_price: e.target.value } }))}
+                                    placeholder="opt." className={inp} style={{ ...bdr, color: '#94A3B8' }} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium mb-1" style={{ color: '#7C3AED' }}>📍 Location</p>
+                                <input value={d.storage_location} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], storage_location: e.target.value } }))}
+                                  placeholder="e.g. Rack A / Shelf 2 / Bin 3" className={inp} style={{ ...bdr, color: '#7C3AED' }} />
+                              </div>
                             </div>
                           )
                         })}
@@ -1103,6 +1131,16 @@ function autoFillPrice(itemName: string, stock: DrugWithStock[]): number {
   return batch?.mrp ?? 0
 }
 
+function findStockLocation(itemName: string, stock: DrugWithStock[]): string | null {
+  const query = itemName.split(' ')[0].toLowerCase()
+  const drug = stock.find((d) =>
+    d.name.toLowerCase().startsWith(query) || query.startsWith(d.name.toLowerCase())
+  )
+  if (!drug) return null
+  const batch = drug.batches.find((b) => b.qty_available > 0)
+  return batch?.storage_location ?? null
+}
+
 interface IpdWardQueueProps {
   requests: IpdPharmacyRequest[]
   stock: DrugWithStock[]
@@ -1158,6 +1196,7 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                 const adm = req.admission
                 const isConfirming = confirmingId === req.id
                 const isDispatching = dispensingId === req.id
+                const location = findStockLocation(req.item_name, stock)
                 return (
                   <div key={req.id} className="rounded-xl overflow-hidden"
                     style={{ border: '1px solid rgba(13,148,136,0.2)', background: 'rgba(13,148,136,0.03)' }}>
@@ -1171,6 +1210,12 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                             style={{ background: '#F1F5F9', color: '#64748B' }}>
                             Qty: {req.quantity}{req.unit ? ` ${req.unit}` : ''}
                           </span>
+                          {location && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-md flex items-center gap-1"
+                              style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
+                              📍 {location}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
                           {adm?.patient?.full_name ?? '—'}{' '}
@@ -1193,8 +1238,16 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
 
                     {/* Price confirm panel */}
                     {isConfirming && (
-                      <div className="px-3 pb-3 pt-1 flex items-center gap-2 flex-wrap"
+                      <div className="px-3 pb-3 pt-2 space-y-2"
                         style={{ borderTop: '1px solid rgba(13,148,136,0.15)', background: 'rgba(13,148,136,0.06)' }}>
+                        {location && (
+                          <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"
+                            style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', color: '#7C3AED' }}>
+                            <span>📍</span>
+                            <span className="font-semibold">Pick from: {location}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-medium flex-shrink-0" style={{ color: '#0F172A' }}>
                           Price per unit (₹)
                         </span>
@@ -1214,20 +1267,21 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                             × {req.quantity} = ₹{(parseFloat(priceInput) * req.quantity).toFixed(2)}
                           </span>
                         )}
-                        <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-                          <button onClick={cancelDispense}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs"
-                            style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => confirmDispense(req.id)}
-                            disabled={isDispatching}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                            <Check className="w-3 h-3" />
-                            {isDispatching ? 'Dispensing…' : 'Confirm Dispense'}
-                          </button>
+                          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                            <button onClick={cancelDispense}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs"
+                              style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => confirmDispense(req.id)}
+                              disabled={isDispatching}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                              <Check className="w-3 h-3" />
+                              {isDispatching ? 'Dispensing…' : 'Confirm Dispense'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}

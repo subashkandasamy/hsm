@@ -264,6 +264,13 @@ export default function DispenseModal({ open, prescription, drugs, onClose, onSu
                   <span>Expires: <DateText date={fefo.batch.expiry} /></span>
                   <span>Total: <strong><Money amount={fefo.price} /></strong></span>
                 </div>
+                {fefo.batch.storage_location && (
+                  <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                    style={{ background: 'rgba(21,128,61,0.08)', border: '1px solid rgba(21,128,61,0.2)' }}>
+                    <span>📍</span>
+                    <span className="font-medium">Pick from: {fefo.batch.storage_location}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

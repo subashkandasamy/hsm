@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listItems, listSuppliers, listPurchaseOrders, getStockAlerts } from '@/app/actions/inventory'
 import InventoryClient from './_components/InventoryClient'
 

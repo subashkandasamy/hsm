@@ -31,6 +31,14 @@ interface Props {
   initialBillStatuses?: BillStatusMap
 }
 
+const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
+  booked:     { bg: '#EFF6FF', color: '#1D4ED8' },
+  checked_in: { bg: '#DCFCE7', color: '#15803D' },
+  done:       { bg: '#F0FDF4', color: '#15803D' },
+  cancelled:  { bg: '#FEE2E2', color: '#B91C1C' },
+  no_show:    { bg: '#FEF3C7', color: '#B45309' },
+}
+
 const STATUS_COLORS: Record<string, string> = {
   booked: 'pending', checked_in: 'info', done: 'success',
   cancelled: 'cancelled', no_show: 'error',
@@ -133,7 +141,7 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         </div>
       )}
 
-      {/* Filters — stacked on mobile, row on sm+ */}
+      {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap mb-5">
         <div className="flex gap-2 flex-1">
           <input
@@ -180,160 +188,171 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         </div>
       </div>
 
-      <GlassCard className="overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-sm" style={{ color: '#94A3B8' }}>Loading…</div>
-        ) : displayed.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-sm" style={{ color: '#94A3B8' }}>Loading…</div>
+      ) : displayed.length === 0 ? (
+        <GlassCard>
           <EmptyState
             title={view === 'queue' ? 'No patients in queue' : 'No appointments'}
             description={view === 'queue' ? 'Checked-in patients will appear here.' : 'Book an appointment to get started.'}
           />
-        ) : (
-          <>
-            {/* ── MOBILE CARD VIEW (< md) ── */}
-            <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {displayed.map((a) => (
-                <div key={a.id} className="px-4 py-4">
-                  {/* Row 1: token + status + bill chip */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg"
-                      style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
-                      #{a.token_no ?? '—'}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {(() => {
-                        const b = billStatuses[a.id]
-                        if (!b) return null
-                        const isPaid = b.status === 'paid'
-                        return (
+        </GlassCard>
+      ) : (
+        <>
+          {/* ── MOBILE CARDS (< md) ── */}
+          <div className="md:hidden space-y-2">
+            {displayed.map((a) => {
+              const b = billStatuses[a.id]
+              const isPaid = !b || b.status === 'paid'
+              const isUnpaid = b && b.status !== 'paid'
+              const busy = actionLoading === a.id
+              const statusStyle = STATUS_STYLES[a.status] ?? { bg: '#F1F5F9', color: '#64748B' }
+              const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+
+              return (
+                <div key={a.id} className="rounded-2xl overflow-hidden"
+                  style={{
+                    background: 'rgba(255,255,255,0.92)',
+                    border: `1px solid ${isUnpaid ? 'rgba(239,68,68,0.25)' : '#E2E8F0'}`,
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                  }}>
+                  <div className="flex items-stretch">
+                    {/* Left status strip */}
+                    <div className="w-1 flex-shrink-0 rounded-l-2xl"
+                      style={{ background: a.status === 'checked_in' ? '#0D9488' : a.status === 'done' ? '#10B981' : a.status === 'cancelled' ? '#EF4444' : a.status === 'no_show' ? '#F59E0B' : '#3B82F6' }} />
+                    <div className="flex-1 min-w-0 p-3.5">
+                      {/* Top row: token + time + status */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg"
+                          style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
+                          #{a.token_no ?? '—'}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-lg"
+                          style={{ background: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
+                          <Clock className="w-3 h-3" />
+                          {time}
+                        </span>
+                        <span className="ml-auto flex-shrink-0">
+                          <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                            style={statusStyle}>{a.status.replace('_', ' ')}</span>
+                        </span>
+                      </div>
+
+                      {/* Patient name + UHID */}
+                      <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="font-mono text-xs" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                        {b && (
                           <span className="text-xs px-1.5 py-0.5 rounded-md font-semibold"
                             style={isPaid
                               ? { background: '#DCFCE7', color: '#15803D' }
-                              : { background: '#FEF3C7', color: '#B45309' }
-                            }>
-                            {isPaid ? `₹${b.total} Paid` : `₹${b.total} due`}
+                              : { background: '#FEF3C7', color: '#B45309' }}>
+                            {isPaid ? `₹${b.total} paid` : `₹${b.total} due`}
                           </span>
-                        )
-                      })()}
-                      <StatusBadge status={STATUS_COLORS[a.status] ?? a.status} label={a.status.replace('_', ' ')} />
-                    </div>
-                  </div>
-
-                  {/* Row 2: patient name + UHID */}
-                  <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>
-                    {a.patient?.full_name ?? '—'}
-                  </p>
-                  <p className="font-mono text-xs mb-1" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
-
-                  {/* Row 3: doctor / time / reason */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1.5 text-xs">
-                    <div>
-                      <span style={{ color: '#94A3B8' }}>Doctor </span>
-                      <span className="font-medium" style={{ color: '#475569' }}>{a.doctor?.full_name ?? '—'}</span>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94A3B8' }}>Time </span>
-                      <span className="font-medium" style={{ color: '#475569' }}>
-                        {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    {a.reason && (
-                      <div className="col-span-2">
-                        <span style={{ color: '#94A3B8' }}>Reason </span>
-                        <span className="font-medium truncate" style={{ color: '#475569' }}>{a.reason}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Actions */}
-                  {(a.status === 'booked' || a.status === 'checked_in') && (
-                    <div className="flex gap-2 mt-3">
-                      {a.status === 'booked' && (
-                        <>
-                          <button onClick={() => handleCheckIn(a.id)} disabled={actionLoading === a.id || isReadOnly}
-                            title={isReadOnly ? 'Renew subscription to check in patients' : undefined}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                            style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
-                            <CheckCircle className="w-3.5 h-3.5" /> Check In
-                          </button>
-                          <button onClick={() => !isReadOnly && setEditTarget(a)} disabled={actionLoading === a.id || isReadOnly}
-                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to edit' : 'Edit'}
-                            style={{ background: '#F0FDF4', color: '#15803D', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleNoShow(a.id)} disabled={actionLoading === a.id || isReadOnly}
-                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to mark no-show' : 'No Show'}
-                            style={{ background: '#FEF3C7', color: '#B45309', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
-                            <Clock className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id || isReadOnly}
-                            className="p-2 rounded-xl" title={isReadOnly ? 'Renew to cancel' : 'Cancel'}
-                            style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      {a.status === 'checked_in' && (
-                        <>
-                          {admittedSet.has(a.patient_id as string) ? (
-                            <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                              style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                              In IPD
-                            </span>
-                          ) : (
+                      {/* Doctor + reason */}
+                      <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap" style={{ color: '#64748B' }}>
+                        {a.doctor?.full_name && <span>{a.doctor.full_name}</span>}
+                        {a.reason && <span style={{ color: '#94A3B8' }}>{a.reason}</span>}
+                      </div>
+
+                      {/* Actions */}
+                      {(a.status === 'booked' || a.status === 'checked_in') && (
+                        <div className="flex gap-2 mt-3 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
+                          {a.status === 'booked' && (
                             <>
-                              <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id || isReadOnly}
-                                title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
+                              <button onClick={() => handleCheckIn(a.id)} disabled={busy || isReadOnly}
+                                title={isReadOnly ? 'Renew subscription to check in patients' : undefined}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
-                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
-                                Start OPD
+                                style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                <CheckCircle className="w-3.5 h-3.5" /> Check In
                               </button>
-                              <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id || isReadOnly}
+                              <button onClick={() => !isReadOnly && setEditTarget(a)} disabled={busy || isReadOnly}
+                                className="p-2 rounded-xl" title={isReadOnly ? 'Renew to edit' : 'Edit'}
+                                style={{ background: '#F0FDF4', color: '#15803D', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleNoShow(a.id)} disabled={busy || isReadOnly}
+                                className="p-2 rounded-xl" title={isReadOnly ? 'Renew to mark no-show' : 'No Show'}
+                                style={{ background: '#FEF3C7', color: '#B45309', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                <Clock className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setCancelTarget(a.id)} disabled={busy || isReadOnly}
                                 className="p-2 rounded-xl" title={isReadOnly ? 'Renew to cancel' : 'Cancel'}
-                                style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (actionLoading === a.id || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
                                 <XCircle className="w-4 h-4" />
                               </button>
                             </>
                           )}
-                        </>
+                          {a.status === 'checked_in' && (
+                            admittedSet.has(a.patient_id as string) ? (
+                              <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
+                                style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                                In IPD
+                              </span>
+                            ) : (
+                              <>
+                                <button onClick={() => handleStartVisit(a.id)} disabled={busy || isReadOnly}
+                                  title={isReadOnly ? 'Renew subscription to start consultations' : undefined}
+                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-1 justify-center"
+                                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                  Start OPD
+                                </button>
+                                <button onClick={() => setCancelTarget(a.id)} disabled={busy || isReadOnly}
+                                  className="p-2 rounded-xl" title={isReadOnly ? 'Renew to cancel' : 'Cancel'}
+                                  style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: (busy || isReadOnly) ? 'not-allowed' : 'pointer', opacity: isReadOnly ? 0.5 : 1 }}>
+                                  <XCircle className="w-4 h-4" />
+                                </button>
+                              </>
+                            )
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              )
+            })}
+          </div>
 
-            {/* ── DESKTOP TABLE (md+) ── */}
-            <table className="hidden md:table w-full text-sm">
+          {/* ── DESKTOP TABLE (md+) ── */}
+          <GlassCard className="hidden md:block overflow-hidden">
+            <table className="w-full text-sm">
               <thead>
-                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '1px solid #E2E8F0' }}>
+                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '2px solid #E2E8F0' }}>
                   {['#', 'Patient', 'Doctor', 'Time', 'Reason', 'Status', 'Bill', 'Actions'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: '#475569' }}>{h}</th>
+                    <th key={h} className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wide" style={{ color: '#64748B' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {displayed.map((a, i) => (
                   <tr key={a.id} style={{ borderBottom: i < displayed.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <span className="font-mono text-xs font-bold" style={{ color: '#0D9488' }}>{a.token_no ?? '—'}</span>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
-                      <p className="text-xs font-mono" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                    <td className="px-4 py-3.5">
+                      <p className="font-semibold" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
+                      <p className="text-xs font-mono mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
                     </td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}>
+                    <td className="px-4 py-3.5" style={{ color: '#475569' }}>
                       {a.doctor?.full_name ?? '—'}
-                      {a.department && <p className="text-xs" style={{ color: '#94A3B8' }}>{a.department.name}</p>}
+                      {a.department && <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{a.department.name}</p>}
                     </td>
-                    <td className="px-4 py-3 text-xs" style={{ color: '#64748B' }}>
-                      {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium"
+                        style={{ color: '#64748B' }}>
+                        <Clock className="w-3 h-3" />
+                        {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-xs max-w-32 truncate" style={{ color: '#475569' }}>{a.reason ?? '—'}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5 text-xs max-w-32 truncate" style={{ color: '#475569' }}>{a.reason ?? '—'}</td>
+                    <td className="px-4 py-3.5">
                       <StatusBadge status={STATUS_COLORS[a.status] ?? a.status} label={a.status.replace('_', ' ')} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       {(() => {
                         const b = billStatuses[a.id]
                         if (!b) return <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>
@@ -342,14 +361,13 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                           <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
                             style={isPaid
                               ? { background: '#DCFCE7', color: '#15803D' }
-                              : { background: '#FEF3C7', color: '#B45309' }
-                            }>
+                              : { background: '#FEF3C7', color: '#B45309' }}>
                             {isPaid ? `₹${b.total} Paid` : `₹${b.total} due`}
                           </span>
                         )
                       })()}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
                         {a.status === 'booked' && (
                           <>
@@ -376,27 +394,25 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                           </>
                         )}
                         {a.status === 'checked_in' && (
-                          <>
-                            {admittedSet.has(a.patient_id as string) ? (
-                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
-                                style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                                In IPD
-                              </span>
-                            ) : (
-                              <>
-                                <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
-                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
-                                  style={{ background: '#0D9488', color: '#fff', cursor: 'pointer', border: 'none' }}>
-                                  Start OPD
-                                </button>
-                                <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
-                                  className="p-1.5 rounded-lg" title="Cancel"
-                                  style={{ background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', border: 'none' }}>
-                                  <XCircle className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </>
+                          admittedSet.has(a.patient_id as string) ? (
+                            <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                              style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                              In IPD
+                            </span>
+                          ) : (
+                            <>
+                              <button onClick={() => handleStartVisit(a.id)} disabled={actionLoading === a.id}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                style={{ background: '#0D9488', color: '#fff', cursor: 'pointer', border: 'none' }}>
+                                Start OPD
+                              </button>
+                              <button onClick={() => setCancelTarget(a.id)} disabled={actionLoading === a.id}
+                                className="p-1.5 rounded-lg" title="Cancel"
+                                style={{ background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', border: 'none' }}>
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )
                         )}
                       </div>
                     </td>
@@ -404,9 +420,9 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                 ))}
               </tbody>
             </table>
-          </>
-        )}
-      </GlassCard>
+          </GlassCard>
+        </>
+      )}
 
       <BookingModal
         open={showBook || !!editTarget}
@@ -418,7 +434,6 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
           if (editTarget) {
             setAppts((prev) => prev.map((a) => a.id === appt.id ? appt : a))
             setEditTarget(null)
-            // Re-fetch bill statuses — doctor change may have updated the fee
             getAppointmentsBillStatuses([appt.id]).then((s) =>
               setBillStatuses((prev) => ({ ...prev, ...s }))
             )
@@ -429,7 +444,6 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
               return prev
             })
             setShowBook(false)
-            // Fetch bill status for the newly booked appointment
             getAppointmentsBillStatuses([appt.id]).then((s) =>
               setBillStatuses((prev) => ({ ...prev, ...s }))
             )
@@ -446,7 +460,6 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         confirmLabel="Cancel Appointment"
         loading={actionLoading === cancelTarget}
       />
-
     </div>
   )
 }

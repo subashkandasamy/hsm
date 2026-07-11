@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getVisit, getPatientVisits } from '@/app/actions/opd'
@@ -7,7 +8,7 @@ import { listRadiologyCatalog } from '@/app/actions/radiology'
 import { listDrugs } from '@/app/actions/pharmacy'
 import { listAllergies } from '@/app/actions/allergies'
 import { getDentalChart, listTreatmentHistory, listDueRecalls } from '@/app/actions/dental'
-import { listWards } from '@/app/actions/wards'
+import { getWardBoard } from '@/app/actions/wards'
 import { resolveVisitTemplate } from '@/lib/clinicalTemplates'
 import { getActorProfile } from '@/lib/server-utils'
 import { createClient } from '@/lib/supabase/server'
@@ -49,7 +50,7 @@ export default async function OpdVisitPage({ params }: Props) {
     listRadiologyCatalog(),
     listDrugs(),
     listAllergies(visit.patient_id),
-    listWards(),
+    getWardBoard(),
     supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).neq('category', 'general').order('name'),
     supabase.from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single(),
@@ -80,6 +81,10 @@ export default async function OpdVisitPage({ params }: Props) {
   const admitWards = (wards as import('@/lib/types').WardWithBeds[]).map((w) => ({
     id: w.id,
     name: w.name,
+    is_temp: w.is_temp,
+    is_multi_bed: w.room_type_data?.is_multi_bed ?? false,
+    room_type_id: w.room_type_data?.id ?? null,
+    room_type_name: w.room_type_data?.name ?? null,
     availableBeds: (w.beds ?? []).filter((b) => b.status === 'available').map((b) => ({ id: b.id, bed_no: b.bed_no })),
   }))
 

@@ -45,6 +45,7 @@ const BILL_SOURCE_LABELS: Record<string, string> = {
   nursing_morning:    'Nursing AM',
   nursing_night:      'Nursing Night',
   consolidated:       'Consolidated',
+  ot:                 'Surgery (OT)',
   advance_refund:     'Advance Refund',
   appointment_refund: 'Appt. Refund',
 }
@@ -244,7 +245,10 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     setBills(data)
     setStats(newStats)
     setDeposits(newDeposits)
-    const admissionIds = [...new Set(data.filter((b) => b.admission_id).map((b) => b.admission_id!))]
+    const admissionIds = [...new Set([
+      ...data.filter((b) => b.admission_id).map((b) => b.admission_id!),
+      ...newDeposits.filter((d) => d.admission_id).map((d) => d.admission_id!),
+    ])]
     if (admissionIds.length > 0) {
       const summaries = await listAdvanceSummariesBatch(admissionIds)
       setAdvanceSummaries(summaries)
@@ -580,7 +584,11 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       {viewMode === 'patient' && (() => {
         const todayStr = new Date().toISOString().split('T')[0]
         const isActiveToday = (g: PatientGroup) =>
-          g.totalOutstanding > 0 || allGroupBills(g).some(b => b.created_at.startsWith(todayStr))
+          g.totalOutstanding > 0 ||
+          g.pendingAdvance > 0 ||
+          g.advanceSummary?.admissionStatus === 'admitted' ||
+          allGroupBills(g).some(b => b.created_at.startsWith(todayStr)) ||
+          g.deposits.some(d => d.created_at.startsWith(todayStr))
         const todayGroups   = filteredGroups.filter(isActiveToday)
         const historyGroups = filteredGroups.filter(g => !isActiveToday(g))
         const sorted = [...todayGroups, ...historyGroups]
@@ -620,7 +628,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                   idx === 0 && todayGroups.length > 0 && (
                     <div key="__sec_today__" className="flex items-center justify-between px-1">
                       <span className="text-xs font-semibold uppercase tracking-widest"
-                        style={{ color: '#0D9488' }}>Today &amp; Active ({todayGroups.length})</span>
+                        style={{ color: '#0D9488' }}>Active ({todayGroups.length})</span>
                     </div>
                   ),
                   idx === historyStart && historyGroups.length > 0 && (

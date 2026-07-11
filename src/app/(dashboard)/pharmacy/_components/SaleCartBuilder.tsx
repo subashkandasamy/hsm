@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   ShoppingCart, Plus, Minus, Trash2, CheckCircle2,
   Search, Package, User2, CreditCard, Truck, Loader2, X, AlertCircle,
@@ -13,10 +13,10 @@ import {
   finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
 } from '@/app/actions/pharmacySale'
 import { checkBillStatus } from '@/app/actions/pharmacy'
-import type { Drug, Patient, PharmacySale } from '@/lib/types'
+import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
 
 interface Props {
-  drugs: Drug[]
+  drugs: DrugWithStock[]
   initialReadySales: PharmacySale[]
   allPatients?: Patient[]
 }
@@ -48,6 +48,23 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
   const [handingOver, setHandingOver]         = useState<Set<string>>(new Set())
   const [fulfillErrors, setFulfillErrors]     = useState<Map<string, string>>(new Map())
   const [globalSuccess, setGlobalSuccess]     = useState('')
+
+  // Restore any in-progress draft sale when navigating back to the page
+  useEffect(() => {
+    async function restoreDraft() {
+      if (activeSale) return
+      const drafts = await listPharmacySales({ status: 'draft' })
+      if (!drafts.length) return
+      const draft = drafts[0]
+      setActiveSale(draft)
+      if (draft.patient) {
+        setSelectedPatient(draft.patient as unknown as Patient)
+        setPatientQuery(draft.patient.full_name)
+      }
+    }
+    restoreDraft()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Auto-filter patients as user types
   const patientResults = useMemo(() => {
@@ -341,18 +358,40 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                   <p className="text-sm text-center py-6" style={{ color: '#94A3B8' }}>No items in cart yet</p>
                 ) : (
                   <div className="space-y-2">
-                    {activeSale.items?.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    {activeSale.items?.map((item) => {
+                      const refId = item.drug_id ?? item.drug_master_id ?? ''
+                      const stockDrug = drugs.find(d => d.id === refId)
+                      const location = stockDrug?.batches?.find(b => b.qty_available > 0)?.storage_location ?? null
+                      return (
+                      <div key={item.id} className="px-3 py-2.5 rounded-xl space-y-2"
                         style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
-                            {displayNameMap.get(item.drug_id) ?? item.drug?.name ?? 'Drug'}
-                          </p>
-                          <p className="text-xs" style={{ color: '#94A3B8' }}>
-                            ₹{item.unit_price}/unit
-                          </p>
+                        {/* Top row: name + price + delete */}
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: '#0F172A', wordBreak: 'break-word' }}>
+                              {displayNameMap.get(item.drug_id ?? item.drug_master_id ?? '') ?? (item.drug ?? item.master)?.name ?? 'Drug'}
+                            </p>
+                            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>₹{item.unit_price}/unit</p>
+                          </div>
+                          <Money amount={item.amount} className="text-sm font-semibold flex-shrink-0"
+                            style={{ color: '#0F172A' }} />
+                          <button onClick={() => removeItem(item.id)} disabled={cartPending}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg flex-shrink-0"
+                            style={{ color: '#DC2626', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1">
+                        {/* Bottom row: location pill + qty controls */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            {location && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-md inline-flex items-center gap-1"
+                                style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
+                                📍 {location}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => changeQty(item.id, item.qty - 1)} disabled={cartPending || item.qty <= 1}
                             className="w-7 h-7 flex items-center justify-center rounded-lg"
                             style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
@@ -364,16 +403,10 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                             style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
                             <Plus className="w-3 h-3" />
                           </button>
+                          </div>
                         </div>
-                        <Money amount={item.amount} className="text-sm font-semibold w-20 text-right"
-                          style={{ color: '#0F172A' }} />
-                        <button onClick={() => removeItem(item.id)} disabled={cartPending}
-                          className="w-7 h-7 flex items-center justify-center rounded-lg"
-                          style={{ color: '#DC2626', border: 'none', background: 'transparent', cursor: 'pointer' }}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
 
@@ -499,10 +532,10 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
                           <div key={item.id} className="flex items-center gap-3 pl-12 pr-4 py-2.5">
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
-                                {displayNameMap.get(item.drug_id) ?? item.drug?.name ?? 'Drug'}
+                                {displayNameMap.get(item.drug_id ?? item.drug_master_id ?? '') ?? (item.drug ?? item.master)?.name ?? 'Drug'}
                               </p>
-                              {item.drug?.strength && (
-                                <p className="text-xs" style={{ color: '#94A3B8' }}>{item.drug.strength}</p>
+                              {(item.drug ?? item.master)?.strength && (
+                                <p className="text-xs" style={{ color: '#94A3B8' }}>{(item.drug ?? item.master)?.strength}</p>
                               )}
                             </div>
                             <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"

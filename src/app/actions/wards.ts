@@ -5,9 +5,157 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { WardCreateSchema } from '@/lib/schemas'
-import type { Ward, Bed, BedStatus, WardWithBeds } from '@/lib/types'
+import type { Ward, Bed, BedStatus, WardWithBeds, WardRoomType } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+// ---- Room type catalog ----
+
+export async function listWardRoomTypes(): Promise<WardRoomType[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('ward_room_types')
+    .select('*')
+    .order('name')
+  return (data ?? []) as WardRoomType[]
+}
+
+export async function createWardRoomType(input: {
+  name: string
+  daily_rate: number
+  is_multi_bed: boolean
+}): Promise<{ success: true; roomType: WardRoomType } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+
+  const trimmed = input.name.trim()
+  if (!trimmed) return { success: false, error: 'Name is required' }
+  if (input.daily_rate < 0) return { success: false, error: 'Rate cannot be negative' }
+
+  const supabase = await createClient()
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('ward_room_types').insert({
+    id,
+    tenant_id: actor.tenant_id,
+    name: trimmed,
+    daily_rate: input.daily_rate,
+    is_multi_bed: input.is_multi_bed,
+  })
+  if (error) {
+    if (error.code === '23505') return { success: false, error: 'Room type already exists' }
+    return { success: false, error: error.message }
+  }
+
+  const { data } = await supabase.from('ward_room_types').select('*').eq('id', id).single()
+  return { success: true, roomType: data as WardRoomType }
+}
+
+export async function updateWardRoomType(
+  id: string,
+  input: { name: string; daily_rate: number }
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+
+  const trimmed = input.name.trim()
+  if (!trimmed) return { success: false, error: 'Name is required' }
+  if (input.daily_rate < 0) return { success: false, error: 'Rate cannot be negative' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('ward_room_types')
+    .update({ name: trimmed, daily_rate: input.daily_rate })
+    .eq('id', id)
+  if (error) {
+    if (error.code === '23505') return { success: false, error: 'Room type name already exists' }
+    return { success: false, error: error.message }
+  }
+
+  // Sync rate to all wards of this type
+  await supabase.from('wards').update({ daily_rate: input.daily_rate }).eq('room_type_id', id)
+
+  await logAudit(actor.id, 'update', 'ward_room_type', id, input as Record<string, unknown>)
+  return { success: true }
+}
+
+export async function updateWardRoomTypeRate(
+  id: string,
+  dailyRate: number
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  if (dailyRate < 0) return { success: false, error: 'Rate cannot be negative' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('ward_room_types')
+    .update({ daily_rate: dailyRate })
+    .eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  // Sync rate to all wards of this type so billing can still read ward.daily_rate
+  await supabase
+    .from('wards')
+    .update({ daily_rate: dailyRate })
+    .eq('room_type_id', id)
+
+  await logAudit(actor.id, 'update', 'ward_room_type_rate', id, { daily_rate: dailyRate })
+  return { success: true }
+}
+
+export async function deleteWard(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+
+  const supabase = await createClient()
+
+  const { data: occupied } = await supabase
+    .from('beds').select('id').eq('ward_id', id).eq('status', 'occupied').limit(1)
+  if (occupied && occupied.length > 0)
+    return { success: false, error: 'Cannot delete a ward with occupied beds' }
+
+  const { error } = await supabase.from('wards').delete().eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'delete', 'ward', id, {})
+  return { success: true }
+}
+
+export async function deleteWardRoomType(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+
+  const supabase = await createClient()
+
+  // Block if any bed in any room of this type is occupied
+  const { data: occupiedBeds } = await supabase
+    .from('beds')
+    .select('id, wards!inner(room_type_id)')
+    .eq('wards.room_type_id', id)
+    .eq('status', 'occupied')
+    .limit(1)
+
+  if (occupiedBeds && occupiedBeds.length > 0) {
+    return { success: false, error: 'Cannot delete: one or more rooms of this type have admitted patients.' }
+  }
+
+  // Delete all wards (rooms) of this type first
+  const { error: wardsErr } = await supabase.from('wards').delete().eq('room_type_id', id)
+  if (wardsErr) return { success: false, error: wardsErr.message }
+
+  const { error } = await supabase.from('ward_room_types').delete().eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'delete', 'ward_room_type', id, {})
+  return { success: true }
+}
+
+// ---- Ward / Room CRUD ----
 
 export async function createWard(
   input: Record<string, unknown>
@@ -19,16 +167,48 @@ export async function createWard(
   const parsed = WardCreateSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const id = crypto.randomUUID()
   const supabase = await createClient()
+
+  // Look up room type to get rate and is_multi_bed
+  let inheritedRate = parsed.data.daily_rate ?? 0
+  let isMultiBed = false
+  if (parsed.data.room_type_id) {
+    const { data: rt } = await supabase
+      .from('ward_room_types')
+      .select('daily_rate, is_multi_bed')
+      .eq('id', parsed.data.room_type_id)
+      .single()
+    if (rt) {
+      inheritedRate = rt.daily_rate as number
+      isMultiBed = rt.is_multi_bed as boolean
+    }
+  }
+
+  const id = crypto.randomUUID()
   const { error } = await supabase.from('wards').insert({
     id,
     tenant_id: actor.tenant_id,
     name: parsed.data.name,
     ward_type: parsed.data.ward_type ?? null,
+    room_type_id: parsed.data.room_type_id ?? null,
+    floor: parsed.data.floor ?? null,
+    block: parsed.data.block ?? null,
     department_id: parsed.data.department_id ?? null,
+    is_temp: parsed.data.is_temp ?? false,
+    daily_rate: inheritedRate,
   })
   if (error) return { success: false, error: error.message }
+
+  // Private single-room: auto-create 1 bed so the room can be admitted to
+  if (!isMultiBed && !parsed.data.is_temp) {
+    await supabase.from('beds').insert({
+      id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
+      ward_id: id,
+      bed_no: '1',
+      status: 'available' as BedStatus,
+    })
+  }
 
   await logAudit(actor.id, 'create', 'ward', id, { name: parsed.data.name })
 
@@ -52,6 +232,50 @@ export async function updateWard(
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'update', 'ward', id, parsed.data as Record<string, unknown>)
+  return { success: true }
+}
+
+export async function updateWardDetails(
+  id: string,
+  input: { name: string; room_type_id: string | null; floor: string | null; block: string | null }
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+
+  const supabase = await createClient()
+
+  // If room_type changed, sync daily_rate
+  let dailyRateUpdate: number | undefined
+  if (input.room_type_id) {
+    const { data: rt } = await supabase
+      .from('ward_room_types').select('daily_rate').eq('id', input.room_type_id).single()
+    if (rt) dailyRateUpdate = rt.daily_rate as number
+  }
+
+  const { error } = await supabase.from('wards').update({
+    name: input.name,
+    room_type_id: input.room_type_id,
+    floor: input.floor,
+    block: input.block,
+    ...(dailyRateUpdate !== undefined ? { daily_rate: dailyRateUpdate } : {}),
+  }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'ward', id, input as Record<string, unknown>)
+  return { success: true }
+}
+
+// Kept for the inline rate edit on ward cards (per-room override)
+export async function updateWardRate(wardId: string, dailyRate: number): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  if (dailyRate < 0) return { success: false, error: 'Rate cannot be negative' }
+  const supabase = await createClient()
+  const { error } = await supabase.from('wards').update({ daily_rate: dailyRate }).eq('id', wardId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'ward_rate', wardId, { daily_rate: dailyRate })
   return { success: true }
 }
 
@@ -94,7 +318,7 @@ export async function setBedStatus(
     .from('beds')
     .update({ status })
     .eq('id', bedId)
-    .neq('status', 'occupied')   // cannot manually override an occupied bed
+    .neq('status', 'occupied')
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'set_bed_status', 'bed', bedId, { status })
@@ -118,11 +342,13 @@ export async function listAvailableBeds(wardId?: string): Promise<Bed[]> {
 export async function getWardBoard(): Promise<WardWithBeds[]> {
   const supabase = await createClient()
 
-  // Fetch wards
-  const { data: wards } = await supabase.from('wards').select('*').order('name')
+  const { data: wards } = await supabase
+    .from('wards')
+    .select('*, room_type_data:ward_room_types(id, name, daily_rate, is_multi_bed)')
+    .order('name')
   if (!wards?.length) return []
 
-  // Fetch beds with current admission info via a join
+  // Fetch beds with current admission info
   const { data: bedsRaw } = await supabase
     .from('beds')
     .select(`
@@ -134,7 +360,6 @@ export async function getWardBoard(): Promise<WardWithBeds[]> {
     `)
     .order('bed_no')
 
-  // Group beds by ward, flatten admission info
   const bedsByWard = new Map<string, WardWithBeds['beds']>()
   for (const b of (bedsRaw ?? [])) {
     const admissions = (b as Record<string, unknown>).admissions as Array<{
@@ -160,8 +385,10 @@ export async function getWardBoard(): Promise<WardWithBeds[]> {
     bedsByWard.set(b.ward_id, list)
   }
 
-  return wards.map((w) => ({
-    ...(w as Ward),
-    beds: bedsByWard.get(w.id) ?? [],
-  }))
+  return wards.map((w) => {
+    const ward = w as Ward & { room_type_data: WardWithBeds['room_type_data'] }
+    const allBeds = bedsByWard.get(w.id) ?? []
+    const beds = ward.is_temp ? allBeds.filter(b => b.status === 'occupied') : allBeds
+    return { ...ward, beds }
+  })
 }

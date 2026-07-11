@@ -1,24 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Settings, Scissors } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronLeft, ChevronRight, RefreshCw, Scissors } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import EmptyState from '@/components/ui/EmptyState'
+import Select from '@/components/ui/Select'
 import { listSchedules } from '@/app/actions/ot'
 import type { OtRoom, OtSchedule, Profile } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import ScheduleModal from './ScheduleModal'
-import ScheduleDetailModal from './ScheduleDetailModal'
-import RoomModal from './RoomModal'
 
-const STATUS_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  scheduled:   { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },
-  in_progress: { bg: '#FEF3C7', border: '#FDE68A', text: '#B45309' },
-  completed:   { bg: '#DCFCE7', border: '#BBF7D0', text: '#15803D' },
-  cancelled:   { bg: '#F1F5F9', border: '#E2E8F0', text: '#94A3B8' },
+const STATUS_MAP: Record<string, string> = {
+  scheduled: 'pending', in_progress: 'info', completed: 'success', cancelled: 'cancelled',
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  scheduled: '#BFDBFE', in_progress: '#FDE68A', completed: '#BBF7D0', cancelled: '#E2E8F0',
 }
 
 interface Props {
@@ -31,11 +31,9 @@ interface Props {
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })
 }
-
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
-
 function addDays(dateStr: string, n: number) {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + n)
@@ -43,22 +41,23 @@ function addDays(dateStr: string, n: number) {
 }
 
 export default function OtClient({ initialSchedules, rooms: initRooms, doctors, initialDate }: Props) {
+  const router = useRouter()
   const { profile } = useAuth()
-  const role = profile?.role
-  const canSchedule = !!role && hasPermission(role, 'ot:schedule')
-  const canManage   = !!role && hasPermission(role, 'ot:manage')
+  const canManage = !!profile && hasPermission(profile.role, 'ot:manage')
 
-  const [date, setDate] = useState(initialDate)
+  const [tab, setTab]         = useState<'active' | 'history'>('active')
+  const [date, setDate]       = useState(initialDate)
   const [schedules, setSchedules] = useState<OtSchedule[]>(initialSchedules)
-  const [rooms, setRooms] = useState<OtRoom[]>(initRooms)
+  const [rooms]               = useState<OtRoom[]>(initRooms)
   const [loading, setLoading] = useState(false)
-  const [showSchedule, setShowSchedule] = useState(false)
-  const [showRoom, setShowRoom] = useState(false)
-  const [detailId, setDetailId] = useState<string | null>(null)
 
-  async function loadDay(d: string) {
+  // Client-side filters
+  const [filterRoom, setFilterRoom]     = useState('')
+  const [filterDoctor, setFilterDoctor] = useState('')
+
+  async function loadDay(d: string, t: 'active' | 'history' = tab) {
     setLoading(true)
-    const s = await listSchedules({ date: d })
+    const s = await listSchedules({ date: d, tab: t })
     setSchedules(s)
     setLoading(false)
   }
@@ -69,7 +68,16 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
     loadDay(next)
   }
 
+  function switchTab(t: 'active' | 'history') {
+    setTab(t)
+    loadDay(date, t)
+  }
+
   const isToday = date === new Date().toISOString().split('T')[0]
+
+  const filtered = schedules
+    .filter(s => !filterRoom   || s.ot_room_id === filterRoom)
+    .filter(s => !filterDoctor || s.surgeon_id === filterDoctor)
 
   return (
     <div>
@@ -77,33 +85,15 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
         title="Operation Theatre"
         subtitle="Surgical scheduling and theatre management"
         action={
-          <div className="flex items-center gap-2">
-            <button onClick={() => loadDay(date)} className="p-2 rounded-xl"
-              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            {canManage && (
-              <button onClick={() => setShowRoom(true)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium"
-                style={{ background: 'rgba(255,255,255,0.8)', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                <Settings className="w-4 h-4" /> Rooms ({rooms.length})
-              </button>
-            )}
-            {canSchedule && (
-              <button onClick={() => setShowSchedule(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}>
-                <Plus className="w-4 h-4" /> Schedule Surgery
-              </button>
-            )}
-          </div>
+          <button onClick={() => loadDay(date)} className="p-2 rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         }
       />
 
       {/* Date navigator */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-4">
         <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg"
           style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
           <ChevronLeft className="w-4 h-4" style={{ color: '#64748B' }} />
@@ -122,112 +112,88 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
         )}
       </div>
 
-      {rooms.length === 0 ? (
-        <GlassCard className="p-6">
-          <EmptyState title="No OT rooms configured"
-            description={canManage ? 'Use the Rooms button to add theatres first.' : 'Ask an admin to configure OT rooms.'}
-            icon={<Scissors className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0', width: 'fit-content' }}>
+        {(['active', 'history'] as const).map(t => (
+          <button key={t} onClick={() => switchTab(t)}
+            className="px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all"
+            style={{
+              background: tab === t ? '#0D9488' : 'transparent',
+              color: tab === t ? '#fff' : '#64748B',
+              border: 'none', cursor: 'pointer',
+            }}>
+            {t === 'active' ? 'Active' : 'History'}
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <div style={{ minWidth: '10rem', flex: '1 1 10rem', maxWidth: '14rem' }}>
+          <Select value={filterRoom} onChange={e => setFilterRoom(e.target.value)}>
+            <option value="">All Rooms</option>
+            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </Select>
+        </div>
+        <div style={{ minWidth: '10rem', flex: '1 1 10rem', maxWidth: '14rem' }}>
+          <Select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}>
+            <option value="">All Surgeons</option>
+            {doctors.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      {/* Schedule list */}
+      {filtered.length === 0 ? (
+        <GlassCard className="p-8">
+          <EmptyState
+            title={tab === 'active' ? 'No active surgeries' : 'No history for this day'}
+            description={tab === 'active' ? 'Schedule surgeries from the patient\'s IPD admission page.' : 'Completed and cancelled surgeries will appear here.'}
+            icon={<Scissors className="w-6 h-6" style={{ color: '#94A3B8' }} />}
+          />
         </GlassCard>
       ) : (
-        <div className="space-y-4">
-          {rooms.map((room) => {
-            const roomSchedules = schedules
-              .filter((s) => s.ot_room_id === room.id && s.status !== 'cancelled')
-              .sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start))
-            return (
-              <GlassCard key={room.id} className="overflow-hidden">
-                <div className="px-5 py-3 flex items-center justify-between"
-                  style={{ background: 'rgba(248,250,252,0.9)', borderBottom: '1px solid #E2E8F0' }}>
-                  <h3 className="font-semibold text-sm flex items-center gap-2" style={{ color: '#0F172A' }}>
-                    <Scissors className="w-4 h-4" style={{ color: '#0D9488' }} />
-                    {room.name}
-                  </h3>
-                  <span className="text-xs" style={{ color: '#94A3B8' }}>
-                    {roomSchedules.length} procedure{roomSchedules.length !== 1 ? 's' : ''}
-                  </span>
+        <GlassCard className="overflow-hidden">
+          <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+            {filtered.map(s => (
+              <button key={s.id} onClick={() => router.push(`/ot/${s.id}`)}
+                className="w-full text-left px-5 py-4 flex items-start gap-4"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,148,136,0.04)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+
+                {/* Color bar */}
+                <div className="w-1 self-stretch rounded-full flex-shrink-0 mt-0.5"
+                  style={{ background: STATUS_COLORS[s.status] ?? '#E2E8F0' }} />
+
+                {/* Time */}
+                <div className="flex-shrink-0 w-20 text-right">
+                  <p className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtTime(s.scheduled_start)}</p>
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>{fmtTime(s.scheduled_end)}</p>
                 </div>
-                {roomSchedules.length === 0 ? (
-                  <div className="px-5 py-6 text-center">
-                    <p className="text-sm" style={{ color: '#94A3B8' }}>No procedures scheduled</p>
-                  </div>
-                ) : (
-                  <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-                    {roomSchedules.map((s) => {
-                      const sc = STATUS_COLORS[s.status] ?? STATUS_COLORS.scheduled
-                      return (
-                        <button key={s.id} onClick={() => setDetailId(s.id)}
-                          className="w-full text-left px-5 py-3.5 flex items-start gap-4"
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.04)' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                          {/* Time block */}
-                          <div className="flex-shrink-0 text-right w-24">
-                            <p className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtTime(s.scheduled_start)}</p>
-                            <p className="text-xs" style={{ color: '#94A3B8' }}>{fmtTime(s.scheduled_end)}</p>
-                          </div>
-                          {/* Color bar */}
-                          <div className="w-1 self-stretch rounded-full flex-shrink-0"
-                            style={{ background: sc.border }} />
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{s.procedure_name}</p>
-                              <span className="text-xs px-2 py-0.5 rounded-lg font-medium"
-                                style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
-                                {s.status.replace('_', ' ')}
-                              </span>
-                            </div>
-                            <p className="text-xs mt-0.5" style={{ color: '#475569' }}>
-                              {s.patient?.full_name} · <span className="font-mono">{s.patient?.uhid}</span>
-                            </p>
-                            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
-                              Surgeon: {s.surgeon?.full_name}
-                              {s.anaesthetist && ` · Anaest: ${s.anaesthetist.full_name}`}
-                            </p>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </GlassCard>
-            )
-          })}
 
-          {/* Cancelled schedules summary */}
-          {schedules.filter((s) => s.status === 'cancelled').length > 0 && (
-            <p className="text-xs text-center" style={{ color: '#94A3B8' }}>
-              {schedules.filter((s) => s.status === 'cancelled').length} cancelled procedure(s) hidden
-            </p>
-          )}
-        </div>
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{s.procedure_name}</p>
+                    <StatusBadge status={STATUS_MAP[s.status] ?? 'pending'} label={s.status.replace('_', ' ')} />
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: '#475569' }}>
+                    {s.patient?.full_name}
+                    {s.patient?.uhid && <span className="font-mono ml-1.5" style={{ color: '#94A3B8' }}>{s.patient.uhid}</span>}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                    Surgeon: {s.surgeon?.full_name ?? '—'}
+                    {s.anaesthetist && <> · Anaest: {s.anaesthetist.full_name}</>}
+                    {s.room && <> · <span style={{ color: '#0D9488' }}>{s.room.name}</span></>}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </GlassCard>
       )}
 
-      <ScheduleModal
-        open={showSchedule}
-        onClose={() => setShowSchedule(false)}
-        rooms={rooms}
-        doctors={doctors}
-        defaultDate={date}
-        onSuccess={() => { setShowSchedule(false); loadDay(date) }}
-      />
-
-      <RoomModal
-        open={showRoom}
-        onClose={() => setShowRoom(false)}
-        onSuccess={(newRooms) => { setRooms(newRooms); setShowRoom(false) }}
-      />
-
-      {detailId && (
-        <ScheduleDetailModal
-          open={true}
-          scheduleId={detailId}
-          rooms={rooms}
-          doctors={doctors}
-          onClose={() => setDetailId(null)}
-          onSuccess={() => { setDetailId(null); loadDay(date) }}
-        />
-      )}
     </div>
   )
 }

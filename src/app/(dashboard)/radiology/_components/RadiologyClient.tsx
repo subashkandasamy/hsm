@@ -232,7 +232,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
 
       <AddRadiologyTestModal
         open={showAddTest}
-        onClose={() => setShowAddTest(false)}
+        onClose={() => { setShowAddTest(false); refresh() }}
         onSuccess={() => { setShowAddTest(false); refresh() }}
       />
     </div>

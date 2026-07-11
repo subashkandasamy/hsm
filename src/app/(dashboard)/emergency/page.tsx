@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listEmergencyCases } from '@/app/actions/emergency'
 import { getWardBoard } from '@/app/actions/wards'
 import { createClient } from '@/lib/supabase/server'
@@ -20,6 +21,10 @@ export default async function EmergencyPage() {
   const wardOptions = board.map(w => ({
     id: w.id,
     name: w.name,
+    is_temp: w.is_temp,
+    is_multi_bed: w.room_type_data?.is_multi_bed ?? false,
+    room_type_id: w.room_type_data?.id ?? null,
+    room_type_name: w.room_type_data?.name ?? null,
     availableBeds: w.beds.filter(b => b.status === 'available'),
   }))
 

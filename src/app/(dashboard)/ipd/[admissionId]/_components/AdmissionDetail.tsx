@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer,
-  Pill, IndianRupee, Stethoscope,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -20,6 +20,7 @@ import Money from '@/components/ui/Money'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient, updateDischargeSummary } from '@/app/actions/ipd'
+import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
@@ -30,6 +31,7 @@ import NursingPanel from './NursingPanel'
 import type {
   Admission, IpdProgressNote, Vitals,
   AdvanceDepositRequest, AdmissionNurseAssignment,
+  OtSchedule, Profile, ProcedureTariff,
 } from '@/lib/types'
 
 function daysAdmitted(admittedAt: string): number {
@@ -52,11 +54,29 @@ interface Props {
   today: string
   depositStatus: AdvanceDepositRequest | null
   todayAssignments: AdmissionNurseAssignment[]
+  otDoctors: Pick<Profile, 'id' | 'full_name' | 'role'>[]
+  otTariffs: ProcedureTariff[]
+  initialOtSchedules: OtSchedule[]
+}
+
+const OT_STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  scheduled:   { bg: '#EFF6FF', text: '#1D4ED8', border: '#BFDBFE' },
+  in_progress: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
+  completed:   { bg: '#DCFCE7', text: '#15803D', border: '#BBF7D0' },
+  cancelled:   { bg: '#F1F5F9', text: '#94A3B8', border: '#E2E8F0' },
+}
+
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+function fmtDateShort(iso: string) {
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function AdmissionDetail({
   admission, initialNotes, availableWards,
   nurses, today, depositStatus, todayAssignments,
+  otDoctors, otTariffs, initialOtSchedules,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -74,6 +94,10 @@ export default function AdmissionDetail({
   const [vitals, setVitals] = useState<Vitals>({})
   const [noteSaving, setNoteSaving] = useState(false)
   const [noteError, setNoteError] = useState<string | null>(null)
+
+  // OT Schedules
+  const [otSchedules, setOtSchedules] = useState<OtSchedule[]>(initialOtSchedules)
+  const [showScheduleOt, setShowScheduleOt] = useState(false)
 
   // Transfer
   const [showWristband, setShowWristband] = useState(false)
@@ -93,6 +117,7 @@ export default function AdmissionDetail({
   const [showBillBuilder, setShowBillBuilder] = useState(false)
 
   // Edit discharge summary after discharge
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [editingSummary, setEditingSummary] = useState(false)
   const [editedSummary, setEditedSummary] = useState(adm.discharge_summary ?? '')
   const [summaryUpdating, setSummaryUpdating] = useState(false)
@@ -184,8 +209,8 @@ export default function AdmissionDetail({
 
       {/* Header card */}
       <GlassCard className="p-5 mb-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{ background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.2)' }}>
               <User className="w-6 h-6" style={{ color: '#0D9488' }} />
@@ -223,24 +248,24 @@ export default function AdmissionDetail({
                 )}
               </div>
 
-              <div className="flex items-center gap-4 mt-1.5 text-sm flex-wrap" style={{ color: '#475569' }}>
-                <span className="flex items-center gap-1">
-                  <BedDouble className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-x-4 gap-y-1 mt-1.5 text-sm flex-wrap" style={{ color: '#475569' }}>
+                <span className="flex items-center gap-1 whitespace-nowrap">
+                  <BedDouble className="w-3.5 h-3.5 flex-shrink-0" />
                   {adm.ward?.name} — Bed {adm.bed?.bed_no}
                 </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" />
+                <span className="flex items-center gap-1 whitespace-nowrap">
+                  <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                   Admitted <DateText date={adm.admitted_at} />
                 </span>
                 {adm.status === 'admitted' && (
-                  <span className="flex items-center gap-1 font-semibold" style={{ color: '#0D9488' }}>
-                    <Clock className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-1 font-semibold whitespace-nowrap" style={{ color: '#0D9488' }}>
+                    <Clock className="w-3.5 h-3.5 flex-shrink-0" />
                     Day {days}
                   </span>
                 )}
                 {adm.status === 'discharged' && adm.discharged_at && (
-                  <span className="flex items-center gap-1">
-                    <LogOut className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-1 whitespace-nowrap">
+                    <LogOut className="w-3.5 h-3.5 flex-shrink-0" />
                     Discharged <DateText date={adm.discharged_at} />
                   </span>
                 )}
@@ -253,7 +278,7 @@ export default function AdmissionDetail({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap" style={{ minWidth: 0 }}>
             <button
               onClick={() => window.open(`/print/ipd/${adm.id}`, '_blank')}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
@@ -277,6 +302,11 @@ export default function AdmissionDetail({
                     <Printer className="w-4 h-4" /> Wristband
                   </button>
                 )}
+                <button onClick={() => setShowScheduleOt(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                  style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
+                  <Scissors className="w-4 h-4" /> Schedule Surgery
+                </button>
                 <button onClick={() => setShowTransfer(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
@@ -295,49 +325,69 @@ export default function AdmissionDetail({
         </div>
 
         {adm.status === 'discharged' && (
-          <div className="mt-4 p-3 rounded-xl text-sm"
-            style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-            <div className="flex items-center justify-between mb-1">
-              <p className="font-semibold" style={{ color: '#15803D' }}>Discharge Summary</p>
-              {canWrite && !editingSummary && (
-                <button onClick={() => { setEditedSummary(adm.discharge_summary ?? ''); setEditingSummary(true) }}
-                  className="text-xs px-2 py-1 rounded-lg font-medium"
-                  style={{ background: '#fff', color: '#0D9488', border: '1px solid #0D9488', cursor: 'pointer' }}>
-                  Edit
-                </button>
-              )}
-            </div>
-            {editingSummary ? (
-              <div>
-                <div className="relative">
-                  <textarea value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} rows={4}
-                    className="w-full text-sm rounded-lg p-2 border"
-                    style={{ borderColor: '#BBF7D0', color: '#0F172A', resize: 'vertical', fontFamily: 'inherit', paddingRight: speechSummary.supported ? '2.25rem' : undefined }} />
-                  {speechSummary.supported && (
-                    <div className="absolute top-2 right-2">
-                      <MicButton listening={speechSummary.listening} onToggle={speechSummary.toggle} />
-                    </div>
-                  )}
-                </div>
-                {speechSummary.interim && (
-                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechSummary.interim}…</p>
+          <div className="mt-4 rounded-xl text-sm overflow-hidden"
+            style={{ border: '1px solid #BBF7D0' }}>
+            {/* Collapsible header */}
+            <button
+              onClick={() => { if (editingSummary) return; setSummaryExpanded(e => !e) }}
+              className="w-full flex items-center justify-between px-3 py-2.5"
+              style={{ background: '#F0FDF4', cursor: 'pointer', border: 'none', textAlign: 'left' }}>
+              <span className="font-semibold" style={{ color: '#15803D' }}>Discharge Summary</span>
+              <div className="flex items-center gap-2">
+                {canWrite && !editingSummary && summaryExpanded && (
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); setEditedSummary(adm.discharge_summary ?? ''); setEditingSummary(true); setSummaryExpanded(true) }}
+                    className="text-xs px-2 py-0.5 rounded-lg font-medium"
+                    style={{ background: '#fff', color: '#0D9488', border: '1px solid #0D9488', cursor: 'pointer' }}>
+                    Edit
+                  </span>
                 )}
-                {summaryError && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{summaryError}</p>}
-                <div className="flex gap-2 mt-2">
-                  <button onClick={handleUpdateSummary} disabled={summaryUpdating}
-                    className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                    style={{ background: '#15803D', color: '#fff', cursor: summaryUpdating ? 'not-allowed' : 'pointer', opacity: summaryUpdating ? 0.6 : 1 }}>
-                    {summaryUpdating ? 'Saving…' : 'Save'}
-                  </button>
-                  <button onClick={() => setEditingSummary(false)}
-                    className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                    style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                    Cancel
-                  </button>
-                </div>
+                {summaryExpanded
+                  ? <ChevronUp className="w-4 h-4 flex-shrink-0" style={{ color: '#15803D' }} />
+                  : <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: '#15803D' }} />
+                }
               </div>
-            ) : (
-              <p style={{ whiteSpace: 'pre-wrap', color: '#15803D' }}>{adm.discharge_summary || <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>No summary recorded</span>}</p>
+            </button>
+
+            {/* Expandable body */}
+            {summaryExpanded && (
+              <div className="px-3 py-3" style={{ background: '#F0FDF4', borderTop: '1px solid #BBF7D0' }}>
+                {editingSummary ? (
+                  <div>
+                    <div className="relative">
+                      <textarea value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} rows={6}
+                        className="w-full text-sm rounded-lg p-2 border"
+                        style={{ borderColor: '#BBF7D0', color: '#0F172A', resize: 'vertical', fontFamily: 'inherit', paddingRight: speechSummary.supported ? '2.25rem' : undefined }} />
+                      {speechSummary.supported && (
+                        <div className="absolute top-2 right-2">
+                          <MicButton listening={speechSummary.listening} onToggle={speechSummary.toggle} />
+                        </div>
+                      )}
+                    </div>
+                    {speechSummary.interim && (
+                      <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechSummary.interim}…</p>
+                    )}
+                    {summaryError && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{summaryError}</p>}
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={handleUpdateSummary} disabled={summaryUpdating}
+                        className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                        style={{ background: '#15803D', color: '#fff', cursor: summaryUpdating ? 'not-allowed' : 'pointer', opacity: summaryUpdating ? 0.6 : 1 }}>
+                        {summaryUpdating ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditingSummary(false)}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                        style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ whiteSpace: 'pre-wrap', color: '#15803D' }}>
+                    {adm.discharge_summary || <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>No summary recorded</span>}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -469,6 +519,43 @@ export default function AdmissionDetail({
             </div>
           </GlassCard>
 
+          {/* Surgeries */}
+          {otSchedules.length > 0 && (
+            <GlassCard className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Scissors className="w-4 h-4" style={{ color: '#0D9488' }} />
+                <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Surgeries</h2>
+              </div>
+              <div className="space-y-2">
+                {otSchedules.map(s => {
+                  const sc = OT_STATUS_COLORS[s.status] ?? OT_STATUS_COLORS.scheduled
+                  return (
+                    <a key={s.id} href={`/ot/${s.id}`}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                      style={{ background: sc.bg, border: `1px solid ${sc.border}`, textDecoration: 'none' }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{s.procedure_name}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#475569' }}>
+                          {fmtDateShort(s.scheduled_start)} · {fmtTime(s.scheduled_start)} – {fmtTime(s.scheduled_end)}
+                          {s.room && <> · <span style={{ color: '#0D9488' }}>{s.room.name}</span></>}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {s.price_snapshot > 0 && (
+                          <Money amount={s.price_snapshot} className="text-xs font-semibold" style={{ color: '#0D9488' }} />
+                        )}
+                        <span className="text-xs px-2 py-0.5 rounded-lg font-medium"
+                          style={{ background: sc.border, color: sc.text }}>
+                          {s.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </a>
+                  )
+                })}
+              </div>
+            </GlassCard>
+          )}
+
           {/* Add note form */}
           {!isClosed && canNote && (
             <GlassCard className="p-4">
@@ -560,6 +647,7 @@ export default function AdmissionDetail({
           )}
         </div>
       )}
+
 
       {/* ── Treatment tab ── */}
       {activeTab === 'treatment' && (
@@ -693,6 +781,28 @@ export default function AdmissionDetail({
           onClose={() => setShowWristband(false)}
         />
       )}
+
+      {/* Schedule Surgery modal — patient pre-filled from IPD admission */}
+      <ScheduleModal
+        open={showScheduleOt}
+        onClose={() => setShowScheduleOt(false)}
+        doctors={otDoctors}
+        tariffs={otTariffs}
+        defaultDate={today}
+        admission={{
+          id: adm.id,
+          patient_id: adm.patient_id,
+          patient: adm.patient as { id: string; full_name: string; uhid: string } | undefined,
+        }}
+        onSuccess={(scheduleId?: string) => {
+          setShowScheduleOt(false)
+          // Refresh OT schedules list after scheduling
+          import('@/app/actions/ot').then(m =>
+            m.listAdmissionSchedules(adm.id).then(setOtSchedules)
+          )
+          void scheduleId
+        }}
+      />
     </div>
   )
 }

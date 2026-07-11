@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { UserPlus, Search, ScanBarcode } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
-import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import { searchPatients } from '@/app/actions/patients'
@@ -24,6 +23,26 @@ function computeAge(dob: string | null): string {
     (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
   ) age--
   return `${age}y`
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(' ').filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0][0].toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+const AVATAR_COLORS = [
+  { bg: 'rgba(13,148,136,0.12)', color: '#0D9488' },
+  { bg: 'rgba(59,130,246,0.12)', color: '#2563EB' },
+  { bg: 'rgba(139,92,246,0.12)', color: '#7C3AED' },
+  { bg: 'rgba(236,72,153,0.12)', color: '#DB2777' },
+  { bg: 'rgba(245,158,11,0.12)', color: '#D97706' },
+]
+
+function avatarColor(name: string) {
+  const idx = name.charCodeAt(0) % AVATAR_COLORS.length
+  return AVATAR_COLORS[idx]
 }
 
 interface Props { initialPatients: Patient[] }
@@ -71,7 +90,7 @@ export default function PatientsClient({ initialPatients }: Props) {
         }
       />
 
-      {/* Search — full-width on mobile */}
+      {/* Search */}
       <div className="mb-4 relative w-full md:max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
         <input
@@ -89,94 +108,123 @@ export default function PatientsClient({ initialPatients }: Props) {
         )}
       </div>
 
-      <GlassCard className="overflow-hidden">
-        {patients.length === 0 ? (
+      {patients.length === 0 ? (
+        <GlassCard>
           <EmptyState title="No patients found"
             description={query ? 'Try a different search term.' : 'Register the first patient to get started.'} />
-        ) : (
-          <>
-            {/* ── MOBILE CARDS (< md) ── */}
-            <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {patients.map((p) => (
-                <div key={p.id} className="flex items-center"
-                  style={{ borderBottom: '1px solid #F1F5F9' }}>
+        </GlassCard>
+      ) : (
+        <>
+          {/* ── MOBILE CARDS (< md) ── */}
+          <div className="md:hidden space-y-2">
+            {patients.map((p) => {
+              const av = avatarColor(p.full_name)
+              const initials = getInitials(p.full_name)
+              return (
+                <div key={p.id} className="flex items-center rounded-2xl overflow-hidden"
+                  style={{ background: 'rgba(255,255,255,0.92)', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                   <button onClick={() => router.push(`/patients/${p.id}`)}
-                    className="flex-1 text-left px-4 py-3.5"
+                    className="flex-1 min-w-0 text-left flex items-center gap-3 px-3.5 py-3"
                     style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{p.full_name}</p>
-                      <span className="font-mono text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
-                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                    {/* Avatar */}
+                    <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold"
+                      style={{ background: av.bg, color: av.color }}>
+                      {initials}
                     </div>
-                    <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: '#64748B' }}>
-                      {p.gender && <span className="capitalize">{p.gender}</span>}
-                      <span>{computeAge(p.dob)}</span>
-                      {p.phone && <span>{p.phone}</span>}
-                      <DateText date={p.created_at} />
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{p.full_name}</p>
+                        <span className="font-mono text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+                          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 text-xs flex-wrap" style={{ color: '#64748B' }}>
+                        {p.gender && <span className="capitalize">{p.gender}</span>}
+                        {p.dob && <span>{computeAge(p.dob)}</span>}
+                        {p.phone && <span>{p.phone}</span>}
+                        {!p.phone && <DateText date={p.created_at} />}
+                      </div>
                     </div>
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setBarcodePatient(p) }}
-                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl mx-2"
+                    className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl mx-2.5"
                     style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}
                     title="View barcode / Print ID card"
                   >
                     <ScanBarcode className="w-4 h-4" />
                   </button>
                 </div>
-              ))}
-            </div>
+              )
+            })}
+          </div>
 
-            {/* ── DESKTOP TABLE (md+) ── */}
-            <table className="hidden md:table w-full text-sm">
+          {/* ── DESKTOP TABLE (md+) ── */}
+          <GlassCard className="hidden md:block overflow-hidden">
+            <table className="w-full text-sm">
               <thead>
-                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '1px solid #E2E8F0' }}>
-                  {['UHID', 'Name', 'Age', 'Gender', 'Phone', 'Registered'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: '#475569' }}>{h}</th>
+                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '2px solid #E2E8F0' }}>
+                  <th className="px-4 py-3.5 w-10" />
+                  {['UHID', 'Name', 'Age', 'Gender', 'Phone', 'Registered', ''].map((h) => (
+                    <th key={h} className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wide" style={{ color: '#64748B' }}>{h}</th>
                   ))}
-                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {patients.map((p, i) => (
-                  <tr key={p.id} onClick={() => router.push(`/patients/${p.id}`)}
-                    style={{ borderBottom: i < patients.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.7)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs px-2 py-0.5 rounded-lg"
-                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
-                    </td>
-                    <td className="px-4 py-3 font-medium" style={{ color: '#0F172A' }}>{p.full_name}</td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}>{computeAge(p.dob)}</td>
-                    <td className="px-4 py-3">
-                      {p.gender
-                        ? <StatusBadge status={p.gender === 'male' ? 'info' : p.gender === 'female' ? 'success' : 'pending'}
-                            label={p.gender.charAt(0).toUpperCase() + p.gender.slice(1)} />
-                        : <span style={{ color: '#94A3B8' }}>—</span>}
-                    </td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}>{p.phone}</td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}><DateText date={p.created_at} /></td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setBarcodePatient(p) }}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium"
-                        style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}
-                        onMouseEnter={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
-                        onMouseLeave={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
-                        title="View barcode / Print ID card"
-                      >
-                        <ScanBarcode className="w-3.5 h-3.5" />
-                        ID Card
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {patients.map((p, i) => {
+                  const av = avatarColor(p.full_name)
+                  return (
+                    <tr key={p.id} onClick={() => router.push(`/patients/${p.id}`)}
+                      style={{ borderBottom: i < patients.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.02)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                      <td className="px-4 py-3.5">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold"
+                          style={{ background: av.bg, color: av.color }}>
+                          {getInitials(p.full_name)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono text-xs px-2 py-0.5 rounded-lg"
+                          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                      </td>
+                      <td className="px-4 py-3.5 font-medium" style={{ color: '#0F172A' }}>{p.full_name}</td>
+                      <td className="px-4 py-3.5" style={{ color: '#475569' }}>{computeAge(p.dob)}</td>
+                      <td className="px-4 py-3.5">
+                        {p.gender ? (
+                          <span className="capitalize text-xs px-2 py-0.5 rounded-lg"
+                            style={p.gender === 'male'
+                              ? { background: '#DBEAFE', color: '#1D4ED8' }
+                              : p.gender === 'female'
+                              ? { background: '#FCE7F3', color: '#9D174D' }
+                              : { background: '#F1F5F9', color: '#64748B' }}>
+                            {p.gender}
+                          </span>
+                        ) : <span style={{ color: '#94A3B8' }}>—</span>}
+                      </td>
+                      <td className="px-4 py-3.5" style={{ color: '#475569' }}>{p.phone ?? <span style={{ color: '#94A3B8' }}>—</span>}</td>
+                      <td className="px-4 py-3.5" style={{ color: '#64748B' }}><DateText date={p.created_at} /></td>
+                      <td className="px-4 py-3.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setBarcodePatient(p) }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}
+                          onMouseEnter={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.15)' }}
+                          onMouseLeave={(ev) => { ev.currentTarget.style.background = 'rgba(13,148,136,0.08)' }}
+                          title="View barcode / Print ID card"
+                        >
+                          <ScanBarcode className="w-3.5 h-3.5" />
+                          ID Card
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
-          </>
-        )}
-      </GlassCard>
+          </GlassCard>
+        </>
+      )}
 
       <RegisterModal
         open={showRegister}

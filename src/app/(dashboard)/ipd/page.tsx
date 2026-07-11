@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listAdmissions } from '@/app/actions/ipd'
 import { listWards } from '@/app/actions/wards'
 import { generateMissingDailyCharges } from '@/app/actions/billing'

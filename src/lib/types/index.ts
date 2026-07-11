@@ -138,22 +138,32 @@ export interface Visit {
 // ---- Phase 2 ----
 
 export type BedStatus = 'available' | 'occupied' | 'maintenance'
-export interface Ward { id: string; name: string; ward_type: string | null; department_id: string | null; created_at: string }
+export interface WardRoomType { id: string; name: string; daily_rate: number; is_multi_bed: boolean; is_active: boolean; created_at: string }
+export interface Ward {
+  id: string; name: string; ward_type: string | null;
+  room_type_id: string | null; floor: string | null; block: string | null;
+  department_id: string | null; is_temp: boolean; daily_rate: number; created_at: string
+}
 export interface Bed { id: string; ward_id: string; bed_no: string; status: BedStatus; created_at: string }
 export interface BedWithOccupant extends Bed { admission_id: string | null; patient_name: string | null; patient_uhid: string | null }
-export interface WardWithBeds extends Ward { beds: BedWithOccupant[] }
+export interface WardWithBeds extends Ward {
+  beds: BedWithOccupant[]
+  room_type_data?: Pick<WardRoomType, 'id' | 'name' | 'daily_rate' | 'is_multi_bed'> | null
+}
 
 export type AdmissionStatus = 'admitted' | 'discharged' | 'transferred'
 export interface Admission {
-  id: string; patient_id: string; admitting_doctor_id: string; ward_id: string; bed_id: string
+  id: string; patient_id: string; admitting_doctor_id: string
+  ward_id: string | null; bed_id: string | null
+  direct_ot: boolean
   reason: string | null; admitted_at: string; discharged_at: string | null
   status: AdmissionStatus; discharge_summary: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
-  ward?: Pick<Ward, 'id' | 'name'>
-  bed?: Pick<Bed, 'id' | 'bed_no'>
+  ward?: Pick<Ward, 'id' | 'name'> | null
+  bed?: Pick<Bed, 'id' | 'bed_no'> | null
 }
 
 export interface IpdProgressNote {
@@ -216,8 +226,13 @@ export interface LabOrder {
 
 // ---- Phase 3: Radiology ----
 
+export interface RadiologyMaster {
+  id: string; name: string; modality: string; body_part: string; is_active: boolean; created_at: string
+}
+
 export interface RadiologyCatalog {
-  id: string; name: string; modality: string | null; price: number; is_active: boolean
+  id: string; name: string; modality: string | null; body_part: string; price: number; is_active: boolean
+  radiology_master_id?: string | null
 }
 
 export type RadiologyOrderStatus = 'ordered' | 'performed' | 'reported' | 'cancelled'
@@ -273,6 +288,7 @@ export interface DrugBatch {
   id: string; batch_no: string; expiry: string
   qty_available: number; purchase_price: number | null; mrp: number
   reorder_level?: number
+  storage_location?: string | null
   drug_id?: string | null; drug_master_id?: string | null
   // Brand / GRN fields (added in migration 0044)
   drug_brand_id?: string | null
@@ -314,23 +330,49 @@ export interface PrescriptionWithVisit extends Prescription {
 
 // ---- Phase 4: Operation Theatre ----
 
-export interface OtRoom { id: string; name: string; is_active: boolean }
+export interface OtRoom {
+  id: string
+  name: string
+  ot_type: string | null
+  floor: string | null
+  block: string | null
+  notes: string | null
+  status: 'active' | 'maintenance' | 'inactive'
+  is_active: boolean
+}
 export type OtStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 
 export interface OtConsumable {
   id: string; ot_schedule_id: string; description: string; qty: number; unit_price: number
 }
 
+export type OtTeamRole = 'surgeon' | 'assistant' | 'anaesthetist' | 'scrub_nurse' | 'other'
+
+export interface OtTeamMember {
+  id: string
+  ot_schedule_id: string
+  profile_id: string
+  role: OtTeamRole
+  created_at: string
+  profile?: Pick<Profile, 'id' | 'full_name'>
+}
+
 export interface OtSchedule {
   id: string; patient_id: string; surgeon_id: string; anaesthetist_id: string | null
   ot_room_id: string; procedure_name: string; scheduled_start: string; scheduled_end: string
   status: OtStatus; notes: string | null; price_snapshot: number; billing_status: BillingStatus
+  admission_id?: string | null
   created_at: string
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   surgeon?: Pick<Profile, 'id' | 'full_name'>
   anaesthetist?: Pick<Profile, 'id' | 'full_name'> | null
   room?: OtRoom
+  admission?: Pick<Admission, 'id' | 'ward_id' | 'bed_id' | 'direct_ot'> & {
+    ward?: Pick<Ward, 'id' | 'name' | 'is_temp'> | null
+    bed?: Pick<Bed, 'id' | 'bed_no'> | null
+  } | null
   consumables?: OtConsumable[]
+  team_members?: OtTeamMember[]
 }
 
 // ---- Phase 4: Blood Bank ----
@@ -395,7 +437,7 @@ export interface Bill {
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
-  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | 'appointment_refund' | null
+  bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | 'appointment_refund' | 'ot' | null
   consolidated_by?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   items?: BillItem[]
@@ -715,11 +757,13 @@ export interface PharmacySaleItem {
   id: string
   pharmacy_sale_id: string
   prescription_id: string | null
-  drug_id: string
+  drug_id: string | null
+  drug_master_id: string | null
   qty: number
   unit_price: number
   amount: number
-  drug?: Pick<Drug, 'id' | 'name' | 'form' | 'strength' | 'unit'>
+  drug?: Pick<Drug, 'id' | 'name' | 'form' | 'strength' | 'unit'> | null
+  master?: Pick<Drug, 'id' | 'name' | 'form' | 'strength' | 'unit'> | null
 }
 
 export interface PharmacySale {

@@ -19,7 +19,7 @@ interface Props {
 type BoolKey = 'charge_room_rent' | 'charge_doctor_fee' | 'charge_nursing' | 'charge_medicines' | 'charge_admission_fee'
 
 const TOGGLES: { key: BoolKey; label: string; hint: string }[] = [
-  { key: 'charge_room_rent',     label: 'Room Rent',          hint: "Uses the ward's daily rate — set on Tariffs & Fees." },
+  { key: 'charge_room_rent',     label: 'Room Rent',          hint: "Uses the ward's daily rate — set directly on each ward in the Ward Board." },
   { key: 'charge_doctor_fee',    label: 'Daily Doctor Fee',   hint: "Uses the attending doctor's consultation fee — set on their staff profile." },
   { key: 'charge_nursing',       label: 'Nursing Charges',    hint: 'Charges each nurse assigned to a shift at their configured per-shift rate.' },
   { key: 'charge_medicines',     label: 'Medicine Dispenses', hint: 'Auto-includes pharmacy dispenses for this patient during the day.' },

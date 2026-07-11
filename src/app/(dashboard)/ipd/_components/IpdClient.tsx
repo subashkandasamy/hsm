@@ -2,10 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, RefreshCw, BedDouble } from 'lucide-react'
+import { UserPlus, RefreshCw, BedDouble, Stethoscope } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
-import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import { listAdmissions } from '@/app/actions/ipd'
@@ -54,6 +53,10 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
   const wardOptions = wardBoard.map(w => ({
     id: w.id,
     name: w.name,
+    is_temp: w.is_temp,
+    is_multi_bed: w.room_type_data?.is_multi_bed ?? false,
+    room_type_id: w.room_type_data?.id ?? null,
+    room_type_name: w.room_type_data?.name ?? null,
     availableBeds: w.beds.filter(b => b.status === 'available'),
   }))
 
@@ -65,7 +68,7 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
         action={
           <div className="flex items-center gap-2">
             <button onClick={() => refresh(statusFilter)}
-              className="p-2 rounded-xl"
+              className="p-2.5 rounded-xl"
               style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -96,91 +99,132 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
         </div>
       </div>
 
-      <GlassCard className="overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-sm" style={{ color: '#94A3B8' }}>Loading…</div>
-        ) : displayed.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-sm" style={{ color: '#94A3B8' }}>Loading…</div>
+      ) : displayed.length === 0 ? (
+        <GlassCard>
           <EmptyState title="No admissions found"
             description={statusFilter === 'admitted' ? 'Admit a patient to get started.' : 'No records match the filter.'}
             icon={<BedDouble className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
-        ) : (
-          <>
-            {/* ── MOBILE CARDS (< md) ── */}
-            <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {displayed.map((a) => (
+        </GlassCard>
+      ) : (
+        <>
+          {/* ── MOBILE CARDS (< md) ── */}
+          <div className="md:hidden space-y-2">
+            {displayed.map((a) => {
+              const days = daysAdmitted(a.admitted_at)
+              const isAdmitted = a.status === 'admitted'
+              return (
                 <button key={a.id} onClick={() => router.push(`/ipd/${a.id}`)}
-                  className="w-full text-left px-4 py-3.5"
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
-                      <p className="font-mono text-xs" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                  className="w-full text-left rounded-2xl overflow-hidden"
+                  style={{ background: 'rgba(255,255,255,0.92)', border: '1px solid #E2E8F0', cursor: 'pointer', display: 'block', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div className="flex items-stretch">
+                    {/* Left status strip */}
+                    <div className="w-1 flex-shrink-0 rounded-l-2xl"
+                      style={{ background: isAdmitted ? '#0D9488' : '#94A3B8' }} />
+                    <div className="flex-1 min-w-0 p-3.5">
+                      {/* Name + days/status badge */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm leading-tight" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
+                          <p className="font-mono text-xs mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                        </div>
+                        {isAdmitted ? (
+                          <span className="flex-shrink-0 px-2.5 py-1 rounded-xl text-xs font-bold"
+                            style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
+                            {days}d
+                          </span>
+                        ) : (
+                          <span className="flex-shrink-0 px-2.5 py-1 rounded-xl text-xs font-semibold"
+                            style={{ background: '#F1F5F9', color: '#64748B' }}>
+                            discharged
+                          </span>
+                        )}
+                      </div>
+                      {/* Ward/bed + doctor chips */}
+                      <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
+                          style={{ background: 'rgba(13,148,136,0.06)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.14)' }}>
+                          <BedDouble className="w-3 h-3" />
+                          {a.ward?.name ?? '—'} · Bed {a.bed?.bed_no}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
+                          style={{ background: 'rgba(100,116,139,0.07)', color: '#475569', border: '1px solid rgba(100,116,139,0.15)' }}>
+                          <Stethoscope className="w-3 h-3" />
+                          {a.doctor?.full_name ?? '—'}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-1.5" style={{ color: '#94A3B8' }}>
+                        Admitted <DateText date={a.admitted_at} />
+                      </p>
                     </div>
-                    <StatusBadge status={a.status === 'admitted' ? 'active' : a.status === 'discharged' ? 'success' : 'pending'}
-                      label={a.status} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                    <div><span style={{ color: '#94A3B8' }}>Ward </span>
-                      <span style={{ color: '#475569' }}>{a.ward?.name ?? '—'} · Bed {a.bed?.bed_no}</span></div>
-                    <div><span style={{ color: '#94A3B8' }}>Doctor </span>
-                      <span style={{ color: '#475569' }}>{a.doctor?.full_name ?? '—'}</span></div>
-                    <div><span style={{ color: '#94A3B8' }}>Admitted </span>
-                      <span style={{ color: '#475569' }}><DateText date={a.admitted_at} /></span></div>
-                    {a.status === 'admitted' && (
-                      <div><span style={{ color: '#94A3B8' }}>Days </span>
-                        <span className="font-semibold" style={{ color: '#0D9488' }}>{daysAdmitted(a.admitted_at)}d</span></div>
-                    )}
                   </div>
                 </button>
-              ))}
-            </div>
+              )
+            })}
+          </div>
 
-            {/* ── DESKTOP TABLE (md+) ── */}
-            <table className="hidden md:table w-full text-sm">
+          {/* ── DESKTOP TABLE (md+) ── */}
+          <GlassCard className="hidden md:block overflow-hidden">
+            <table className="w-full text-sm">
               <thead>
-                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '1px solid #E2E8F0' }}>
+                <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '2px solid #E2E8F0' }}>
+                  <th className="w-1 p-0" />
                   {['Patient', 'Ward / Bed', 'Doctor', 'Admitted', 'Days', 'Status', ''].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: '#475569' }}>{h}</th>
+                    <th key={h} className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wide" style={{ color: '#64748B' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {displayed.map((a, i) => (
-                  <tr key={a.id}
-                    style={{ borderBottom: i < displayed.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}
-                    onClick={() => router.push(`/ipd/${a.id}`)}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,250,252,0.7)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    <td className="px-4 py-3">
-                      <p className="font-medium" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
-                      <p className="text-xs font-mono" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
-                    </td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}>
-                      <p>{a.ward?.name ?? '—'}</p>
-                      <p className="text-xs" style={{ color: '#94A3B8' }}>Bed {a.bed?.bed_no}</p>
-                    </td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}>{a.doctor?.full_name ?? '—'}</td>
-                    <td className="px-4 py-3" style={{ color: '#475569' }}><DateText date={a.admitted_at} /></td>
-                    <td className="px-4 py-3">
-                      <span className="font-semibold" style={{ color: '#0D9488' }}>
-                        {a.status === 'admitted' ? `${daysAdmitted(a.admitted_at)}d` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={a.status === 'admitted' ? 'active' : a.status === 'discharged' ? 'success' : 'pending'}
-                        label={a.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-1 rounded-lg font-medium"
-                        style={{ background: '#EFF6FF', color: '#1D4ED8' }}>View</span>
-                    </td>
-                  </tr>
-                ))}
+                {displayed.map((a, i) => {
+                  const isAdmitted = a.status === 'admitted'
+                  return (
+                    <tr key={a.id}
+                      style={{ borderBottom: i < displayed.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}
+                      onClick={() => router.push(`/ipd/${a.id}`)}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.03)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                      {/* Colored left strip */}
+                      <td className="p-0 w-1">
+                        <div className="h-full w-1" style={{ background: isAdmitted ? '#0D9488' : '#CBD5E1', minHeight: 56 }} />
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-semibold" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-medium text-sm" style={{ color: '#0F172A' }}>{a.ward?.name ?? '—'}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Bed {a.bed?.bed_no}</p>
+                      </td>
+                      <td className="px-4 py-3.5" style={{ color: '#475569' }}>{a.doctor?.full_name ?? '—'}</td>
+                      <td className="px-4 py-3.5" style={{ color: '#64748B' }}><DateText date={a.admitted_at} /></td>
+                      <td className="px-4 py-3.5">
+                        {isAdmitted ? (
+                          <span className="font-bold text-sm" style={{ color: '#0D9488' }}>{daysAdmitted(a.admitted_at)}d</span>
+                        ) : (
+                          <span style={{ color: '#94A3B8' }}>—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={isAdmitted
+                            ? { background: '#DCFCE7', color: '#15803D' }
+                            : { background: '#F1F5F9', color: '#64748B' }}>
+                          {a.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-xs px-2.5 py-1 rounded-lg font-medium"
+                          style={{ background: '#EFF6FF', color: '#1D4ED8' }}>View →</span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
-          </>
-        )}
-      </GlassCard>
+          </GlassCard>
+        </>
+      )}
 
       {showAdmit && (
         <AdmitModal

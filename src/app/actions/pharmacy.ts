@@ -45,7 +45,7 @@ export async function updateDrug(id: string, input: Record<string, unknown>): Pr
 
 export async function updateBatch(
   batchId: string,
-  input: { batch_no?: string; expiry?: string; qty_available?: number; mrp?: number; purchase_price?: number | null }
+  input: { batch_no?: string; expiry?: string; qty_available?: number; mrp?: number; purchase_price?: number | null; storage_location?: string | null }
 ): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -158,7 +158,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
   // All batches for this tenant (all expiry/qty states — to show full inventory)
   const { data: allBatches } = await supabase
     .from('drug_batches')
-    .select('id, drug_id, drug_master_id, batch_no, expiry, qty_available, purchase_price, mrp, reorder_level')
+    .select('id, drug_id, drug_master_id, batch_no, expiry, qty_available, purchase_price, mrp, reorder_level, storage_location')
     .order('expiry', { ascending: true })
 
   if (!allBatches?.length) return []

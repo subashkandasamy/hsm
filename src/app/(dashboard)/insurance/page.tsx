@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listClaims } from '@/app/actions/insurance'
 import InsuranceClient from './_components/InsuranceClient'
 

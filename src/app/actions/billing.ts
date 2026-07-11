@@ -798,14 +798,33 @@ export async function listBills(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('bills')
-    .select('*, patient:patients(id,full_name,uhid,phone), items:bill_items(source), visit:visits(id,type)')
+    .select('*, patient:patients(id,full_name,uhid,phone), items:bill_items(source)')
     .order('created_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)
   if (filters?.patientId) q = q.eq('patient_id', filters.patientId)
 
-  const { data } = await q.limit(300)
-  return (data ?? []) as unknown as Bill[]
+  const { data: bills } = await q.limit(300)
+  if (!bills) return []
+
+  // Batch-fetch visit types for bills that have a visit_id.
+  // (visits is partitioned — no FK exists, so PostgREST cannot join it inline)
+  const visitIds = [...new Set(bills.filter((b) => b.visit_id).map((b) => b.visit_id as string))]
+  const visitTypeMap: Record<string, string> = {}
+  if (visitIds.length > 0) {
+    const { data: visitRows } = await supabase
+      .from('visits')
+      .select('id, type')
+      .in('id', visitIds)
+    for (const v of visitRows ?? []) {
+      visitTypeMap[v.id as string] = v.type as string
+    }
+  }
+
+  return bills.map((b) => ({
+    ...b,
+    visit: b.visit_id ? { id: b.visit_id, type: visitTypeMap[b.visit_id as string] ?? 'opd' } : null,
+  })) as unknown as Bill[]
 }
 
 
@@ -824,6 +843,26 @@ const COMBINED_BILL_SECTIONS: Array<{ label: string; sources: string[] }> = [
   { label: 'Other Charges',     sources: ['manual'] },
 ]
 
+type CombinedBillRawItem = { source: string; description: string; qty: number; unit_price: number; amount: number }
+type CombinedBillRaw = { bill_no: string; billing_date: string | null; created_at: string; total: number; paid: number; bill_source?: string | null; items: CombinedBillRawItem[] }
+
+function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').CombinedBillSection[] {
+  const sections: import('@/lib/types').CombinedBillSection[] = []
+  for (const sectionDef of COMBINED_BILL_SECTIONS) {
+    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
+    for (const bill of bills) {
+      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
+      for (const item of bill.items) {
+        if (sectionDef.sources.includes(item.source)) {
+          rows.push({ date, billNo: bill.bill_no, description: item.description, qty: item.qty, unitPrice: item.unit_price, amount: item.amount })
+        }
+      }
+    }
+    if (rows.length > 0) sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
+  }
+  return sections
+}
+
 export async function getCombinedBillData(admissionId: string): Promise<CombinedBillData | null> {
   const actor = await getActorProfile()
   const supabase = await createClient()
@@ -834,12 +873,44 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
   // 1. Fetch admission
-  const { data: admission } = await supabase
+  const { data: admission, error: admError } = await supabase
     .from('admissions')
     .select('id, patient_id, combined_bill_no')
     .eq('id', admissionId)
-    .single()
-  if (!admission) return null
+    .maybeSingle()
+  if (admError) console.error('[getCombinedBillData] admission fetch error:', admError.message)
+  if (!admission) {
+    // Fallback: try to resolve patient from bills linked to this admissionId
+    const { data: firstBill } = await supabase
+      .from('bills').select('patient_id').eq('admission_id', admissionId).limit(1).maybeSingle()
+    if (!firstBill?.patient_id) { console.error('[getCombinedBillData] no admission or bills found for', admissionId); return null }
+    const pid = firstBill.patient_id as string
+    const { data: fbPatient } = await supabase.from('patients').select('full_name, uhid, phone').eq('id', pid).single()
+    if (!fbPatient) return null
+    const { data: admBillsFb } = await supabase
+      .from('bills')
+      .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+      .eq('admission_id', admissionId).neq('status', 'cancelled')
+      .order('billing_date', { ascending: true }).order('created_at', { ascending: true })
+    const allBillsFb = ((admBillsFb ?? []) as unknown as CombinedBillRaw[]).filter((b) => (b as { bill_source?: string | null }).bill_source !== 'consolidated')
+    const { data: billNoFb } = await supabase.rpc('get_next_bill_no')
+    const { data: advRowsFb } = await supabase.from('admission_advances').select('amount').eq('admission_id', admissionId)
+    const advFb = (advRowsFb ?? []).reduce((s, a) => s + (a.amount as number), 0)
+    const secFb = buildSections(allBillsFb)
+    const regFb = allBillsFb.filter((b) => (b as { bill_source?: string | null }).bill_source !== 'advance_refund')
+    return {
+      combinedBillNo: (billNoFb as string | null) ?? 'COMBINED',
+      tenantName,
+      patient: { full_name: fbPatient.full_name as string, uhid: fbPatient.uhid as string, phone: fbPatient.phone as string | null },
+      generatedAt: new Date().toISOString(),
+      sections: secFb,
+      grandTotal: regFb.reduce((s, b) => s + (b as { total: number }).total, 0),
+      totalPaid: regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0),
+      advanceCollected: advFb,
+      advanceRefunded: 0,
+      balanceDue: Math.max(0, regFb.reduce((s, b) => s + (b as { total: number }).total, 0) - regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0)),
+    }
+  }
 
   const patientId = admission.patient_id as string
 
@@ -887,28 +958,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
   const advanceCollected = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
 
   // 7. Group items into sections
-  const sections: import('@/lib/types').CombinedBillSection[] = []
-  for (const sectionDef of COMBINED_BILL_SECTIONS) {
-    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
-    for (const bill of allBills) {
-      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
-      for (const item of bill.items) {
-        if (sectionDef.sources.includes(item.source)) {
-          rows.push({
-            date,
-            billNo: bill.bill_no,
-            description: item.description,
-            qty: item.qty,
-            unitPrice: item.unit_price,
-            amount: item.amount,
-          })
-        }
-      }
-    }
-    if (rows.length > 0) {
-      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
-    }
-  }
+  const sections = buildSections(allBills)
 
   const regularBills = allBills.filter(b => b.bill_source !== 'advance_refund')
   const refundBills  = allBills.filter(b => b.bill_source === 'advance_refund')
@@ -968,7 +1018,51 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (data) visitRow = data as any as VisitRow
   }
-  if (!visitRow) return null
+  type RawBill = {
+    id: string; bill_no: string; billing_date: string | null; created_at: string
+    total: number; paid: number; bill_source: string | null; patient_id?: string
+    items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
+  }
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, patient_id, items:bill_items(source, description, qty, unit_price, amount)'
+
+  // No visit row found — visitId is an appointmentId for a booking where OPD visit hasn't started yet.
+  // Fall back to appointment-stage bills directly.
+  if (!visitRow) {
+    const { data: apptBillRows } = await supabase
+      .from('bills')
+      .select(BILL_SELECT)
+      .eq('appointment_id', visitId)
+      .is('visit_id', null)
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: true })
+    const apptBills = ((apptBillRows ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
+    if (apptBills.length === 0) return null
+    const apptPatientId = apptBills[0].patient_id
+    if (!apptPatientId) return null
+    const { data: apptPatient } = await supabase
+      .from('patients').select('full_name, uhid, phone').eq('id', apptPatientId).single()
+    if (!apptPatient) return null
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    const combinedBillNoAppt = (billNoData as string | null) ?? 'COMBINED'
+    const apptSections = buildSections(apptBills)
+    const apptRegular = apptBills.filter(b => b.bill_source !== 'advance_refund')
+    return {
+      combinedBillNo: combinedBillNoAppt,
+      tenantName,
+      patient: {
+        full_name: apptPatient.full_name as string,
+        uhid: apptPatient.uhid as string,
+        phone: apptPatient.phone as string | null,
+      },
+      generatedAt: new Date().toISOString(),
+      sections: apptSections,
+      grandTotal: apptRegular.reduce((s, b) => s + b.total, 0),
+      totalPaid: apptRegular.reduce((s, b) => s + b.paid, 0),
+      advanceCollected: 0,
+      advanceRefunded: 0,
+      balanceDue: Math.max(0, apptRegular.reduce((s, b) => s + b.total, 0) - apptRegular.reduce((s, b) => s + b.paid, 0)),
+    }
+  }
 
   const resolvedVisitId = visitRow.id
   const patientId = visitRow.patient_id
@@ -993,14 +1087,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
   if (!patient) return null
 
-  type RawBill = {
-    id: string; bill_no: string; billing_date: string | null; created_at: string
-    total: number; paid: number; bill_source: string | null
-    items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
-  }
-
   // 4. Fetch all non-cancelled bills for this visit (filter consolidated in JS — PG neq drops NULLs)
-  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)'
   const { data: visitBills } = await supabase
     .from('bills')
     .select(BILL_SELECT)
@@ -1030,28 +1117,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   ]
 
   // 5. Group items into sections
-  const sections: import('@/lib/types').CombinedBillSection[] = []
-  for (const sectionDef of COMBINED_BILL_SECTIONS) {
-    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
-    for (const bill of allBills) {
-      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
-      for (const item of bill.items) {
-        if (sectionDef.sources.includes(item.source)) {
-          rows.push({
-            date,
-            billNo: bill.bill_no,
-            description: item.description,
-            qty: item.qty,
-            unitPrice: item.unit_price,
-            amount: item.amount,
-          })
-        }
-      }
-    }
-    if (rows.length > 0) {
-      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
-    }
-  }
+  const sections = buildSections(allBills)
 
   const regularBills2 = allBills.filter(b => b.bill_source !== 'advance_refund')
   const grandTotal = regularBills2.reduce((s, b) => s + b.total, 0)
@@ -1127,21 +1193,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
     advanceCollected = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
   }
 
-  const sections: import('@/lib/types').CombinedBillSection[] = []
-  for (const sectionDef of COMBINED_BILL_SECTIONS) {
-    const rows: import('@/lib/types').CombinedBillSection['rows'] = []
-    for (const bill of allBills) {
-      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
-      for (const item of bill.items) {
-        if (sectionDef.sources.includes(item.source)) {
-          rows.push({ date, billNo: bill.bill_no, description: item.description, qty: item.qty, unitPrice: item.unit_price, amount: item.amount })
-        }
-      }
-    }
-    if (rows.length > 0) {
-      sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
-    }
-  }
+  const sections = buildSections(allBills)
 
   const regularBills3 = allBills.filter(b => b.bill_source !== 'advance_refund')
   const refundBills3  = allBills.filter(b => b.bill_source === 'advance_refund')

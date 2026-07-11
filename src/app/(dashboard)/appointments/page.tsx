@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { listAppointments, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import AppointmentsClient from './_components/AppointmentsClient'

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { getActorProfile } from '@/lib/server-utils'
 import { hasPermission } from '@/lib/rbac'

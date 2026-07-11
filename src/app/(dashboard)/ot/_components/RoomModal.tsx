@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
@@ -21,14 +21,11 @@ export default function RoomModal({ open, onClose, onSuccess }: Props) {
   const [rooms, setRooms] = useState<OtRoom[]>([])
   const [loaded, setLoaded] = useState(false)
 
-  async function ensureLoaded() {
-    if (!loaded) {
-      const r = await listRooms()
-      setRooms(r); setLoaded(true)
+  useEffect(() => {
+    if (open && !loaded) {
+      listRooms().then(r => { setRooms(r); setLoaded(true) })
     }
-  }
-
-  if (open && !loaded) { ensureLoaded() }
+  }, [open, loaded])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()

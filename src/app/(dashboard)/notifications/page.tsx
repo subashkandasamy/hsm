@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listNotifications } from '@/app/actions/notifications'
 import NotificationsClient from './_components/NotificationsClient'
 

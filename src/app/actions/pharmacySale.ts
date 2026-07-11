@@ -55,12 +55,17 @@ export async function addSaleItem(params: {
   if (!sale) return { success: false, error: 'Sale not found' }
   if (sale.status !== 'draft') return { success: false, error: 'Sale is already locked' }
 
-  // Snapshot current MRP from the earliest non-expired batch
+  // Determine whether drugId is a tenant drug or a global drug_master entry
+  const { data: tenantDrug } = await supabase
+    .from('drugs').select('id').eq('id', drugId).maybeSingle()
+  const isMasterDrug = !tenantDrug
+
+  // Snapshot current MRP from the earliest non-expired batch (works for both sources)
   const today = new Date().toISOString().split('T')[0]
   const { data: batches } = await supabase
     .from('drug_batches')
     .select('mrp')
-    .eq('drug_id', drugId)
+    .or(`drug_id.eq.${drugId},drug_master_id.eq.${drugId}`)
     .gt('expiry', today)
     .gt('qty_available', 0)
     .order('expiry', { ascending: true })
@@ -74,7 +79,8 @@ export async function addSaleItem(params: {
     tenant_id: actor.tenant_id,
     pharmacy_sale_id: saleId,
     prescription_id: prescriptionId ?? null,
-    drug_id: drugId,
+    drug_id:        isMasterDrug ? null : drugId,
+    drug_master_id: isMasterDrug ? drugId : null,
     qty,
     unit_price: unitPrice,
     amount: qty * unitPrice,
@@ -151,7 +157,7 @@ export async function finalizeSale(
   // Load sale + items
   const { data: sale } = await supabase
     .from('pharmacy_sales')
-    .select('*, items:pharmacy_sale_items(*, drug:drugs(name))')
+    .select('*, items:pharmacy_sale_items(*, drug:drugs(name), master:drug_master(name))')
     .eq('id', saleId)
     .single()
 
@@ -159,8 +165,8 @@ export async function finalizeSale(
   if (sale.status !== 'draft') return { success: false, error: 'Sale is already finalized' }
 
   const items = (sale.items ?? []) as Array<{
-    id: string; drug_id: string; qty: number; unit_price: number; amount: number
-    drug: { name: string } | null
+    id: string; drug_id: string | null; drug_master_id: string | null; qty: number; unit_price: number; amount: number
+    drug: { name: string } | null; master: { name: string } | null
   }>
   if (!items.length) return { success: false, error: 'Add at least one item before finalizing' }
 
@@ -270,17 +276,18 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
   }
 
   const items = (sale.items ?? []) as Array<{
-    drug_id: string; prescription_id: string | null; qty: number; unit_price: number
+    drug_id: string | null; drug_master_id: string | null; prescription_id: string | null; qty: number; unit_price: number
   }>
 
   const today = new Date().toISOString().split('T')[0]
 
   // FEFO dispense: for each item, pick earliest non-expired batch and call dispense_drug RPC
   for (const item of items) {
+    const drugRef = item.drug_id ?? item.drug_master_id ?? ''
     const { data: batches } = await supabase
       .from('drug_batches')
       .select('id, mrp, expiry, qty_available')
-      .eq('drug_id', item.drug_id)
+      .or(`drug_id.eq.${drugRef},drug_master_id.eq.${drugRef}`)
       .gt('expiry', today)
       .gte('qty_available', item.qty)
       .order('expiry', { ascending: true })
@@ -300,7 +307,8 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
       p_dispense_id:     dispenseId,
       p_patient_id:      sale.patient_id,
       p_prescription_id: item.prescription_id ?? null,
-      p_drug_id:         item.drug_id,
+      p_drug_id:         item.drug_id ?? null,
+      p_drug_master_id:  item.drug_master_id ?? null,
       p_batch_id:        batch.id,
       p_qty:             item.qty,
       p_price_snapshot:  batch.mrp,
@@ -331,7 +339,7 @@ export async function getPharmacySale(saleId: string): Promise<PharmacySale | nu
   const { data } = await supabase
     .from('pharmacy_sales')
     .select(`*, patient:patients(id,full_name,uhid),
-             items:pharmacy_sale_items(*, drug:drugs(id,name,form,strength,unit))`)
+             items:pharmacy_sale_items(*, drug:drugs(id,name,form,strength,unit), master:drug_master(id,name,form,strength,unit))`)
     .eq('id', saleId)
     .single()
   return data as unknown as PharmacySale | null
@@ -345,7 +353,7 @@ export async function listPharmacySales(filters?: {
   let q = supabase
     .from('pharmacy_sales')
     .select(`*, patient:patients(id,full_name,uhid),
-             items:pharmacy_sale_items(*, drug:drugs(id,name,form,strength,unit)),
+             items:pharmacy_sale_items(*, drug:drugs(id,name,form,strength,unit), master:drug_master(id,name,form,strength,unit)),
              bill:bills(id,bill_no,status,total,paid)`)
     .order('created_at', { ascending: false })
 

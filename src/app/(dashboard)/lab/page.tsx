@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listLabOrders, listLabCatalog } from '@/app/actions/lab'
 import LabClient from './_components/LabClient'
 

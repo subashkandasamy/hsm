@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listAuditLogs, listActors } from '@/app/actions/audit'
 import AuditClient from './_components/AuditClient'
 

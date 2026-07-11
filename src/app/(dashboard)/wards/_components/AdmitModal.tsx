@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
@@ -12,10 +12,22 @@ import { listAvailableBeds } from '@/app/actions/wards'
 import { searchPatients } from '@/app/actions/patients'
 import type { Patient, Bed, ProcedureTariff } from '@/lib/types'
 
-interface WardOption {
+export interface WardOption {
   id: string
-  name: string
+  name: string           // individual room/ward name, e.g. "101"
+  is_temp: boolean
+  is_multi_bed: boolean  // true = general-ward style, shows bed dropdown
+  room_type_id: string | null
+  room_type_name: string | null  // e.g. "Non AC Deluxe"
   availableBeds: Pick<Bed, 'id' | 'bed_no'>[]
+}
+
+interface RoomTypeGroup {
+  id: string       // room_type_id or 'temp-{id}' for temp wards
+  name: string     // room type display name
+  is_multi_bed: boolean
+  is_temp: boolean
+  wards: WardOption[]
 }
 
 interface Props {
@@ -42,15 +54,57 @@ export default function AdmitModal({
   )
   const [showDropdown, setShowDropdown] = useState(false)
   const [doctorId, setDoctorId] = useState('')
-  const [wardId, setWardId] = useState('')
+  const [roomTypeId, setRoomTypeId] = useState('')   // selected room type group id
+  const [wardId, setWardId] = useState('')           // selected individual room/ward
   const [bedId, setBedId] = useState(preselectedBed?.id ?? '')
-  const [wardBeds, setWardBeds] = useState<Pick<Bed, 'id' | 'bed_no'>[]>(
-    preselectedBed ? [{ id: preselectedBed.id, bed_no: preselectedBed.bed_no }] : []
-  )
   const [tariffId, setTariffId] = useState('')
   const [reason, setReason] = useState('')
+  const [directOt, setDirectOt] = useState(false)
+  const [tempSlot, setTempSlot] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Group wards by room type
+  const roomTypeGroups = useMemo<RoomTypeGroup[]>(() => {
+    const map = new Map<string, RoomTypeGroup>()
+    for (const w of wards) {
+      if (w.is_temp) {
+        map.set(`temp-${w.id}`, { id: `temp-${w.id}`, name: w.name, is_multi_bed: false, is_temp: true, wards: [w] })
+        continue
+      }
+      const key = w.room_type_id ?? 'uncategorized'
+      const label = w.room_type_name ?? w.name
+      if (!map.has(key)) map.set(key, { id: key, name: label, is_multi_bed: w.is_multi_bed, is_temp: false, wards: [] })
+      map.get(key)!.wards.push(w)
+    }
+    return Array.from(map.values())
+  }, [wards])
+
+  const selectedGroup = roomTypeGroups.find(g => g.id === roomTypeId)
+  const isTempWard  = selectedGroup?.is_temp ?? false
+  const isMultiBed  = selectedGroup?.is_multi_bed ?? false
+
+  // Rooms available within the selected group (only those with at least one available bed or temp)
+  const availableRooms = selectedGroup?.wards.filter(w => isTempWard || w.availableBeds.length > 0) ?? []
+
+  // Beds for multi-bed ward (load dynamically when room selected)
+  const [loadedBeds, setLoadedBeds] = useState<Pick<Bed, 'id' | 'bed_no'>[]>(
+    preselectedBed ? [{ id: preselectedBed.id, bed_no: preselectedBed.bed_no }] : []
+  )
+
+  useEffect(() => {
+    if (!wardId || !isMultiBed || preselectedBed) return
+    setBedId('')
+    listAvailableBeds(wardId).then(setLoadedBeds)
+  }, [wardId, isMultiBed, preselectedBed])
+
+  // For single-bed rooms: auto-select the only available bed
+  useEffect(() => {
+    if (!wardId || isMultiBed || isTempWard) return
+    const room = selectedGroup?.wards.find(w => w.id === wardId)
+    const onlyBed = room?.availableBeds[0]
+    setBedId(onlyBed?.id ?? '')
+  }, [wardId, isMultiBed, isTempWard, selectedGroup])
 
   // Compute advance preview (25% of selected tariff, or general tariff if none selected)
   const selectedTariff = procedureTariffs.find((t) => t.id === tariffId)
@@ -69,26 +123,27 @@ export default function AdmitModal({
     return () => clearTimeout(t)
   }, [patientQuery, doSearch])
 
-  useEffect(() => {
-    if (!wardId || preselectedBed) return
-    setBedId('')
-    listAvailableBeds(wardId).then((beds) => setWardBeds(beds))
-  }, [wardId, preselectedBed])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedPatient) { setError('Please select a patient'); return }
     if (!doctorId) { setError('Please select an admitting doctor'); return }
-    if (!bedId) { setError('Please select a bed'); return }
+    if (!directOt && !roomTypeId) { setError('Please select a ward type'); return }
+    if (!directOt && !isTempWard && !wardId) { setError('Please select a room'); return }
+    if (!directOt && !isTempWard && isMultiBed && !bedId) { setError('Please select a bed'); return }
 
     setLoading(true)
     setError(null)
     const result = await admitPatient({
       patient_id: selectedPatient.id,
       admitting_doctor_id: doctorId,
-      bed_id: bedId,
+      bed_id: (directOt || isTempWard) ? null : bedId,
+      ward_id: isTempWard ? wardId : null,
       reason: reason || null,
       procedure_tariff_id: tariffId || null,
+      direct_ot: directOt,
+      is_temp_ward: isTempWard || undefined,
+      temp_slot: isTempWard ? (tempSlot || null) : undefined,
     })
     setLoading(false)
 
@@ -162,6 +217,24 @@ export default function AdmitModal({
           </Select>
         </FormField>
 
+        {/* Direct OT checkbox */}
+        {!preselectedBed && (
+          <label className="flex items-center gap-3 cursor-pointer select-none"
+            style={{ padding: '0.75rem 1rem', borderRadius: '0.75rem', border: directOt ? '1px solid rgba(13,148,136,0.35)' : '1px solid #E2E8F0', background: directOt ? 'rgba(13,148,136,0.06)' : 'rgba(248,250,252,0.8)' }}>
+            <input
+              type="checkbox"
+              checked={directOt}
+              onChange={e => { setDirectOt(e.target.checked); setWardId(''); setBedId('') }}
+              style={{ width: '1.1rem', height: '1.1rem', accentColor: '#0D9488', cursor: 'pointer' }}
+            />
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Patient coming directly for OT</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Ward / bed will be assigned after surgery</p>
+            </div>
+          </label>
+        )}
+
+        {/* Ward / Room / Bed — hidden for direct OT */}
         {preselectedBed ? (
           <FormField label="Ward / Bed">
             <div className="px-3.5 py-2.5 rounded-xl text-sm"
@@ -169,24 +242,72 @@ export default function AdmitModal({
               {wardLabel}
             </div>
           </FormField>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
+        ) : !directOt ? (
+          <div className="space-y-3">
+            {/* Step 1: Ward type */}
             <FormField label="Ward" required>
-              <Select value={wardId} onChange={(e) => setWardId(e.target.value)}>
+              <Select value={roomTypeId} onChange={(e) => {
+                const grp = roomTypeGroups.find(g => g.id === e.target.value)
+                setRoomTypeId(e.target.value)
+                // For temp wards there's only one room in the group — auto-set it so submit works
+                setWardId(grp?.is_temp ? (grp.wards[0]?.id ?? '') : '')
+                setBedId('')
+                setTempSlot('')
+              }}>
                 <option value="">Select ward…</option>
-                {wards.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name} ({w.availableBeds.length} avail.)
-                  </option>
-                ))}
+                {roomTypeGroups.map((g) => {
+                  const availCount = g.is_temp ? '—' : `${g.wards.filter(w => w.availableBeds.length > 0).length} avail.`
+                  return (
+                    <option key={g.id} value={g.id}>
+                      {g.is_temp ? `⚠ ${g.name} (overflow)` : `${g.name} (${availCount})`}
+                    </option>
+                  )
+                })}
               </Select>
             </FormField>
-            <FormField label="Bed" required>
-              <Select value={bedId} onChange={(e) => setBedId(e.target.value)} disabled={!wardId}>
-                <option value="">Select bed…</option>
-                {wardBeds.map((b) => <option key={b.id} value={b.id}>{b.bed_no}</option>)}
-              </Select>
-            </FormField>
+
+            {/* Step 2: Room (hidden for temp ward) */}
+            {roomTypeId && !isTempWard && (
+              <FormField label="Room" required>
+                <Select value={wardId} onChange={(e) => { setWardId(e.target.value); setBedId('') }} disabled={!roomTypeId}>
+                  <option value="">Select room…</option>
+                  {availableRooms.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {isMultiBed ? `${w.name} (${w.availableBeds.length} beds avail.)` : w.name}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            )}
+
+            {/* Step 3: Bed — only for multi-bed / general ward */}
+            {wardId && isMultiBed && (
+              <FormField label="Bed" required>
+                <Select value={bedId} onChange={(e) => setBedId(e.target.value)}>
+                  <option value="">Select bed…</option>
+                  {loadedBeds.map((b) => <option key={b.id} value={b.id}>{b.bed_no}</option>)}
+                </Select>
+              </FormField>
+            )}
+
+            {/* Temp ward: slot label */}
+            {isTempWard && roomTypeId && (
+              <FormField label="Slot label">
+                <Input
+                  value={tempSlot}
+                  onChange={(e) => setTempSlot(e.target.value)}
+                  placeholder="e.g. T-3, Corridor-1 (optional)"
+                />
+              </FormField>
+            )}
+          </div>
+        ) : null}
+
+        {/* Temp ward note */}
+        {isTempWard && !directOt && (
+          <div className="px-3.5 py-2.5 rounded-xl text-xs"
+            style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+            Overflow admission — a temporary slot will be created. Transfer the patient to a regular ward once a bed becomes available.
           </div>
         )}
 

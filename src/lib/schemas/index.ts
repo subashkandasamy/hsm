@@ -75,14 +75,23 @@ export const PrescriptionSchema = z.object({
 export const WardCreateSchema = z.object({
   name: z.string().min(1, 'Ward name is required').max(100),
   ward_type: z.string().nullable().optional(),
+  room_type_id: z.string().uuid().nullable().optional(),
+  floor: z.string().nullable().optional(),
+  block: z.string().nullable().optional(),
   department_id: z.string().uuid().nullable().optional(),
+  is_temp: z.boolean().optional(),
+  daily_rate: z.number().min(0).optional(),
 })
 export const AdmitPatientSchema = z.object({
   patient_id: z.string().uuid('Please select a patient'),
   admitting_doctor_id: z.string().uuid('Please select an admitting doctor'),
-  bed_id: z.string().uuid('Please select a bed'),
+  bed_id: z.string().uuid('Please select a bed').nullable().optional(),
+  ward_id: z.string().uuid().nullable().optional(),
   reason: z.string().nullable().optional(),
   procedure_tariff_id: z.string().uuid().nullable().optional(),
+  direct_ot: z.boolean().optional(),
+  is_temp_ward: z.boolean().optional(),
+  temp_slot: z.string().max(50).nullable().optional(),
 })
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),
@@ -134,6 +143,7 @@ export const LabResultItemSchema = z.object({
 export const RadiologyCatalogSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   modality: z.string().nullable().optional(),
+  body_part: z.string().optional().default('General'),
   price: z.number().min(0),
 })
 
@@ -174,6 +184,7 @@ export const DrugBatchSchema = z.object({
   supplier_name:       z.string().nullable().optional(),
   supplier_invoice_no: z.string().nullable().optional(),
   purchase_date:       z.string().nullable().optional(),
+  storage_location:    z.string().nullable().optional(),
 }).refine(d => !!(d.drug_id || d.drug_master_id), {
   message: 'Either drug_id or drug_master_id must be provided',
 })
@@ -189,7 +200,12 @@ export const DispenseSchema = z.object({
 // ---- Phase 4: OT ----
 
 export const OtRoomSchema = z.object({
-  name: z.string().min(1, 'Room name is required'),
+  name:    z.string().min(1, 'Room name is required'),
+  ot_type: z.string().nullable().optional(),
+  floor:   z.string().nullable().optional(),
+  block:   z.string().nullable().optional(),
+  notes:   z.string().nullable().optional(),
+  status:  z.enum(['active', 'maintenance', 'inactive']).optional(),
 })
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','AB+','AB-','O+','O-'] as const

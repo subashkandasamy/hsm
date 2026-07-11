@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import { UserCog } from 'lucide-react'

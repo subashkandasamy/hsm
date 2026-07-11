@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS lab_tests_master (
 );
 
 ALTER TABLE lab_tests_master ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "lab_master_read" ON lab_tests_master;
 CREATE POLICY "lab_master_read" ON lab_tests_master FOR SELECT USING (auth.role() = 'authenticated');
 
 ALTER TABLE lab_tests_catalog ADD COLUMN IF NOT EXISTS lab_master_id UUID REFERENCES lab_tests_master(id) ON DELETE SET NULL;

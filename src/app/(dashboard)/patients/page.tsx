@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { listPatients } from '@/app/actions/patients'
 import PatientsClient from './_components/PatientsClient'
 
