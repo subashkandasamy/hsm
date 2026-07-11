@@ -344,6 +344,7 @@ export type OtStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 
 export interface OtConsumable {
   id: string; ot_schedule_id: string; description: string; qty: number; unit_price: number
+  drug_master_id?: string | null; drug_id?: string | null; pharmacy_request_id?: string | null
 }
 
 export type OtTeamRole = 'surgeon' | 'assistant' | 'anaesthetist' | 'scrub_nurse' | 'other'

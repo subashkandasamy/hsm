@@ -95,12 +95,14 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
 
 
   // Consumable drug picker
-  const [drugQuery, setDrugQuery]       = useState('')
-  const [showDrugDrop, setShowDrugDrop] = useState(false)
-  const [newDesc, setNewDesc]           = useState('')
-  const [newQty, setNewQty]             = useState('1')
-  const [newPrice, setNewPrice]         = useState('0')
-  const [addingC, setAddingC]           = useState(false)
+  const [drugQuery, setDrugQuery]               = useState('')
+  const [showDrugDrop, setShowDrugDrop]         = useState(false)
+  const [newDesc, setNewDesc]                   = useState('')
+  const [newQty, setNewQty]                     = useState('1')
+  const [newPrice, setNewPrice]                 = useState('0')
+  const [addingC, setAddingC]                   = useState(false)
+  const [selectedDrugId, setSelectedDrugId]     = useState<string | null>(null)
+  const [selectedDrugIsGlobal, setSelectedDrugIsGlobal] = useState(false)
 
   const isClosed = schedule.status === 'completed' || schedule.status === 'cancelled'
   const consumablesTotal = consumables.reduce((s, c) => s + c.qty * c.unit_price, 0)
@@ -132,6 +134,8 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
   function selectDrug(drug: Drug) {
     const label = [drug.name, drug.form, drug.strength].filter(Boolean).join(' ')
     setNewDesc(label); setDrugQuery(label); setShowDrugDrop(false)
+    setSelectedDrugId(drug.id)
+    setSelectedDrugIsGlobal(drug.is_global ?? false)
   }
 
   async function handleStatus(status: 'in_progress' | 'completed') {
@@ -180,17 +184,20 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
     if (!newDesc.trim()) return
     setAddingC(true)
     const r = await addConsumable({
-      ot_schedule_id: schedule.id,
-      description: newDesc.trim(),
-      qty: parseInt(newQty, 10) || 1,
-      unit_price: parseFloat(newPrice) || 0,
+      ot_schedule_id:  schedule.id,
+      description:     newDesc.trim(),
+      qty:             parseInt(newQty, 10) || 1,
+      unit_price:      parseFloat(newPrice) || 0,
+      drug_master_id:  selectedDrugId && selectedDrugIsGlobal  ? selectedDrugId : null,
+      drug_id:         selectedDrugId && !selectedDrugIsGlobal ? selectedDrugId : null,
     })
     setAddingC(false)
     if (r.success) {
       setConsumables(c => [...c, r.consumable])
       setNewDesc(''); setDrugQuery(''); setNewQty('1'); setNewPrice('0')
+      setSelectedDrugId(null); setSelectedDrugIsGlobal(false)
     }
-  }, [schedule.id, newDesc, newQty, newPrice])
+  }, [schedule.id, newDesc, newQty, newPrice, selectedDrugId, selectedDrugIsGlobal])
 
   async function handleRemoveConsumable(id: string) {
     await removeConsumable(id)
@@ -532,7 +539,7 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
               <input
                 type="text"
                 value={drugQuery}
-                onChange={e => { setDrugQuery(e.target.value); setNewDesc(e.target.value); setShowDrugDrop(true) }}
+                onChange={e => { setDrugQuery(e.target.value); setNewDesc(e.target.value); setShowDrugDrop(true); setSelectedDrugId(null); setSelectedDrugIsGlobal(false) }}
                 onFocus={() => drugQuery.trim() && setShowDrugDrop(true)}
                 onBlur={() => setTimeout(() => setShowDrugDrop(false), 150)}
                 placeholder="Search pharmacy or type item name…"

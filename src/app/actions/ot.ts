@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schemas'
 import type { OtRoom, OtSchedule, OtConsumable, OtTeamMember, Profile } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
+import { revalidatePath } from 'next/cache'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -184,6 +185,7 @@ export async function cancelSurgery(id: string): Promise<SimpleResult> {
     .update({ status: 'cancelled' }).eq('id', id).in('status', ['scheduled'])
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'cancel', 'ot_schedule', id)
+  revalidatePath('/ot')
   return { success: true }
 }
 
@@ -198,6 +200,7 @@ export async function setOtStatus(
   const { error } = await supabase.from('ot_schedules').update({ status }).eq('id', id)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, `status_${status}`, 'ot_schedule', id)
+  revalidatePath('/ot')
   return { success: true }
 }
 
@@ -310,10 +313,84 @@ export async function addConsumable(
   await requirePermission(actor.role, 'ot:record')
   const parsed = OtConsumableSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const id = crypto.randomUUID()
+
   const supabase = await createClient()
-  const { error } = await supabase.from('ot_consumables').insert({ id, tenant_id: actor.tenant_id, ...parsed.data })
+
+  // Fetch schedule to get admission_id + patient_id for billing
+  const { data: schedule } = await supabase
+    .from('ot_schedules')
+    .select('id, admission_id, patient_id')
+    .eq('id', parsed.data.ot_schedule_id)
+    .single()
+
+  const admissionId = (schedule?.admission_id as string | null) ?? null
+  const patientId   = (schedule?.patient_id  as string | null) ?? null
+
+  // Resolve drug IDs
+  const drugMasterId = (parsed.data.drug_master_id as string | null | undefined) ?? null
+  const drugId       = (parsed.data.drug_id       as string | null | undefined) ?? null
+
+  // Create IPD pharmacy request if linked to an admission
+  let pharmacyRequestId: string | null = null
+  if (admissionId && patientId) {
+    const { data: admission } = await supabase
+      .from('admissions').select('ward_id').eq('id', admissionId).single()
+    const wardId = (admission?.ward_id as string | null) ?? null
+
+    const reqId = crypto.randomUUID()
+    const total = parsed.data.qty * parsed.data.unit_price
+    const { error: reqErr } = await supabase.from('ipd_pharmacy_requests').insert({
+      id: reqId,
+      tenant_id:      actor.tenant_id,
+      admission_id:   admissionId,
+      ward_id:        wardId,
+      ordered_by:     actor.id,
+      item_name:      parsed.data.description,
+      quantity:       parsed.data.qty,
+      unit:           null,
+      unit_price:     parsed.data.unit_price,
+      total_price:    total,
+      status:         'pending',
+      notes:          'OT consumable',
+      drug_master_id: drugMasterId,
+      drug_id:        drugId,
+    })
+    if (!reqErr) pharmacyRequestId = reqId
+  }
+
+  // Insert consumable row
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('ot_consumables').insert({
+    id, tenant_id: actor.tenant_id,
+    ot_schedule_id: parsed.data.ot_schedule_id,
+    description:    parsed.data.description,
+    qty:            parsed.data.qty,
+    unit_price:     parsed.data.unit_price,
+    drug_master_id: drugMasterId,
+    drug_id:        drugId,
+    pharmacy_request_id: pharmacyRequestId,
+  })
   if (error) return { success: false, error: error.message }
+
+  // Auto-generate IPD bill line item for this consumable
+  if (admissionId && patientId && parsed.data.unit_price > 0) {
+    const today = new Date().toISOString().split('T')[0]
+    await autoIpdBill(supabase, actor.id, {
+      tenantId:    actor.tenant_id,
+      admissionId,
+      patientId,
+      billingDate: today,
+      billSource:  'ot',
+      lineItems: [{
+        source:      'ot_consumable',
+        ref_id:      id,
+        description: parsed.data.description,
+        qty:         parsed.data.qty,
+        unit_price:  parsed.data.unit_price,
+      }],
+    })
+  }
+
   await logAudit(actor.id, 'add_consumable', 'ot_schedule', parsed.data.ot_schedule_id)
   const { data: row } = await supabase.from('ot_consumables').select('*').eq('id', id).single()
   return { success: true, consumable: row as OtConsumable }
@@ -324,6 +401,33 @@ export async function removeConsumable(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const supabase = await createClient()
+
+  // Fetch consumable to clean up linked records
+  const { data: consumable } = await supabase
+    .from('ot_consumables').select('pharmacy_request_id').eq('id', id).single()
+
+  // Cancel linked pharmacy request if still pending
+  if (consumable?.pharmacy_request_id) {
+    await supabase.from('ipd_pharmacy_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', consumable.pharmacy_request_id)
+      .eq('status', 'pending')
+  }
+
+  // Remove linked bill_item and recalculate bill total
+  const { data: billItem } = await supabase
+    .from('bill_items').select('bill_id, amount').eq('ref_id', id).eq('source', 'ot_consumable').maybeSingle()
+  if (billItem?.bill_id) {
+    await supabase.from('bill_items').delete().eq('ref_id', id).eq('source', 'ot_consumable')
+    const { data: remaining } = await supabase
+      .from('bill_items').select('amount').eq('bill_id', billItem.bill_id)
+    const newTotal = (remaining ?? []).reduce((s, r) => s + (r.amount as number), 0)
+    const { data: bill } = await supabase.from('bills').select('paid').eq('id', billItem.bill_id).single()
+    const paid = (bill?.paid as number) ?? 0
+    const newStatus = newTotal <= 0 ? 'cancelled' : paid >= newTotal ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
+    await supabase.from('bills').update({ subtotal: newTotal, total: newTotal, status: newStatus }).eq('id', billItem.bill_id)
+  }
+
   const { error } = await supabase.from('ot_consumables').delete().eq('id', id)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'remove_consumable', 'ot_consumable', id)

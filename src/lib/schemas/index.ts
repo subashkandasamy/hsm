@@ -224,10 +224,12 @@ export const OtScheduleSchema = z.object({
 })
 
 export const OtConsumableSchema = z.object({
-  ot_schedule_id: z.string().uuid(),
-  description:    z.string().min(1, 'Description is required'),
-  qty:            z.number().int().min(1),
-  unit_price:     z.number().min(0),
+  ot_schedule_id:  z.string().uuid(),
+  description:     z.string().min(1, 'Description is required'),
+  qty:             z.number().int().min(1),
+  unit_price:      z.number().min(0),
+  drug_master_id:  z.string().uuid().nullable().optional(),
+  drug_id:         z.string().uuid().nullable().optional(),
 })
 
 // ---- Phase 4: Blood Bank ----
