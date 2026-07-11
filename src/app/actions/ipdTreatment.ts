@@ -615,10 +615,11 @@ export async function createIpdLabOrder(
 
   const supabase = await createClient()
   const { data: tests } = await supabase
-    .from('lab_tests_catalog').select('id, price').in('id', testIds)
+    .from('lab_tests_catalog').select('id, price, name').in('id', testIds)
   if (!tests?.length) return { success: false, error: 'No valid tests selected' }
 
   const priceMap = new Map(tests.map((t) => [t.id as string, t.price as number]))
+  const nameMap  = new Map(tests.map((t) => [t.id as string, t.name as string]))
   const orderId = crypto.randomUUID()
 
   const { error: orderErr } = await supabase.from('lab_orders').insert({
@@ -637,6 +638,28 @@ export async function createIpdLabOrder(
   const { error: itemErr } = await supabase.from('lab_order_items').insert(items)
   if (itemErr) return { success: false, error: itemErr.message }
 
+  // Auto-generate IPD bill immediately on order creation
+  const totalAmount = items.reduce((s, i) => s + i.price_snapshot, 0)
+  if (totalAmount > 0) {
+    const { autoIpdBill } = await import('@/lib/ipdBilling')
+    const today = new Date().toISOString().split('T')[0]
+    await autoIpdBill(supabase, actor.id, {
+      tenantId: actor.tenant_id,
+      admissionId,
+      patientId,
+      billingDate: today,
+      billSource: 'lab',
+      lineItems: testIds.map((test_id) => ({
+        source: 'lab' as const,
+        ref_id: orderId,
+        description: nameMap.get(test_id) ?? 'Lab test',
+        qty: 1,
+        unit_price: priceMap.get(test_id) ?? 0,
+      })),
+    })
+    await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
+  }
+
   await logAudit(actor.id, 'create', 'lab_order', orderId, { admissionId, count: testIds.length })
   return { success: true, orderId }
 }
@@ -648,6 +671,18 @@ export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> 
   const supabase = await createClient()
   const { error } = await supabase.from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
+
+  // Cancel linked bill if no payments made yet
+  const { data: billItem } = await supabase
+    .from('bill_items').select('bill_id').eq('ref_id', orderId).eq('source', 'lab').maybeSingle()
+  if (billItem?.bill_id) {
+    const { count } = await supabase
+      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
+    if ((count ?? 0) === 0) {
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
+    }
+  }
+
   await logAudit(actor.id, 'cancel', 'lab_order', orderId, {})
   return { success: true }
 }
@@ -684,20 +719,42 @@ export async function createIpdRadiologyOrder(
 
   const supabase = await createClient()
   const { data: test } = await supabase
-    .from('radiology_catalog').select('price').eq('id', testId).single()
+    .from('radiology_catalog').select('price, name').eq('id', testId).single()
   if (!test) return { success: false, error: 'Scan not found in catalog' }
 
   const id = crypto.randomUUID()
+  const priceSnapshot = test.price as number
   const { error } = await supabase.from('radiology_orders').insert({
     id, tenant_id: actor.tenant_id,
     patient_id: patientId, admission_id: admissionId,
     test_id: testId, ordered_by: actor.id,
-    price_snapshot: test.price as number,
+    price_snapshot: priceSnapshot,
     status: 'ordered', billing_status: 'unbilled',
     report: notes ?? null,
     priority, scheduled_for: scheduledFor ?? new Date().toISOString().split('T')[0],
   })
   if (error) return { success: false, error: error.message }
+
+  // Auto-generate IPD bill immediately on order creation
+  if (priceSnapshot > 0) {
+    const { autoIpdBill } = await import('@/lib/ipdBilling')
+    const today = new Date().toISOString().split('T')[0]
+    await autoIpdBill(supabase, actor.id, {
+      tenantId: actor.tenant_id,
+      admissionId,
+      patientId,
+      billingDate: today,
+      billSource: 'radiology',
+      lineItems: [{
+        source: 'radiology' as const,
+        ref_id: id,
+        description: (test.name as string) ?? 'Radiology scan',
+        qty: 1,
+        unit_price: priceSnapshot,
+      }],
+    })
+    await supabase.from('radiology_orders').update({ billing_status: 'billed' }).eq('id', id)
+  }
 
   await logAudit(actor.id, 'create', 'radiology_order', id, { admissionId, testId })
   return { success: true, orderId: id }
@@ -710,6 +767,18 @@ export async function cancelIpdRadiologyOrder(orderId: string): Promise<SimpleRe
   const supabase = await createClient()
   const { error } = await supabase.from('radiology_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
+
+  // Cancel linked bill if no payments made yet
+  const { data: billItem } = await supabase
+    .from('bill_items').select('bill_id').eq('ref_id', orderId).eq('source', 'radiology').maybeSingle()
+  if (billItem?.bill_id) {
+    const { count } = await supabase
+      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
+    if ((count ?? 0) === 0) {
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
+    }
+  }
+
   await logAudit(actor.id, 'cancel', 'radiology_order', orderId, {})
   return { success: true }
 }
