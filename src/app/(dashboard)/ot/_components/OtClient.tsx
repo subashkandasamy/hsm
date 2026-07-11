@@ -64,7 +64,6 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
 
   function navigate(n: number) {
     const next = addDays(date, n)
-    if (n > 0 && next > new Date().toISOString().split('T')[0]) return  // block future
     setDate(next)
     loadDay(next)
   }
@@ -100,8 +99,8 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
           <ChevronLeft className="w-4 h-4" style={{ color: '#64748B' }} />
         </button>
         <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{fmtDate(date)}</span>
-        <button onClick={() => navigate(1)} disabled={isToday} className="p-1.5 rounded-lg"
-          style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', cursor: isToday ? 'not-allowed' : 'pointer', opacity: isToday ? 0.4 : 1 }}>
+        <button onClick={() => navigate(1)} className="p-1.5 rounded-lg"
+          style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
           <ChevronRight className="w-4 h-4" style={{ color: '#64748B' }} />
         </button>
         {!isToday && (
