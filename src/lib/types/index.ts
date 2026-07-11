@@ -850,6 +850,8 @@ export interface IpdMedicationOrder {
   ordered_by: string
   type: MedicationOrderType
   drug_name: string | null
+  drug_master_id: string | null
+  drug_id: string | null
   dose: number | null
   dose_unit: string | null
   route: string | null
@@ -894,6 +896,8 @@ export interface IpdPharmacyRequest {
   item_name: string
   quantity: number
   unit: string | null
+  drug_master_id: string | null
+  drug_id: string | null
   status: 'pending' | 'dispensed' | 'cancelled'
   dispensed_by: string | null
   dispensed_at: string | null
@@ -901,7 +905,7 @@ export interface IpdPharmacyRequest {
   price_snapshot: number
   billing_status: 'pending' | 'unbilled' | 'billed'
   created_at: string
-  admission?: { patient?: Pick<Patient, 'full_name' | 'uhid'>; ward?: { name: string }; bed?: { bed_no: string } }
+  admission?: { admitted_at?: string | null; patient?: Pick<Patient, 'full_name' | 'uhid'>; ward?: { name: string }; bed?: { bed_no: string } }
 }
 
 export interface AdvanceDepositRequest {

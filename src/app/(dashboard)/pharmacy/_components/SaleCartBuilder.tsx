@@ -18,10 +18,11 @@ import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
 interface Props {
   drugs: DrugWithStock[]
   initialReadySales: PharmacySale[]
+  initialFulfilledSales?: PharmacySale[]
   allPatients?: Patient[]
 }
 
-export default function SaleCartBuilder({ drugs, initialReadySales, allPatients = [] }: Props) {
+export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfilledSales = [], allPatients = [] }: Props) {
   // Cart builder state
   const [patientQuery, setPatientQuery]       = useState('')
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
@@ -37,6 +38,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
 
   // Fulfillment queue state
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
+  const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set())
   const [readySales, setReadySales] = useState(initialReadySales)
   const [billStatusMap, setBillStatusMap] = useState<Map<string, { status: string; paid: number; total: number }>>(
     new Map(initialReadySales.map((s) => [
@@ -581,6 +583,66 @@ export default function SaleCartBuilder({ drugs, initialReadySales, allPatients 
           )}
         </div>
       </div>
+
+      {/* ── Fulfilled sale history ── */}
+      {initialFulfilledSales.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3 mt-2" style={{ color: '#94A3B8' }}>
+            Sale History — Fulfilled ({initialFulfilledSales.length})
+          </h3>
+          <div className="space-y-1.5">
+            {initialFulfilledSales.map((sale) => {
+              const isOpen   = expandedHistory.has(sale.id)
+              const saleDate = new Date(sale.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })
+              const total    = sale.bill?.total ?? 0
+              return (
+                <div key={sale.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                  <button onClick={() => setExpandedHistory(prev => { const n = new Set(prev); n.has(sale.id) ? n.delete(sale.id) : n.add(sale.id); return n })}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                    style={{ background: isOpen ? 'rgba(16,185,129,0.05)' : '#FAFAFA', border: 'none', cursor: 'pointer' }}>
+                    {isOpen
+                      ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />
+                      : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+                    <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+                        {sale.patient?.full_name ?? 'Walk-in'}
+                      </span>
+                      {sale.patient?.uhid && (
+                        <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{sale.patient.uhid}</span>
+                      )}
+                      <span className="text-xs" style={{ color: '#94A3B8' }}>{saleDate}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-md"
+                        style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                        Fulfilled
+                      </span>
+                    </div>
+                    {total > 0 && <Money amount={total} className="text-sm font-semibold flex-shrink-0" style={{ color: '#0D9488' }} />}
+                  </button>
+                  {isOpen && sale.items && sale.items.length > 0 && (
+                    <div className="px-5 py-1.5 space-y-1 border-t" style={{ borderColor: '#F1F5F9' }}>
+                      {sale.items.map((item) => {
+                        const drugName = item.drug?.name ?? item.master?.name ?? 'Drug'
+                        const lineTotal = (item.unit_price ?? 0) * item.qty
+                        return (
+                          <div key={item.id} className="flex items-center justify-between text-xs py-1"
+                            style={{ borderBottom: '1px solid #F8FAFC' }}>
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-3 h-3 flex-shrink-0" style={{ color: '#10B981' }} />
+                              <span style={{ color: '#0F172A' }}>{drugName}</span>
+                              <span style={{ color: '#94A3B8' }}>× {item.qty}</span>
+                            </div>
+                            {lineTotal > 0 && <Money amount={lineTotal} style={{ color: '#0D9488' }} />}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

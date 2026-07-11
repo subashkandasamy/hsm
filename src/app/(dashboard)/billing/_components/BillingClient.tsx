@@ -287,9 +287,10 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   async function handleApplyAdvance(e: React.MouseEvent, billId: string, admissionId: string) {
     e.stopPropagation()
     setApplyingBillId(billId)
-    await applyAdvanceToBill(billId, admissionId)
+    const res = await applyAdvanceToBill(billId, admissionId)
     setApplyingBillId(null)
-    refresh()
+    if (!res.success) alert(res.error ?? 'Failed to apply advance')
+    else refresh()
   }
 
   async function handleCancelBill(e: React.MouseEvent, billId: string) {
@@ -1066,7 +1067,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       {/* IPD bill rows */}
                                       {ipd.bills.map((bill, i) => {
                                         const balance = Math.max(0, bill.total - bill.paid)
-                                        const canApply = canAdvance && hasCollectedAdv && balance > 0
+                                        const canApply = canAdvance && ipdAdvHasBalance && balance > 0
                                           && (bill.status === 'unpaid' || bill.status === 'partial' || bill.status === 'draft')
                                         return (
                                           <div key={bill.id} className="px-4 py-3 cursor-pointer"

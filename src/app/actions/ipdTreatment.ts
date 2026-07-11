@@ -85,6 +85,8 @@ export async function createOrder(
   input: {
     type: IpdMedicationOrder['type']
     drug_name?: string
+    drug_ref_id?: string | null      // drug_master.id (is_global) or drugs.id
+    drug_is_global?: boolean         // true → drug_master, false → drugs
     dose?: number
     dose_unit?: string
     route?: string
@@ -107,6 +109,9 @@ export async function createOrder(
   const orderId = crypto.randomUUID()
   const startAt = new Date()
 
+  const drugMasterId = input.drug_is_global ? (input.drug_ref_id ?? null) : null
+  const drugId       = input.drug_is_global === false ? (input.drug_ref_id ?? null) : null
+
   const { error } = await supabase.from('ipd_medication_orders').insert({
     id:              orderId,
     tenant_id:       actor.tenant_id,
@@ -114,6 +119,8 @@ export async function createOrder(
     ordered_by:      actor.id,
     type:            input.type,
     drug_name:       input.drug_name ?? null,
+    drug_master_id:  drugMasterId,
+    drug_id:         drugId,
     dose:            input.dose ?? null,
     dose_unit:       input.dose_unit ?? null,
     route:           input.route ?? null,
@@ -143,17 +150,31 @@ export async function createOrder(
   // Create pharmacy request for medication and IV orders
   if (input.type !== 'oxygen') {
     const itemName = input.type === 'medication'
-      ? `${input.drug_name ?? 'Medication'} ${input.dose ?? ''}${input.dose_unit ?? ''}`.trim()
+      ? (input.drug_name ?? 'Medication')
       : `${input.fluid_name ?? 'IV Fluid'} ${input.volume_ml ?? ''}ml`.trim()
 
+    // Calculate total dispensing quantity: doses per day × duration
+    let totalQty = 1
+    if (input.type === 'medication') {
+      const days = input.duration_days
+      if (input.frequency_type === 'daily')        totalQty = days
+      else if (input.frequency_type === 'twice_daily')  totalQty = 2 * days
+      else if (input.frequency_type === 'thrice_daily') totalQty = 3 * days
+      else if (input.frequency_type === 'every_x_hours' && input.frequency_hours)
+        totalQty = Math.ceil((24 / input.frequency_hours) * days)
+      // stat / sos / continuous → 1
+    }
+
     await supabase.from('ipd_pharmacy_requests').insert({
-      id:           crypto.randomUUID(),
-      tenant_id:    actor.tenant_id,
-      order_id:     orderId,
-      admission_id: admissionId,
-      item_name:    itemName,
-      quantity:     1,
-      unit:         input.type === 'medication' ? (input.dose_unit ?? null) : 'bottle',
+      id:             crypto.randomUUID(),
+      tenant_id:      actor.tenant_id,
+      order_id:       orderId,
+      admission_id:   admissionId,
+      item_name:      itemName,
+      quantity:       totalQty,
+      unit:           input.type === 'medication' ? null : 'bottle',
+      drug_master_id: input.type === 'medication' ? drugMasterId : null,
+      drug_id:        input.type === 'medication' ? drugId : null,
     })
   }
 
@@ -450,6 +471,7 @@ export async function listIpdPharmacyRequests(): Promise<IpdPharmacyRequest[]> {
     .select(`
       *,
       admission:admissions(
+        admitted_at,
         patient:patients(full_name, uhid),
         ward:wards(name),
         bed:beds(bed_no)
@@ -481,13 +503,16 @@ export async function dispenseIpdRequest(
 
   const supabase = await createClient()
 
-  // Fetch request details needed for auto-billing
+  // Fetch request details needed for billing and stock deduction.
+  // Use * so the query doesn't error on columns added by later migrations (drug_master_id, drug_id).
   const { data: req } = await supabase
     .from('ipd_pharmacy_requests')
-    .select('admission_id, item_name, quantity, admission:admissions(patient_id)')
+    .select('*, admission:admissions(patient_id)')
     .eq('id', requestId)
     .single()
 
+  // billing_status stays 'unbilled' until we confirm the bill was created;
+  // zero-price items have nothing to bill so they are immediately 'billed'
   const { error } = await supabase
     .from('ipd_pharmacy_requests')
     .update({
@@ -496,7 +521,7 @@ export async function dispenseIpdRequest(
       dispensed_at:   new Date().toISOString(),
       notes:          notes ?? null,
       price_snapshot: pricePerUnit,
-      billing_status: 'billed',
+      billing_status: pricePerUnit <= 0 ? 'billed' : 'unbilled',
     })
     .eq('id', requestId)
 
@@ -508,7 +533,7 @@ export async function dispenseIpdRequest(
     const patientId = (req.admission as unknown as { patient_id: string } | null)?.patient_id
     if (patientId) {
       const today = new Date().toISOString().split('T')[0]
-      await autoIpdBill(supabase, actor.id, {
+      const billId = await autoIpdBill(supabase, actor.id, {
         tenantId: actor.tenant_id,
         admissionId: req.admission_id as string,
         patientId,
@@ -522,6 +547,42 @@ export async function dispenseIpdRequest(
           unit_price: pricePerUnit,
         }],
       })
+      if (billId) {
+        await supabase
+          .from('ipd_pharmacy_requests')
+          .update({ billing_status: 'billed' })
+          .eq('id', requestId)
+      }
+      // If billId is null, billing_status stays 'unbilled' so billing can still pick it up
+    }
+  }
+
+  // Deduct stock via stored drug FK only — no name matching.
+  // Requests without a drug ID (typed custom name or pre-migration rows) skip deduction.
+  if (req) {
+    const resolvedId = ((req as Record<string, unknown>).drug_master_id ?? (req as Record<string, unknown>).drug_id) as string | null | undefined
+    const qty = req.quantity as number
+    const today = new Date().toISOString().split('T')[0]
+
+    if (resolvedId && qty > 0) {
+      const { data: batches } = await supabase
+        .from('drug_batches')
+        .select('id, qty_available')
+        .or(`drug_master_id.eq.${resolvedId},drug_id.eq.${resolvedId}`)
+        .gt('expiry', today)
+        .gt('qty_available', 0)
+        .order('expiry', { ascending: true })
+
+      let remaining = qty
+      for (const batch of batches ?? []) {
+        if (remaining <= 0) break
+        const deduct = Math.min(remaining, batch.qty_available as number)
+        await supabase
+          .from('drug_batches')
+          .update({ qty_available: (batch.qty_available as number) - deduct })
+          .eq('id', batch.id)
+        remaining -= deduct
+      }
     }
   }
 

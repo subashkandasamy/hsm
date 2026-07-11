@@ -69,8 +69,12 @@ export async function updateDrugReorderLevel(drugId: string, reorderLevel: numbe
     const { error } = await supabase.from('drugs').update({ reorder_level: reorderLevel }).eq('id', drugId)
     if (error) return { success: false, error: error.message }
   } else {
-    // Global drug — store reorder_level on the drug_master row (it has this column)
-    const { error } = await supabase.from('drug_master').update({ reorder_level: reorderLevel }).eq('id', drugId)
+    // Global drug — drug_master has no reorder_level column; persist it on the drug's batches
+    // (getStock() derives reorder_level for master drugs from drug_batches.reorder_level)
+    const { error } = await supabase
+      .from('drug_batches')
+      .update({ reorder_level: reorderLevel })
+      .eq('drug_master_id', drugId)
     if (error) return { success: false, error: error.message }
   }
   await logAudit(actor.id, 'update', 'drug', drugId, { reorder_level: reorderLevel })
@@ -170,9 +174,12 @@ export async function getStock(): Promise<DrugWithStock[]> {
   type MRow = { id: string; name: string; generic_name: string | null; form: string | null; strength: string | null; unit: string | null }
   type TRow = MRow & { reorder_level: number }
 
+  type BrandDetail = { drug_master_id: string; brand_name: string; manufacturer: string | null; hsn_code: string | null; gst_rate: number | null; pack_size: number | null; pack_unit: string | null }
+
   const masterMap = new Map<string, MRow>()
   const tenantMap = new Map<string, TRow>()
   const masterBrandAliases = new Map<string, string[]>()
+  const masterBrandData    = new Map<string, BrandDetail[]>()
 
   if (masterIds.length) {
     const { data: mDrugs } = await supabase.from('drug_master').select('id, name, generic_name, form, strength, unit').in('id', masterIds)
@@ -180,12 +187,15 @@ export async function getStock(): Promise<DrugWithStock[]> {
 
     const { data: brandRows } = await supabase
       .from('drug_brands')
-      .select('drug_master_id, brand_name')
+      .select('drug_master_id, brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit')
       .in('drug_master_id', masterIds)
-    for (const br of (brandRows ?? []) as { drug_master_id: string; brand_name: string }[]) {
-      const arr = masterBrandAliases.get(br.drug_master_id) ?? []
-      arr.push(br.brand_name)
-      masterBrandAliases.set(br.drug_master_id, arr)
+    for (const br of (brandRows ?? []) as BrandDetail[]) {
+      const aliases = masterBrandAliases.get(br.drug_master_id) ?? []
+      aliases.push(br.brand_name)
+      masterBrandAliases.set(br.drug_master_id, aliases)
+      const data = masterBrandData.get(br.drug_master_id) ?? []
+      data.push(br)
+      masterBrandData.set(br.drug_master_id, data)
     }
   }
   if (tenantIds.length) {
@@ -228,6 +238,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
         : Math.max(reorderByKey.get(key) ?? 0, (tenantMap.get(key) as TRow | undefined)?.reorder_level ?? 0)
 
       const brand_aliases = isMaster ? (masterBrandAliases.get(key) ?? []) : []
+      const brand_data    = isMaster ? (masterBrandData.get(key) ?? []) : []
       return {
         id: key,
         name: info.name,
@@ -239,6 +250,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
         is_active: true,
         is_global: isMaster,
         brand_aliases,
+        brand_data,
         total_qty,
         batches,
       }
@@ -246,10 +258,23 @@ export async function getStock(): Promise<DrugWithStock[]> {
     .filter((d): d is DrugWithStock => d !== null)
 }
 
+export type RichBatch = DrugBatch & {
+  drug_name: string
+  generic_name: string | null
+  form: string | null
+  strength: string | null
+  brand_name: string | null
+  manufacturer: string | null
+  hsn_code: string | null
+  pack_size: number | null
+  pack_unit: string | null
+  all_brands: Array<{ brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }>
+}
+
 export interface PharmacyAlerts {
   lowStock: DrugWithStock[]
-  nearExpiry: (DrugBatch & { drug_name: string })[]
-  expired: (DrugBatch & { drug_name: string })[]
+  nearExpiry: RichBatch[]
+  expired: RichBatch[]
 }
 
 export async function getAlerts(): Promise<PharmacyAlerts> {
@@ -260,25 +285,40 @@ export async function getAlerts(): Promise<PharmacyAlerts> {
   const stock = await getStock()
   const lowStock = stock.filter((d) => d.total_qty <= (d.reorder_level ?? 0))
 
+  const batchSelect = `
+    *,
+    master:drug_master(name, generic_name, form, strength, drug_brands(brand_name, manufacturer, hsn_code, pack_size, pack_unit)),
+    drug:drugs(name, generic_name, form, strength)
+  `
+
   const [{ data: nearRaw }, { data: expiredRaw }] = await Promise.all([
-    supabase
-      .from('drug_batches')
-      .select('*, master:drug_master(name), drug:drugs(name)')
-      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0)
-      .order('expiry'),
-    supabase
-      .from('drug_batches')
-      .select('*, master:drug_master(name), drug:drugs(name)')
-      .lte('expiry', today).gt('qty_available', 0)
-      .order('expiry'),
+    supabase.from('drug_batches').select(batchSelect)
+      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0).order('expiry'),
+    supabase.from('drug_batches').select(batchSelect)
+      .lte('expiry', today).gt('qty_available', 0).order('expiry'),
   ])
 
-  const mapBatch = (b: Record<string, unknown>) => ({
-    ...(b as unknown as DrugBatch),
-    drug_name: (b.master as { name: string } | null)?.name
-      ?? (b.drug as { name: string } | null)?.name
-      ?? '—',
-  })
+  type MasterJoin = { name: string; generic_name: string | null; form: string | null; strength: string | null; drug_brands?: Array<{ brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }> }
+  type DrugJoin   = { name: string; generic_name: string | null; form: string | null; strength: string | null }
+
+  const mapBatch = (b: Record<string, unknown>) => {
+    const master = b.master as MasterJoin | null
+    const drug   = b.drug   as DrugJoin   | null
+    const brands = master?.drug_brands ?? []
+    return {
+      ...(b as unknown as DrugBatch),
+      drug_name:    master?.name ?? drug?.name ?? '—',
+      generic_name: master?.generic_name ?? drug?.generic_name ?? null,
+      form:         master?.form ?? drug?.form ?? null,
+      strength:     master?.strength ?? drug?.strength ?? null,
+      brand_name:   brands[0]?.brand_name ?? null,
+      manufacturer: brands[0]?.manufacturer ?? null,
+      hsn_code:     brands[0]?.hsn_code ?? null,
+      pack_size:    brands[0]?.pack_size ?? null,
+      pack_unit:    brands[0]?.pack_unit ?? null,
+      all_brands:   brands,
+    }
+  }
 
   return {
     lowStock,
@@ -660,6 +700,78 @@ export async function listPackedAwaitingDispatch(): Promise<AwaitingDispatchPati
       bill: billByPatient.get(pid) ?? null,
     }
   })
+}
+
+export interface DispatchedPatientHistory {
+  patient_id: string
+  patient_name: string
+  patient_uhid: string
+  dispatched_at: string
+  items: Array<{ name: string; qty: number; unit_price: number; total: number }>
+  total: number
+}
+
+export async function listDispatchedHistory(limitDays = 7): Promise<DispatchedPatientHistory[]> {
+  const supabase = await createClient()
+  const since = new Date(Date.now() - limitDays * 86400_000).toISOString()
+
+  const { data } = await supabase
+    .from('dispenses')
+    .select('id, patient_id, qty, price_snapshot, dispatched_at, drug_id, drug_master_id')
+    .not('dispatched_at', 'is', null)
+    .gte('dispatched_at', since)
+    .order('dispatched_at', { ascending: false })
+    .limit(200)
+
+  if (!data?.length) return []
+
+  const rows = data as Array<{
+    id: string; patient_id: string; qty: number; price_snapshot: number
+    dispatched_at: string; drug_id: string | null; drug_master_id: string | null
+  }>
+
+  const patientIds    = [...new Set(rows.map(r => r.patient_id))]
+  const masterIds     = [...new Set(rows.map(r => r.drug_master_id).filter(Boolean) as string[])]
+  const tenantDrugIds = [...new Set(rows.map(r => r.drug_id).filter(Boolean) as string[])]
+
+  const [{ data: patients }, { data: masterDrugs }, { data: tenantDrugs }] = await Promise.all([
+    supabase.from('patients').select('id, full_name, uhid').in('id', patientIds),
+    masterIds.length
+      ? supabase.from('drug_master').select('id, name').in('id', masterIds)
+      : Promise.resolve({ data: [] }),
+    tenantDrugIds.length
+      ? supabase.from('drugs').select('id, name').in('id', tenantDrugIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const patientMap  = new Map((patients ?? []).map(p => [p.id as string, p as { id: string; full_name: string; uhid: string }]))
+  const drugNameMap = new Map<string, string>()
+  for (const d of (masterDrugs ?? [])) drugNameMap.set(d.id as string, d.name as string)
+  for (const d of (tenantDrugs ?? [])) drugNameMap.set(d.id as string, d.name as string)
+
+  const byPatient = new Map<string, DispatchedPatientHistory>()
+  for (const r of rows) {
+    const pid = r.patient_id
+    const patient = patientMap.get(pid)
+    if (!byPatient.has(pid)) {
+      byPatient.set(pid, {
+        patient_id: pid,
+        patient_name: patient?.full_name ?? '—',
+        patient_uhid: patient?.uhid ?? '',
+        dispatched_at: r.dispatched_at,
+        items: [],
+        total: 0,
+      })
+    }
+    const group = byPatient.get(pid)!
+    const drugId = r.drug_master_id ?? r.drug_id ?? ''
+    const itemTotal = r.qty * r.price_snapshot
+    group.items.push({ name: drugNameMap.get(drugId) ?? 'Drug', qty: r.qty, unit_price: r.price_snapshot, total: itemTotal })
+    group.total += itemTotal
+    if (r.dispatched_at > group.dispatched_at) group.dispatched_at = r.dispatched_at
+  }
+
+  return Array.from(byPatient.values()).sort((a, b) => b.dispatched_at.localeCompare(a.dispatched_at))
 }
 
 export async function getFefoPreview(

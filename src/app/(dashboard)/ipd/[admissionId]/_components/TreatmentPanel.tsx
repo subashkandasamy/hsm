@@ -1018,14 +1018,16 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
 
 interface OrderForm {
   type: IpdMedicationOrder['type']
-  drug_name: string; dose: string; dose_unit: string; route: string
+  drug_name: string; drug_ref_id: string | null; drug_is_global: boolean
+  dose: string; dose_unit: string; route: string
   fluid_name: string; volume_ml: string; rate_ml_per_hr: string
   flow_rate_lpm: string; delivery_method: string
   frequency_type: FrequencyType; frequency_hours: string
   duration_days: string; notes: string
 }
 const BLANK: OrderForm = {
-  type: 'medication', drug_name: '', dose: '', dose_unit: 'mg', route: 'IV',
+  type: 'medication', drug_name: '', drug_ref_id: null, drug_is_global: false,
+  dose: '', dose_unit: 'mg', route: 'IV',
   fluid_name: '', volume_ml: '', rate_ml_per_hr: '',
   flow_rate_lpm: '', delivery_method: 'Nasal Cannula',
   frequency_type: 'daily', frequency_hours: '6', duration_days: '5', notes: '',
@@ -1076,6 +1078,8 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     const res = await createOrder(admissionId, {
       type:            form.type,
       drug_name:       form.drug_name || undefined,
+      drug_ref_id:     form.drug_ref_id,
+      drug_is_global:  form.drug_is_global,
       dose:            form.dose ? parseFloat(form.dose) : undefined,
       dose_unit:       form.dose_unit || undefined,
       route:           form.route || undefined,
@@ -1203,7 +1207,15 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                 <div className="col-span-2">
                   <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Drug Name *</label>
                   <DrugCombobox value={form.drug_name} drugs={pharmaDrugs}
-                    onChange={(name, drug) => { setF('drug_name', name); if (drug?.unit) setF('dose_unit', drug.unit) }} />
+                    onChange={(name, drug) => {
+                      setF('drug_name', name)
+                      if (drug?.unit) setF('dose_unit', drug.unit)
+                      setForm((f) => ({
+                        ...f,
+                        drug_ref_id:    drug?.id ?? null,
+                        drug_is_global: drug?.is_global ?? false,
+                      }))
+                    }} />
                 </div>
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Dose</label>

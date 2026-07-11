@@ -359,7 +359,10 @@ function RoomTypeSection({
             // General ward: each ward with its own collapse + bed grid
             <div className="space-y-1">
               {wards.map(ward => {
-                const locationStr = [ward.floor, ward.block].filter(Boolean).join(' · ')
+                const locationStr = [
+                  ward.floor ? `Floor ${ward.floor}` : null,
+                  ward.block ? `Block ${ward.block}` : null,
+                ].filter(Boolean).join(' · ')
                 const avail = ward.beds.filter(b => b.status === 'available').length
                 const occ   = ward.beds.filter(b => b.status === 'occupied').length
                 return (
@@ -410,8 +413,15 @@ function MultiWardRow({ ward, locationStr, avail, occ, isAdmin, onView, onEdit, 
           {open ? <ChevronDown className="w-3 h-3" style={{ color: '#94A3B8' }} />
                 : <ChevronRight className="w-3 h-3" style={{ color: '#94A3B8' }} />}
         </button>
-        <span className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: '#374151' }}>{ward.name}</span>
-        {locationStr && <span className="flex items-center gap-0.5 text-xs" style={{ color: '#94A3B8' }}><MapPin className="w-2.5 h-2.5" />{locationStr}</span>}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.05rem' }}>
+          <span className="text-xs font-semibold truncate" style={{ color: '#374151' }}>{ward.name}</span>
+          {locationStr && (
+            <span style={{ fontSize: '0.65rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+              <MapPin style={{ width: '0.55rem', height: '0.55rem', flexShrink: 0 }} />
+              {locationStr}
+            </span>
+          )}
+        </div>
         <span className="text-xs" style={{ color: '#94A3B8' }}>
           <span style={{ color: '#15803D', fontWeight: 600 }}>{avail}</span>
           {occ > 0 && <> · <span style={{ color: '#DC2626', fontWeight: 600 }}>{occ}</span> occ</>}
@@ -1143,7 +1153,10 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
             </div>
             <div className="p-3 space-y-2">
               {(nonTempByType.get(null) ?? []).map(ward => {
-                const locationStr = [ward.floor, ward.block].filter(Boolean).join(' · ')
+                const locationStr = [
+                  ward.floor ? `Floor ${ward.floor}` : null,
+                  ward.block ? `Block ${ward.block}` : null,
+                ].filter(Boolean).join(' · ')
                 const avail = ward.beds.filter(b => b.status === 'available').length
                 return (
                   <div key={ward.id} className="flex items-center gap-3">
@@ -1222,7 +1235,10 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
             <div className="space-y-2">
               {otRooms.map(room => {
                 const sm = OT_STATUS_META[room.status ?? 'active']
-                const locationStr = [room.floor, room.block].filter(Boolean).join(' · ')
+                const locationStr = [
+                  room.floor ? `Floor ${room.floor}` : null,
+                  room.block ? `Block ${room.block}` : null,
+                ].filter(Boolean).join(' · ')
                 return (
                   <GlassCard key={room.id} className="p-4">
                     <div className="flex items-start gap-3">

@@ -133,7 +133,7 @@ export async function applyAdvanceToBill(
 
   const financials = await getAdmissionFinancials(admissionId)
   const remaining = financials.unusedAdvance
-  if (remaining <= 0) return { success: true } // no advance to apply
+  if (remaining <= 0) return { success: false, error: 'No unused advance balance available for this admission' }
 
   const billBalance = (bill.total as number) - (bill.paid as number)
   const applyAmount = Math.min(remaining, billBalance)

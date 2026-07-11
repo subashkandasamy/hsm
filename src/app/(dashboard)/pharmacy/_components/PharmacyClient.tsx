@@ -19,7 +19,9 @@ import {
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
-import type { PharmacyAlerts, AwaitingDispatchPatient } from '@/app/actions/pharmacy'
+import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
+import { listDispatchedHistory } from '@/app/actions/pharmacy'
+import { listPharmacySales } from '@/app/actions/pharmacySale'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import Select from '@/components/ui/Select'
@@ -36,15 +38,17 @@ interface Props {
   initialAlerts: PharmacyAlerts
   drugs: Drug[]
   initialReadySales: PharmacySale[]
+  initialFulfilledSales: PharmacySale[]
   allPatients: Patient[]
   initialAwaitingDispatch: AwaitingDispatchPatient[]
   initialIpdRequests: IpdPharmacyRequest[]
+  initialOpdHistory: DispatchedPatientHistory[]
 }
 
 export default function PharmacyClient({
   initialPending, initialStock, initialAlerts, drugs,
-  initialReadySales, allPatients, initialAwaitingDispatch,
-  initialIpdRequests,
+  initialReadySales, initialFulfilledSales, allPatients, initialAwaitingDispatch,
+  initialIpdRequests, initialOpdHistory,
 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
@@ -88,16 +92,20 @@ export default function PharmacyClient({
   const [dispatchedPatients, setDispatchedPatients] = useState<Set<string>>(new Set())
   const [ipdRequests, setIpdRequests] = useState(initialIpdRequests)
   const [dispensingIpdId, setDispensingIpdId] = useState<string | null>(null)
+  const [opdHistory, setOpdHistory] = useState(initialOpdHistory)
+  const [fulfilledSales, setFulfilledSales] = useState(initialFulfilledSales)
 
   const alertCount = alerts.lowStock.length + alerts.nearExpiry.length + alerts.expired.length
   const ipdPendingCount = ipdRequests.filter((r) => r.status === 'pending').length
 
   async function refresh() {
     setLoading(true)
-    const [p, s, a, aw, ipd] = await Promise.all([
-      listPendingPrescriptions(), getStock(), getAlerts(), listPackedAwaitingDispatch(), listIpdPharmacyRequests(),
+    const [p, s, a, aw, ipd, hist, fulfilled] = await Promise.all([
+      listPendingPrescriptions(), getStock(), getAlerts(), listPackedAwaitingDispatch(),
+      listIpdPharmacyRequests(), listDispatchedHistory(), listPharmacySales({ status: 'fulfilled' }),
     ])
-    setPending(p); setStock(s); setAlerts(a); setAwaitingDispatch(aw); setIpdRequests(ipd)
+    setPending(p); setStock(s); setAlerts(a); setAwaitingDispatch(aw)
+    setIpdRequests(ipd); setOpdHistory(hist); setFulfilledSales(fulfilled)
     const billMap = new Map<string, BillInfo>()
     const dispMap = new Map<string, string[]>()
     for (const ap of aw) {
@@ -227,7 +235,7 @@ export default function PharmacyClient({
       </div>
 
       {tab === 'cart' && canSale && (
-        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} allPatients={allPatients} />
+        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} initialFulfilledSales={fulfilledSales} allPatients={allPatients} />
       )}
       {tab === 'cart' && !canSale && (
         <p className="text-sm p-4" style={{ color: '#64748B' }}>You don&apos;t have permission to manage sale carts.</p>
@@ -244,6 +252,7 @@ export default function PharmacyClient({
           billInfoMap={billInfoMap}
           dispatchedPatients={dispatchedPatients}
           canDispense={canDispense}
+          dispatchedHistory={opdHistory}
           onDispense={setDispenseRx}
           onSkipRx={(rxId) => setSkippedRxIds((prev) => new Set([...prev, rxId]))}
           onUnSkipRx={(rxId) => setSkippedRxIds((prev) => { const n = new Set(prev); n.delete(rxId); return n })}
@@ -310,7 +319,7 @@ type PatientGroup = {
 function DispenseQueue({
   pending, awaitingDispatch, drugs,
   skippedRxIds, dispensedIds, extraByPatient, billInfoMap, dispatchedPatients,
-  canDispense,
+  canDispense, dispatchedHistory,
   onDispense, onSkipRx, onUnSkipRx, onAddAndPack, onCheckPayment, onDispatch,
 }: {
   pending: PrescriptionWithVisit[]
@@ -322,6 +331,7 @@ function DispenseQueue({
   billInfoMap: Map<string, BillInfo>
   dispatchedPatients: Set<string>
   canDispense: boolean
+  dispatchedHistory: DispatchedPatientHistory[]
   onDispense: (rx: PrescriptionWithVisit) => void
   onSkipRx: (rxId: string) => void
   onUnSkipRx: (rxId: string) => void
@@ -403,6 +413,7 @@ function DispenseQueue({
   }
 
   return (
+    <>
     <div className="space-y-4">
       {/* Packing-phase patients */}
       {pendingGroups.map((group) => {
@@ -783,6 +794,69 @@ function DispenseQueue({
         )
       })}
     </div>
+    {/* ── OPD Dispatch History ── */}
+    {dispatchedHistory.length > 0 && (
+      <div className="mt-6">
+        <OpdDispatchHistory history={dispatchedHistory} />
+      </div>
+    )}
+    </>
+  )
+}
+
+function OpdDispatchHistory({ history }: { history: DispatchedPatientHistory[] }) {
+  const [expandedSet, setExpandedSet] = useState<Set<string>>(new Set())
+  function toggle(id: string) {
+    setExpandedSet(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  return (
+    <GlassCard>
+      <div className="p-4">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: '#94A3B8' }}>
+          Recently Dispatched (last 7 days · {history.length} patient{history.length !== 1 ? 's' : ''})
+        </h3>
+        <div className="space-y-1.5">
+          {history.map((p) => {
+            const isOpen = expandedSet.has(p.patient_id)
+            return (
+              <div key={p.patient_id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <button onClick={() => toggle(p.patient_id)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                  style={{ background: isOpen ? 'rgba(16,185,129,0.05)' : '#FAFAFA', border: 'none', cursor: 'pointer' }}>
+                  {isOpen ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />
+                           : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+                  <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{p.patient_name}</span>
+                    {p.patient_uhid && <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{p.patient_uhid}</span>}
+                    <span className="text-xs" style={{ color: '#94A3B8' }}>
+                      {new Date(p.dispatched_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>
+                      {p.items.length} item{p.items.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {p.total > 0 && <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#0D9488' }}>₹{p.total.toFixed(2)}</span>}
+                </button>
+                {isOpen && (
+                  <div className="px-5 py-1.5 space-y-1 border-t" style={{ borderColor: '#F1F5F9' }}>
+                    {p.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs py-1" style={{ borderBottom: '1px solid #F8FAFC' }}>
+                        <div className="flex items-center gap-2">
+                          <Check className="w-3 h-3 flex-shrink-0" style={{ color: '#10B981' }} />
+                          <span style={{ color: '#0F172A' }}>{item.name}</span>
+                          <span style={{ color: '#94A3B8' }}>× {item.qty}</span>
+                        </div>
+                        {item.total > 0 && <span className="font-medium" style={{ color: '#0D9488' }}>₹{item.total.toFixed(2)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </GlassCard>
   )
 }
 
@@ -923,7 +997,7 @@ function StockView({ stock, canManage, onRefresh }: {
                 </div>
                 <p className="text-sm mt-1">
                   <span className="font-bold" style={{ color: isLow ? '#DC2626' : '#0D9488' }}>{drug.total_qty}</span>
-                  <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{drug.unit ?? 'units'} available</span>
+                  <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{(drug.form ?? drug.unit ?? 'units').toLowerCase()} available</span>
                   {(drug.reorder_level ?? 0) > 0 && !isEditing && (
                     <span className="ml-2 text-xs" style={{ color: '#94A3B8' }}>Reorder at {drug.reorder_level}</span>
                   )}
@@ -1041,6 +1115,46 @@ function StockView({ stock, canManage, onRefresh }: {
 
 // ---- Alerts View ----
 
+function DrugMeta({ d }: { d: DrugWithStock }) {
+  const primaryBrand = d.brand_data?.[0]
+  const displayName  = (d.brand_aliases ?? [])[0] ?? d.name
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{displayName}</span>
+        {d.form && <span className="text-xs px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{d.form}</span>}
+        {d.strength && <span className="text-xs" style={{ color: '#64748B' }}>{d.strength}</span>}
+      </div>
+      {primaryBrand && (
+        <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+          {primaryBrand.manufacturer && <span className="text-xs" style={{ color: '#64748B' }}>{primaryBrand.manufacturer}</span>}
+          {primaryBrand.pack_size && primaryBrand.pack_unit && <span className="text-xs" style={{ color: '#94A3B8' }}>{primaryBrand.pack_size} {primaryBrand.pack_unit}/pack</span>}
+          {primaryBrand.hsn_code && <span className="text-xs" style={{ color: '#94A3B8' }}>HSN {primaryBrand.hsn_code}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BatchMeta({ b }: { b: RichBatch }) {
+  const displayName = b.brand_name ?? b.drug_name
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{displayName}</span>
+        {b.form && <span className="text-xs px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{b.form}</span>}
+        {b.strength && <span className="text-xs" style={{ color: '#64748B' }}>{b.strength}</span>}
+        <span className="font-mono text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F8FAFC', color: '#94A3B8', border: '1px solid #E2E8F0' }}>Batch {b.batch_no}</span>
+      </div>
+      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+        {b.manufacturer && <span className="text-xs" style={{ color: '#64748B' }}>{b.manufacturer}</span>}
+        {b.pack_size && b.pack_unit && <span className="text-xs" style={{ color: '#94A3B8' }}>{b.pack_size} {b.pack_unit}</span>}
+        {b.hsn_code && <span className="text-xs" style={{ color: '#94A3B8' }}>HSN {b.hsn_code}</span>}
+      </div>
+    </div>
+  )
+}
+
 function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
   const hasAlerts = alerts.lowStock.length + alerts.nearExpiry.length + alerts.expired.length > 0
   if (!hasAlerts) {
@@ -1060,13 +1174,12 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
           <div className="space-y-2">
             {alerts.expired.map((b) => (
               <GlassCard key={b.id} className="p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-sm" style={{ color: '#0F172A' }}>{b.drug_name}</span>
-                    <span className="ml-2 font-mono text-xs" style={{ color: '#94A3B8' }}>{b.batch_no}</span>
-                  </div>
-                  <div className="text-xs" style={{ color: '#DC2626' }}>
-                    Expired <DateText date={b.expiry} /> · {b.qty_available} units
+                <div className="flex items-start justify-between gap-4">
+                  <BatchMeta b={b} />
+                  <div className="text-xs text-right flex-shrink-0" style={{ color: '#DC2626' }}>
+                    <div>Expired <DateText date={b.expiry} /></div>
+                    <div className="mt-0.5" style={{ color: '#94A3B8' }}>{b.qty_available} units · <span style={{ color: '#0D9488' }}>₹{b.mrp}/unit</span></div>
+                    {b.storage_location && <div className="mt-0.5" style={{ color: '#7C3AED' }}>📍 {b.storage_location}</div>}
                   </div>
                 </div>
               </GlassCard>
@@ -1082,11 +1195,13 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
           <div className="space-y-2">
             {alerts.lowStock.map((d) => (
               <GlassCard key={d.id} className="p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm" style={{ color: '#0F172A' }}>{d.name}</span>
-                  <span className="text-xs" style={{ color: '#B45309' }}>
-                    {d.total_qty} remaining · reorder at {d.reorder_level}
-                  </span>
+                <div className="flex items-start justify-between gap-4">
+                  <DrugMeta d={d} />
+                  <div className="text-xs text-right flex-shrink-0" style={{ color: '#B45309' }}>
+                    <div className="font-semibold">{d.total_qty} remaining</div>
+                    <div className="mt-0.5" style={{ color: '#94A3B8' }}>Reorder at {d.reorder_level}</div>
+                    {d.batches[0]?.storage_location && <div className="mt-0.5" style={{ color: '#7C3AED' }}>📍 {d.batches[0].storage_location}</div>}
+                  </div>
                 </div>
               </GlassCard>
             ))}
@@ -1101,14 +1216,13 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
           <div className="space-y-2">
             {alerts.nearExpiry.map((b) => (
               <GlassCard key={b.id} className="p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-sm" style={{ color: '#0F172A' }}>{b.drug_name}</span>
-                    <span className="ml-2 font-mono text-xs" style={{ color: '#94A3B8' }}>{b.batch_no}</span>
+                <div className="flex items-start justify-between gap-4">
+                  <BatchMeta b={b} />
+                  <div className="text-xs text-right flex-shrink-0" style={{ color: '#0D9488' }}>
+                    <div>Expires <DateText date={b.expiry} /></div>
+                    <div className="mt-0.5" style={{ color: '#94A3B8' }}>{b.qty_available} units · <span style={{ color: '#0D9488' }}>₹{b.mrp}/unit</span></div>
+                    {b.storage_location && <div className="mt-0.5" style={{ color: '#7C3AED' }}>📍 {b.storage_location}</div>}
                   </div>
-                  <span className="text-xs" style={{ color: '#0D9488' }}>
-                    Expires <DateText date={b.expiry} /> · {b.qty_available} units
-                  </span>
                 </div>
               </GlassCard>
             ))}
@@ -1121,24 +1235,35 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
 
 // ── IPD Ward Queue ────────────────────────────────────────────────────────────
 
-function autoFillPrice(itemName: string, stock: DrugWithStock[]): number {
-  const query = itemName.split(' ')[0].toLowerCase()
-  const drug = stock.find((d) =>
-    d.name.toLowerCase().startsWith(query) || query.startsWith(d.name.toLowerCase())
-  )
-  if (!drug) return 0
-  const batch = drug.batches.find((b) => b.qty_available > 0)
-  return batch?.mrp ?? 0
+interface StockInfo {
+  mrp: number
+  location: string | null
+  availableQty: number
+  inStock: boolean
+  sufficient: boolean
 }
 
-function findStockLocation(itemName: string, stock: DrugWithStock[]): string | null {
-  const query = itemName.split(' ')[0].toLowerCase()
-  const drug = stock.find((d) =>
-    d.name.toLowerCase().startsWith(query) || query.startsWith(d.name.toLowerCase())
-  )
-  if (!drug) return null
-  const batch = drug.batches.find((b) => b.qty_available > 0)
-  return batch?.storage_location ?? null
+function findStockInfo(
+  _itemName: string,
+  stock: DrugWithStock[],
+  requestedQty: number,
+  drugRef?: { id: string | null; isMaster: boolean } | null
+): StockInfo {
+  // Match exclusively by stored drug ID — no name string matching.
+  const drug = drugRef?.id
+    ? stock.find((d) => d.id === drugRef.id && d.is_global === drugRef.isMaster)
+    : undefined
+  if (!drug) return { mrp: 0, location: null, availableQty: 0, inStock: false, sufficient: false }
+  const availableBatches = drug.batches.filter((b) => b.qty_available > 0)
+  const availableQty = availableBatches.reduce((s, b) => s + b.qty_available, 0)
+  const firstBatch = availableBatches[0]
+  return {
+    mrp: firstBatch?.mrp ?? 0,
+    location: firstBatch?.storage_location ?? null,
+    availableQty,
+    inStock: availableQty > 0,
+    sufficient: availableQty >= requestedQty,
+  }
 }
 
 interface IpdWardQueueProps {
@@ -1149,43 +1274,100 @@ interface IpdWardQueueProps {
   onDispense: (id: string, pricePerUnit: number) => void
 }
 
+// Build grouped history: patient → admission → items
+interface IpdAdmissionGroup {
+  admissionId: string
+  wardBed: string
+  admittedAt: string | null
+  items: IpdPharmacyRequest[]
+  subtotal: number
+  hasUnbilled: boolean
+}
+interface IpdPatientGroup {
+  patientName: string
+  uhid: string
+  admissions: IpdAdmissionGroup[]
+}
+
+function buildIpdHistory(dispensed: IpdPharmacyRequest[]): IpdPatientGroup[] {
+  const patientMap = new Map<string, IpdPatientGroup>()
+  for (const req of dispensed) {
+    const patientName = req.admission?.patient?.full_name ?? 'Unknown Patient'
+    const uhid        = req.admission?.patient?.uhid ?? ''
+    if (!patientMap.has(patientName)) patientMap.set(patientName, { patientName, uhid, admissions: [] })
+    const patient = patientMap.get(patientName)!
+
+    let adm = patient.admissions.find(a => a.admissionId === req.admission_id)
+    if (!adm) {
+      const ward = req.admission?.ward?.name ?? ''
+      const bed  = req.admission?.bed?.bed_no ? `Bed ${req.admission.bed.bed_no}` : ''
+      adm = {
+        admissionId: req.admission_id,
+        wardBed: [ward, bed].filter(Boolean).join(' · '),
+        admittedAt: req.admission?.admitted_at ?? null,
+        items: [],
+        subtotal: 0,
+        hasUnbilled: false,
+      }
+      patient.admissions.push(adm)
+    }
+    adm.items.push(req)
+    adm.subtotal += req.price_snapshot * req.quantity
+    if (req.billing_status === 'unbilled') adm.hasUnbilled = true
+  }
+  return Array.from(patientMap.values())
+}
+
 function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }: IpdWardQueueProps) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  const [priceInput, setPriceInput] = useState('')
+  const [confirmingStockInfo, setConfirmingStockInfo] = useState<StockInfo | null>(null)
+  const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
+  const [expandedAdmissions, setExpandedAdmissions] = useState<Set<string>>(new Set())
 
   const pending   = requests.filter((r) => r.status === 'pending')
   const dispensed = requests.filter((r) => r.status === 'dispensed')
+  const history   = buildIpdHistory(dispensed)
 
   function startDispense(req: IpdPharmacyRequest) {
-    const auto = autoFillPrice(req.item_name, stock)
-    setPriceInput(auto > 0 ? String(auto) : '')
+    const drugRef = (req.drug_master_id || req.drug_id)
+      ? { id: req.drug_master_id ?? req.drug_id, isMaster: !!req.drug_master_id }
+      : null
+    const info = findStockInfo(req.item_name, stock, req.quantity, drugRef)
+    setConfirmingStockInfo(info)
     setConfirmingId(req.id)
   }
 
   function cancelDispense() {
     setConfirmingId(null)
-    setPriceInput('')
+    setConfirmingStockInfo(null)
   }
 
   function confirmDispense(reqId: string) {
-    const price = parseFloat(priceInput) || 0
+    // Price always comes from stock MRP — no manual input
+    const price = confirmingStockInfo?.mrp ?? 0
     onDispense(reqId, price)
     setConfirmingId(null)
-    setPriceInput('')
+    setConfirmingStockInfo(null)
+  }
+
+  function togglePatient(key: string) {
+    setExpandedPatients(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  }
+  function toggleAdmission(key: string) {
+    setExpandedAdmissions(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
 
   return (
     <div className="space-y-4">
+      {/* ── Pending requests ── */}
       <GlassCard>
         <div className="p-4">
           <div className="flex items-center gap-2 mb-3">
             <BedDouble className="w-4 h-4" style={{ color: '#0D9488' }} />
             <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
               IPD Ward Requests
-              <span className="ml-2 text-xs font-normal" style={{ color: '#94A3B8' }}>
-                — no payment required to dispense
-              </span>
             </h3>
+            <span className="text-xs" style={{ color: '#94A3B8' }}>— price auto-filled from stock MRP</span>
           </div>
 
           {pending.length === 0 ? (
@@ -1194,9 +1376,12 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
             <div className="space-y-2">
               {pending.map((req) => {
                 const adm = req.admission
-                const isConfirming = confirmingId === req.id
+                const isConfirming  = confirmingId === req.id
                 const isDispatching = dispensingId === req.id
-                const location = findStockLocation(req.item_name, stock)
+                const rowDrugRef = (req.drug_master_id || req.drug_id)
+                  ? { id: req.drug_master_id ?? req.drug_id, isMaster: !!req.drug_master_id }
+                  : null
+                const rowStock = findStockInfo(req.item_name, stock, req.quantity, rowDrugRef)
                 return (
                   <div key={req.id} className="rounded-xl overflow-hidden"
                     style={{ border: '1px solid rgba(13,148,136,0.2)', background: 'rgba(13,148,136,0.03)' }}>
@@ -1206,14 +1391,28 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{req.item_name}</p>
-                          <span className="text-xs px-1.5 py-0.5 rounded-md"
-                            style={{ background: '#F1F5F9', color: '#64748B' }}>
-                            Qty: {req.quantity}{req.unit ? ` ${req.unit}` : ''}
+                          <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>
+                            Qty: {req.quantity}
                           </span>
-                          {location && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md flex items-center gap-1"
-                              style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
-                              📍 {location}
+                          {rowStock.sufficient ? (
+                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                              style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                              {rowStock.availableQty} in stock · ₹{rowStock.mrp}/unit
+                            </span>
+                          ) : rowStock.inStock ? (
+                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                              style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                              Only {rowStock.availableQty} in stock · ₹{rowStock.mrp}/unit
+                            </span>
+                          ) : (
+                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                              style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                              Not in stock
+                            </span>
+                          )}
+                          {rowStock.location && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
+                              📍 {rowStock.location}
                             </span>
                           )}
                         </div>
@@ -1225,9 +1424,7 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                         </p>
                       </div>
                       {canDispense && !isConfirming && (
-                        <button
-                          onClick={() => startDispense(req)}
-                          disabled={isDispatching}
+                        <button onClick={() => startDispense(req)} disabled={isDispatching}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                           <Check className="w-3.5 h-3.5" />
@@ -1236,46 +1433,47 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                       )}
                     </div>
 
-                    {/* Price confirm panel */}
+                    {/* Confirm panel — no price input, price comes from stock */}
                     {isConfirming && (
                       <div className="px-3 pb-3 pt-2 space-y-2"
                         style={{ borderTop: '1px solid rgba(13,148,136,0.15)', background: 'rgba(13,148,136,0.06)' }}>
-                        {location && (
+                        {!confirmingStockInfo?.inStock ? (
+                          <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"
+                            style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+                            ⚠ <span className="font-semibold">Not in stock — add this drug to stock first so price can be captured correctly.</span>
+                          </div>
+                        ) : !confirmingStockInfo.sufficient ? (
+                          <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"
+                            style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E' }}>
+                            ⚠ <span className="font-semibold">Only {confirmingStockInfo.availableQty} in stock, {requests.find(r => r.id === confirmingId)?.quantity} requested.</span>
+                          </div>
+                        ) : confirmingStockInfo.location ? (
                           <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"
                             style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', color: '#7C3AED' }}>
-                            <span>📍</span>
-                            <span className="font-semibold">Pick from: {location}</span>
+                            📍 <span className="font-semibold">Pick from: {confirmingStockInfo.location}</span>
                           </div>
-                        )}
-                        <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-medium flex-shrink-0" style={{ color: '#0F172A' }}>
-                          Price per unit (₹)
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={priceInput}
-                          onChange={(e) => setPriceInput(e.target.value)}
-                          placeholder="Enter MRP"
-                          className="w-28 px-2 py-1 rounded-lg text-xs"
-                          style={{ border: '1px solid #CBD5E1', outline: 'none', color: '#0F172A' }}
-                          autoFocus
-                        />
-                        {priceInput && parseFloat(priceInput) > 0 && (
-                          <span className="text-xs" style={{ color: '#64748B' }}>
-                            × {req.quantity} = ₹{(parseFloat(priceInput) * req.quantity).toFixed(2)}
-                          </span>
-                        )}
-                          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                        ) : null}
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="text-xs" style={{ color: '#475569' }}>
+                            {confirmingStockInfo?.mrp && confirmingStockInfo.mrp > 0 ? (
+                              <>
+                                <span className="font-semibold" style={{ color: '#0D9488' }}>₹{confirmingStockInfo.mrp}/unit</span>
+                                {' '}(MRP from stock){' '}
+                                {requests.find(r => r.id === confirmingId) && (
+                                  <span>× {requests.find(r => r.id === confirmingId)!.quantity} = <span className="font-semibold">₹{(confirmingStockInfo.mrp * requests.find(r => r.id === confirmingId)!.quantity).toFixed(2)}</span></span>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ color: '#DC2626' }}>No price available — bill will be unbilled until stock is added</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             <button onClick={cancelDispense}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs"
                               style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                               Cancel
                             </button>
-                            <button
-                              onClick={() => confirmDispense(req.id)}
-                              disabled={isDispatching}
+                            <button onClick={() => confirmDispense(confirmingId!)} disabled={isDispatching}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
                               style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                               <Check className="w-3 h-3" />
@@ -1293,33 +1491,126 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
         </div>
       </GlassCard>
 
-      {dispensed.length > 0 && (
+      {/* ── Dispensed history — grouped by patient → admission ── */}
+      {history.length > 0 && (
         <GlassCard>
           <div className="p-4">
             <h3 className="text-sm font-semibold mb-3" style={{ color: '#94A3B8' }}>
-              Dispensed ({dispensed.length})
+              Dispensed History ({dispensed.length} items · {history.length} patient{history.length !== 1 ? 's' : ''})
             </h3>
-            <div className="space-y-1.5">
-              {dispensed.map((req) => (
-                <div key={req.id} className="flex items-center justify-between text-xs py-1.5"
-                  style={{ borderBottom: '1px solid #F8FAFC' }}>
-                  <div className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                    <span style={{ color: '#0F172A' }}>{req.item_name}</span>
-                    <span style={{ color: '#94A3B8' }}>{req.admission?.patient?.full_name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {req.price_snapshot > 0 && (
-                      <span className="font-medium" style={{ color: '#0D9488' }}>
-                        ₹{(req.price_snapshot * req.quantity).toFixed(2)}
-                      </span>
+            <div className="space-y-2">
+              {history.map((patient) => {
+                const patientKey = patient.uhid || patient.patientName
+                const isPatientOpen = expandedPatients.has(patientKey)
+                const totalItems = patient.admissions.reduce((s, a) => s + a.items.length, 0)
+                const totalAmt   = patient.admissions.reduce((s, a) => s + a.subtotal, 0)
+                const hasUnbilled = patient.admissions.some(a => a.hasUnbilled)
+                return (
+                  <div key={patientKey} className="rounded-xl overflow-hidden"
+                    style={{ border: '1px solid #E2E8F0' }}>
+                    {/* Patient header */}
+                    <button onClick={() => togglePatient(patientKey)}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                      style={{ background: isPatientOpen ? 'rgba(13,148,136,0.05)' : '#FAFAFA', border: 'none', cursor: 'pointer' }}>
+                      {isPatientOpen ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />
+                                     : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+                      <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{patient.patientName}</span>
+                        {patient.uhid && <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{patient.uhid}</span>}
+                        <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>
+                          {totalItems} item{totalItems !== 1 ? 's' : ''} · {patient.admissions.length} admission{patient.admissions.length !== 1 ? 's' : ''}
+                        </span>
+                        {hasUnbilled && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                            style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                            ⚠ unbilled
+                          </span>
+                        )}
+                      </div>
+                      {totalAmt > 0 && (
+                        <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#0D9488' }}>
+                          ₹{totalAmt.toFixed(2)}
+                        </span>
+                      )}
+                    </button>
+
+                    {isPatientOpen && (
+                      <div className="border-t" style={{ borderColor: '#F1F5F9' }}>
+                        {patient.admissions.map((adm) => {
+                          const admKey = adm.admissionId
+                          const isAdmOpen = expandedAdmissions.has(admKey)
+                          return (
+                            <div key={admKey} style={{ borderBottom: '1px solid #F8FAFC' }}>
+                              {/* Admission sub-header */}
+                              <button onClick={() => toggleAdmission(admKey)}
+                                className="w-full flex items-center gap-2 px-4 py-2 text-left"
+                                style={{ background: isAdmOpen ? '#F0FDF4' : '#FAFAFA', border: 'none', cursor: 'pointer' }}>
+                                {isAdmOpen ? <ChevronDown className="w-3 h-3 flex-shrink-0" style={{ color: '#94A3B8' }} />
+                                           : <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+                                <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
+                                  <span className="text-xs font-semibold" style={{ color: '#374151' }}>
+                                    {adm.wardBed || 'Admission'}
+                                  </span>
+                                  {adm.admittedAt && (
+                                    <span className="text-xs" style={{ color: '#94A3B8' }}>
+                                      Admitted {new Date(adm.admittedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                    </span>
+                                  )}
+                                  <span className="text-xs" style={{ color: '#94A3B8' }}>
+                                    {adm.items.length} item{adm.items.length !== 1 ? 's' : ''}
+                                  </span>
+                                  {adm.hasUnbilled && (
+                                    <span className="text-xs px-1 py-0.5 rounded font-medium"
+                                      style={{ background: '#FEF3C7', color: '#92400E' }}>unbilled</span>
+                                  )}
+                                </div>
+                                {adm.subtotal > 0 && (
+                                  <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#0D9488' }}>
+                                    ₹{adm.subtotal.toFixed(2)}
+                                  </span>
+                                )}
+                              </button>
+
+                              {isAdmOpen && (
+                                <div className="px-6 py-1.5 space-y-1">
+                                  {adm.items.map((item) => (
+                                    <div key={item.id} className="flex items-center justify-between text-xs py-1"
+                                      style={{ borderBottom: '1px solid #F8FAFC' }}>
+                                      <div className="flex items-center gap-2">
+                                        <Check className="w-3 h-3 flex-shrink-0" style={{ color: '#10B981' }} />
+                                        <span style={{ color: '#0F172A' }}>{item.item_name}</span>
+                                        <span style={{ color: '#94A3B8' }}>× {item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+                                        {item.billing_status === 'unbilled' && (
+                                          <span className="px-1 py-0.5 rounded font-medium"
+                                            style={{ background: '#FEF3C7', color: '#92400E', fontSize: '0.6rem' }}>unbilled</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        {item.price_snapshot > 0 ? (
+                                          <span className="font-medium" style={{ color: '#0D9488' }}>
+                                            ₹{(item.price_snapshot * item.quantity).toFixed(2)}
+                                          </span>
+                                        ) : (
+                                          <span style={{ color: '#94A3B8' }}>—</span>
+                                        )}
+                                        <span style={{ color: '#94A3B8' }}>
+                                          {item.dispensed_at
+                                            ? new Date(item.dispensed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+                                            : '—'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     )}
-                    <span style={{ color: '#64748B' }}>
-                      {req.dispensed_at ? new Date(req.dispensed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                    </span>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </GlassCard>
