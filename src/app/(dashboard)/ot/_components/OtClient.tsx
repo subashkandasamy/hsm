@@ -92,20 +92,26 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
         }
       />
 
-      {/* Date navigator */}
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg"
+      {/* Date picker */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg flex-shrink-0"
           style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
           <ChevronLeft className="w-4 h-4" style={{ color: '#64748B' }} />
         </button>
-        <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{fmtDate(date)}</span>
-        <button onClick={() => navigate(1)} className="p-1.5 rounded-lg"
+        <input
+          type="date"
+          value={date}
+          onChange={e => { if (e.target.value) { setDate(e.target.value); loadDay(e.target.value) } }}
+          className="text-sm font-semibold rounded-xl px-3 py-1.5 flex-shrink-0"
+          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', cursor: 'pointer' }}
+        />
+        <button onClick={() => navigate(1)} className="p-1.5 rounded-lg flex-shrink-0"
           style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
           <ChevronRight className="w-4 h-4" style={{ color: '#64748B' }} />
         </button>
         {!isToday && (
           <button onClick={() => { const t = new Date().toISOString().split('T')[0]; setDate(t); loadDay(t) }}
-            className="text-xs px-3 py-1.5 rounded-lg"
+            className="text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
             style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}>
             Today
           </button>
