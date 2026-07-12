@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
 import HospitalEntryForm from './_components/HospitalEntryForm'
 
-export const metadata: Metadata = { title: 'Uyirly' }
+export const metadata: Metadata = {
+  title: 'Uyirly',
+  robots: { index: false, follow: false },
+}
 
 interface Props {
   searchParams: Promise<{ switch?: string }>

@@ -6,7 +6,10 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit } from '@/app/actions/platform'
 import PlatformAdminClient from './_components/PlatformAdminClient'
 
-export const metadata = { title: 'Platform Admin — Uyirly' }
+export const metadata = {
+  title: 'Platform Admin — Uyirly',
+  robots: { index: false, follow: false },
+}
 export const dynamic   = 'force-dynamic'
 
 export default async function PlatformAdminPage() {

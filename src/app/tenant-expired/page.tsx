@@ -1,5 +1,11 @@
+import type { Metadata } from 'next'
 import { CalendarX, RefreshCcw } from 'lucide-react'
 import Link from 'next/link'
+
+export const metadata: Metadata = {
+  title: 'Subscription expired — Uyirly',
+  robots: { index: false, follow: false },
+}
 
 export default function TenantExpiredPage() {
   return (

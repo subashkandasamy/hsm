@@ -1,7 +1,10 @@
 import { headers } from 'next/headers'
 import LoginForm from './_components/LoginForm'
 
-export const metadata = { title: 'Sign in — Uyirly' }
+export const metadata = {
+  title: 'Sign in — Uyirly',
+  robots: { index: false, follow: false },
+}
 
 export default async function LoginPage() {
   const hdrs = await headers()

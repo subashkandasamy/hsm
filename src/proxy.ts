@@ -82,7 +82,9 @@ export async function proxy(request: NextRequest) {
   const PUBLIC_PATHS = [
     '/login', '/signup', '/tenant-not-found', '/tenant-suspended',
     '/auth/callback', '/forgot-password', '/reset-password',
-    '/native-entry',
+    '/native-entry', '/find-hospital',
+    // Public marketing / legal pages
+    '/terms', '/privacy', '/security',
   ]
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 

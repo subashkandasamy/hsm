@@ -1,4 +1,10 @@
+import type { Metadata } from 'next'
 import { AlertTriangle, Mail } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: 'Account suspended — Uyirly',
+  robots: { index: false, follow: false },
+}
 
 export default function TenantSuspendedPage() {
   return (

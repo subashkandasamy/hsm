@@ -3,8 +3,16 @@ import Link from 'next/link'
 import { Building2, CheckCircle, ArrowRight, Mail } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Pricing — Uyirly Hospital Management',
-  description: 'Simple flat pricing for Indian hospitals. Starter, Growth, and Enterprise plans with a 14-day free trial.',
+  title: 'Pricing — Hospital Management Software from ₹2,999/mo | Uyirly',
+  description:
+    'Transparent flat pricing for hospital management software in India. Starter ₹2,999/mo, Growth ₹7,999/mo, and custom Enterprise plans. No per-bed fees, no per-user metering. 30-day free trial, no credit card.',
+  alternates: { canonical: '/pricing' },
+  openGraph: {
+    url: '/pricing',
+    title: 'Uyirly Pricing — Hospital Management Software from ₹2,999/mo',
+    description:
+      'Flat monthly pricing for Indian hospitals. Starter, Growth and Enterprise plans. No per-bed fees. 30-day free trial, no credit card.',
+  },
 }
 
 const TEAL   = '#0D9488'
@@ -68,6 +76,7 @@ const PLANS: PlanDef[] = [
           'Appointment booking with token queue',
           'Basic IPD admission',
           'Prescriptions',
+          'Pharmacy with FEFO dispense',
         ],
       },
       {
@@ -106,7 +115,6 @@ const PLANS: PlanDef[] = [
           'Emergency triage (ESI 1–5)',
           'Lab orders and result entry',
           'Radiology orders and report upload',
-          'Pharmacy with FEFO dispense',
           'OT scheduling with overlap prevention',
           'Blood bank — cross-match and issue',
         ],
@@ -163,7 +171,7 @@ const COMPARE_ROWS: { label: string; starter: string | boolean; growth: string |
   { label: 'IPD',                      starter: 'Basic',      growth: 'Full',        enterprise: 'Full' },
   { label: 'Emergency triage',         starter: false,        growth: true,          enterprise: true },
   { label: 'Lab & Radiology',          starter: false,        growth: true,          enterprise: true },
-  { label: 'Pharmacy (FEFO)',          starter: false,        growth: true,          enterprise: true },
+  { label: 'Pharmacy (FEFO)',          starter: true,         growth: true,          enterprise: true },
   { label: 'OT scheduling',            starter: false,        growth: true,          enterprise: true },
   { label: 'Blood bank',               starter: false,        growth: true,          enterprise: true },
   { label: 'Insurance claims',         starter: false,        growth: true,          enterprise: true },
@@ -181,17 +189,64 @@ function CellValue({ v }: { v: string | boolean }) {
 
 // ── FAQ ───────────────────────────────────────────────────────────────────────
 const FAQS = [
-  { q: 'Is the free trial really free?', a: 'Yes — 14 days, full access, no credit card required. You only pay when you choose to subscribe after the trial.' },
+  { q: 'Is the free trial really free?', a: 'Yes — 30 days, full access, no credit card required. You only pay when you choose to subscribe after the trial.' },
   { q: 'Can I switch plans later?', a: 'Yes, you can upgrade from Starter to Growth at any time. Billing is prorated for the remaining billing period.' },
   { q: 'Are prices inclusive of GST?', a: 'No. Prices shown are exclusive of GST. GST at 18% is added at checkout.' },
   { q: 'What payment methods are accepted?', a: 'Credit card, debit card, UPI, and bank transfer via Stripe. Invoices are available for corporate accounts.' },
   { q: 'Can I cancel anytime?', a: 'Yes. Cancel from the billing portal at any time. No lock-in, no cancellation fees. Remaining days on the current billing period are not refunded.' },
 ]
 
+// ── Structured data (JSON-LD) ──────────────────────────────────────────────────
+const SITE = 'https://uyirly.com'
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: SITE },
+        { '@type': 'ListItem', position: 2, name: 'Pricing', item: `${SITE}/pricing` },
+      ],
+    },
+    {
+      '@type': 'Product',
+      name: 'Uyirly Hospital Management Software',
+      description:
+        'Cloud hospital management software for Indian hospitals, nursing homes and clinics — OPD, IPD, pharmacy, lab, billing, insurance and more.',
+      brand: { '@type': 'Brand', name: 'Uyirly' },
+      offers: {
+        '@type': 'AggregateOffer',
+        priceCurrency: 'INR',
+        lowPrice: '2999',
+        highPrice: '7999',
+        offerCount: 3,
+        offers: [
+          { '@type': 'Offer', name: 'Starter', price: '2999', priceCurrency: 'INR', url: `${SITE}/pricing` },
+          { '@type': 'Offer', name: 'Growth', price: '7999', priceCurrency: 'INR', url: `${SITE}/pricing` },
+          { '@type': 'Offer', name: 'Enterprise', priceCurrency: 'INR', url: `${SITE}/pricing`, description: 'Custom pricing for multi-location hospital groups.' },
+        ],
+      },
+    },
+    {
+      '@type': 'FAQPage',
+      mainEntity: FAQS.map(({ q, a }) => ({
+        '@type': 'Question',
+        name: q,
+        acceptedAnswer: { '@type': 'Answer', text: a },
+      })),
+    },
+  ],
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function PricingPage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Nav />
 
       <main className="pt-24">
@@ -206,7 +261,7 @@ export default function PricingPage() {
               No per-bed fees. No per-user metering. One flat monthly rate.
             </p>
             <p className="text-sm" style={{ color: SLATE4 }}>
-              14-day free trial on all self-serve plans · No credit card required
+              30-day free trial on all self-serve plans · No credit card required
             </p>
           </div>
         </section>
@@ -359,8 +414,9 @@ export default function PricingPage() {
         <footer className="py-10 px-4 sm:px-6 text-center" style={{ borderTop: `1px solid ${BORDER}` }}>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 text-sm" style={{ color: SLATE5 }}>
             <Link href="/" className="hover:underline">Home</Link>
-            <Link href="#" className="hover:underline">Terms</Link>
-            <Link href="#" className="hover:underline">Privacy</Link>
+            <Link href="/terms" className="hover:underline">Terms</Link>
+            <Link href="/privacy" className="hover:underline">Privacy</Link>
+            <Link href="/security" className="hover:underline">Security</Link>
             <a href="mailto:contact@uyirly.com" className="hover:underline">contact@uyirly.com</a>
           </div>
           <p className="mt-4 text-xs" style={{ color: SLATE4 }}>

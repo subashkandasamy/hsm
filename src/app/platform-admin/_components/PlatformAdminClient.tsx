@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import {
   Building2, Users, UserCheck, ShieldAlert, ExternalLink, RefreshCw,
   Loader2, AlertTriangle, CalendarClock, Plus, Trash2, CreditCard,
@@ -19,6 +19,16 @@ import type { AdminSubscriptionRow, AuditRow } from '@/app/actions/platform'
 // Slice ISO string — identical on server and client, no locale variance
 const fmtDate = (iso: string) => iso.slice(0, 10)           // 2026-07-01
 const fmtDateTime = (iso: string) => iso.slice(0, 16).replace('T', ' ')  // 2026-07-01 09:13
+
+// Renders a date ONLY after mount. The SSR HTML contains no date text, so
+// date-reformatting browser extensions (which mutate the DOM before React
+// hydrates) can't trigger a hydration mismatch. Fills in immediately post-mount.
+function ClientDate({ iso, withTime = false }: { iso: string; withTime?: boolean }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted) return null
+  return <span suppressHydrationWarning>{withTime ? fmtDateTime(iso) : fmtDate(iso)}</span>
+}
 
 type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'purged'
 
@@ -58,12 +68,12 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
   const [planChangeId, setPlanChangeId] = useState<string | null>(null)
   const [planChangeVal, setPlanChangeVal] = useState<'starter' | 'growth'>('starter')
   const [trialExtId, setTrialExtId]     = useState<string | null>(null)
-  const [trialDays, setTrialDays]       = useState(14)
+  const [trialDays, setTrialDays]       = useState(30)
   const [purgeId, setPurgeId]           = useState<string | null>(null)
   const [purgeSlug, setPurgeSlug]       = useState('')
   const [createOpen, setCreateOpen]     = useState(false)
   const [createForm, setCreateForm]     = useState({
-    name: '', slug: '', adminEmail: '', plan: 'starter' as 'starter' | 'growth', trialDays: 14,
+    name: '', slug: '', adminEmail: '', plan: 'starter' as 'starter' | 'growth', trialDays: 30,
   })
 
   const todayISO = useMemo(() => new Date().toISOString().split('T')[0], [])
@@ -148,7 +158,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
       })
       if (res.success) {
         setCreateOpen(false)
-        setCreateForm({ name: '', slug: '', adminEmail: '', plan: 'starter', trialDays: 14 })
+        setCreateForm({ name: '', slug: '', adminEmail: '', plan: 'starter', trialDays: 30 })
         reloadTenants(statusFilter)
       } else toast(res.error)
     })
@@ -268,11 +278,11 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                       <div className="flex flex-wrap gap-4 text-xs" style={{ color: '#64748B' }}>
                         <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.user_count} users</span>
                         <span className="flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> {t.patient_count} patients</span>
-                        <span suppressHydrationWarning>Created {fmtDate(t.created_at)}</span>
+                        <span className="flex items-center gap-1">Created <ClientDate iso={t.created_at} /></span>
                         {(t as any).trial_ends_at && t.status === 'trial' && (
-                          <span suppressHydrationWarning className="flex items-center gap-1" style={{ color: '#A78BFA' }}>
+                          <span className="flex items-center gap-1" style={{ color: '#A78BFA' }}>
                             <Clock className="w-3 h-3" />
-                            Trial ends {fmtDate((t as any).trial_ends_at)}
+                            Trial ends <ClientDate iso={(t as any).trial_ends_at} />
                           </span>
                         )}
                       </div>
@@ -291,7 +301,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                           style={{ background: 'rgba(99,102,241,0.12)', color: '#A5B4FC', border: '1px solid rgba(99,102,241,0.2)' }}>
                           <ArrowLeftRight className="w-3.5 h-3.5" /> Plan
                         </button>
-                        <button onClick={() => { setTrialExtId(t.id); setTrialDays(14) }} disabled={isPending}
+                        <button onClick={() => { setTrialExtId(t.id); setTrialDays(30) }} disabled={isPending}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
                           style={{ background: 'rgba(217,119,6,0.12)', color: '#FCD34D', border: '1px solid rgba(217,119,6,0.2)' }}>
                           <CalendarClock className="w-3.5 h-3.5" /> Trial
@@ -362,7 +372,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                         {s.current_period_end && (
                           <span className="flex items-center gap-1">
                             <CreditCard className="w-3 h-3" />
-                            Renews {fmtDate(s.current_period_end!)}
+                            Renews <ClientDate iso={s.current_period_end!} />
                           </span>
                         )}
                         {s.razorpay_sub_id && (
@@ -428,7 +438,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                   )}
                 </div>
                 <span className="text-xs whitespace-nowrap" style={{ color: '#475569' }}>
-                  {fmtDateTime(a.created_at)}
+                  <ClientDate iso={a.created_at} withTime />
                 </span>
               </div>
             ))}

@@ -1,4 +1,10 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+
+export const metadata: Metadata = {
+  title: 'Hospital not found — Uyirly',
+  robots: { index: false, follow: false },
+}
 import { Building2, ArrowRight } from 'lucide-react'
 
 export default function TenantNotFoundPage() {

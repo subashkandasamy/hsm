@@ -1,7 +1,19 @@
+import type { Metadata } from 'next'
 import { Building2 } from 'lucide-react'
 import SignupForm from './_components/SignupForm'
 
-export const metadata = { title: 'Register your hospital — Uyirly' }
+export const metadata: Metadata = {
+  title: 'Start Your Free Trial — Uyirly Hospital Management Software',
+  description:
+    'Register your hospital on Uyirly in under 2 minutes and start a 30-day free trial. No credit card required. All-in-one hospital management software for India — OPD, IPD, pharmacy, lab, billing and more.',
+  alternates: { canonical: '/signup' },
+  openGraph: {
+    url: '/signup',
+    title: 'Start Your Free Trial — Uyirly Hospital Management Software',
+    description:
+      'Set up your hospital in under 2 minutes. 30-day free trial, no credit card. Built for Indian hospitals.',
+  },
+}
 
 interface Props {
   searchParams: Promise<{ plan?: string }>
@@ -29,7 +41,7 @@ export default async function SignupPage({ searchParams }: Props) {
           {selectedPlan === 'growth' && (
             <span className="mt-3 px-3 py-1 rounded-full text-xs font-semibold"
               style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
-              Growth plan selected — 14-day free trial
+              Growth plan selected — 30-day free trial
             </span>
           )}
         </div>

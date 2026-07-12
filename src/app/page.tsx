@@ -11,7 +11,14 @@ import ScrollReveal from '@/components/ui/ScrollReveal'
 export const metadata: Metadata = {
   title: 'Uyirly — Hospital Management Software for India',
   description:
-    'From OPD to billing, pharmacy to blood bank — everything your team needs in one place. Built for Indian hospitals. DPDP Act aligned.',
+    'All-in-one hospital management software for Indian hospitals, nursing homes and clinics. Manage OPD, IPD, pharmacy, lab, radiology, OT, blood bank, billing and insurance from one cloud platform. DPDP Act aligned, data stored in India, native mobile app. Start a 30-day free trial — no credit card.',
+  alternates: { canonical: '/' },
+  openGraph: {
+    url: '/',
+    title: 'Uyirly — Hospital Management Software for India',
+    description:
+      'Run your entire hospital on one platform — OPD to discharge, lab to pharmacy, billing to insurance. Built for Indian hospitals. DPDP Act aligned. 30-day free trial.',
+  },
 }
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -57,7 +64,7 @@ function Nav() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link href="/login" className="hidden sm:inline-flex text-sm font-medium px-4 py-2 rounded-xl"
+          <Link href="/find-hospital" className="hidden sm:inline-flex text-sm font-medium px-4 py-2 rounded-xl"
             style={{ color: S6 }}>
             Sign in
           </Link>
@@ -131,7 +138,7 @@ function Hero() {
           <Link href="/signup?plan=starter"
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold"
             style={{ background: T, color: '#fff', minHeight: '56px', boxShadow: '0 8px 28px rgba(13,148,136,0.35)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
-            Start free — 14 days <ArrowRight className="w-5 h-5" />
+            Start free — 30 days <ArrowRight className="w-5 h-5" />
           </Link>
           <Link href="/pricing"
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold"
@@ -914,7 +921,7 @@ function PricingTeaser() {
         <ScrollReveal>
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-3" style={{ color: S9 }}>Simple, flat pricing</h2>
-            <p className="text-base" style={{ color: S5 }}>14-day free trial on all plans. No credit card required.</p>
+            <p className="text-base" style={{ color: S5 }}>30-day free trial on all plans. No credit card required.</p>
           </div>
         </ScrollReveal>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -979,7 +986,7 @@ const FAQS = [
     a: 'We have built DPDP-aligned controls into the platform: patient consent capture, purpose-limited data access, audit trails, and a data erasure workflow.' },
   { q: 'Can I migrate data from our existing software?',
     a: 'Growth and Enterprise plans include assisted data migration for patient records and historical bills. We support CSV import and can work with exports from most Indian HIS systems.' },
-  { q: 'What happens when the 14-day trial ends?',
+  { q: 'What happens when the 30-day trial ends?',
     a: "You'll receive reminders before the trial ends. If you don't subscribe, your data is retained for 30 days and then deleted. No automatic charges." },
   { q: 'Does it work on mobile and tablets?',
     a: 'Yes. The web app is fully responsive. A native iOS and Android app is also available — the same system, optimised for mobile workflows like bedside nursing and ward rounds.' },
@@ -1053,7 +1060,7 @@ function Footer() {
                 { label: 'Features', href: '#features' },
                 { label: 'Modules',  href: '#modules'  },
                 { label: 'Pricing',  href: '/pricing'  },
-                { label: 'Security', href: '#'         },
+                { label: 'Security', href: '/security' },
               ].map(({ label, href }) => (
                 <li key={label}>
                   <Link href={href} className="text-sm" style={{ color: S5, transition: 'color 0.2s' }}>{label}</Link>
@@ -1066,8 +1073,8 @@ function Footer() {
             <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: S4 }}>Company</p>
             <ul className="space-y-3">
               {[
-                { label: 'Terms',   href: '#'                         },
-                { label: 'Privacy', href: '#'                         },
+                { label: 'Terms',   href: '/terms'                    },
+                { label: 'Privacy', href: '/privacy'                  },
                 { label: 'Contact', href: 'mailto:contact@uyirly.com' },
               ].map(({ label, href }) => (
                 <li key={label}>
@@ -1081,17 +1088,99 @@ function Footer() {
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4"
           style={{ borderTop: `1px solid ${S2}` }}>
           <p className="text-xs" style={{ color: S4 }}>© {new Date().getFullYear()} Uyirly. Made in India 🇮🇳</p>
-          <p className="text-xs" style={{ color: S4 }}>14-day free trial · No credit card required</p>
+          <p className="text-xs" style={{ color: S4 }}>30-day free trial · No credit card required</p>
         </div>
       </div>
     </footer>
   )
 }
 
+// ── Structured data (JSON-LD) ──────────────────────────────────────────────────
+const SITE = 'https://uyirly.com'
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE}/#organization`,
+      name: 'Uyirly',
+      url: SITE,
+      logo: `${SITE}/icons/icon-512.png`,
+      description:
+        'All-in-one hospital management software built for Indian hospitals, nursing homes and clinics.',
+      areaServed: { '@type': 'Country', name: 'India' },
+      contactPoint: {
+        '@type': 'ContactPoint',
+        email: 'contact@uyirly.com',
+        contactType: 'sales',
+        areaServed: 'IN',
+        availableLanguage: ['English', 'Hindi', 'Tamil'],
+      },
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE}/#website`,
+      url: SITE,
+      name: 'Uyirly',
+      publisher: { '@id': `${SITE}/#organization` },
+      inLanguage: 'en-IN',
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${SITE}/#software`,
+      name: 'Uyirly Hospital Management Software',
+      applicationCategory: 'BusinessApplication',
+      applicationSubCategory: 'Hospital Management System',
+      operatingSystem: 'Web, iOS, Android',
+      url: SITE,
+      publisher: { '@id': `${SITE}/#organization` },
+      description:
+        'Cloud hospital management software covering OPD, IPD, emergency, lab, radiology, pharmacy, operation theatre, blood bank, billing, insurance, HR and inventory. DPDP Act aligned, data stored in India.',
+      featureList: [
+        'OPD management', 'IPD & ward management', 'Emergency', 'Laboratory (LIS)',
+        'Radiology', 'Pharmacy', 'Operation theatre', 'Blood bank',
+        'Billing & GST invoicing', 'Insurance & TPA', 'HR & rostering', 'Inventory',
+      ],
+      offers: [
+        {
+          '@type': 'Offer',
+          name: 'Starter',
+          price: '2999',
+          priceCurrency: 'INR',
+          description: 'Flat monthly plan for small hospitals and clinics. 30-day free trial.',
+          url: `${SITE}/pricing`,
+        },
+        {
+          '@type': 'Offer',
+          name: 'Growth',
+          price: '7999',
+          priceCurrency: 'INR',
+          description: 'For growing multi-department hospitals. 30-day free trial.',
+          url: `${SITE}/pricing`,
+        },
+      ],
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': `${SITE}/#faq`,
+      mainEntity: FAQS.map(({ q, a }) => ({
+        '@type': 'Question',
+        name: q,
+        acceptedAnswer: { '@type': 'Answer', text: a },
+      })),
+    },
+  ],
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Nav />
       <Hero />
       <StatsBar />

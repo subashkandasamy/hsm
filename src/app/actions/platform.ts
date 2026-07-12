@@ -283,7 +283,7 @@ export async function createTenant(params: {
   const actor = await requirePlatformAdmin()
   const service = createServiceClient()
 
-  const { name, slug, adminEmail, plan, trialDays = 14 } = params
+  const { name, slug, adminEmail, plan, trialDays = 30 } = params
 
   // Validate slug uniqueness
   const { data: existing } = await service

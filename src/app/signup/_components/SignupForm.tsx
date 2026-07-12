@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
+import Link from 'next/link'
 import { CheckCircle, XCircle, Loader2, Eye, EyeOff, Check } from 'lucide-react'
 import { checkSlugAvailable, signupHospital } from '@/app/actions/onboarding'
 
@@ -46,6 +47,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [selectedDepts, setSelectedDepts] = useState<string[]>(['General Medicine'])
+  const [agreed, setAgreed] = useState(false)
   const [error, setError] = useState('')
   const [redirecting, setRedirecting] = useState(false)
   const [fallbackSlug, setFallbackSlug] = useState('')
@@ -87,7 +89,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
     setError('')
     startTransition(async () => {
       const depts = selectedDepts.length > 0 ? selectedDepts : undefined
-      const res = await signupHospital({ hospitalName, slug, adminName, adminPhone: `+91${adminPhone}`, adminEmail: email, password, plan, departments: depts })
+      const res = await signupHospital({ hospitalName, slug, adminName, adminPhone: `+91${adminPhone}`, adminEmail: email, password, plan, departments: depts, acceptedTerms: agreed })
       if (!res.success) {
         setError(res.error)
         return
@@ -138,7 +140,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
 
   const slugOk = slugState === 'available'
   const phoneValid = /^\d{10}$/.test(adminPhone)
-  const canSubmit = !isPending && slugOk && hospitalName && adminName && phoneValid && !phoneError && email && password.length >= 8
+  const canSubmit = !isPending && slugOk && hospitalName && adminName && phoneValid && !phoneError && email && password.length >= 8 && agreed
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -339,6 +341,34 @@ export default function SignupForm({ plan = 'starter' }: Props) {
         </button>
       </div>
 
+      {/* Agreement */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setAgreed(v => !v)}
+          className="flex items-start gap-2.5 text-left w-full"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <div className="w-5 h-5 rounded flex-shrink-0 flex items-center justify-center mt-0.5 transition-all"
+            style={{
+              background: agreed ? '#0D9488' : 'rgba(255,255,255,0.8)',
+              border: `1px solid ${agreed ? '#0D9488' : '#CBD5E1'}`,
+            }}>
+            {agreed && <Check className="w-3 h-3" style={{ color: '#fff' }} />}
+          </div>
+          <span className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+            I have read and agree, on behalf of my organisation, to Uyirly&apos;s{' '}
+            <Link href="/terms" target="_blank" className="font-medium underline" style={{ color: '#0D9488' }}>
+              Terms of Service
+            </Link>{' '}and{' '}
+            <Link href="/privacy" target="_blank" className="font-medium underline" style={{ color: '#0D9488' }}>
+              Privacy Policy
+            </Link>
+            , and I am authorised to accept them.
+          </span>
+        </button>
+      </div>
+
       {error && (
         <div className="rounded-xl px-3.5 py-2.5 text-sm"
           style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
@@ -366,7 +396,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
       </button>
 
       <p className="text-xs text-center" style={{ color: '#94A3B8' }}>
-        14-day free trial. No credit card required.
+        30-day free trial. No credit card required.
       </p>
     </form>
   )
