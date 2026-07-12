@@ -77,7 +77,7 @@ function Hero() {
   const modules = ['OPD', 'IPD & Wards', 'Emergency', 'Lab', 'Radiology', 'Pharmacy', 'OT', 'Blood Bank', 'Billing', 'Insurance', 'HR', 'Inventory']
 
   return (
-    <section className="relative overflow-hidden px-4 sm:px-6" style={{ paddingTop: '112px', paddingBottom: '100px', background: 'linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 40%, #ffffff 100%)' }}>
+    <section className="relative overflow-hidden px-4 sm:px-6" style={{ paddingTop: '80px', paddingBottom: '100px', background: 'linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 40%, #ffffff 100%)' }}>
       {/* Gradient overlay */}
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 30% 40%, rgba(13,148,136,0.07) 0%, transparent 60%)' }} />
