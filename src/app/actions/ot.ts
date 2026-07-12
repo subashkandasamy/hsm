@@ -330,66 +330,41 @@ export async function addConsumable(
   const drugMasterId = (parsed.data.drug_master_id as string | null | undefined) ?? null
   const drugId       = (parsed.data.drug_id       as string | null | undefined) ?? null
 
-  // Create IPD pharmacy request if linked to an admission
+  // Create IPD pharmacy request if linked to an admission.
+  // Price is left at 0 — the pharmacist's dispatch step fetches MRP from stock and auto-bills.
   let pharmacyRequestId: string | null = null
   if (admissionId && patientId) {
-    const { data: admission } = await supabase
-      .from('admissions').select('ward_id').eq('id', admissionId).single()
-    const wardId = (admission?.ward_id as string | null) ?? null
-
     const reqId = crypto.randomUUID()
-    const total = parsed.data.qty * parsed.data.unit_price
     const { error: reqErr } = await supabase.from('ipd_pharmacy_requests').insert({
-      id: reqId,
+      id:             reqId,
       tenant_id:      actor.tenant_id,
       admission_id:   admissionId,
-      ward_id:        wardId,
-      ordered_by:     actor.id,
       item_name:      parsed.data.description,
       quantity:       parsed.data.qty,
-      unit:           null,
-      unit_price:     parsed.data.unit_price,
-      total_price:    total,
+      price_snapshot: 0,
+      billing_status: 'pending',
       status:         'pending',
       notes:          'OT consumable',
       drug_master_id: drugMasterId,
       drug_id:        drugId,
     })
+    if (reqErr) console.error('[addConsumable] pharmacy request insert failed:', reqErr.message)
     if (!reqErr) pharmacyRequestId = reqId
   }
 
-  // Insert consumable row
+  // Insert consumable row (unit_price stored as 0; real price set at pharmacy dispatch)
   const id = crypto.randomUUID()
   const { error } = await supabase.from('ot_consumables').insert({
     id, tenant_id: actor.tenant_id,
     ot_schedule_id: parsed.data.ot_schedule_id,
     description:    parsed.data.description,
     qty:            parsed.data.qty,
-    unit_price:     parsed.data.unit_price,
+    unit_price:     0,
     drug_master_id: drugMasterId,
     drug_id:        drugId,
     pharmacy_request_id: pharmacyRequestId,
   })
   if (error) return { success: false, error: error.message }
-
-  // Auto-generate IPD bill line item for this consumable
-  if (admissionId && patientId && parsed.data.unit_price > 0) {
-    const today = new Date().toISOString().split('T')[0]
-    await autoIpdBill(supabase, actor.id, {
-      tenantId:    actor.tenant_id,
-      admissionId,
-      patientId,
-      billingDate: today,
-      billSource:  'ot',
-      lineItems: [{
-        source:      'ot_consumable',
-        ref_id:      id,
-        description: parsed.data.description,
-        qty:         parsed.data.qty,
-        unit_price:  parsed.data.unit_price,
-      }],
-    })
-  }
 
   await logAudit(actor.id, 'add_consumable', 'ot_schedule', parsed.data.ot_schedule_id)
   const { data: row } = await supabase.from('ot_consumables').select('*').eq('id', id).single()
@@ -406,26 +381,12 @@ export async function removeConsumable(id: string): Promise<SimpleResult> {
   const { data: consumable } = await supabase
     .from('ot_consumables').select('pharmacy_request_id').eq('id', id).single()
 
-  // Cancel linked pharmacy request if still pending
+  // Cancel linked pharmacy request if still pending (bill is created at dispatch time, not here)
   if (consumable?.pharmacy_request_id) {
     await supabase.from('ipd_pharmacy_requests')
       .update({ status: 'cancelled' })
       .eq('id', consumable.pharmacy_request_id)
       .eq('status', 'pending')
-  }
-
-  // Remove linked bill_item and recalculate bill total
-  const { data: billItem } = await supabase
-    .from('bill_items').select('bill_id, amount').eq('ref_id', id).eq('source', 'ot_consumable').maybeSingle()
-  if (billItem?.bill_id) {
-    await supabase.from('bill_items').delete().eq('ref_id', id).eq('source', 'ot_consumable')
-    const { data: remaining } = await supabase
-      .from('bill_items').select('amount').eq('bill_id', billItem.bill_id)
-    const newTotal = (remaining ?? []).reduce((s, r) => s + (r.amount as number), 0)
-    const { data: bill } = await supabase.from('bills').select('paid').eq('id', billItem.bill_id).single()
-    const paid = (bill?.paid as number) ?? 0
-    const newStatus = newTotal <= 0 ? 'cancelled' : paid >= newTotal ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
-    await supabase.from('bills').update({ subtotal: newTotal, total: newTotal, status: newStatus }).eq('id', billItem.bill_id)
   }
 
   const { error } = await supabase.from('ot_consumables').delete().eq('id', id)

@@ -99,8 +99,24 @@ export async function proxy(request: NextRequest) {
   const isProductionSubdomain = hostWithoutPort.endsWith(`.${rootDomain}`)
 
   if (!isBareLocalhost) {
-    // ── Apex and www: serve marketing site ───────────────────────────────────
+    // ── Apex and www: marketing site only — block all tenant app paths ────────
     if (hostWithoutPort === rootDomain || hostWithoutPort === `www.${rootDomain}`) {
+      // These paths belong to tenant subdomains, not the apex domain.
+      // A tenant user who somehow lands here after login gets redirected to home.
+      const TENANT_APP_PREFIXES = [
+        '/dashboard', '/patients', '/appointments', '/opd', '/ipd',
+        '/wards', '/emergency', '/lab', '/radiology', '/pharmacy',
+        '/ot', '/blood', '/insurance', '/inventory', '/staff',
+        '/billing', '/account', '/reports', '/dental',
+      ]
+      const isTenantPath = TENANT_APP_PREFIXES.some(
+        p => pathname === p || pathname.startsWith(p + '/')
+      )
+      if (isTenantPath) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/'
+        return NextResponse.redirect(url)
+      }
       return NextResponse.next()
     }
 
@@ -237,7 +253,7 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(url)
       }
 
-      if (user && pathname === '/login') {
+      if (user && pathname === '/login' && !request.nextUrl.searchParams.get('wrongtenant')) {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
         url.search = ''

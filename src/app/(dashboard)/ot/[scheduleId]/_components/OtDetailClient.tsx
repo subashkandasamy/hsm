@@ -99,13 +99,11 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
   const [showDrugDrop, setShowDrugDrop]         = useState(false)
   const [newDesc, setNewDesc]                   = useState('')
   const [newQty, setNewQty]                     = useState('1')
-  const [newPrice, setNewPrice]                 = useState('0')
   const [addingC, setAddingC]                   = useState(false)
   const [selectedDrugId, setSelectedDrugId]     = useState<string | null>(null)
   const [selectedDrugIsGlobal, setSelectedDrugIsGlobal] = useState(false)
 
   const isClosed = schedule.status === 'completed' || schedule.status === 'cancelled'
-  const consumablesTotal = consumables.reduce((s, c) => s + c.qty * c.unit_price, 0)
 
   const speechNotes = useSpeechInput({ onAppend: (t) => setNotes(n => n ? `${n} ${t}` : t) })
 
@@ -127,12 +125,15 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
     ? drugs.filter(d => {
         const q = drugQuery.toLowerCase()
         return d.name.toLowerCase().includes(q) ||
-          (d.generic_name ?? '').toLowerCase().includes(q)
+          (d.generic_name ?? '').toLowerCase().includes(q) ||
+          (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
       }).slice(0, 8)
     : []
 
   function selectDrug(drug: Drug) {
-    const label = [drug.name, drug.form, drug.strength].filter(Boolean).join(' ')
+    const brandName = (drug.brand_aliases ?? [])[0]
+    const primaryName = brandName ?? drug.name
+    const label = [primaryName, drug.form, drug.strength].filter(Boolean).join(' ')
     setNewDesc(label); setDrugQuery(label); setShowDrugDrop(false)
     setSelectedDrugId(drug.id)
     setSelectedDrugIsGlobal(drug.is_global ?? false)
@@ -187,17 +188,16 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
       ot_schedule_id:  schedule.id,
       description:     newDesc.trim(),
       qty:             parseInt(newQty, 10) || 1,
-      unit_price:      parseFloat(newPrice) || 0,
       drug_master_id:  selectedDrugId && selectedDrugIsGlobal  ? selectedDrugId : null,
       drug_id:         selectedDrugId && !selectedDrugIsGlobal ? selectedDrugId : null,
     })
     setAddingC(false)
     if (r.success) {
       setConsumables(c => [...c, r.consumable])
-      setNewDesc(''); setDrugQuery(''); setNewQty('1'); setNewPrice('0')
+      setNewDesc(''); setDrugQuery(''); setNewQty('1')
       setSelectedDrugId(null); setSelectedDrugIsGlobal(false)
     }
-  }, [schedule.id, newDesc, newQty, newPrice, selectedDrugId, selectedDrugIsGlobal])
+  }, [schedule.id, newDesc, newQty, selectedDrugId, selectedDrugIsGlobal])
 
   async function handleRemoveConsumable(id: string) {
     await removeConsumable(id)
@@ -243,19 +243,11 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
               <Money amount={schedule.price_snapshot} />
             </span>
             <span className="text-xs" style={{ color: '#94A3B8' }}>procedure fee</span>
-            {consumablesTotal > 0 && (
-              <span className="text-xs font-medium" style={{ color: '#64748B' }}>
-                + <Money amount={consumablesTotal} /> consumables
-                {' '}= <span style={{ color: '#0D9488', fontWeight: 600 }}>
-                  <Money amount={(schedule.price_snapshot ?? 0) + consumablesTotal} />
-                </span>
-              </span>
-            )}
           </div>
         </div>
 
         {/* Detail rows */}
-        <dl className="divide-y" style={{ borderColor: '#F8FAFC' }}>
+        <dl className="divide-y divide-[#F1F5F9]">
           {([
             ['Patient',       `${schedule.patient?.full_name ?? '—'}  ·  ${schedule.patient?.uhid ?? ''}`],
             ['Date & Time',   `${fmtDate(schedule.scheduled_start)}  ·  ${fmtTime(schedule.scheduled_start)} – ${fmtTime(schedule.scheduled_end)}`],
@@ -466,28 +458,19 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>
             Consumables
-            {consumablesTotal > 0 && (
-              <span className="ml-2 text-xs font-normal" style={{ color: '#0D9488' }}>
-                · <Money amount={consumablesTotal} />
-              </span>
-            )}
           </h2>
+          <span className="text-xs" style={{ color: '#94A3B8' }}>Billed at pharmacy dispatch</span>
         </div>
 
         {consumables.length > 0 && (
           <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid #E2E8F0' }}>
             {/* Mobile card rows */}
-            <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
+            <div className="md:hidden divide-y divide-[#F1F5F9]">
               {consumables.map(c => (
                 <div key={c.id} className="px-3 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{c.description}</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                      {c.qty} × <Money amount={c.unit_price} /> ={' '}
-                      <span className="font-semibold" style={{ color: '#0D9488' }}>
-                        <Money amount={c.qty * c.unit_price} />
-                      </span>
-                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Qty: {c.qty}</p>
                   </div>
                   {!isClosed && canRecord && (
                     <button onClick={() => handleRemoveConsumable(c.id)}
@@ -503,7 +486,7 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
             <table className="hidden md:table w-full text-sm">
               <thead>
                 <tr style={{ background: 'rgba(248,250,252,0.9)', borderBottom: '1px solid #E2E8F0' }}>
-                  {['Description', 'Qty', 'Unit Price', 'Total', ''].map(h => (
+                  {['Description', 'Qty', ''].map(h => (
                     <th key={h} className="text-left px-3 py-2 text-xs font-semibold" style={{ color: '#475569' }}>{h}</th>
                   ))}
                 </tr>
@@ -513,8 +496,6 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
                   <tr key={c.id} style={{ borderBottom: i < consumables.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                     <td className="px-3 py-2.5" style={{ color: '#0F172A' }}>{c.description}</td>
                     <td className="px-3 py-2.5" style={{ color: '#475569' }}>{c.qty}</td>
-                    <td className="px-3 py-2.5" style={{ color: '#475569' }}><Money amount={c.unit_price} /></td>
-                    <td className="px-3 py-2.5 font-medium" style={{ color: '#0D9488' }}><Money amount={c.qty * c.unit_price} /></td>
                     <td className="px-3 py-2.5">
                       {!isClosed && canRecord && (
                         <button onClick={() => handleRemoveConsumable(c.id)}
@@ -548,35 +529,36 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
               {showDrugDrop && filteredDrugs.length > 0 && (
                 <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl overflow-hidden shadow-lg"
                   style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: '10rem', overflowY: 'auto' }}>
-                  {filteredDrugs.map(d => (
-                    <li key={d.id}>
-                      <button type="button" onMouseDown={() => selectDrug(d)}
-                        className="w-full text-left px-4 py-2.5 text-sm"
-                        style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
-                        <span className="font-medium" style={{ color: '#0F172A' }}>{d.name}</span>
-                        {(d.form || d.strength) && (
-                          <span className="ml-2 text-xs" style={{ color: '#94A3B8' }}>
-                            {[d.form, d.strength].filter(Boolean).join(' ')}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
+                  {filteredDrugs.map(d => {
+                    const brandName = (d.brand_aliases ?? [])[0]
+                    const displayName = brandName ?? d.name
+                    const genericLabel = brandName ? d.name : null
+                    return (
+                      <li key={d.id}>
+                        <button type="button" onMouseDown={() => selectDrug(d)}
+                          className="w-full text-left px-4 py-2.5"
+                          style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,148,136,0.06)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{displayName}</span>
+                            {d.form && <span className="text-xs px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{d.form}</span>}
+                            {d.strength && <span className="text-xs" style={{ color: '#64748B' }}>{d.strength}</span>}
+                          </div>
+                          {genericLabel && (
+                            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{genericLabel}</p>
+                          )}
+                        </button>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
-            {/* Qty + Price + Add in one row */}
+            {/* Qty + Add */}
             <div className="flex gap-2 items-center">
-              <div className="flex items-center gap-1.5 flex-1">
-                <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Qty</label>
-                <Input type="number" min={1} value={newQty} onChange={e => setNewQty(e.target.value)} style={{ width: '4.5rem' }} />
-              </div>
-              <div className="flex items-center gap-1.5 flex-1">
-                <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>₹</label>
-                <Input type="number" min={0} step="0.01" value={newPrice} onChange={e => setNewPrice(e.target.value)} style={{ width: '6rem' }} />
-              </div>
+              <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Qty</label>
+              <Input type="number" min={1} value={newQty} onChange={e => setNewQty(e.target.value)} style={{ width: '5rem' }} />
               <button type="submit" disabled={addingC || !newDesc.trim()}
                 className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-semibold flex-shrink-0"
                 style={{ background: newDesc.trim() ? '#0D9488' : '#94A3B8', color: '#fff', border: 'none', cursor: newDesc.trim() ? 'pointer' : 'not-allowed' }}>

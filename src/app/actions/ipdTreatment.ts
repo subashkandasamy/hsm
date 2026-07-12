@@ -484,7 +484,8 @@ export async function listIpdPharmacyRequests(): Promise<IpdPharmacyRequest[]> {
     return {
       ...(row as unknown as IpdPharmacyRequest),
       admission: adm ? {
-        patient: adm.patient as IpdPharmacyRequest['admission'] extends undefined ? never : NonNullable<IpdPharmacyRequest['admission']>['patient'],
+        admitted_at: (adm.admitted_at as string | null) ?? null,
+        patient: adm.patient as NonNullable<IpdPharmacyRequest['admission']>['patient'],
         ward:    adm.ward as { name: string } | undefined,
         bed:     adm.bed  as { bed_no: string } | undefined,
       } : undefined,

@@ -594,7 +594,13 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 // ---- IPD daily charge generation (called from IPD ward board RSC) ----
 
 export async function generateMissingDailyCharges(
-  admissions: Array<{ id: string; patient_id: string; ward: { name: string; daily_rate: number } }>
+  admissions: Array<{
+    id: string
+    patient_id: string
+    admitting_doctor_id?: string | null
+    admitted_at?: string | null
+    ward: { name: string; daily_rate: number }
+  }>
 ): Promise<void> {
   await requireWriteAccess()
   if (!admissions.length) return
@@ -603,7 +609,20 @@ export async function generateMissingDailyCharges(
   const today = new Date().toISOString().split('T')[0]
   const admissionIds = admissions.map((a) => a.id)
 
-  // ── 1. Fetch all today's non-cancelled bills for these admissions (one query) ──
+  // ── 1. Fetch billing config + custom charges for this tenant once ─────────────
+  const [{ data: cfg }, { data: customCharges }] = await Promise.all([
+    supabase.from('ipd_billing_config').select('*').eq('tenant_id', actor.tenant_id).maybeSingle(),
+    supabase.from('ipd_custom_charges').select('name, amount').eq('tenant_id', actor.tenant_id).eq('is_active', true),
+  ])
+
+  const chargeRoomRent  = cfg?.charge_room_rent     ?? true
+  const chargeDoctorFee = cfg?.charge_doctor_fee    ?? true
+  const chargeNursing   = cfg?.charge_nursing       ?? true
+  const chargeAdmFee    = cfg?.charge_admission_fee ?? false
+  const admFeeAmount    = (cfg?.admission_fee_amount  as number) ?? 0
+  const svcCharge       = (cfg?.service_charge_per_day as number) ?? 0
+
+  // ── 2. Fetch today's non-cancelled bills for these admissions ────────────────
   const { data: todayBills } = await supabase
     .from('bills')
     .select('id, admission_id, bill_source')
@@ -611,7 +630,6 @@ export async function generateMissingDailyCharges(
     .eq('billing_date', today)
     .neq('status', 'cancelled')
 
-  // Map: admissionId → Set<bill_source already created today>
   const billedToday = new Map<string, Set<string>>()
   for (const b of todayBills ?? []) {
     const aid = b.admission_id as string
@@ -619,77 +637,121 @@ export async function generateMissingDailyCharges(
     billedToday.get(aid)!.add(b.bill_source as string)
   }
 
-  // ── 2. Bed bills: one per admission per day ──────────────────────────────────
+  // ── 3. Room rent ─────────────────────────────────────────────────────────────
+  if (chargeRoomRent) {
+    for (const adm of admissions) {
+      if (billedToday.get(adm.id)?.has('bed')) continue
+      const rate = adm.ward?.daily_rate ?? 0
+      if (rate <= 0) continue
+      const wardLabel = adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent'
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: adm.id,
+        patientId: adm.patient_id,
+        billingDate: today,
+        billSource: 'bed',
+        lineItems: [{ source: 'bed', ref_id: null, description: wardLabel, qty: 1, unit_price: rate }],
+      })
+    }
+  }
+
+  // ── 4. Daily doctor fee ───────────────────────────────────────────────────────
+  if (chargeDoctorFee) {
+    const doctorIds = [...new Set(admissions.map((a) => a.admitting_doctor_id).filter(Boolean) as string[])]
+    const feeMap = new Map<string, number>()
+    if (doctorIds.length) {
+      const { data: spRows } = await supabase
+        .from('staff_profiles').select('profile_id, consultation_fee').in('profile_id', doctorIds)
+      for (const sp of spRows ?? []) feeMap.set(sp.profile_id as string, (sp.consultation_fee as number) ?? 0)
+    }
+    for (const adm of admissions) {
+      if (billedToday.get(adm.id)?.has('consultation')) continue
+      if (!adm.admitting_doctor_id) continue
+      const fee = feeMap.get(adm.admitting_doctor_id) ?? 0
+      if (fee <= 0) continue
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: adm.id,
+        patientId: adm.patient_id,
+        billingDate: today,
+        billSource: 'consultation',
+        lineItems: [{ source: 'consultation', ref_id: adm.id, description: `Daily doctor rounding fee`, qty: 1, unit_price: fee }],
+      })
+    }
+  }
+
+  // ── 5. Nursing bills ──────────────────────────────────────────────────────────
+  if (chargeNursing) {
+    const { data: allAssignments } = await supabase
+      .from('admission_nurse_assignments')
+      .select('admission_id, shift, charge_snapshot')
+      .in('admission_id', admissionIds)
+      .lte('assigned_date', today)
+      .order('assigned_date', { ascending: false })
+
+    const latestPerShift = new Map<string, { admissionId: string; shift: string; chargeSnapshot: number }>()
+    for (const a of allAssignments ?? []) {
+      const key = `${a.admission_id}:${a.shift}`
+      if (!latestPerShift.has(key)) {
+        latestPerShift.set(key, {
+          admissionId: a.admission_id as string,
+          shift: a.shift as string,
+          chargeSnapshot: a.charge_snapshot as number,
+        })
+      }
+    }
+
+    const admissionMap = new Map(admissions.map((a) => [a.id, a]))
+    for (const [, entry] of latestPerShift) {
+      const billSource = entry.shift === 'morning' ? 'nursing_morning' : 'nursing_night'
+      if (billedToday.get(entry.admissionId)?.has(billSource)) continue
+      const adm = admissionMap.get(entry.admissionId)
+      if (!adm) continue
+      const shiftLabel = entry.shift === 'morning' ? 'Morning' : 'Night'
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId: entry.admissionId,
+        patientId: adm.patient_id,
+        billingDate: today,
+        billSource,
+        lineItems: [{ source: billSource as 'nursing_morning' | 'nursing_night', description: `Nursing — ${shiftLabel} Shift`, qty: 1, unit_price: entry.chargeSnapshot }],
+      })
+    }
+  }
+
+  // ── 6. Admission fee (Day 1 only), service charge, custom charges ─────────────
   for (const adm of admissions) {
-    if (billedToday.get(adm.id)?.has('bed')) continue
-    const rate = adm.ward?.daily_rate ?? 0
-    if (rate <= 0) continue
-    const wardLabel = adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent'
+    if (billedToday.get(adm.id)?.has('manual')) continue
+
+    const lineItems: Parameters<typeof autoIpdBill>[2]['lineItems'] = []
+
+    // Admission fee — Day 1 only
+    if (chargeAdmFee && admFeeAmount > 0) {
+      const dayOne = adm.admitted_at ? new Date(adm.admitted_at).toISOString().split('T')[0] : null
+      if (dayOne === today) {
+        lineItems.push({ source: 'manual', ref_id: adm.id, description: 'Admission fee', qty: 1, unit_price: admFeeAmount })
+      }
+    }
+
+    // Daily service charge
+    if (svcCharge > 0) {
+      lineItems.push({ source: 'manual', ref_id: adm.id, description: 'Daily service charge', qty: 1, unit_price: svcCharge })
+    }
+
+    // Active custom charges
+    for (const cc of customCharges ?? []) {
+      const amt = (cc.amount as number) ?? 0
+      if (amt > 0) lineItems.push({ source: 'manual', ref_id: adm.id, description: cc.name as string, qty: 1, unit_price: amt })
+    }
+
+    if (!lineItems.length) continue
     await autoIpdBill(supabase, actor.id, {
       tenantId: actor.tenant_id,
       admissionId: adm.id,
       patientId: adm.patient_id,
       billingDate: today,
-      billSource: 'bed',
-      lineItems: [{
-        source: 'bed',
-        ref_id: null,
-        description: wardLabel,
-        qty: 1,
-        unit_price: rate,
-      }],
-    })
-  }
-
-  // ── 3. Nursing bills: carry-forward most recent assignment per shift ──────────
-  // Query ALL assignments for these admissions up to and including today,
-  // sorted newest-first so we can take the first match per (admission, shift).
-  const { data: allAssignments } = await supabase
-    .from('admission_nurse_assignments')
-    .select('admission_id, shift, charge_snapshot')
-    .in('admission_id', admissionIds)
-    .lte('assigned_date', today)
-    .order('assigned_date', { ascending: false })
-
-  if (!allAssignments?.length) return
-
-  // Deduplicate to the most recent assignment per (admission_id, shift)
-  const latestPerShift = new Map<string, { admissionId: string; shift: string; chargeSnapshot: number }>()
-  for (const a of allAssignments) {
-    const key = `${a.admission_id}:${a.shift}`
-    if (!latestPerShift.has(key)) {
-      latestPerShift.set(key, {
-        admissionId: a.admission_id as string,
-        shift: a.shift as string,
-        chargeSnapshot: a.charge_snapshot as number,
-      })
-    }
-  }
-
-  // Build admission map for quick lookup
-  const admissionMap = new Map(admissions.map((a) => [a.id, a]))
-
-  // Create per-shift nursing bills that haven't been created today yet
-  for (const [, entry] of latestPerShift) {
-    const billSource = entry.shift === 'morning' ? 'nursing_morning' : 'nursing_night'
-    if (billedToday.get(entry.admissionId)?.has(billSource)) continue
-
-    const adm = admissionMap.get(entry.admissionId)
-    if (!adm) continue
-
-    const shiftLabel = entry.shift === 'morning' ? 'Morning' : 'Night'
-    await autoIpdBill(supabase, actor.id, {
-      tenantId: actor.tenant_id,
-      admissionId: entry.admissionId,
-      patientId: adm.patient_id,
-      billingDate: today,
-      billSource,
-      lineItems: [{
-        source: billSource as 'nursing_morning' | 'nursing_night',
-        description: `Nursing — ${shiftLabel} Shift`,
-        qty: 1,
-        unit_price: entry.chargeSnapshot,
-      }],
+      billSource: 'manual',
+      lineItems,
     })
   }
 }

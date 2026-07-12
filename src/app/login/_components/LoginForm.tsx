@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { getPostLoginRedirect } from '@/app/actions/auth'
 import { LoginSchema } from '@/lib/schemas'
 import { Building2, Eye, EyeOff, LogIn, CheckCircle, AlertCircle } from 'lucide-react'
 
@@ -18,7 +19,11 @@ export default function LoginForm({ hospitalName }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    params.get('wrongtenant') === '1'
+      ? `Your account does not belong to ${hospitalName ?? 'this hospital'}. Please use your hospital's login link.`
+      : null
+  )
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,7 +46,20 @@ export default function LoginForm({ hospitalName }: Props) {
       return
     }
 
-    router.push('/dashboard')
+    const loginRedirect = await getPostLoginRedirect()
+
+    if ('error' in loginRedirect) {
+      await supabase.auth.signOut()
+      if (loginRedirect.error === 'no_hospital_url') {
+        setError('Please log in using your hospital\'s URL (e.g. yourhospital.uyirly.com). Contact your administrator for the correct link.')
+      } else {
+        setError(`Your account does not belong to ${loginRedirect.tenantName}. Please use your hospital's login link.`)
+      }
+      setLoading(false)
+      return
+    }
+
+    router.push(loginRedirect.redirect)
   }
 
   return (

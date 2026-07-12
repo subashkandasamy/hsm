@@ -24,6 +24,8 @@ export default async function IpdPage() {
     admissions.map((a) => ({
       id: a.id,
       patient_id: a.patient_id,
+      admitting_doctor_id: (a as unknown as { admitting_doctor_id?: string | null }).admitting_doctor_id ?? null,
+      admitted_at: (a as unknown as { admitted_at?: string | null }).admitted_at ?? null,
       ward: (a.ward as unknown as { name: string; daily_rate: number }) ?? { name: '', daily_rate: 0 },
     }))
   )

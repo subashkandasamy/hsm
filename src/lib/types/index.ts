@@ -23,7 +23,7 @@ export interface TenantProfile {
 
 // ---- Phase 9: SaaS / Multi-Tenancy ----
 
-export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
+export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'purged'
 export type TenantPlan = 'starter' | 'growth' | 'enterprise'
 
 export interface Tenant {
@@ -273,6 +273,7 @@ export interface Drug {
   id: string; name: string; generic_name: string | null; form: string | null
   strength: string | null; unit: string | null; reorder_level?: number; is_active: boolean
   is_global?: boolean
+  mrp?: number | null
   brand_aliases?: string[]  // brand names only, for autocomplete search
   brand_data?: Array<{
     brand_name: string

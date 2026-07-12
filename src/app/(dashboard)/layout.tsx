@@ -23,7 +23,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('id', user.id)
     .single()
 
-  if (!profile) redirect('/login')
+  if (!profile) {
+    // Platform admin has no tenant profile — send them to their own panel
+    const service = createServiceClient()
+    const { data: pa } = await service
+      .from('platform_admins')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+    // ?wrongtenant=1 prevents the proxy from auto-redirecting back to /dashboard
+    redirect(pa ? '/platform-admin' : '/login?wrongtenant=1')
+  }
 
   const hdrs = await headers()
   const tenantName   = hdrs.get('x-tenant-name')   ?? 'Hospital'
