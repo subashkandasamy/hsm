@@ -64,7 +64,7 @@ function Nav() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link href="/find-hospital" className="hidden sm:inline-flex text-sm font-medium px-4 py-2 rounded-xl"
+          <Link href="/find-hospital" className="inline-flex text-sm font-medium px-2 sm:px-4 py-2 rounded-xl"
             style={{ color: S6 }}>
             Sign in
           </Link>
