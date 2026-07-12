@@ -75,8 +75,9 @@ export const viewport: Viewport = {
   themeColor: '#0D9488',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Allow pinch-zoom up to 5x — WCAG 1.4.4 / Lighthouse accessibility.
+  // (Removed maximumScale:1 + userScalable:false which blocked zoom.)
+  maximumScale: 5,
   viewportFit: 'cover',
 }
 
