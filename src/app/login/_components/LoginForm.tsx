@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { getPostLoginRedirect } from '@/app/actions/auth'
@@ -11,7 +11,6 @@ import { Building2, Eye, EyeOff, LogIn, CheckCircle, AlertCircle } from 'lucide-
 interface Props { hospitalName?: string | null }
 
 export default function LoginForm({ hospitalName }: Props) {
-  const router = useRouter()
   const params = useSearchParams()
   const isExpired = params.get('expired') === '1'
   const isReset   = params.get('reset') === '1'
@@ -46,7 +45,16 @@ export default function LoginForm({ hospitalName }: Props) {
       return
     }
 
-    const loginRedirect = await getPostLoginRedirect()
+    // Determine where to send the user. If the server action fails for any
+    // reason, don't leave the button spinning — auth already succeeded, so fall
+    // back to a full-page load and let the proxy/dashboard layout route us.
+    let loginRedirect
+    try {
+      loginRedirect = await getPostLoginRedirect()
+    } catch {
+      window.location.href = '/dashboard'
+      return
+    }
 
     if ('error' in loginRedirect) {
       await supabase.auth.signOut()
@@ -59,7 +67,12 @@ export default function LoginForm({ hospitalName }: Props) {
       return
     }
 
-    router.push(loginRedirect.redirect)
+    // Full-page navigation (not router.push): guarantees the proxy re-runs with
+    // the freshly-set session cookie and routes correctly. A '/login' result
+    // means the server couldn't see the session yet — go to /dashboard and let
+    // the proxy/layout decide rather than bouncing back to this page.
+    const dest = loginRedirect.redirect === '/login' ? '/dashboard' : loginRedirect.redirect
+    window.location.href = dest
   }
 
   return (
