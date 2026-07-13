@@ -41,6 +41,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const tenantStatus = (hdrs.get('x-tenant-status') ?? 'trial')   as TenantStatus
   const isReadOnly   = hdrs.get('x-tenant-readonly') === '1'
 
+  // ── Tenant isolation guard ────────────────────────────────────────────────
+  // Supabase sessions are shared across every *.uyirly.com subdomain, so a user
+  // from one tenant could otherwise open another tenant's subdomain while signed
+  // in. Enforce here that the profile's tenant matches the subdomain being
+  // served. (x-tenant-id is absent only on bare-localhost dev, where we skip it.)
+  const currentTenantId = hdrs.get('x-tenant-id')
+  if (currentTenantId && profile.tenant_id !== currentTenantId) {
+    redirect('/login?wrongtenant=1')
+  }
+
   const service = createServiceClient()
   const { data: tenant } = await service
     .from('tenants')

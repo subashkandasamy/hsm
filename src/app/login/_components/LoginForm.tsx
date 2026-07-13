@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -24,6 +24,14 @@ export default function LoginForm({ hospitalName }: Props) {
       : null
   )
   const [loading, setLoading] = useState(false)
+
+  // If redirected here for a tenant mismatch, clear the stale session so the
+  // user isn't left signed in as an account that doesn't belong to this hospital.
+  useEffect(() => {
+    if (params.get('wrongtenant') === '1') {
+      createClient().auth.signOut().catch(() => {})
+    }
+  }, [params])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
