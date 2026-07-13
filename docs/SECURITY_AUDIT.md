@@ -111,14 +111,25 @@ Review result — **all reviewed usages are correctly tenant-scoped**:
 
 ---
 
-## Prioritized recommendations
+## Prioritized recommendations — resolution
 
-1. **(Medium, preventive)** Wrapper/lint rule so service-client reads of tenant tables can't
-   omit a `tenant_id` filter. Highest leverage against future leaks.
-2. **(Medium, hygiene)** Reconcile migration history (record 0064–0068).
-3. **(Low)** Create the `radiology` storage bucket.
-4. **(Low, defense-in-depth)** Role predicates in RLS for `bills`/`payments`.
-5. **(Low)** Fix `Stripe → Razorpay` copy in the pricing FAQ.
+| # | Item | Status |
+|---|---|---|
+| 1 | **(Medium, preventive)** Tenant-scope helper so service-client queries can't omit `tenant_id` | ✅ **Done** — `src/lib/supabase/tenant-scope.ts` (`selectForTenant` / `insertForTenant` / `updateForTenant` / `deleteForTenant`). Use for any service-client query on a tenant table. |
+| 2 | **(Medium, hygiene)** Reconcile migration history (record 0064–0068) | ✅ **Done** — `supabase_migrations.schema_migrations` now has 0001–0068. |
+| 3 | **(Low)** Create `radiology` storage bucket | ✅ **Done** — private bucket created. |
+| 4 | **(Low, defense-in-depth)** Role predicates in RLS for `bills`/`payments` | ⛔ **Deliberately not applied** — see below. |
+| 5 | **(Low)** Fix `Stripe → Razorpay` copy in pricing FAQ | ✅ **Done**. |
+
+### Why #4 was not applied (intentional)
+
+Billing rows are legitimately created and read by **many** roles, not just admin/accountant:
+pharmacist (POS sales), nurse/admin (IPD auto-billing), lab_tech / doctor (lab & radiology
+order billing), receptionist (OPD). Adding a role predicate to `bills`/`payments` RLS would
+have to allow almost every role — providing negligible security value while risking breakage
+of these automated multi-role billing flows. The correct boundary stays: **tenant isolation
+in RLS + per-action `requirePermission()` in the app layer.** Revisit only if billing access
+is ever consolidated to a small, fixed set of roles.
 
 _No critical, unaddressed issues remain. The previously-reported "accountant sees all bills"
 was a cross-tenant **access** gap (now fixed), not a data leak — RLS always isolated the data._

@@ -192,7 +192,7 @@ const FAQS = [
   { q: 'Is the free trial really free?', a: 'Yes — 30 days, full access, no credit card required. You only pay when you choose to subscribe after the trial.' },
   { q: 'Can I switch plans later?', a: 'Yes, you can upgrade from Starter to Growth at any time. Billing is prorated for the remaining billing period.' },
   { q: 'Are prices inclusive of GST?', a: 'No. Prices shown are exclusive of GST. GST at 18% is added at checkout.' },
-  { q: 'What payment methods are accepted?', a: 'Credit card, debit card, UPI, and bank transfer via Stripe. Invoices are available for corporate accounts.' },
+  { q: 'What payment methods are accepted?', a: 'Credit card, debit card, UPI, and net banking via Razorpay. Invoices are available for corporate accounts.' },
   { q: 'Can I cancel anytime?', a: 'Yes. Cancel from the billing portal at any time. No lock-in, no cancellation fees. Remaining days on the current billing period are not refunded.' },
 ]
 
