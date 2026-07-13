@@ -149,6 +149,17 @@ export async function proxy(request: NextRequest) {
         return NextResponse.rewrite(url)
       }
 
+      // ── Platform admin panel is NOT served from tenant subdomains ─────────
+      // It lives on the apex (uyirly.com/platform-admin) or the admin/platform
+      // subdomains. Redirect any tenant-subdomain hit to the apex so the panel
+      // never renders under a tenant's context. (Access is still gated by the
+      // platform_admins table on the page itself.)
+      if (pathname === '/platform-admin' || pathname.startsWith('/platform-admin/')) {
+        const url = request.nextUrl.clone()
+        url.hostname = isLocalhostSubdomain ? 'localhost' : rootDomain
+        return NextResponse.redirect(url)
+      }
+
       // ── Inject tenant context headers (built before async work) ──────────
       const requestHeaders = new Headers(request.headers)
       requestHeaders.set('x-pathname', pathname)

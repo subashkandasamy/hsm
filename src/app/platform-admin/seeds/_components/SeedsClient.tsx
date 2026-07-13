@@ -248,7 +248,7 @@ export default function SeedsClient({ initialDrugs, initialLabTests, initialRadi
   return (
     <div>
       {/* Tab nav */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit"
+      <div className="flex gap-1 mb-6 p-1 rounded-xl w-full sm:w-fit overflow-x-auto"
         style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {([
           { id: 'drugs',    label: 'Drug Catalog'   },
@@ -257,7 +257,7 @@ export default function SeedsClient({ initialDrugs, initialLabTests, initialRadi
           { id: 'tariffs',  label: 'Procedure Tariffs'},
         ] as const).map(t => (
           <button key={t.id} onClick={() => { setTab(t.id); setSearch('') }}
-            className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
+            className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap shrink-0"
             style={{
               background: tab === t.id ? 'rgba(13,148,136,0.2)' : 'transparent',
               color:      tab === t.id ? '#0D9488' : '#64748B',

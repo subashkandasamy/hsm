@@ -36,9 +36,9 @@ export default async function SeedsPage() {
   ])
 
   return (
-    <div className="min-h-screen px-4 py-8 md:py-12"
+    <div className="min-h-screen px-4 py-8 md:py-12 overflow-x-hidden"
       style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F4C75 100%)' }}>
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto w-full">
         {/* Header */}
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center"
