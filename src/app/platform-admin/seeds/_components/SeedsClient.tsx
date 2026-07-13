@@ -594,8 +594,8 @@ export default function SeedsClient({ initialDrugs, initialLabTests, initialRadi
               ) : drugBrands.length === 0 ? (
                 <p className="text-xs py-3 text-center" style={{ color: '#475569' }}>No brands added yet.</p>
               ) : (
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                <div className="rounded-xl overflow-x-auto" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <table className="w-full min-w-[560px]" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
                         {['Brand', 'Manufacturer', 'Pack', 'MRP', 'HSN', 'GST', ''].map(h => (

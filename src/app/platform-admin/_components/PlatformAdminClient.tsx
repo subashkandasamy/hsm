@@ -290,7 +290,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
 
                     {/* Actions */}
                     {t.status !== 'purged' && (
-                      <div className="flex flex-wrap gap-2 shrink-0">
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                         <button onClick={() => handleImpersonate(t.id)} disabled={isPending}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
                           style={{ background: 'rgba(255,255,255,0.06)', color: '#94A3B8', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -382,7 +382,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2 shrink-0">
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                       {s.status === 'past_due' && (
                         <button onClick={() => handleRetryPayment(s.tenant_id)} disabled={isPending}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
