@@ -54,6 +54,7 @@ function Nav() {
             { label: 'Features', href: '#features' },
             { label: 'Modules',  href: '#modules'  },
             { label: 'Pricing',  href: '/pricing'  },
+            { label: 'Guides',   href: '/guides'   },
           ].map(({ label, href }) => (
             <Link key={label} href={href}
               className="text-sm font-medium"
@@ -1073,6 +1074,7 @@ function Footer() {
             <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: S4 }}>Company</p>
             <ul className="space-y-3">
               {[
+                { label: 'Guides',  href: '/guides'                   },
                 { label: 'Terms',   href: '/terms'                    },
                 { label: 'Privacy', href: '/privacy'                  },
                 { label: 'Contact', href: 'mailto:contact@uyirly.com' },
