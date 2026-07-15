@@ -28,6 +28,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'tariffs:manage', 'billing:advance', 'pharmacy:sale',
     'ipd:config', 'ipd:nursing',
     'barcode:print:patient', 'barcode:print:sample',
+    'scheduling:read', 'scheduling:manage', 'leave:request', 'leave:approve',
     'dashboard:read',
   ],
   doctor: [
@@ -47,6 +48,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'emr:read', 'emr:allergy:write', 'emr:document:upload',
     'dental:read', 'dental:write',
     'ophthalmology:write',
+    'scheduling:read', 'leave:request',
     'dashboard:read',
   ],
   nurse: [
@@ -64,6 +66,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'emr:read', 'emr:allergy:write', 'emr:document:upload',
     'dental:read', 'dental:write',
     'barcode:print:patient', 'barcode:print:sample',
+    'scheduling:read', 'leave:request',
     'dashboard:read',
   ],
   receptionist: [
@@ -77,6 +80,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'emr:document:upload',
     'pharmacy:read',
     'barcode:print:patient',
+    'leave:request',
     'dashboard:read',
   ],
   lab_tech: [
@@ -86,12 +90,14 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:issue',
     'emr:read',
     'barcode:print:sample',
+    'leave:request',
     'dashboard:read',
   ],
   pharmacist: [
     'patients:read',
     'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage', 'pharmacy:sale',
     'emr:read',
+    'leave:request',
     'dashboard:read',
   ],
   accountant: [
@@ -100,6 +106,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'insurance:read', 'insurance:write',
     'inventory:read', 'inventory:manage',
     'notifications:send',
+    'leave:request',
     'dashboard:read',
   ],
 }
@@ -151,6 +158,7 @@ export const NAV_CONFIG: NavGroup[] = [
     label: 'Platform',
     items: [
       { label: 'Staff & HR',     href: '/staff',                   icon: 'UserCog',       requiredPermission: 'hr:read',              moduleKey: 'hr' },
+      { label: 'Scheduling',     href: '/scheduling',              icon: 'CalendarClock', requiredPermission: 'scheduling:read' },
       { label: 'Notifications',  href: '/notifications',                icon: 'Bell',          requiredPermission: 'notifications:send' },
       { label: 'Audit Log',      href: '/audit',                        icon: 'ClipboardList', requiredPermission: 'audit:read' },
       { label: 'Subscription',   href: '/account/subscription',         icon: 'CreditCard',    requiredPermission: 'account:subscription' },

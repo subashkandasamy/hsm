@@ -557,7 +557,9 @@ export interface StaffMember extends Profile {
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'half_day'
-export type Shift = 'morning' | 'evening' | 'night'
+// A shift is now a configurable code (see shift_definitions). Kept as a string
+// alias so custom shift codes are valid; the well-known defaults are morning/evening/night.
+export type Shift = string
 
 export interface StaffAttendance {
   id: string; profile_id: string; date: string; status: AttendanceStatus
@@ -565,10 +567,89 @@ export interface StaffAttendance {
   profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
 }
 
+export type RosterStatus = 'draft' | 'published'
+export type RosterSource = 'manual' | 'copy_forward' | 'pattern' | 'auto_fill'
+
 export interface DutyRoster {
   id: string; profile_id: string; date: string; shift: Shift | null; ward_id: string | null
+  status?: RosterStatus; source?: RosterSource; created_by?: string | null
   profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
   ward?: Pick<Ward, 'id' | 'name'>
+}
+
+// ---- Staff Scheduling & Nurse Rostering ----
+
+export interface ShiftDefinition {
+  id: string; tenant_id?: string; code: string; label: string
+  start_time: string; end_time: string; crosses_midnight: boolean
+  sort_order: number; is_active: boolean
+}
+
+export interface WardCoverageRule {
+  id: string; ward_id: string; shift_code: string
+  patient_ratio: number; min_nurses: number
+  ward?: Pick<Ward, 'id' | 'name'>
+}
+
+export interface WardIncharge {
+  id: string; ward_id: string; profile_id: string
+  ward?: Pick<Ward, 'id' | 'name'>
+  profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
+}
+
+export type LeaveType = 'annual' | 'casual' | 'sick' | 'unpaid' | 'maternity' | 'other'
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
+
+export interface LeaveRequest {
+  id: string; profile_id: string; leave_type: LeaveType
+  start_date: string; end_date: string; reason: string | null
+  status: LeaveStatus; reviewed_by: string | null; reviewed_at: string | null
+  created_at: string
+  profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
+  reviewer?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface RosterPattern {
+  id: string; name: string; cycle_days: number; day_plan: string[]
+  members?: RosterPatternMember[]
+}
+
+export interface RosterPatternMember {
+  id: string; pattern_id: string; profile_id: string; ward_id: string | null
+  anchor_date: string; offset_days: number
+  profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
+}
+
+// Coverage computation result surfaced to the roster grid / picker
+export interface ShiftCoverage {
+  ward_id: string; shift_code: string
+  required: number; assigned: number; occupied_beds: number
+}
+
+export interface WardRosterData {
+  roster: DutyRoster[]
+  nurses: { id: string; full_name: string }[]
+  shifts: ShiftDefinition[]
+  coverage: ShiftCoverage[]
+  canManage: boolean
+  weekStart: string
+}
+
+// Nurse row for the roster-aware IPD assignment picker
+export interface PickerNurse {
+  id: string
+  full_name: string
+  nursing_charge_per_shift: number | null
+  rostered: boolean
+  on_leave: boolean
+  load: number
+  capacity: number
+}
+
+export interface NursePickerData {
+  nurses: PickerNurse[]
+  wardId: string | null
+  coverage: { required: number; assigned: number; occupied_beds: number } | null
 }
 
 // ---- Phase 8: EMR ----
@@ -684,6 +765,7 @@ export type Permission =
   | 'tariffs:manage' | 'pharmacy:sale'
   | 'ipd:config' | 'ipd:nursing'
   | 'barcode:print:patient' | 'barcode:print:sample'
+  | 'scheduling:read' | 'scheduling:manage' | 'leave:request' | 'leave:approve'
 
 export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
 export interface NavGroup { label: string; items: NavItem[] }
@@ -834,7 +916,7 @@ export interface AdmissionNurseAssignment {
   tenant_id: string
   admission_id: string
   nurse_id: string
-  shift: 'morning' | 'night'
+  shift: Shift
   assigned_date: string
   charge_snapshot: number
   created_at: string

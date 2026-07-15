@@ -171,6 +171,14 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   ]
   await service.from('notification_templates').insert(tplRows)
 
+  // 5b. Seed default nursing shifts (Morning/Night active, Evening off — configurable later)
+  const shiftRows = [
+    { id: crypto.randomUUID(), tenant_id: tenantId, code: 'morning', label: 'Morning', start_time: '07:00', end_time: '19:00', crosses_midnight: false, sort_order: 1, is_active: true },
+    { id: crypto.randomUUID(), tenant_id: tenantId, code: 'evening', label: 'Evening', start_time: '14:00', end_time: '21:00', crosses_midnight: false, sort_order: 2, is_active: false },
+    { id: crypto.randomUUID(), tenant_id: tenantId, code: 'night',   label: 'Night',   start_time: '19:00', end_time: '07:00', crosses_midnight: true,  sort_order: 3, is_active: true },
+  ]
+  await service.from('shift_definitions').insert(shiftRows)
+
   // 6. Seed default lab & radiology catalogs (inactive, ₹1 each — admin enables & prices)
   await Promise.all([
     seedLabCatalog(tenantId),

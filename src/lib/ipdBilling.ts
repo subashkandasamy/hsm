@@ -193,3 +193,72 @@ export async function autoIpdBill(
 
   return billId
 }
+
+/**
+ * Sync one shift's nursing charge onto the day's nursing bill.
+ *
+ * With configurable shifts, every shift's nursing charge lives on a single
+ * `nursing` bill per (admission, date), one line item per shift, deduped and
+ * identified by ref_id = the shift_definition's id. This keeps auto-billing
+ * correct for any number of shifts (morning/evening/night/custom) without
+ * needing a distinct bill_source per shift.
+ *
+ * - creates the line (and the bill) if absent, applying advance credit
+ * - updates the line's rate in place if the assigned nurse's charge changed
+ * - no-ops when the charge is 0 or the line already matches
+ */
+export async function syncNursingBillLine(
+  supabase: SupabaseClient,
+  actorId: string,
+  p: {
+    tenantId: string
+    admissionId: string
+    patientId: string
+    date: string            // 'YYYY-MM-DD'
+    shiftDefId: string      // shift_definitions.id — stable per-shift dedup key
+    description: string
+    charge: number
+  }
+): Promise<void> {
+  if (p.charge <= 0) return
+
+  const { data: bill } = await supabase
+    .from('bills')
+    .select('id')
+    .eq('tenant_id', p.tenantId)
+    .eq('admission_id', p.admissionId)
+    .eq('billing_date', p.date)
+    .eq('bill_source', 'nursing')
+    .neq('status', 'cancelled')
+    .maybeSingle()
+
+  if (bill) {
+    const { data: item } = await supabase
+      .from('bill_items')
+      .select('id, unit_price')
+      .eq('bill_id', bill.id)
+      .eq('ref_id', p.shiftDefId)
+      .maybeSingle()
+
+    if (item) {
+      // Rate change (e.g. a different nurse took over the shift) — update in place.
+      if (Number(item.unit_price) !== p.charge) {
+        await supabase.from('bill_items').update({ unit_price: p.charge, amount: p.charge }).eq('id', item.id)
+        const { data: items } = await supabase.from('bill_items').select('amount').eq('bill_id', bill.id)
+        const sum = (items ?? []).reduce((s, i) => s + Number(i.amount), 0)
+        await supabase.from('bills').update({ subtotal: sum, total: sum }).eq('id', bill.id)
+      }
+      return
+    }
+  }
+
+  // No bill yet, or this shift's line is missing — create/append (also applies advance).
+  await autoIpdBill(supabase, actorId, {
+    tenantId: p.tenantId,
+    admissionId: p.admissionId,
+    patientId: p.patientId,
+    billingDate: p.date,
+    billSource: 'nursing',
+    lineItems: [{ source: 'nursing', ref_id: p.shiftDefId, description: p.description, qty: 1, unit_price: p.charge }],
+  })
+}

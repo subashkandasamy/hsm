@@ -420,15 +420,84 @@ export const MarkAttendanceSchema = z.object({
   profile_id: z.string().uuid(),
   date: z.string().min(1, 'Date required'),
   status: z.enum(['present','absent','leave','half_day']),
-  shift: z.enum(['morning','evening','night']).nullable().optional(),
+  shift: z.string().min(1).nullable().optional(),      // shift code (configurable)
   check_in: z.string().nullable().optional(),
   check_out: z.string().nullable().optional(),
 })
 export const SetRosterSchema = z.object({
   profile_id: z.string().uuid(),
   date: z.string().min(1, 'Date required'),
-  shift: z.enum(['morning','evening','night']).nullable().optional(),
+  shift: z.string().min(1).nullable().optional(),      // shift code (configurable)
   ward_id: z.string().uuid().nullable().optional(),
+})
+
+// ---- Staff Scheduling & Nurse Rostering ----
+
+export const ShiftDefinitionSchema = z.object({
+  id: z.string().uuid().optional(),
+  code: z.string().min(1, 'Code required').max(32)
+    .regex(/^[a-z0-9_]+$/, 'Lowercase letters, numbers and underscores only'),
+  label: z.string().min(1, 'Label required').max(60),
+  start_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Use HH:MM'),
+  end_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Use HH:MM'),
+  crosses_midnight: z.boolean().optional().default(false),
+  sort_order: z.number().int().nonnegative().optional().default(0),
+  is_active: z.boolean().optional().default(true),
+})
+
+export const WardCoverageRuleSchema = z.object({
+  ward_id: z.string().uuid('Select a ward'),
+  shift_code: z.string().min(1, 'Select a shift'),
+  patient_ratio: z.number().positive('Ratio must be > 0'),
+  min_nurses: z.number().int().nonnegative().optional().default(1),
+})
+
+export const WardInchargeSchema = z.object({
+  ward_id: z.string().uuid('Select a ward'),
+  profile_id: z.string().uuid('Select a nurse'),
+})
+
+export const LeaveRequestSchema = z.object({
+  profile_id: z.string().uuid().optional(),   // defaults to the requesting user
+  leave_type: z.enum(['annual','casual','sick','unpaid','maternity','other']),
+  start_date: z.string().min(1, 'Start date required'),
+  end_date: z.string().min(1, 'End date required'),
+  reason: z.string().max(500).nullable().optional(),
+}).refine(v => v.end_date >= v.start_date, { message: 'End date cannot be before start date', path: ['end_date'] })
+
+export const LeaveReviewSchema = z.object({
+  id: z.string().uuid(),
+  decision: z.enum(['approved','rejected']),
+})
+
+export const RosterPatternSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1, 'Name required').max(80),
+  day_plan: z.array(z.string().min(1)).min(1, 'Add at least one cycle day').max(60),
+})
+
+export const RosterPatternMemberSchema = z.object({
+  pattern_id: z.string().uuid(),
+  profile_id: z.string().uuid(),
+  ward_id: z.string().uuid().nullable().optional(),
+  anchor_date: z.string().min(1, 'Anchor date required'),
+  offset_days: z.number().int().optional().default(0),
+})
+
+export const GenerateRosterSchema = z.object({
+  ward_id: z.string().uuid('Select a ward'),
+  start_date: z.string().min(1, 'Start date required'),
+  end_date: z.string().min(1, 'End date required'),
+  pattern_id: z.string().uuid().nullable().optional(),
+  copy_forward: z.boolean().optional().default(false),
+  auto_fill: z.boolean().optional().default(false),
+}).refine(v => v.end_date >= v.start_date, { message: 'End date cannot be before start date', path: ['end_date'] })
+
+export const AssignNurseSchema = z.object({
+  admissionId: z.string().uuid(),
+  nurseId: z.string().uuid(),
+  shift: z.string().min(1),
+  date: z.string().min(1),
 })
 
 export type SupplierInput = z.infer<typeof SupplierSchema>
@@ -441,3 +510,11 @@ export type CreateStaffInput = z.infer<typeof CreateStaffSchema>
 export type UpdateStaffInput = z.infer<typeof UpdateStaffSchema>
 export type MarkAttendanceInput = z.infer<typeof MarkAttendanceSchema>
 export type SetRosterInput = z.infer<typeof SetRosterSchema>
+export type ShiftDefinitionInput = z.infer<typeof ShiftDefinitionSchema>
+export type WardCoverageRuleInput = z.infer<typeof WardCoverageRuleSchema>
+export type WardInchargeInput = z.infer<typeof WardInchargeSchema>
+export type LeaveRequestInput = z.infer<typeof LeaveRequestSchema>
+export type LeaveReviewInput = z.infer<typeof LeaveReviewSchema>
+export type RosterPatternInput = z.infer<typeof RosterPatternSchema>
+export type RosterPatternMemberInput = z.infer<typeof RosterPatternMemberSchema>
+export type GenerateRosterInput = z.infer<typeof GenerateRosterSchema>

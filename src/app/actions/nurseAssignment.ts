@@ -4,22 +4,34 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
-import { autoIpdBill } from '@/lib/ipdBilling'
-import type { AdmissionNurseAssignment } from '@/lib/types'
+import { syncNursingBillLine } from '@/lib/ipdBilling'
+import { AssignNurseSchema } from '@/lib/schemas'
+import type { AdmissionNurseAssignment, PickerNurse, NursePickerData } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
 export async function assignNurse(params: {
   admissionId: string
   nurseId: string
-  shift: 'morning' | 'night'
+  shift: string
   date: string
 }): Promise<{ success: true; assignment: AdmissionNurseAssignment } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
 
-  const { admissionId, nurseId, shift, date } = params
+  const parsed = AssignNurseSchema.safeParse(params)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { admissionId, nurseId, shift, date } = parsed.data
   const supabase = await createClient()
+
+  // Resolve the (active) shift definition — its id is the stable per-shift billing key.
+  const { data: shiftDef } = await supabase
+    .from('shift_definitions')
+    .select('id, label, is_active')
+    .eq('code', shift)
+    .maybeSingle()
+  if (!shiftDef) return { success: false, error: `Unknown shift "${shift}"` }
+  if (shiftDef.is_active === false) return { success: false, error: `Shift "${shiftDef.label}" is not active` }
 
   // Fetch the nurse's current charge rate (snapshot at assignment time)
   const { data: sp } = await supabase
@@ -43,63 +55,27 @@ export async function assignNurse(params: {
 
   if (error) {
     if (error.code === '23505')
-      return { success: false, error: `A nurse is already assigned to the ${shift} shift on ${date}` }
+      return { success: false, error: `A nurse is already assigned to the ${shiftDef.label} shift on ${date}` }
     return { success: false, error: error.message }
   }
 
   await logAudit(actor.id, 'assign', 'nurse', id, { admissionId, nurseId, shift, date, chargeSnapshot })
 
-  // Sync nursing bill for today's assignments
+  // Auto-bill today's shift onto the day's nursing bill (per-shift line, deduped by shift id).
   const today = new Date().toISOString().split('T')[0]
   if (date === today && chargeSnapshot > 0) {
-    const billSource = shift === 'morning' ? 'nursing_morning' : 'nursing_night'
-    const shiftLabel = shift === 'morning' ? 'Morning' : 'Night'
-
-    // Check if a bill for this shift already exists today (from carry-forward)
-    const { data: existingBill } = await supabase
-      .from('bills')
-      .select('id')
-      .eq('tenant_id', actor.tenant_id)
-      .eq('admission_id', admissionId)
-      .eq('billing_date', today)
-      .eq('bill_source', billSource)
-      .neq('status', 'cancelled')
-      .maybeSingle()
-
-    if (existingBill) {
-      // Update the existing line item to the new nurse's rate
-      await supabase
-        .from('bill_items')
-        .update({ unit_price: chargeSnapshot, amount: chargeSnapshot })
-        .eq('bill_id', existingBill.id)
-
-      await supabase
-        .from('bills')
-        .update({ subtotal: chargeSnapshot, total: chargeSnapshot })
-        .eq('id', existingBill.id)
-    } else {
-      // No bill yet — create one (admission may have been admitted today)
-      const { data: adm } = await supabase
-        .from('admissions')
-        .select('patient_id')
-        .eq('id', admissionId)
-        .single()
-
-      if (adm?.patient_id) {
-        await autoIpdBill(supabase, actor.id, {
-          tenantId: actor.tenant_id,
-          admissionId,
-          patientId: adm.patient_id as string,
-          billingDate: today,
-          billSource,
-          lineItems: [{
-            source: billSource as 'nursing_morning' | 'nursing_night',
-            description: `Nursing — ${shiftLabel} Shift`,
-            qty: 1,
-            unit_price: chargeSnapshot,
-          }],
-        })
-      }
+    const { data: adm } = await supabase
+      .from('admissions').select('patient_id').eq('id', admissionId).single()
+    if (adm?.patient_id) {
+      await syncNursingBillLine(supabase, actor.id, {
+        tenantId: actor.tenant_id,
+        admissionId,
+        patientId: adm.patient_id as string,
+        date: today,
+        shiftDefId: shiftDef.id as string,
+        description: `Nursing — ${shiftDef.label} Shift`,
+        charge: chargeSnapshot,
+      })
     }
   }
 
@@ -218,4 +194,72 @@ export async function listNurses(): Promise<Array<{
     full_name: n.full_name as string,
     nursing_charge_per_shift: rateMap.get(n.id as string) ?? null,
   }))
+}
+
+const DEFAULT_RATIO = 6
+
+/**
+ * Roster-aware, load-aware nurse list for the IPD assignment picker.
+ * Rostered + available nurses float to the top; everyone else remains
+ * searchable as an off-roster fallback.
+ */
+export async function listNursesForPicker(params: {
+  admissionId: string; date: string; shift: string
+}): Promise<NursePickerData> {
+  const supabase = await createClient()
+  const { admissionId, date, shift } = params
+
+  const { data: adm } = await supabase
+    .from('admissions').select('ward_id').eq('id', admissionId).maybeSingle()
+  const wardId = (adm?.ward_id as string | null) ?? null
+
+  const [nursesRes, spRes, rosterRes, leaveRes, loadRes, ruleRes, bedsRes] = await Promise.all([
+    supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
+    supabase.from('staff_profiles').select('profile_id, nursing_charge_per_shift'),
+    wardId
+      ? supabase.from('duty_roster').select('profile_id').eq('ward_id', wardId).eq('date', date).eq('shift', shift)
+      : Promise.resolve({ data: [] as { profile_id: string }[] }),
+    supabase.from('leave_requests').select('profile_id').eq('status', 'approved').lte('start_date', date).gte('end_date', date),
+    supabase.from('admission_nurse_assignments').select('nurse_id').eq('assigned_date', date).eq('shift', shift),
+    wardId
+      ? supabase.from('ward_coverage_rules').select('patient_ratio, min_nurses').eq('ward_id', wardId).eq('shift_code', shift).maybeSingle()
+      : Promise.resolve({ data: null }),
+    wardId
+      ? supabase.from('admissions').select('id', { count: 'exact', head: true }).eq('ward_id', wardId).eq('status', 'admitted')
+      : Promise.resolve({ count: 0 }),
+  ])
+
+  const rateMap = new Map((spRes.data ?? []).map(r => [r.profile_id as string, r.nursing_charge_per_shift as number | null]))
+  const rostered = new Set((rosterRes.data ?? []).map(r => r.profile_id as string))
+  const onLeave = new Set((leaveRes.data ?? []).map(r => r.profile_id as string))
+  const loadMap = new Map<string, number>()
+  for (const a of loadRes.data ?? []) {
+    const nid = a.nurse_id as string
+    loadMap.set(nid, (loadMap.get(nid) ?? 0) + 1)
+  }
+  const ratio = ((ruleRes.data as { patient_ratio?: number } | null)?.patient_ratio) ?? DEFAULT_RATIO
+
+  const nurses: PickerNurse[] = (nursesRes.data ?? []).map(n => ({
+    id: n.id as string,
+    full_name: n.full_name as string,
+    nursing_charge_per_shift: rateMap.get(n.id as string) ?? null,
+    rostered: rostered.has(n.id as string),
+    on_leave: onLeave.has(n.id as string),
+    load: loadMap.get(n.id as string) ?? 0,
+    capacity: ratio,
+  }))
+
+  // rostered & available first, then rostered-but-busy, then the rest — alpha within groups
+  nurses.sort((a, b) => {
+    const rank = (x: PickerNurse) => (x.on_leave ? 2 : x.rostered ? 0 : 1)
+    return rank(a) - rank(b) || a.full_name.localeCompare(b.full_name)
+  })
+
+  const beds = (bedsRes as { count?: number }).count ?? 0
+  const minN = ((ruleRes.data as { min_nurses?: number } | null)?.min_nurses) ?? 1
+  const coverage = wardId
+    ? { required: Math.max(minN, Math.ceil(beds / ratio)), assigned: rostered.size, occupied_beds: beds }
+    : null
+
+  return { nurses, wardId, coverage }
 }

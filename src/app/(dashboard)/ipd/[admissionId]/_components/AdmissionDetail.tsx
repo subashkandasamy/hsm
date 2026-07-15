@@ -665,7 +665,6 @@ export default function AdmissionDetail({
           <NursingPanel
             admissionId={adm.id}
             canAssign={!!canNursing}
-            nurses={nurses}
             today={today}
           />
         ) : (

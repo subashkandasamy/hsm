@@ -8,7 +8,7 @@ import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
-import { autoIpdBill } from '@/lib/ipdBilling'
+import { autoIpdBill, syncNursingBillLine } from '@/lib/ipdBilling'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -681,6 +681,8 @@ export async function generateMissingDailyCharges(
   }
 
   // ── 5. Nursing bills ──────────────────────────────────────────────────────────
+  // Carry forward the latest nurse per shift and bill each shift onto the day's
+  // single 'nursing' bill (one line per shift, deduped by shift_definition id).
   if (chargeNursing) {
     const { data: allAssignments } = await supabase
       .from('admission_nurse_assignments')
@@ -701,21 +703,28 @@ export async function generateMissingDailyCharges(
       }
     }
 
-    const admissionMap = new Map(admissions.map((a) => [a.id, a]))
-    for (const [, entry] of latestPerShift) {
-      const billSource = entry.shift === 'morning' ? 'nursing_morning' : 'nursing_night'
-      if (billedToday.get(entry.admissionId)?.has(billSource)) continue
-      const adm = admissionMap.get(entry.admissionId)
-      if (!adm) continue
-      const shiftLabel = entry.shift === 'morning' ? 'Morning' : 'Night'
-      await autoIpdBill(supabase, actor.id, {
-        tenantId: actor.tenant_id,
-        admissionId: entry.admissionId,
-        patientId: adm.patient_id,
-        billingDate: today,
-        billSource,
-        lineItems: [{ source: billSource as 'nursing_morning' | 'nursing_night', description: `Nursing — ${shiftLabel} Shift`, qty: 1, unit_price: entry.chargeSnapshot }],
-      })
+    if (latestPerShift.size > 0) {
+      // Map shift code → { id, label } for active shifts (billing dedup key + label)
+      const { data: shiftDefs } = await supabase
+        .from('shift_definitions').select('id, code, label').eq('is_active', true)
+      const shiftMap = new Map((shiftDefs ?? []).map(s => [s.code as string, { id: s.id as string, label: s.label as string }]))
+      const admissionMap = new Map(admissions.map((a) => [a.id, a]))
+
+      for (const [, entry] of latestPerShift) {
+        const def = shiftMap.get(entry.shift)
+        if (!def) continue     // shift deactivated — skip
+        const adm = admissionMap.get(entry.admissionId)
+        if (!adm) continue
+        await syncNursingBillLine(supabase, actor.id, {
+          tenantId: actor.tenant_id,
+          admissionId: entry.admissionId,
+          patientId: adm.patient_id,
+          date: today,
+          shiftDefId: def.id,
+          description: `Nursing — ${def.label} Shift`,
+          charge: entry.chargeSnapshot,
+        })
+      }
     }
   }
 
