@@ -164,9 +164,12 @@ export default function SignupForm({ plan = 'starter' }: Props) {
 
       {/* Slug */}
       <div>
-        <label className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
+        <label className="block text-sm font-medium mb-1" style={{ color: '#0F172A' }}>
           Subdomain
         </label>
+        <p className="text-xs mb-1.5" style={{ color: '#64748B' }}>
+          This becomes your hospital&apos;s own website address — e.g. <strong>city-general.uyirly.com</strong> — where you and your staff will log in every day.
+        </p>
         <div className="flex items-center rounded-xl overflow-hidden transition-all"
           style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.8)' }}>
           <input
