@@ -63,7 +63,7 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
         description: meta.description,
         datePublished: meta.updated,
         dateModified: meta.updated,
-        author: { '@type': 'Person', name: 'Subash Kandasamy', url: `${SITE}` },
+        author: { '@type': 'Person', name: 'Subash Kandasamy', jobTitle: 'Founder, Uyirly', url: `${SITE}` },
         publisher: {
           '@type': 'Organization',
           name: 'Uyirly',

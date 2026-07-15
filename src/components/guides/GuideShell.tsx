@@ -69,7 +69,7 @@ export default function GuideShell({ meta, children, faqs }: Props) {
           </div>
           <div>
             <p className="text-sm font-semibold" style={{ color: SLATE9 }}>Subash Kandasamy</p>
-            <p className="text-xs" style={{ color: SLATE4 }}>Building Uyirly — hospital software for Indian hospitals</p>
+            <p className="text-xs" style={{ color: SLATE4 }}>Founder, Uyirly</p>
           </div>
         </div>
 
