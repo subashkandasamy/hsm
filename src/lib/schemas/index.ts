@@ -301,18 +301,54 @@ export const InsurancePolicySchema = z.object({
   policy_no:       z.string().min(1, 'Policy number is required'),
   valid_till:      z.string().nullable().optional(),
   coverage_amount: z.number().nullable().optional(),
+  tpa_id:          z.string().uuid().nullable().optional(),
 })
 
+// A claim targets exactly one encounter: an admission (IPD), an OPD visit,
+// or a single bill (legacy / one-off). At least one must be provided.
 export const InsuranceClaimSchema = z.object({
-  bill_id:      z.string().uuid('Please select a bill'),
+  admission_id: z.string().uuid().nullable().optional(),
+  visit_id:     z.string().uuid().nullable().optional(),
+  bill_id:      z.string().uuid().nullable().optional(),
   policy_id:    z.string().uuid('Please select a policy'),
   claim_amount: z.number().positive('Claim amount must be positive'),
+  claim_type:   z.enum(['cashless','reimbursement']).optional().default('cashless'),
+}).refine(
+  (v) => !!(v.admission_id || v.visit_id || v.bill_id),
+  { message: 'A claim must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
+)
+
+// Pre-authorization raised against an admission before any bill exists.
+export const PreauthSchema = z.object({
+  admission_id:     z.string().uuid('Select an admission'),
+  policy_id:        z.string().uuid('Select a policy'),
+  estimated_amount: z.number().positive('Estimated amount must be positive'),
+  claim_type:       z.enum(['cashless','reimbursement']).optional().default('cashless'),
+  remarks:          z.string().nullable().optional(),
 })
 
 export const AdvanceClaimSchema = z.object({
   next_status:     z.enum(['preauth','submitted','approved','rejected','settled']),
   approved_amount: z.number().positive().nullable().optional(),
+  copay_amount:    z.number().nonnegative().nullable().optional(),
   remarks:         z.string().nullable().optional(),
+})
+
+// Enhancement: raise the claimed amount mid-stay (cost overran the estimate).
+export const EnhanceClaimSchema = z.object({
+  claim_amount: z.number().positive('Amount must be positive'),
+  remarks:      z.string().nullable().optional(),
+})
+
+export const InsuranceTpaSchema = z.object({
+  id:             z.string().uuid().optional(),
+  name:           z.string().min(1, 'Name is required').max(120),
+  code:           z.string().max(40).nullable().optional(),
+  contact_person: z.string().max(120).nullable().optional(),
+  phone:          z.string().max(40).nullable().optional(),
+  email:          z.string().max(160).nullable().optional(),
+  notes:          z.string().max(500).nullable().optional(),
+  is_active:      z.boolean().optional().default(true),
 })
 
 // ---- Type exports ----
@@ -350,6 +386,9 @@ export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>
 export type InsurancePolicyInput = z.infer<typeof InsurancePolicySchema>
 export type InsuranceClaimInput = z.infer<typeof InsuranceClaimSchema>
 export type AdvanceClaimInput = z.infer<typeof AdvanceClaimSchema>
+export type PreauthInput = z.infer<typeof PreauthSchema>
+export type EnhanceClaimInput = z.infer<typeof EnhanceClaimSchema>
+export type InsuranceTpaInput = z.infer<typeof InsuranceTpaSchema>
 
 // ---- Phase 6: Inventory ----
 export const SupplierSchema = z.object({

@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { Search, Loader2 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
-import { addPolicy } from '@/app/actions/insurance'
+import Select from '@/components/ui/Select'
+import { addPolicy, listTpas, listProviders } from '@/app/actions/insurance'
 import { searchPatients } from '@/app/actions/patients'
-import type { Patient } from '@/lib/types'
+import type { Patient, InsuranceTpa } from '@/lib/types'
 
 interface Props { onClose: () => void; onAdded: () => void }
 
@@ -20,8 +21,16 @@ export default function AddPolicyModal({ onClose, onAdded }: Props) {
   const [policyNo, setPolicyNo]           = useState('')
   const [validTill, setValidTill]         = useState('')
   const [coverage, setCoverage]           = useState('')
+  const [tpaId, setTpaId]                 = useState('')
+  const [tpas, setTpas]                   = useState<InsuranceTpa[]>([])
+  const [providers, setProviders]         = useState<string[]>([])
   const [submitting, setSubmitting]       = useState(false)
   const [error, setError]                 = useState<string | null>(null)
+
+  useEffect(() => {
+    listTpas().then((t) => setTpas(t.filter((x) => x.is_active)))
+    listProviders().then((p) => setProviders(p.map((x) => x.name)))
+  }, [])
 
   useEffect(() => {
     if (!patientSearch.trim()) { setPatients([]); return }
@@ -44,6 +53,7 @@ export default function AddPolicyModal({ onClose, onAdded }: Props) {
       policy_no:       policyNo,
       valid_till:      validTill || null,
       coverage_amount: coverage ? parseFloat(coverage) : null,
+      tpa_id:          tpaId || null,
     })
     setSubmitting(false)
     if (!res.success) { setError(res.error); return }
@@ -119,26 +129,35 @@ export default function AddPolicyModal({ onClose, onAdded }: Props) {
       ) : (
         <div className="space-y-4">
           {error && <div className="px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#EF4444' }}>{error}</div>}
-          {[
-            { label: 'Insurance Provider', value: provider, setter: setProvider, required: true },
-            { label: 'Policy Number', value: policyNo, setter: setPolicyNo, required: true },
-          ].map(({ label, value, setter, required }) => (
-            <div key={label}>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>{label} {required && <span style={{ color: '#EF4444' }}>*</span>}</label>
-              <input
-                type="text"
-                value={value}
-                onChange={(e) => setter(e.target.value)}
-                className="w-full px-3 py-3 rounded-xl text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0',
-                  color: '#0F172A', minHeight: '44px', outline: 'none',
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
-              />
-            </div>
-          ))}
+
+          {/* Provider — pick from the shared list or type your own (saved for reuse) */}
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Insurance Provider <span style={{ color: '#EF4444' }}>*</span></label>
+            <input
+              type="text" list="ins-provider-list"
+              value={provider} onChange={(e) => setProvider(e.target.value)}
+              placeholder="Search or type an insurer…"
+              className="w-full px-3 py-3 rounded-xl text-sm"
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
+            />
+            <datalist id="ins-provider-list">
+              {providers.map((p) => <option key={p} value={p} />)}
+            </datalist>
+            <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Not in the list? Just type it — it&apos;s saved to your hospital&apos;s insurers for next time.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Policy Number <span style={{ color: '#EF4444' }}>*</span></label>
+            <input
+              type="text" value={policyNo} onChange={(e) => setPolicyNo(e.target.value)}
+              className="w-full px-3 py-3 rounded-xl text-sm"
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Valid Till</label>
             <input type="date" value={validTill} onChange={(e) => setValidTill(e.target.value)}
@@ -164,6 +183,15 @@ export default function AddPolicyModal({ onClose, onAdded }: Props) {
               onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
             />
           </div>
+          {tpas.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>TPA (optional)</label>
+              <Select value={tpaId} onChange={(e) => setTpaId(e.target.value)}>
+                <option value="">— None —</option>
+                {tpas.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </Select>
+            </div>
+          )}
         </div>
       )}
     </Modal>

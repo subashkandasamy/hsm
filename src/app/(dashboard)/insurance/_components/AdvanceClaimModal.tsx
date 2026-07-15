@@ -6,7 +6,7 @@ import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
-import { advanceClaim } from '@/app/actions/insurance'
+import { advanceClaim, enhanceClaim } from '@/app/actions/insurance'
 import type { InsuranceClaim, InsuranceClaimStatus } from '@/lib/types'
 
 const VALID_TRANSITIONS: Record<InsuranceClaimStatus, InsuranceClaimStatus[]> = {
@@ -44,15 +44,24 @@ interface Props {
 
 export default function AdvanceClaimModal({ claim, onClose, onAdvanced }: Props) {
   const nextOptions = VALID_TRANSITIONS[claim.status]
+  const claimedAmt = claim.claim_amount ?? claim.estimated_amount ?? 0
   const [nextStatus, setNextStatus] = useState<InsuranceClaimStatus>(nextOptions[0] ?? 'submitted')
   const [approvedAmount, setApprovedAmount] = useState(
-    claim.approved_amount ? String(claim.approved_amount) : String(claim.claim_amount)
+    claim.approved_amount ? String(claim.approved_amount) : String(claimedAmt)
   )
+  const [copay, setCopay] = useState(claim.copay_amount ? String(claim.copay_amount) : '')
   const [remarks, setRemarks] = useState(claim.remarks ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Enhancement (raise the claimed amount) — only before approval/settlement
+  const canEnhance = !['approved', 'settled', 'rejected'].includes(claim.status)
+  const [enhanceAmt, setEnhanceAmt] = useState(String(claimedAmt))
+  const [enhancing, setEnhancing] = useState(false)
+
   const needsApproved = nextStatus === 'approved' || nextStatus === 'settled'
+  // Auto-suggest co-pay = claimed − approved
+  const suggestedCopay = Math.max(0, claimedAmt - (parseFloat(approvedAmount) || 0))
 
   async function handleAdvance() {
     setSubmitting(true)
@@ -60,9 +69,19 @@ export default function AdvanceClaimModal({ claim, onClose, onAdvanced }: Props)
     const res = await advanceClaim(claim.id, {
       next_status:     nextStatus,
       approved_amount: needsApproved && approvedAmount ? parseFloat(approvedAmount) : null,
+      copay_amount:    needsApproved ? (copay ? parseFloat(copay) : suggestedCopay) : null,
       remarks:         remarks || null,
     })
     setSubmitting(false)
+    if (!res.success) { setError(res.error); return }
+    onAdvanced()
+  }
+
+  async function handleEnhance() {
+    setEnhancing(true)
+    setError(null)
+    const res = await enhanceClaim(claim.id, { claim_amount: parseFloat(enhanceAmt) || 0 })
+    setEnhancing(false)
     if (!res.success) { setError(res.error); return }
     onAdvanced()
   }
@@ -110,7 +129,7 @@ export default function AdvanceClaimModal({ claim, onClose, onAdvanced }: Props)
         <div className="px-4 py-3 rounded-xl space-y-1" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
           <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{patientName}</p>
           <p className="text-xs" style={{ color: '#64748B' }}>
-            {claim.bill?.bill_no} · Claim: <Money amount={claim.claim_amount} />
+            {claim.admission_id ? 'IPD admission' : claim.visit_id ? 'OPD visit' : claim.bill?.bill_no ?? 'Claim'} · {claim.status === 'preauth' ? 'Estimate' : 'Claim'}: <Money amount={claimedAmt} />
           </p>
           <div className="flex items-center gap-2">
             <StatusBadge status={STATUS_MAP[claim.status]} label={claim.status} />
@@ -151,9 +170,42 @@ export default function AdvanceClaimModal({ claim, onClose, onAdvanced }: Props)
             />
             {nextStatus === 'settled' && (
               <p className="text-xs mt-1" style={{ color: '#64748B' }}>
-                Settling will post an insurance payment of this amount to the bill.
+                Settling will post this amount as insurance payment across the encounter&apos;s bills, oldest first.
               </p>
             )}
+          </div>
+        )}
+
+        {/* Co-pay (patient share) */}
+        {needsApproved && (
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
+              Patient Co-pay (₹)
+            </label>
+            <input type="number" min={0} step={1}
+              value={copay} onChange={(e) => setCopay(e.target.value)}
+              placeholder={`Suggested ₹${suggestedCopay.toFixed(0)}`}
+              className="w-full px-3 py-3 rounded-xl text-sm"
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }} />
+            <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>The portion the patient pays directly (claimed − approved).</p>
+          </div>
+        )}
+
+        {/* Enhancement — raise the claimed amount before approval */}
+        {canEnhance && (
+          <div className="pt-3" style={{ borderTop: '1px dashed #E2E8F0' }}>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Enhance claimed amount (₹)</label>
+            <div className="flex gap-2">
+              <input type="number" min={0} step={1} value={enhanceAmt} onChange={(e) => setEnhanceAmt(e.target.value)}
+                className="flex-1 px-3 py-3 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }} />
+              <button onClick={handleEnhance} disabled={enhancing || parseFloat(enhanceAmt) === claimedAmt}
+                className="px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap"
+                style={{ border: '1px solid #0D9488', color: '#0D9488', minHeight: '44px' }}>
+                {enhancing ? '…' : 'Update'}
+              </button>
+            </div>
+            <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Use when treatment cost overran the original estimate.</p>
           </div>
         )}
 

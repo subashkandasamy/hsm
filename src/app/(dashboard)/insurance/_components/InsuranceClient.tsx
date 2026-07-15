@@ -1,19 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, ShieldPlus, ChevronRight } from 'lucide-react'
+import { Plus, RefreshCw, ShieldPlus, Building2, ChevronRight } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
-import DateText from '@/components/ui/DateText'
-import { listClaims, advanceClaim } from '@/app/actions/insurance'
+import { listClaims } from '@/app/actions/insurance'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import type { InsuranceClaim, InsuranceClaimStatus } from '@/lib/types'
+import type { InsuranceClaim, InsuranceClaimStatus, InsuranceReceivables, InsuranceTpa } from '@/lib/types'
 import AddPolicyModal from './AddPolicyModal'
 import NewClaimModal from './NewClaimModal'
 import AdvanceClaimModal from './AdvanceClaimModal'
+import TpaManagerModal from './TpaManagerModal'
 
 const STATUS_MAP: Record<InsuranceClaimStatus, string> = {
   draft:     'info',
@@ -33,9 +33,9 @@ const KANBAN_COLS: { key: InsuranceClaimStatus; label: string }[] = [
   { key: 'settled',   label: 'Settled' },
 ]
 
-interface Props { initialClaims: InsuranceClaim[] }
+interface Props { initialClaims: InsuranceClaim[]; receivables: InsuranceReceivables; initialTpas: InsuranceTpa[] }
 
-export default function InsuranceClient({ initialClaims }: Props) {
+export default function InsuranceClient({ initialClaims, receivables, initialTpas }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canWrite = !!role && hasPermission(role, 'insurance:write')
@@ -44,6 +44,7 @@ export default function InsuranceClient({ initialClaims }: Props) {
   const [loading, setLoading]           = useState(false)
   const [showAddPolicy, setShowAddPolicy] = useState(false)
   const [showNewClaim, setShowNewClaim] = useState(false)
+  const [showTpa, setShowTpa]           = useState(false)
   const [advancingClaim, setAdvancingClaim] = useState<InsuranceClaim | null>(null)
   const [mobileFilter, setMobileFilter] = useState<InsuranceClaimStatus | 'all'>('all')
 
@@ -74,6 +75,14 @@ export default function InsuranceClient({ initialClaims }: Props) {
         actions={
           canWrite ? (
             <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setShowTpa(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569', minHeight: '44px' }}
+              >
+                <Building2 className="w-4 h-4" />
+                TPAs
+              </button>
               <button
                 onClick={() => setShowAddPolicy(true)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -109,6 +118,21 @@ export default function InsuranceClient({ initialClaims }: Props) {
           ) : undefined
         }
       />
+
+      {/* Receivables summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        {[
+          { label: 'Awaiting decision', value: receivables.pending, color: '#B45309' },
+          { label: 'Approved (to receive)', value: receivables.approved, color: '#0D9488' },
+          { label: 'Settled this month', value: receivables.settledThisMonth, color: '#10B981' },
+          { label: '60+ days pending', value: receivables.agingBuckets.find((b) => b.label === '60+ days')?.amount ?? 0, color: '#DC2626' },
+        ].map((s) => (
+          <GlassCard key={s.label} className="p-3">
+            <p className="text-xs mb-1" style={{ color: '#64748B' }}>{s.label}</p>
+            <Money amount={s.value} className="text-lg font-bold" style={{ color: s.color }} />
+          </GlassCard>
+        ))}
+      </div>
 
       {/* Desktop kanban */}
       <div className="hidden md:block overflow-x-auto">
@@ -210,6 +234,9 @@ export default function InsuranceClient({ initialClaims }: Props) {
       {showNewClaim && (
         <NewClaimModal onClose={() => setShowNewClaim(false)} onCreated={refresh} />
       )}
+      {showTpa && (
+        <TpaManagerModal initialTpas={initialTpas} onClose={() => setShowTpa(false)} />
+      )}
       {advancingClaim && (
         <AdvanceClaimModal
           claim={advancingClaim}
@@ -248,14 +275,14 @@ function ClaimCard({
 
       <div className="space-y-1 text-xs" style={{ color: '#64748B' }}>
         <div className="flex justify-between">
-          <span>Bill</span>
-          <span className="font-mono" style={{ color: '#0D9488' }}>
-            {claim.bill?.bill_no ?? '—'}
+          <span>{claim.claim_type === 'reimbursement' ? 'Reimbursement' : 'Cashless'}</span>
+          <span style={{ color: '#0D9488' }}>
+            {claim.admission_id ? 'IPD' : claim.visit_id ? 'OPD' : claim.bill?.bill_no ?? '—'}
           </span>
         </div>
         <div className="flex justify-between">
-          <span>Claim</span>
-          <Money amount={claim.claim_amount} className="font-semibold" />
+          <span>{claim.status === 'preauth' ? 'Estimate' : 'Claim'}</span>
+          <Money amount={claim.claim_amount ?? claim.estimated_amount ?? 0} className="font-semibold" />
         </div>
         {claim.approved_amount != null && (
           <div className="flex justify-between">

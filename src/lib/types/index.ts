@@ -487,25 +487,64 @@ export interface CombinedBillData {
   advanceCollected: number
   advanceRefunded: number
   balanceDue: number
+  insuranceApproved?: number   // approved cashless cover pending settlement
+  insuranceSettled?: number    // insurance already posted to bills
+  patientBalance?: number      // what the patient themselves still owes after insurance
 }
 
 // ---- Phase 5: Insurance ----
 
 export type InsuranceClaimStatus = 'draft' | 'preauth' | 'submitted' | 'approved' | 'rejected' | 'settled'
+export type InsuranceClaimType = 'cashless' | 'reimbursement'
+
+export interface InsuranceTpa {
+  id: string; name: string; code: string | null; contact: string | null
+  contact_person: string | null; phone: string | null; email: string | null; notes: string | null
+  is_active: boolean; created_at?: string
+}
 
 export interface InsurancePolicy {
   id: string; patient_id: string; provider: string; policy_no: string
   valid_till: string | null; coverage_amount: number | null; created_at: string
+  tpa_id: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  tpa?: Pick<InsuranceTpa, 'id' | 'name'>
 }
 
 export interface InsuranceClaim {
-  id: string; bill_id: string; policy_id: string; claim_amount: number
-  approved_amount: number | null; status: InsuranceClaimStatus
+  id: string
+  bill_id: string | null
+  admission_id: string | null
+  visit_id: string | null
+  policy_id: string
+  claim_amount: number | null
+  estimated_amount: number | null
+  approved_amount: number | null
+  copay_amount: number
+  claim_type: InsuranceClaimType
+  status: InsuranceClaimStatus
   remarks: string | null; submitted_at: string | null; created_at: string
   bill?: Pick<Bill, 'id' | 'bill_no' | 'total' | 'paid' | 'status'>
-  policy?: Pick<InsurancePolicy, 'id' | 'provider' | 'policy_no'>
+  policy?: Pick<InsurancePolicy, 'id' | 'provider' | 'policy_no' | 'coverage_amount'>
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  admission?: { id: string; admitted_at: string | null }
+}
+
+// Coverage remaining on a policy after existing non-rejected claims
+export interface PolicyCoverage {
+  coverage_amount: number | null
+  claimed: number
+  remaining: number | null
+  valid_till: string | null
+  expired: boolean
+}
+
+// Insurance receivable roll-up for the claims dashboard
+export interface InsuranceReceivables {
+  pending: number       // submitted, awaiting decision
+  approved: number      // approved, awaiting settlement (money owed to hospital)
+  settledThisMonth: number
+  agingBuckets: { label: string; amount: number; count: number }[]
 }
 
 // ---- Phase 6: Inventory ----
@@ -888,6 +927,9 @@ export interface AdmissionFinancials {
   totalPaid: number
   balanceDue: number
   unusedAdvance: number
+  insuranceApproved: number   // approved but not yet settled — a receivable, covers balance at discharge
+  insuranceSettled: number    // insurance money actually posted to bills
+  patientBalanceDue: number   // balanceDue minus the approved-insurance receivable
 }
 
 export interface IpdBillingConfig {

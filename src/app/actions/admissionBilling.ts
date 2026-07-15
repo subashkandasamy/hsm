@@ -97,20 +97,39 @@ export async function getAdmissionFinancials(
   // incorrectly reduce the unusedAdvance balance.
   const billIds = (bills ?? []).map((b) => b.id as string)
   let advanceApplied = 0
+  let insuranceSettled = 0
   if (billIds.length > 0) {
     const { data: advPayments } = await supabase
       .from('payments')
-      .select('amount')
+      .select('amount, method')
       .in('bill_id', billIds)
-      .eq('method', 'advance')
-    advanceApplied = (advPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)
+      .in('method', ['advance', 'insurance'])
+    for (const p of advPayments ?? []) {
+      if (p.method === 'advance') advanceApplied += (p.amount as number)
+      else if (p.method === 'insurance') insuranceSettled += (p.amount as number)
+    }
   }
+
+  // Approved-but-unsettled insurance is a receivable that covers the balance at
+  // discharge (the TPA settles days/weeks later). Only the patient's own share
+  // must be collected before discharge.
+  const { data: apprClaims } = await supabase
+    .from('insurance_claims')
+    .select('approved_amount, claim_amount')
+    .eq('admission_id', admissionId)
+    .eq('status', 'approved')
+  const insuranceApproved = (apprClaims ?? []).reduce(
+    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? 0), 0)
 
   const advanceSpent  = totalAdvance - totalRefunded
   const balanceDue    = Math.max(0, totalBilled - totalPaid)
   const unusedAdvance = Math.max(0, advanceSpent - advanceApplied)
+  const patientBalanceDue = Math.max(0, balanceDue - insuranceApproved)
 
-  return { totalAdvance, totalBilled, totalPaid, balanceDue, unusedAdvance }
+  return {
+    totalAdvance, totalBilled, totalPaid, balanceDue, unusedAdvance,
+    insuranceApproved, insuranceSettled, patientBalanceDue,
+  }
 }
 
 // ---- Apply advance credit to a specific bill ----

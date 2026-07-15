@@ -368,12 +368,17 @@ export async function dischargePatient(
     return { success: false, error: 'Admission not found or already discharged' }
   }
 
-  // Phase 15: gate on full settlement before discharge
+  // Gate on the patient's own outstanding balance before discharge. An
+  // approved-but-unsettled insurance claim covers its portion — the TPA settles
+  // later — so only the patient's residual share must be collected now.
   const financials = await getAdmissionFinancials(admissionId)
-  if (financials.balanceDue > 0) {
+  if (financials.patientBalanceDue > 0) {
+    const insuranceNote = financials.insuranceApproved > 0
+      ? ` (₹${financials.insuranceApproved.toFixed(2)} is covered by an approved insurance claim)`
+      : ''
     return {
       success: false,
-      error: `Cannot discharge — ₹${financials.balanceDue.toFixed(2)} balance due. Settle the outstanding amount before discharge.`,
+      error: `Cannot discharge — ₹${financials.patientBalanceDue.toFixed(2)} patient balance due${insuranceNote}. Collect the patient's share before discharge.`,
     }
   }
 

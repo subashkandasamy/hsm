@@ -179,6 +179,18 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
   ]
   await service.from('shift_definitions').insert(shiftRows)
 
+  // 5c. Seed the standard Indian TPA list (tenant can prune/add its own)
+  const tpaNames = [
+    'Medi Assist', 'Paramount Health Services', 'MDIndia Health Insurance TPA',
+    'Health India TPA', 'Vidal Health TPA', 'Family Health Plan (FHPL)',
+    'Heritage Health TPA', 'Raksha Health Insurance TPA', 'Ericson TPA',
+    'Good Health TPA', 'Vipul MedCorp TPA', 'Safeway TPA',
+    'East West Assist TPA', 'Park Mediclaim TPA', 'Genins India TPA',
+  ]
+  await service.from('insurance_tpas').insert(
+    tpaNames.map((name) => ({ id: crypto.randomUUID(), tenant_id: tenantId, name }))
+  )
+
   // 6. Seed default lab & radiology catalogs (inactive, ₹1 each — admin enables & prices)
   await Promise.all([
     seedLabCatalog(tenantId),

@@ -1037,6 +1037,20 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
   const totalPaid       = regularBills.reduce((s, b) => s + b.paid, 0)
   const advanceRefunded = refundBills.reduce((s, b) => s + Math.abs(b.total), 0)
 
+  // Insurance split: what a settled/approved claim covers vs. the patient's own share.
+  const billIds = allBills.map(b => b.id)
+  let insuranceSettled = 0
+  if (billIds.length > 0) {
+    const { data: insPays } = await supabase
+      .from('payments').select('amount').in('bill_id', billIds).eq('method', 'insurance')
+    insuranceSettled = (insPays ?? []).reduce((s, p) => s + (p.amount as number), 0)
+  }
+  const { data: apprClaims } = await supabase
+    .from('insurance_claims').select('approved_amount, claim_amount')
+    .eq('admission_id', admissionId).eq('status', 'approved')
+  const insuranceApproved = (apprClaims ?? []).reduce(
+    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? 0), 0)
+
   return {
     combinedBillNo,
     tenantName,
@@ -1052,6 +1066,9 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     advanceCollected,
     advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
+    insuranceSettled,
+    insuranceApproved,
+    patientBalance: Math.max(0, grandTotal - totalPaid - insuranceApproved),
   }
 }
 
