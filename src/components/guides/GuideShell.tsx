@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Clock, ChevronRight, ArrowRight, Building2 } from 'lucide-react'
+import { Clock, ChevronRight, ArrowRight } from 'lucide-react'
 import MarketingNav from '@/components/marketing/MarketingNav'
 import type { GuideMeta } from '@/lib/guides/registry'
 import { relatedGuides } from '@/lib/guides/registry'
@@ -63,13 +63,13 @@ export default function GuideShell({ meta, children, faqs }: Props) {
         <p className="text-base leading-relaxed mb-5" style={{ color: SLATE5 }}>{meta.description}</p>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <Building2 className="w-4 h-4" style={{ color: TEAL }} />
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)', color: TEAL }}>
+            SK
           </div>
           <div>
-            <p className="text-sm font-semibold" style={{ color: SLATE9 }}>Uyirly Team</p>
-            <p className="text-xs" style={{ color: SLATE4 }}>Hospital software builders — we run this in production at the hospitals on Uyirly</p>
+            <p className="text-sm font-semibold" style={{ color: SLATE9 }}>Subash Kandasamy</p>
+            <p className="text-xs" style={{ color: SLATE4 }}>Building Uyirly — hospital software for Indian hospitals</p>
           </div>
         </div>
 
