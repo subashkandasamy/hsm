@@ -45,8 +45,8 @@ export default function Guide() {
       />
       <p>
         Nurse assignment at admission should be roster-aware — showing which nurses are actually on duty for
-        that ward and shift, not a list of every nurse in the hospital. See our{' '}
-        <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster guide</Link> for how that
+        that ward and shift, not a list of every nurse in the hospital &mdash; our{' '}
+        <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster guide</Link> explains how that
         assignment connects to the weekly schedule.
       </p>
 
@@ -70,13 +70,15 @@ export default function Guide() {
         whole stay&apos;s costs at the last minute.
       </p>
 
-      <h2>What to check in IPD/bed management software</h2>
-      <ul>
-        <li>A live ward board showing bed status across every ward, not per-ward screens you have to click into.</li>
-        <li>Nurse assignment that&apos;s aware of the actual duty roster for that shift.</li>
-        <li>Ward transfers that preserve one continuous admission and bill.</li>
-        <li>Instant bed release on discharge, visible on the ward board immediately.</li>
-      </ul>
+      <h2>Where this usually breaks in practice</h2>
+      <p>
+        The most common failure isn&apos;t a missing feature &mdash; it&apos;s a ward board that isn&apos;t actually live. A
+        bed status screen that updates on a delay, or requires refreshing per ward instead of showing the
+        whole hospital at once, quietly pushes staff back toward calling around to check availability, which
+        defeats the point of having a ward board at all. The second most common failure is a discharge that
+        doesn&apos;t release the bed instantly, leaving a ready room sitting invisible while admissions elsewhere
+        get delayed for &ldquo;no availability.&rdquo;
+      </p>
     </>
   )
 }

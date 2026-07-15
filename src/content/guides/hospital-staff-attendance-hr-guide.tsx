@@ -24,9 +24,9 @@ export default function Guide() {
       <p>
         The duty roster answers &ldquo;who is supposed to be working this shift.&rdquo; Attendance answers &ldquo;who
         actually showed up.&rdquo; They need to stay connected — when someone marked present on the roster is
-        actually absent, that gap should be visible immediately, not discovered hours into the shift. See our{' '}
-        <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster guide</Link> for how rostering
-        and same-day gaps connect.
+        actually absent, that gap should be visible immediately, not discovered hours into the shift &mdash; how
+        rostering and same-day gaps connect is covered in our{' '}
+        <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster guide</Link>.
       </p>
 
       <h2>Why this connects to billing</h2>
@@ -45,13 +45,14 @@ export default function Guide() {
         for, instead of an in-charge discovering the conflict manually.
       </p>
 
-      <h2>What to check in staff attendance/HR software</h2>
-      <ul>
-        <li>Attendance linked to the roster, so gaps are visible immediately, not reconstructed later.</li>
-        <li>Leave requests with an approval step that feeds directly into roster generation.</li>
-        <li>Shift-based charge tracking for roles like nursing, connected to actual attendance.</li>
-        <li>Basic staff records (designation, department, joining date) in the same system as scheduling.</li>
-      </ul>
+      <h2>The test that actually matters</h2>
+      <p>
+        Most attendance software can mark someone present or absent. The real test is narrower: when a nurse
+        scheduled for the 2pm shift doesn&apos;t check in by 2:15, does anyone find out before a patient does?
+        Software where attendance and roster are two disconnected screens fails this test even if both screens
+        individually work fine &mdash; the gap only becomes visible when someone happens to compare them manually.
+        Software where a no-show immediately flags against the roster passes it without anyone having to look.
+      </p>
     </>
   )
 }

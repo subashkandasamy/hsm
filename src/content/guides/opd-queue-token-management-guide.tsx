@@ -52,20 +52,21 @@ export default function Guide() {
       <h2>Why this connects to everything downstream</h2>
       <p>
         A consultation that starts from a properly queued, correctly identified patient record flows cleanly
-        into orders (lab, radiology, prescription) and eventually into admission if needed. See our{' '}
-        <Link href="/guides/hospital-digitization-workflow-guide">hospital digitization workflow guide</Link>{' '}
-        for how OPD connects to IPD and billing, and{' '}
-        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> for why one identity per
-        patient matters from the very first token.
+        into orders (lab, radiology, prescription) and eventually into admission if needed. We map that full
+        path in the{' '}
+        <Link href="/guides/hospital-digitization-workflow-guide">hospital digitization workflow guide</Link>.
+        Why one identity per patient matters from the very first token is covered in our{' '}
+        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link>.
       </p>
 
-      <h2>What to look for in OPD queue software</h2>
-      <ul>
-        <li>Doctor-wise and department-wise queues, not one shared line.</li>
-        <li>Appointment slots and walk-in tokens sharing one fair queue.</li>
-        <li>Vitals capture before consultation, visible to the doctor immediately.</li>
-        <li>A visible queue/display so patients aren&apos;t stuck asking reception for updates.</li>
-      </ul>
+      <h2>The two questions worth asking a vendor</h2>
+      <p>
+        First: does one doctor&apos;s queue ever get blocked by another doctor&apos;s patients? If reception can&apos;t
+        route a token straight to the right doctor at registration, the answer is yes, and it will show up
+        the first busy morning. Second: do appointment slots and walk-in tokens share one fair queue, or run
+        as two separate lines that leave staff manually deciding whose turn it really is? Everything else
+        &mdash; vitals capture, a visible display &mdash; is easier to bolt on later; these two aren&apos;t.
+      </p>
     </>
   )
 }

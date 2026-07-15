@@ -58,13 +58,14 @@ export default function Guide() {
         sample, see our <Link href="/guides/radiology-ris-reporting-guide">radiology workflow guide</Link>.
       </p>
 
-      <h2>What to check in lab software</h2>
-      <ul>
-        <li>Orders reach the lab electronically, tagged to patient and doctor, no paper requisition required.</li>
-        <li>Emergency/stat orders are visibly prioritized over routine ones.</li>
-        <li>Report status is visible to the ordering doctor without a phone call.</li>
-        <li>Charges post to the patient&apos;s bill automatically on order, not manually reconciled later.</li>
-      </ul>
+      <h2>The paper slip is the tell</h2>
+      <p>
+        A simple way to judge whether a lab is genuinely digitized: does a printed requisition slip still
+        physically travel from the ward to the lab? If it does, the order-tracking, the priority flagging and
+        the automatic billing described above aren&apos;t actually connected yet &mdash; they&apos;re running alongside a
+        paper process rather than replacing it, which means every one of those benefits depends on someone
+        remembering to also update the digital record.
+      </p>
     </>
   )
 }

@@ -84,9 +84,8 @@ export default function Guide() {
         Information System) mean the same thing &mdash; the whole platform. <strong>EMR</strong> (Electronic
         Medical Record) is narrower: it&apos;s specifically the clinical documentation part &mdash; history,
         diagnosis, prescriptions &mdash; which lives as one module inside a full HMS rather than being a
-        separate product. See our{' '}
-        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> for more on this piece
-        specifically.
+        separate product &mdash; we go deeper on that distinction in our{' '}
+        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link>.
       </p>
 
       <h2>Do you need every module on day one?</h2>

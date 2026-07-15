@@ -53,19 +53,27 @@ export default function Guide() {
         A combined IPD bill mixes exempt and potentially taxable line items in the same stay — bed rent,
         nursing, consultations, pharmacy, lab. Billing software should be able to flag the room-rent line
         separately so tax treatment can be applied correctly to just that portion, rather than the whole bill
-        being treated uniformly. See our{' '}
+        being treated uniformly &mdash; see the{' '}
         <Link href="/guides/ipd-billing-software-explained">IPD billing guide</Link> and{' '}
         <Link href="/guides/hospital-bill-format-ipd-opd-sample">sample hospital bill format</Link> for how a
         combined bill is typically broken into line items.
       </p>
 
-      <h2>What to check in hospital billing software</h2>
-      <ul>
-        <li>Room rent tracked as its own line item, separate from other charges, so a threshold-based rule can apply to it specifically.</li>
-        <li>ICU/CCU/NICU rooms distinguishable from general ward rooms in the system.</li>
-        <li>OPD pharmacy retail sales handled separately from IPD ward dispensing for tax purposes.</li>
-        <li>Configurable tax rules, since thresholds and rates can change — hardcoded logic ages badly.</li>
-      </ul>
+      <h2>Why hardcoded tax logic is risky</h2>
+      <p>
+        The ₹5,000 room-rent threshold and the ICU exemption are both the kind of rule that changes with
+        government notification, not hospital policy. Billing software that hardcodes today&apos;s threshold
+        directly into its pricing logic will quietly bill incorrectly the day that number changes, unless
+        someone remembers to update code rather than a configuration setting. The safer pattern is a
+        configurable tax rule per room type, reviewed periodically against current guidance rather than
+        trusted to stay accurate indefinitely.
+      </p>
+      <p>
+        Practically, this comes down to two things billing software needs to get right: room rent has to be
+        its own distinct line item (not folded into a general &ldquo;bed charges&rdquo; bucket), and ICU/CCU/NICU
+        beds need to be distinguishable from general ward beds in the system &mdash; because the exemption applies
+        to one and not, automatically, the other.
+      </p>
     </>
   )
 }

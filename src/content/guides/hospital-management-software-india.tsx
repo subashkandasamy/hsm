@@ -44,8 +44,8 @@ export default function Guide() {
       <h3>2. Is the pricing model predictable?</h3>
       <p>
         Flat, module-based monthly pricing is easier to budget than per-bed or per-user metering, which can
-        grow unpredictably as the hospital adds staff or beds. See our{' '}
-        <Link href="/guides/hospital-management-software-cost-india">hospital software cost guide</Link> for
+        grow unpredictably as the hospital adds staff or beds &mdash; our{' '}
+        <Link href="/guides/hospital-management-software-cost-india">hospital software cost guide</Link> has
         realistic pricing ranges by hospital size.
       </p>
       <h3>3. Does billing actually connect across departments?</h3>
@@ -90,9 +90,9 @@ export default function Guide() {
       <h2>If you&apos;re switching from paper or spreadsheets</h2>
       <p>
         Moving off registers and Excel is a different evaluation question than switching between two software
-        products. See our dedicated guide on{' '}
+        products. We wrote a dedicated guide on{' '}
         <Link href="/guides/switching-from-spreadsheets-to-hms">switching from registers &amp; spreadsheets to hospital software</Link>{' '}
-        for a realistic, low-disruption rollout plan.
+        covering a realistic, low-disruption rollout.
       </p>
     </>
   )

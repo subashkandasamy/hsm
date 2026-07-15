@@ -10,7 +10,7 @@ export const faqs = [
   },
   {
     q: 'How many nurses should be on duty per shift?',
-    a: 'It depends on the ward type and how many beds are occupied. NABH-recommended ratios range from 1 nurse per 6 patients in a general ward to 1:1 in ICU. Required headcount = occupied beds ÷ ratio, rounded up. See our full nurse-to-patient ratio guide for ward-by-ward numbers.',
+    a: 'It depends on the ward type and how many beds are occupied. NABH-recommended ratios range from 1 nurse per 6 patients in a general ward to 1:1 in ICU. Required headcount = occupied beds ÷ ratio, rounded up. Our nurse-to-patient ratio guide has the full ward-by-ward table.',
   },
   {
     q: 'Can nurse rostering be automated?',
@@ -142,15 +142,14 @@ export default function Guide() {
         <Link href="/guides/hospital-staff-attendance-hr-guide">staff attendance &amp; HR basics for hospitals</Link>.
       </p>
 
-      <h2>A practical checklist</h2>
-      <ul>
-        <li>Roster by ward, owned by that ward&apos;s in-charge &mdash; not one global grid.</li>
-        <li>Publish 1&ndash;4 weeks ahead; use copy-forward to cut weekly editing time.</li>
-        <li>Define coverage ratios per ward and shift, and compute required headcount from live bed occupancy.</li>
-        <li>Require leave requests to go through approval so the roster stays accurate automatically.</li>
-        <li>Give same-day gaps a fast &ldquo;who&apos;s available&rdquo; view, not a phone tree.</li>
-        <li>Make patient assignment roster-aware, with visible (not blocking) overload warnings.</li>
-      </ul>
+      <h2>Bringing it together</h2>
+      <p>
+        None of this requires solving rostering as a single hard problem. It requires solving six small ones
+        &mdash; who owns the roster, how far ahead it&apos;s published, what each shift actually needs, how leave
+        gets excluded automatically, how a same-day gap gets found fast, and how assignment reflects all of
+        it &mdash; and none of the six is difficult on its own. The hospitals that struggle with rostering are
+        almost always missing one of these pieces entirely, not doing all six badly.
+      </p>
     </>
   )
 }

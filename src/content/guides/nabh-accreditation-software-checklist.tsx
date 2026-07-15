@@ -33,14 +33,14 @@ export default function Guide() {
       <p>
         NABH assessors look for consistent documentation — every admission with a complete record, allergies
         noted, consent captured, discharge summaries present. A system where documentation is optional or
-        scattered across paper and digital records makes this much harder to demonstrate. See our{' '}
-        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link>.
+        scattered across paper and digital records makes this much harder to demonstrate, which our{' '}
+        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> covers in more depth.
       </p>
 
       <h2>Medication and pharmacy records</h2>
       <p>
         Traceable dispensing records — what was given, to whom, by whom, against which prescription — matter
-        both for NABH and for drug-schedule compliance. See our{' '}
+        both for NABH and for drug-schedule compliance &mdash; more in our{' '}
         <Link href="/guides/drug-schedule-h-h1-x-pharmacy-compliance">pharmacy compliance guide</Link>.
       </p>
 

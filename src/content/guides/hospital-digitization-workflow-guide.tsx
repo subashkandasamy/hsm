@@ -44,8 +44,8 @@ export default function Guide() {
       <p>
         Everything downstream depends on this step being right. Every patient needs one unique health ID
         (UHID) that every department searches against &mdash; not a fresh entry each visit. Get this wrong and
-        every later module inherits duplicate, fragmented patient records. See our{' '}
-        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> for how this connects to
+        every later module inherits duplicate, fragmented patient records. Our{' '}
+        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> covers how this connects to
         India&apos;s ABHA health ID system.
       </p>
 
@@ -85,9 +85,8 @@ export default function Guide() {
       <CalloutBox tone="tip" title="Digitize in phases, not all at once">
         Trying to switch every department to digital on the same day is where most rollouts struggle. A
         realistic sequence is: registration + OPD + billing first (immediate, visible benefit for the least
-        disruption), then IPD, then lab/radiology/pharmacy, then the rest. See our{' '}
-        <Link href="/guides/switching-from-spreadsheets-to-hms">guide to switching from registers and spreadsheets</Link>{' '}
-        for a practical rollout plan.
+        disruption), then IPD, then lab/radiology/pharmacy, then the rest &mdash; a practical rollout plan is in our{' '}
+        <Link href="/guides/switching-from-spreadsheets-to-hms">guide to switching from registers and spreadsheets</Link>.
       </CalloutBox>
 
       <h2>What &ldquo;done&rdquo; looks like</h2>

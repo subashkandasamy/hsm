@@ -13,7 +13,7 @@ export const faqs = [
   },
   {
     q: 'What is Schedule H1 in pharmacy compliance?',
-    a: 'Schedule H1 drugs are a category of prescription medicines — mostly antibiotics and habit-forming drugs — that Indian pharmacies must dispense only against a prescription and log in a separate register with patient and doctor details. See our drug schedule guide for the full breakdown.',
+    a: 'Schedule H1 drugs are a category of prescription medicines — mostly antibiotics and habit-forming drugs — that Indian pharmacies must dispense only against a prescription and log in a separate register with patient and doctor details. The full breakdown is in our drug schedule guide.',
   },
 ]
 
@@ -83,14 +83,14 @@ export default function Guide() {
         bill comes together across every department.
       </p>
 
-      <h2>What to check before choosing pharmacy software</h2>
-      <ul>
-        <li>Does OPD sale and IPD ward dispensing draw from and reduce the same stock?</li>
-        <li>Does it track batch number and expiry per stock entry, not just a total quantity?</li>
-        <li>Can you search drugs by brand, manufacturer and generic name?</li>
-        <li>Does it flag Schedule H1 / X drugs for stricter recording?</li>
-        <li>Does IPD dispensing post straight to the patient&apos;s combined bill automatically?</li>
-      </ul>
+      <h2>The one-stock-count test</h2>
+      <p>
+        There&apos;s a fast way to tell whether a pharmacy module actually unifies OPD and IPD, or just runs them
+        as two disconnected features under one login: dispense an item to a ward, then check the OPD sale
+        screen for that same drug. If the stock count dropped there too, it&apos;s genuinely one system. If it
+        didn&apos;t, the &ldquo;single pharmacy module&rdquo; is really two separate stock ledgers wearing one interface
+        &mdash; and that gap is exactly where physical stock and recorded stock quietly drift apart.
+      </p>
     </>
   )
 }

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Clock, ChevronRight, ArrowRight } from 'lucide-react'
+import { Clock, ChevronRight, ArrowRight, Building2 } from 'lucide-react'
 import MarketingNav from '@/components/marketing/MarketingNav'
 import type { GuideMeta } from '@/lib/guides/registry'
 import { relatedGuides } from '@/lib/guides/registry'
@@ -60,7 +60,19 @@ export default function GuideShell({ meta, children, faqs }: Props) {
           {meta.category}
         </span>
         <h1 className="text-3xl sm:text-4xl font-bold mb-3 leading-tight" style={{ color: SLATE9 }}>{meta.title}</h1>
-        <p className="text-base leading-relaxed mb-4" style={{ color: SLATE5 }}>{meta.description}</p>
+        <p className="text-base leading-relaxed mb-5" style={{ color: SLATE5 }}>{meta.description}</p>
+
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
+            <Building2 className="w-4 h-4" style={{ color: TEAL }} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: SLATE9 }}>Uyirly Team</p>
+            <p className="text-xs" style={{ color: SLATE4 }}>Hospital software builders — we run this in production at the hospitals on Uyirly</p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-4 text-xs mb-10 pb-6" style={{ color: SLATE4, borderBottom: `1px solid ${BORDER}` }}>
           <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {meta.readingMinutes} min read</span>
           <span>Updated {new Date(meta.updated + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>

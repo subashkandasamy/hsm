@@ -47,13 +47,15 @@ export default function Guide() {
         how batch and expiry tracking carries through from purchase order to patient dispensing.
       </p>
 
-      <h2>What to check in inventory software</h2>
-      <ul>
-        <li>Configurable reorder thresholds per item, not a single hospital-wide rule.</li>
-        <li>Stock tracked per store, with a combined hospital-wide total available too.</li>
-        <li>Goods-received matching against the original purchase order, to catch short deliveries.</li>
-        <li>Batch and expiry carried through from receipt to dispensing, not tracked separately.</li>
-      </ul>
+      <h2>The failure mode this is designed to prevent</h2>
+      <p>
+        Stockouts on essential surgical consumables rarely happen because nobody was watching the shelf &mdash;
+        they happen because the reorder threshold was set hospital-wide instead of per item, so a
+        fast-moving suture ran out weeks before its &ldquo;low stock&rdquo; alert would have fired under a generic
+        rule. The fix isn&apos;t more vigilance; it&apos;s a reorder point calculated per item from how quickly it
+        actually moves, checked automatically against goods received so a short delivery gets caught before
+        it becomes a shortage during a procedure.
+      </p>
     </>
   )
 }

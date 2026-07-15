@@ -43,8 +43,8 @@ export default function Guide() {
       <h2>Test with real staff, not just yourself</h2>
       <p>
         The most useful trial isn&apos;t an admin exploring the software alone — it&apos;s a receptionist registering
-        a walk-in, a nurse assigning herself to a patient, a doctor writing a prescription. See our{' '}
-        <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist</Link> for what else to
+        a walk-in, a nurse assigning herself to a patient, a doctor writing a prescription. Our{' '}
+        <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist</Link> covers what else to
         evaluate during a trial beyond whether setup was easy.
       </p>
 

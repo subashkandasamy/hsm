@@ -77,9 +77,8 @@ export default function Guide() {
         smaller facility, or OPD+IPD+pharmacy+lab for anything running inpatient care &mdash; and price that.
         Modular platforms let a hospital add lab, radiology, OT, insurance or staff scheduling later without
         re-platforming, so there&apos;s little value in paying for modules that won&apos;t be used for a year or
-        more. See our{' '}
-        <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist for choosing hospital software</Link>{' '}
-        for what else to evaluate beyond price.
+        more. What else to evaluate beyond price is in our{' '}
+        <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist for choosing hospital software</Link>.
       </p>
     </>
   )

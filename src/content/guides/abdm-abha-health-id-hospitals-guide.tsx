@@ -36,7 +36,7 @@ export default function Guide() {
       <p>
         ABHA (Ayushman Bharat Health Account) is an individual&apos;s national health ID — a 14-digit number a
         patient can create once and link across participating providers. It sits alongside, not instead of, a
-        hospital&apos;s own internal identifier. See our{' '}
+        hospital&apos;s own internal identifier. We cover how the two relate in our{' '}
         <Link href="/guides/patient-records-emr-uhid-guide">UHID &amp; EMR guide</Link> for how a hospital&apos;s own
         UHID relates to it.
       </p>

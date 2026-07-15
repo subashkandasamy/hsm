@@ -53,18 +53,19 @@ export default function Guide() {
       <p>
         A hospital&apos;s UHID is internal — it identifies a patient within that hospital&apos;s own records. India&apos;s
         ABHA (Ayushman Bharat Health Account) is a national health ID meant to work across different
-        hospitals and providers, part of the Ayushman Bharat Digital Mission (ABDM). See our{' '}
-        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM &amp; ABHA guide</Link> for what that
-        national layer means for hospital software specifically.
+        hospitals and providers, part of the Ayushman Bharat Digital Mission (ABDM) &mdash; what that national
+        layer means for hospital software specifically is covered in our{' '}
+        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM &amp; ABHA guide</Link>.
       </p>
 
-      <h2>What to check in patient record software</h2>
-      <ul>
-        <li>Search by phone number and name at registration, not just exact ID match — to catch returning patients reliably.</li>
-        <li>Allergies surfaced as a visible warning at prescribing and dispensing, not a buried field.</li>
-        <li>One record spanning OPD and IPD visits, not separate histories per department.</li>
-        <li>A clear path to link UHID with ABHA for national interoperability.</li>
-      </ul>
+      <h2>The registration-desk test</h2>
+      <p>
+        The clearest way to judge a patient-record system isn&apos;t reading its feature list &mdash; it&apos;s watching
+        a receptionist register a returning patient who doesn&apos;t remember their ID. If search by phone number
+        or name reliably finds the existing record, UHID discipline is working. If it doesn&apos;t, and a
+        duplicate record gets created &ldquo;just this once,&rdquo; that patient now has two fragmented histories, and
+        every department downstream inherits the confusion.
+      </p>
     </>
   )
 }

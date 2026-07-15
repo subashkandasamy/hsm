@@ -46,13 +46,12 @@ export default function Guide() {
         lab results.
       </p>
 
-      <h2>What to check in radiology software</h2>
-      <ul>
-        <li>Equipment-aware scheduling for CT/MRI/ultrasound to avoid double-booking.</li>
-        <li>Reports linked back to the same patient record the order came from.</li>
-        <li>Clear PACS integration path if you need real image storage and viewing.</li>
-        <li>Charges posting to billing automatically on order.</li>
-      </ul>
+      <p>
+        In practice, the two things worth confirming before choosing radiology software are whether
+        equipment-heavy scans actually get a scheduling slot (preventing the double-booking that causes real
+        scheduling headaches), and whether the signed report lands back on the same patient record the order
+        came from — rather than becoming a disconnected file the ordering doctor has to go looking for.
+      </p>
     </>
   )
 }

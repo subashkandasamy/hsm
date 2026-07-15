@@ -110,14 +110,14 @@ export default function Guide() {
         which is which.
       </p>
 
-      <h2>Checklist for evaluating IPD billing software</h2>
-      <ul>
-        <li>Does bed rent and nursing auto-bill daily, or only get calculated at discharge?</li>
-        <li>Can it safely re-run the daily billing job without creating duplicate charges?</li>
-        <li>Does an admission advance apply automatically against the running bill?</li>
-        <li>Is every department&apos;s charge (lab, pharmacy, OT, radiology) linked back to the same combined bill?</li>
-        <li>Does the final bill break out each department clearly, not just a lump total?</li>
-      </ul>
+      <h2>The one question that reveals everything else</h2>
+      <p>
+        If you only have time to ask a vendor one question, ask this: &ldquo;show me a bill for a patient who is
+        still admitted, mid-stay.&rdquo; A system where bed rent and nursing are already sitting on that bill,
+        current as of last night, has solved daily auto-billing correctly. A system where the answer is
+        &ldquo;we calculate that at discharge&rdquo; is telling you, in one sentence, that discharge will be slow and
+        disputes will be common &mdash; no matter how good every other feature looks in a demo.
+      </p>
     </>
   )
 }

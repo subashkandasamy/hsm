@@ -50,13 +50,19 @@ export default function Guide() {
         this status isn&apos;t visible and someone has to call the TPA to check.
       </p>
 
-      <h2>What to check in insurance/TPA software</h2>
-      <ul>
-        <li>Pre-authorization status visible on the admission record, not tracked separately in email or calls.</li>
-        <li>Support for revised estimates if treatment costs change mid-stay.</li>
-        <li>A clear split at discharge between what&apos;s covered and what the patient owes directly.</li>
-        <li>Reimbursement-claim document generation for patients without cashless coverage.</li>
-      </ul>
+      <h2>The discharge-delay problem, and how to avoid it</h2>
+      <p>
+        Almost every delayed insurance discharge traces back to the same root cause: someone had to call the
+        TPA to find out approval status, because it wasn&apos;t visible in the system. If pre-authorization status
+        sits on the admission record itself &mdash; pending, approved, or needs a revised estimate &mdash; the front
+        desk can tell a patient&apos;s family exactly where things stand without picking up the phone. That single
+        change is usually worth more than any other feature on an insurance module.
+      </p>
+      <p>
+        The other half of a smooth discharge is a bill that already splits cleanly into &ldquo;covered by
+        insurance&rdquo; and &ldquo;patient pays directly&rdquo; &mdash; because that split was tracked throughout the stay,
+        not calculated for the first time at the discharge counter.
+      </p>
     </>
   )
 }

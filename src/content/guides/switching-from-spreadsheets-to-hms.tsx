@@ -30,9 +30,9 @@ export default function Guide() {
       <p>
         The instinct to flip every department to digital simultaneously is understandable and almost always a
         mistake. A phased rollout — registration and OPD first, then billing, then IPD, then the rest — lets
-        staff build confidence on a smaller workflow before taking on the next one. See our{' '}
-        <Link href="/guides/hospital-digitization-workflow-guide">hospital digitization workflow guide</Link>{' '}
-        for the recommended sequence.
+        staff build confidence on a smaller workflow before taking on the next one &mdash; the recommended sequence
+        is laid out in our{' '}
+        <Link href="/guides/hospital-digitization-workflow-guide">hospital digitization workflow guide</Link>.
       </p>
 
       <h2>Run in parallel before you cut over</h2>
