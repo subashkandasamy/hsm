@@ -38,9 +38,8 @@ async function encounterBills(
 ): Promise<{ id: string; total: number; paid: number }[]> {
   let q = supabase
     .from('bills')
-    .select('id, total, paid, created_at, billing_date')
+    .select('id, total, paid, bill_source, created_at, billing_date')
     .neq('status', 'cancelled')
-    .neq('bill_source', 'consolidated')
   if (scope.admission_id) q = q.eq('admission_id', scope.admission_id)
   else if (scope.visit_id) q = q.eq('visit_id', scope.visit_id)
   else if (scope.bill_id) q = q.eq('id', scope.bill_id)
@@ -48,7 +47,12 @@ async function encounterBills(
   const { data } = await q
     .order('billing_date', { ascending: true })
     .order('created_at', { ascending: true })
-  return (data ?? []).map((b) => ({ id: b.id as string, total: b.total as number, paid: b.paid as number }))
+  // Filter bill_source in JS, not in the query — Postgres NEQ silently drops
+  // rows where the column is NULL (most bills have no bill_source at all),
+  // which would otherwise make every un-sourced bill invisible to insurance.
+  return (data ?? [])
+    .filter((b) => (b.bill_source as string | null) !== 'consolidated')
+    .map((b) => ({ id: b.id as string, total: b.total as number, paid: b.paid as number }))
 }
 
 /** The claimable total (sum of encounter bill totals) and outstanding balance. */
