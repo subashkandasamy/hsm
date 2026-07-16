@@ -7,14 +7,30 @@ import type { SelectHTMLAttributes } from 'react'
 
 interface OptionData { value: string; label: string }
 
+// Flatten an <option>'s children into plain text. Options are frequently built
+// from multiple JSX nodes (e.g. {name} · ₹{price}) — React represents that as
+// an array, and naively calling String() on an array joins it with commas
+// ("Acme, · ,123"). Recurse and join with '' instead.
+function childrenToText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(childrenToText).join('')
+  if (React.isValidElement(node)) {
+    const p = node.props as { children?: React.ReactNode }
+    return childrenToText(p.children)
+  }
+  return ''
+}
+
 function extractOptions(children: React.ReactNode): OptionData[] {
   const opts: OptionData[] = []
   React.Children.forEach(children, (child) => {
     if (React.isValidElement(child) && child.type === 'option') {
       const p = child.props as { value?: unknown; children?: React.ReactNode }
+      const text = childrenToText(p.children)
       opts.push({
         value: String(p.value ?? ''),
-        label: String(p.children ?? p.value ?? ''),
+        label: text || String(p.value ?? ''),
       })
     }
   })

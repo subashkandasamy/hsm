@@ -8,12 +8,13 @@ import Money from '@/components/ui/Money'
 import { createClaim, listPolicies, getClaimContext, getPolicyCoverage } from '@/app/actions/insurance'
 import { listAdmissions } from '@/app/actions/ipd'
 import { getPatientVisits } from '@/app/actions/opd'
+import { listBills } from '@/app/actions/billing'
 import { searchPatients } from '@/app/actions/patients'
-import type { Patient, InsurancePolicy, Admission, Visit, PolicyCoverage } from '@/lib/types'
+import type { Patient, InsurancePolicy, Admission, Visit, Bill, PolicyCoverage } from '@/lib/types'
 
 interface Props { onClose: () => void; onCreated: () => void }
 
-interface EncounterOpt { key: string; type: 'admission' | 'visit'; id: string; label: string }
+interface EncounterOpt { key: string; type: 'admission' | 'visit' | 'bill'; id: string; label: string }
 
 export default function NewClaimModal({ onClose, onCreated }: Props) {
   const [step, setStep] = useState<'patient' | 'form'>('patient')
@@ -46,11 +47,20 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
   async function selectPatient(p: Patient) {
     setPatient(p)
     setStep('form')
-    const [adms, visits, pol] = await Promise.all([
+    const [adms, visits, bills, pol] = await Promise.all([
       listAdmissions({ patientId: p.id }),
       getPatientVisits(p.id),
+      listBills({ patientId: p.id }),
       listPolicies(p.id),
     ])
+    // Bills not yet tied to an admission or visit — e.g. an OPD consultation fee
+    // booked but not yet started (visit_id is only set once the doctor begins
+    // the consult), or a standalone pharmacy/manual charge. These would
+    // otherwise be un-claimable even though real money is owed. Skip
+    // zero/negative-total rows (refunds) and already-settled bills.
+    const orphanBills = (bills as Bill[]).filter(
+      (b) => !b.visit_id && !b.admission_id && b.status !== 'cancelled' && b.total > 0,
+    )
     const opts: EncounterOpt[] = [
       ...(adms as Admission[]).map((a) => ({
         key: `admission:${a.id}`, type: 'admission' as const, id: a.id,
@@ -60,9 +70,19 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
         key: `visit:${v.id}`, type: 'visit' as const, id: v.id,
         label: `OPD · ${v.visit_date ? new Date(v.visit_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}`,
       })),
+      ...orphanBills.map((b) => ({
+        key: `bill:${b.id}`, type: 'bill' as const, id: b.id,
+        label: `Bill ${b.bill_no} · ₹${b.total.toFixed(0)} · ${b.status}`,
+      })),
     ]
     setEncounters(opts)
     setPolicies(pol)
+  }
+
+  function scopeFor(enc: EncounterOpt) {
+    if (enc.type === 'admission') return { admission_id: enc.id }
+    if (enc.type === 'visit') return { visit_id: enc.id }
+    return { bill_id: enc.id }
   }
 
   // When encounter changes, fetch its claimable balance
@@ -70,8 +90,7 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
     if (!selectedEnc) { setEncBalance(null); return }
     const enc = encounters.find((e) => e.key === selectedEnc)
     if (!enc) return
-    const scope = enc.type === 'admission' ? { admission_id: enc.id } : { visit_id: enc.id }
-    getClaimContext(scope).then((ctx) => {
+    getClaimContext(scopeFor(enc)).then((ctx) => {
       setEncBalance(ctx.balance)
       setClaimAmount(String(ctx.balance || ctx.total || 0))
     })
@@ -88,9 +107,8 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
     if (!enc) return
     setSubmitting(true)
     setError(null)
-    const scope = enc.type === 'admission' ? { admission_id: enc.id } : { visit_id: enc.id }
     const res = await createClaim({
-      ...scope,
+      ...scopeFor(enc),
       policy_id: selectedPolicy,
       claim_amount: parseFloat(claimAmount) || 0,
       claim_type: claimType,
@@ -154,10 +172,10 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Encounter <span style={{ color: '#EF4444' }}>*</span></label>
             {encounters.length === 0 ? (
-              <p className="text-sm" style={{ color: '#94A3B8' }}>No admissions or visits for this patient</p>
+              <p className="text-sm" style={{ color: '#94A3B8' }}>No admissions, visits or bills for this patient</p>
             ) : (
               <Select value={selectedEnc} onChange={(e) => setSelectedEnc(e.target.value)}>
-                <option value="">— Select admission or visit —</option>
+                <option value="">— Select admission, visit or bill —</option>
                 {encounters.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
               </Select>
             )}
