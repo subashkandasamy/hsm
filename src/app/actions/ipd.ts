@@ -185,11 +185,26 @@ export async function admitPatient(
     const { data: billNoData } = await supabase.rpc('get_next_bill_no')
     admissionCombinedNo = billNoData as string | null
   }
-  if (admissionCombinedNo) {
-    await supabase
-      .from('admissions')
-      .update({ combined_bill_no: admissionCombinedNo })
-      .eq('id', admissionId)
+
+  // Separately, record which OPD visit (if any) today this admission followed
+  // on from — independent of whether that visit happened to have a
+  // combined_bill_no yet — so insurance can treat OPD + IPD as one
+  // continuous encounter instead of two disconnected claims.
+  const { data: latestTodayVisit } = await supabase
+    .from('visits')
+    .select('id')
+    .eq('patient_id', patient_id)
+    .gte('visit_date', `${todayStr}T00:00:00`)
+    .lt('visit_date', `${todayStr}T23:59:59`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const admissionUpdate: Record<string, unknown> = {}
+  if (admissionCombinedNo) admissionUpdate.combined_bill_no = admissionCombinedNo
+  if (latestTodayVisit?.id) admissionUpdate.source_visit_id = latestTodayVisit.id
+  if (Object.keys(admissionUpdate).length > 0) {
+    await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }
 
   await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })

@@ -318,13 +318,30 @@ export const InsuranceClaimSchema = z.object({
   { message: 'A claim must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
 )
 
-// Pre-authorization raised against an admission before any bill exists.
+// Pre-authorization / eligibility check raised against an IPD admission, an
+// OPD visit, or — before a visit even exists yet, e.g. at the OPD
+// payment-pending queue — a specific bill directly. Exactly one scope must
+// be given, mirroring InsuranceClaimSchema's three-way encounter scope.
 export const PreauthSchema = z.object({
-  admission_id:     z.string().uuid('Select an admission'),
+  admission_id:     z.string().uuid().nullable().optional(),
+  visit_id:         z.string().uuid().nullable().optional(),
+  bill_id:          z.string().uuid().nullable().optional(),
   policy_id:        z.string().uuid('Select a policy'),
   estimated_amount: z.number().positive('Estimated amount must be positive'),
-  claim_type:       z.enum(['cashless','reimbursement']).optional().default('cashless'),
   remarks:          z.string().nullable().optional(),
+}).refine(
+  (v) => !!(v.admission_id || v.visit_id || v.bill_id),
+  { message: 'A pre-authorization must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
+)
+
+// Resolve an eligibility check in real time (front-desk verification is a
+// 2-3 minute check, not the slow multi-day TPA process) — approve or reject
+// directly, skipping the intermediate submitted/approved handshake.
+export const ResolveEligibilitySchema = z.object({
+  id:              z.string().uuid(),
+  decision:        z.enum(['approved', 'rejected']),
+  approved_amount: z.number().positive().nullable().optional(),
+  remarks:         z.string().nullable().optional(),
 })
 
 export const AdvanceClaimSchema = z.object({
@@ -387,6 +404,7 @@ export type InsurancePolicyInput = z.infer<typeof InsurancePolicySchema>
 export type InsuranceClaimInput = z.infer<typeof InsuranceClaimSchema>
 export type AdvanceClaimInput = z.infer<typeof AdvanceClaimSchema>
 export type PreauthInput = z.infer<typeof PreauthSchema>
+export type ResolveEligibilityInput = z.infer<typeof ResolveEligibilitySchema>
 export type EnhanceClaimInput = z.infer<typeof EnhanceClaimSchema>
 export type InsuranceTpaInput = z.infer<typeof InsuranceTpaSchema>
 

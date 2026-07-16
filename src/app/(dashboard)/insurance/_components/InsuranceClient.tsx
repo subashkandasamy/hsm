@@ -71,7 +71,7 @@ export default function InsuranceClient({ initialClaims, receivables, initialTpa
     <div>
       <PageHeader
         title="Insurance"
-        subtitle="Policies, claims and reimbursements"
+        subtitle="Policies and cashless claims"
         actions={
           canWrite ? (
             <div className="flex gap-2 flex-wrap">

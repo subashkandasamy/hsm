@@ -27,7 +27,6 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
   const [policies, setPolicies] = useState<InsurancePolicy[]>([])
   const [selectedEnc, setSelectedEnc] = useState('')
   const [selectedPolicy, setSelectedPolicy] = useState('')
-  const [claimType, setClaimType] = useState<'cashless' | 'reimbursement'>('cashless')
   const [claimAmount, setClaimAmount] = useState('')
   const [coverage, setCoverage] = useState<PolicyCoverage | null>(null)
   const [encBalance, setEncBalance] = useState<number | null>(null)
@@ -111,7 +110,7 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
       ...scopeFor(enc),
       policy_id: selectedPolicy,
       claim_amount: parseFloat(claimAmount) || 0,
-      claim_type: claimType,
+      claim_type: 'cashless',
     })
     setSubmitting(false)
     if (!res.success) { setError(res.error); return }
@@ -213,14 +212,6 @@ export default function NewClaimModal({ onClose, onCreated }: Props) {
             )}
           </div>
 
-          {/* Claim type */}
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Type</label>
-            <Select value={claimType} onChange={(e) => setClaimType(e.target.value as 'cashless' | 'reimbursement')}>
-              <option value="cashless">Cashless</option>
-              <option value="reimbursement">Reimbursement</option>
-            </Select>
-          </div>
 
           {/* Amount */}
           <div>

@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   InsurancePolicySchema, InsuranceClaimSchema, AdvanceClaimSchema,
-  PreauthSchema, EnhanceClaimSchema, InsuranceTpaSchema,
+  PreauthSchema, EnhanceClaimSchema, InsuranceTpaSchema, ResolveEligibilitySchema,
 } from '@/lib/schemas'
 import type {
   InsurancePolicy, InsuranceClaim, InsuranceClaimStatus,
@@ -16,8 +16,11 @@ import type {
 type SimpleResult = { success: true } | { success: false; error: string }
 
 const VALID_TRANSITIONS: Record<InsuranceClaimStatus, InsuranceClaimStatus[]> = {
+  // preauth → approved/rejected directly is the fast path: a real-time
+  // front-desk eligibility check, not the slow multi-day TPA process that
+  // preauth → submitted → approved still models for genuine IPD claims.
   draft:     ['preauth', 'submitted'],
-  preauth:   ['submitted'],
+  preauth:   ['submitted', 'approved', 'rejected'],
   submitted: ['approved', 'rejected'],
   approved:  ['settled'],
   rejected:  [],
@@ -40,7 +43,17 @@ async function encounterBills(
     .from('bills')
     .select('id, total, paid, bill_source, created_at, billing_date')
     .neq('status', 'cancelled')
-  if (scope.admission_id) q = q.eq('admission_id', scope.admission_id)
+  if (scope.admission_id) {
+    // Sweep in the source OPD visit's bills too, if this admission followed
+    // one on the same day — the whole OPD→IPD episode is one claimable
+    // encounter, not two.
+    const { data: adm } = await supabase
+      .from('admissions').select('source_visit_id').eq('id', scope.admission_id).maybeSingle()
+    const sourceVisitId = adm?.source_visit_id as string | null | undefined
+    q = sourceVisitId
+      ? q.or(`admission_id.eq.${scope.admission_id},visit_id.eq.${sourceVisitId}`)
+      : q.eq('admission_id', scope.admission_id)
+  }
   else if (scope.visit_id) q = q.eq('visit_id', scope.visit_id)
   else if (scope.bill_id) q = q.eq('id', scope.bill_id)
   else return []
@@ -343,14 +356,15 @@ export async function createPreauth(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const d = parsed.data
   const supabase = await createClient()
+  const scope = { admission_id: d.admission_id ?? null, visit_id: d.visit_id ?? null, bill_id: d.bill_id ?? null }
 
   const [pol, encPatient] = await Promise.all([
     policyPatient(supabase, d.policy_id),
-    encounterPatientId(supabase, { admission_id: d.admission_id }),
+    encounterPatientId(supabase, scope),
   ])
   if (!pol) return { success: false, error: 'Policy not found' }
   if (encPatient && pol.patient_id !== encPatient)
-    return { success: false, error: 'This policy belongs to a different patient than the admission' }
+    return { success: false, error: 'This policy belongs to a different patient than the encounter' }
   const today = new Date().toISOString().split('T')[0]
   if (pol.valid_till && pol.valid_till < today)
     return { success: false, error: `Policy expired on ${pol.valid_till}` }
@@ -359,17 +373,65 @@ export async function createPreauth(
   const { error } = await supabase.from('insurance_claims').insert({
     id,
     tenant_id:        actor.tenant_id,
-    admission_id:     d.admission_id,
+    admission_id:     scope.admission_id,
+    visit_id:         scope.visit_id,
+    bill_id:          scope.bill_id,
     policy_id:        d.policy_id,
     estimated_amount: d.estimated_amount,
-    claim_type:       d.claim_type,
+    claim_type:       'cashless',
     status:           'preauth',
     remarks:          d.remarks ?? null,
   })
   if (error) return { success: false, error: error.message }
 
-  await logAudit(actor.id, 'preauth', 'insurance_claim', id, { admission_id: d.admission_id, estimated_amount: d.estimated_amount })
+  await logAudit(actor.id, 'preauth', 'insurance_claim', id, { ...scope, estimated_amount: d.estimated_amount })
   return { success: true, claimId: id }
+}
+
+/**
+ * Resolve an eligibility check in real time — the front-desk verification
+ * (corporate ID / policy card / a quick portal check) is a 2-3 minute
+ * lookup, not the multi-day TPA process. Approves or rejects a preauth
+ * directly, reusing advanceClaim's transition + settlement-allocation logic
+ * so there's exactly one place that money ever moves onto bills.
+ */
+export async function resolveEligibility(input: Record<string, unknown>): Promise<SimpleResult> {
+  const parsed = ResolveEligibilitySchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const d = parsed.data
+  return advanceClaim(d.id, {
+    next_status:     d.decision,
+    approved_amount: d.decision === 'approved' ? d.approved_amount : null,
+    remarks:         d.remarks ?? null,
+  })
+}
+
+/**
+ * One-shot front-desk verification: raise the eligibility check and resolve
+ * it in the same call, for the real-time (2-3 minute) case where staff have
+ * already confirmed the outcome — no separate "raise, then come back and
+ * resolve" round trip needed. Reuses createPreauth + resolveEligibility so
+ * the guardrails and settlement-allocation logic exist in exactly one place.
+ */
+export async function verifyCashlessEligibility(input: {
+  admission_id?: string | null; visit_id?: string | null; bill_id?: string | null
+  policy_id: string
+  estimated_amount: number       // the expected bill amount, regardless of outcome
+  decision: 'approved' | 'rejected'
+  approved_amount?: number | null  // only meaningful when decision === 'approved'
+  remarks?: string | null
+}): Promise<SimpleResult> {
+  const created = await createPreauth({
+    admission_id: input.admission_id, visit_id: input.visit_id, bill_id: input.bill_id,
+    policy_id: input.policy_id, estimated_amount: input.estimated_amount, remarks: input.remarks,
+  })
+  if (!created.success) return created
+  return resolveEligibility({
+    id: created.claimId,
+    decision: input.decision,
+    approved_amount: input.decision === 'approved' ? (input.approved_amount ?? input.estimated_amount) : null,
+    remarks: input.remarks ?? null,
+  })
 }
 
 export async function advanceClaim(

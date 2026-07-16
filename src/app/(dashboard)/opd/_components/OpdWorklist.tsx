@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { RefreshCw, Stethoscope, Clock, CreditCard } from 'lucide-react'
+import { RefreshCw, Stethoscope, Clock, CreditCard, ShieldCheck } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import EmptyState from '@/components/ui/EmptyState'
@@ -10,8 +10,9 @@ import { getTodaysQueue, getAppointmentsBillStatuses } from '@/app/actions/appoi
 import { startVisit } from '@/app/actions/opd'
 import type { Appointment } from '@/lib/types'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
+import VerifyCashlessModal from './VerifyCashlessModal'
 
-type BillStatus = { id: string; status: string; total: number; paid: number }
+type BillStatus = { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }
 
 interface Props {
   initialQueue: Appointment[]
@@ -25,7 +26,12 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
   const [billStatuses, setBillStatuses] = useState(initialBillStatuses)
   const [loading, setLoading]           = useState(false)
   const [actionId, setActionId]         = useState<string | null>(null)
+  const [verifyingAppt, setVerifyingAppt] = useState<Appointment | null>(null)
   const isReadOnly = useIsReadOnly()
+
+  async function refreshBillStatuses() {
+    setBillStatuses(await getAppointmentsBillStatuses(queue.map((a) => a.id)))
+  }
 
   async function refresh() {
     setLoading(true)
@@ -79,8 +85,9 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
         <div className="space-y-3">
           {queue.map((a, i) => {
             const bill = billStatuses[a.id]
+            const isCashless = !!bill && bill.status !== 'paid' && bill.cashlessCovered
             const isPaid = !bill || bill.status === 'paid'
-            const isUnpaid = bill && bill.status !== 'paid'
+            const isUnpaid = !!bill && bill.status !== 'paid' && !bill.cashlessCovered
             const busy = actionId === a.id
             const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
@@ -127,6 +134,13 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                               Paid
                             </span>
                           )}
+                          {isCashless && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                              style={{ background: 'rgba(99,102,241,0.1)', color: '#4F46E5', border: '1px solid rgba(99,102,241,0.2)' }}>
+                              <ShieldCheck className="w-3 h-3" />
+                              Cashless — approved
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
                           {a.patient?.uhid}{a.patient?.phone ? ` · ${a.patient.phone}` : ''}
@@ -144,13 +158,22 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                           )}
                         </div>
                         {isUnpaid && (
-                          <button
-                            onClick={() => router.push('/billing')}
-                            className="flex items-center gap-1 mt-1.5 text-xs font-medium"
-                            style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
-                            <CreditCard className="w-3 h-3" />
-                            Collect payment before starting →
-                          </button>
+                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                            <button
+                              onClick={() => router.push('/billing')}
+                              className="flex items-center gap-1 text-xs font-medium"
+                              style={{ background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', padding: 0 }}>
+                              <CreditCard className="w-3 h-3" />
+                              Collect payment before starting →
+                            </button>
+                            <button
+                              onClick={() => setVerifyingAppt(a)}
+                              className="flex items-center gap-1 text-xs font-medium"
+                              style={{ background: 'none', border: 'none', color: '#4F46E5', cursor: 'pointer', padding: 0 }}>
+                              <ShieldCheck className="w-3 h-3" />
+                              Verify cashless →
+                            </button>
+                          </div>
                         )}
                       </div>
 
@@ -192,6 +215,17 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
             )
           })}
         </div>
+      )}
+
+      {verifyingAppt && billStatuses[verifyingAppt.id] && (
+        <VerifyCashlessModal
+          patientId={verifyingAppt.patient_id}
+          patientName={verifyingAppt.patient?.full_name ?? 'Patient'}
+          billId={billStatuses[verifyingAppt.id].id}
+          billAmount={billStatuses[verifyingAppt.id].total}
+          onClose={() => setVerifyingAppt(null)}
+          onResolved={refreshBillStatuses}
+        />
       )}
     </div>
   )

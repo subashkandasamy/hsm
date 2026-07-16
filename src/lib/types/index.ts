@@ -932,6 +932,17 @@ export interface AdmissionFinancials {
   patientBalanceDue: number   // balanceDue minus the approved-insurance receivable
 }
 
+// OPD equivalent of AdmissionFinancials — no advances (that's an IPD-only
+// concept), just bills for the visit vs. any approved/settled cashless claim.
+export interface VisitFinancials {
+  totalBilled: number
+  totalPaid: number
+  balanceDue: number
+  insuranceApproved: number
+  insuranceSettled: number
+  patientBalanceDue: number
+}
+
 export interface IpdBillingConfig {
   tenant_id: string
   charge_room_rent: boolean

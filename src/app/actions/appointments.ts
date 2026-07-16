@@ -475,10 +475,12 @@ export async function getAppointmentBill(appointmentId: string): Promise<{
   return data as { id: string; status: string; total: number; paid: number } | null
 }
 
-// Bulk: returns a map of appointmentId → bill status for a list of appointments
+// Bulk: returns a map of appointmentId → bill status for a list of appointments.
+// cashlessCovered marks bills with an approved/settled claim against them —
+// the worklist treats these as clear-to-start without collecting payment.
 export async function getAppointmentsBillStatuses(
   appointmentIds: string[]
-): Promise<Record<string, { id: string; status: string; total: number; paid: number }>> {
+): Promise<Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }>> {
   if (appointmentIds.length === 0) return {}
   const supabase = await createClient()
   const { data } = await supabase
@@ -486,9 +488,26 @@ export async function getAppointmentsBillStatuses(
     .select('id, appointment_id, status, total, paid')
     .in('appointment_id', appointmentIds)
     .not('status', 'eq', 'cancelled')
-  const map: Record<string, { id: string; status: string; total: number; paid: number }> = {}
+
+  const billIds = (data ?? []).map((b) => b.id as string)
+  const coveredBillIds = new Set<string>()
+  if (billIds.length > 0) {
+    const { data: claims } = await supabase
+      .from('insurance_claims')
+      .select('bill_id')
+      .in('bill_id', billIds)
+      .in('status', ['approved', 'settled'])
+    for (const c of claims ?? []) if (c.bill_id) coveredBillIds.add(c.bill_id as string)
+  }
+
+  const map: Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }> = {}
   for (const b of data ?? []) {
-    if (b.appointment_id) map[b.appointment_id as string] = b as { id: string; status: string; total: number; paid: number }
+    if (b.appointment_id) {
+      map[b.appointment_id as string] = {
+        id: b.id as string, status: b.status as string, total: b.total as number, paid: b.paid as number,
+        cashlessCovered: coveredBillIds.has(b.id as string),
+      }
+    }
   }
   return map
 }

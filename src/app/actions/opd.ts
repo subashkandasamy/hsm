@@ -6,9 +6,49 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
-import type { Visit, Prescription } from '@/lib/types'
+import type { Visit, Prescription, VisitFinancials } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+/**
+ * OPD equivalent of getAdmissionFinancials (admissionBilling.ts) — no
+ * advances (that's IPD-only), just this visit's bills vs. any approved or
+ * settled cashless claim scoped to it. An approved claim is a receivable
+ * that covers the patient's balance the same way it does at IPD discharge;
+ * only the patient's own residual share needs collecting.
+ */
+export async function getVisitFinancials(visitId: string): Promise<VisitFinancials> {
+  const supabase = await createClient()
+
+  const { data: bills } = await supabase
+    .from('bills')
+    .select('id, total, paid')
+    .eq('visit_id', visitId)
+    .not('status', 'eq', 'cancelled')
+  const totalBilled = (bills ?? []).reduce((s, b) => s + (b.total as number), 0)
+  const totalPaid   = (bills ?? []).reduce((s, b) => s + (b.paid as number), 0)
+
+  const billIds = (bills ?? []).map((b) => b.id as string)
+  let insuranceSettled = 0
+  if (billIds.length > 0) {
+    const { data: insPayments } = await supabase
+      .from('payments').select('amount').in('bill_id', billIds).eq('method', 'insurance')
+    insuranceSettled = (insPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)
+  }
+
+  const { data: apprClaims } = await supabase
+    .from('insurance_claims')
+    .select('approved_amount, claim_amount, estimated_amount')
+    .eq('visit_id', visitId)
+    .eq('status', 'approved')
+  const insuranceApproved = (apprClaims ?? []).reduce(
+    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? (c.estimated_amount as number | null) ?? 0), 0)
+
+  const balanceDue = Math.max(0, totalBilled - totalPaid)
+  const patientBalanceDue = Math.max(0, balanceDue - insuranceApproved)
+
+  return { totalBilled, totalPaid, balanceDue, insuranceApproved, insuranceSettled, patientBalanceDue }
+}
 
 export async function startVisit(
   appointmentId: string
@@ -58,7 +98,25 @@ export async function startVisit(
   const hasPaid      = allConsultBills?.some((b) => b.status === 'paid') ?? false
   const hasActiveUnpaid = allConsultBills?.some((b) => b.status !== 'paid' && b.status !== 'cancelled') ?? false
 
+  // A verified cashless claim (front-desk eligibility check, approved before
+  // the visit even starts) covers the bill the same way an approved claim
+  // covers the balance at IPD discharge — the patient doesn't need to pay
+  // what the insurer already owes. No visit exists yet at this point, so
+  // this can only be a bill-scoped claim.
+  let cashlessCovered = false
   if (hasBill && !hasPaid) {
+    const activeBillIds = (allConsultBills ?? []).filter((b) => b.status !== 'cancelled').map((b) => b.id as string)
+    if (activeBillIds.length > 0) {
+      const { count } = await supabase
+        .from('insurance_claims')
+        .select('id', { count: 'exact', head: true })
+        .in('bill_id', activeBillIds)
+        .in('status', ['approved', 'settled'])
+      cashlessCovered = (count ?? 0) > 0
+    }
+  }
+
+  if (hasBill && !hasPaid && !cashlessCovered) {
     return {
       success: false,
       error: hasActiveUnpaid
