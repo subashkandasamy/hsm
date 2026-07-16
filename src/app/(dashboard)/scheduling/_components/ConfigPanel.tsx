@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Clock, Users, ShieldCheck, Plus, Trash2, Pencil, AlertCircle } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import {
   listShiftDefinitions, upsertShiftDefinition, deleteShiftDefinition,
   listCoverageRules, upsertCoverageRule, deleteCoverageRule,
@@ -120,14 +121,14 @@ export default function ConfigPanel({ wards, nurses, initialShifts, initialCover
           {coverage.length === 0 && <p className="text-xs" style={{ color: '#CBD5E1' }}>No custom ratios — all wards use 1:6.</p>}
         </div>
         <div className="flex flex-wrap items-end gap-2 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
-          <select value={cForm.ward_id} onChange={(e) => setCForm((f) => ({ ...f, ward_id: e.target.value }))} className={inputCls} style={inputStyle}>
+          <Select value={cForm.ward_id} onChange={(e) => setCForm((f) => ({ ...f, ward_id: e.target.value }))} className="w-40">
             <option value="">Ward…</option>
             {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-          <select value={cForm.shift_code} onChange={(e) => setCForm((f) => ({ ...f, shift_code: e.target.value }))} className={inputCls} style={inputStyle}>
+          </Select>
+          <Select value={cForm.shift_code} onChange={(e) => setCForm((f) => ({ ...f, shift_code: e.target.value }))} className="w-32">
             <option value="">Shift…</option>
             {shifts.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-          </select>
+          </Select>
           <div className="flex items-center gap-1 text-xs" style={{ color: '#64748B' }}>1:
             <input type="number" min={1} value={cForm.patient_ratio} onChange={(e) => setCForm((f) => ({ ...f, patient_ratio: Number(e.target.value) }))} className={inputCls} style={{ ...inputStyle, width: 64 }} />
           </div>
@@ -161,14 +162,14 @@ export default function ConfigPanel({ wards, nurses, initialShifts, initialCover
           {incharges.length === 0 && <p className="text-xs" style={{ color: '#CBD5E1' }}>No in-charges assigned — only admins manage rosters.</p>}
         </div>
         <div className="flex flex-wrap items-end gap-2 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
-          <select value={iForm.ward_id} onChange={(e) => setIForm((f) => ({ ...f, ward_id: e.target.value }))} className={inputCls} style={inputStyle}>
+          <Select value={iForm.ward_id} onChange={(e) => setIForm((f) => ({ ...f, ward_id: e.target.value }))} className="w-40">
             <option value="">Ward…</option>
             {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-          <select value={iForm.profile_id} onChange={(e) => setIForm((f) => ({ ...f, profile_id: e.target.value }))} className={inputCls} style={inputStyle}>
+          </Select>
+          <Select value={iForm.profile_id} onChange={(e) => setIForm((f) => ({ ...f, profile_id: e.target.value }))} className="w-44">
             <option value="">Nurse…</option>
             {nurses.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
-          </select>
+          </Select>
           <button onClick={() => run(() => addWardIncharge(iForm), async () => { await reloadIncharges(); setIForm({ ward_id: '', profile_id: '' }) })}
             disabled={isPending || !iForm.ward_id || !iForm.profile_id}
             className="flex items-center gap-1 text-xs px-3 py-2 rounded-lg disabled:opacity-50" style={{ background: '#0D9488', color: '#fff' }}>

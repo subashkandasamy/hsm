@@ -3,6 +3,7 @@
 import { useState, useEffect, useTransition, useMemo, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Copy, Wand2, Send, Plus, AlertCircle, Users } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import {
   getWardRoster, setRosterCell, clearRosterCell, publishRoster, generateRoster,
 } from '@/app/actions/scheduling'
@@ -90,11 +91,10 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
       {/* Toolbar */}
       <GlassCard className="p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <select value={wardId} onChange={(e) => setWardId(e.target.value)}
-            className="text-sm px-3 py-2 rounded-xl" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }}>
+          <Select value={wardId} onChange={(e) => setWardId(e.target.value)} className="w-48">
             {wards.length === 0 && <option value="">No wards</option>}
             {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
+          </Select>
 
           <div className="flex items-center gap-1">
             <button onClick={() => setWeekStart(addDays(weekStart, -7))}
@@ -126,11 +126,10 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
               </button>
               {patterns.length > 0 && (
                 <div className="flex items-center gap-1">
-                  <select value={patternId} onChange={(e) => setPatternId(e.target.value)}
-                    className="text-xs px-2 py-2 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }}>
+                  <Select value={patternId} onChange={(e) => setPatternId(e.target.value)} className="w-44">
                     <option value="">Apply pattern…</option>
                     {patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  </Select>
                   {patternId && (
                     <button onClick={() => act(() => generateRoster({ ward_id: wardId, start_date: weekStart, end_date: weekEnd, pattern_id: patternId }))}
                       disabled={isPending} className="text-xs px-2 py-2 rounded-lg" style={{ background: '#F1F5F9', color: '#334155' }}>Apply</button>
@@ -234,11 +233,10 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
         {/* Add nurse row */}
         {canManage && availableToAdd.length > 0 && (
           <div className="flex items-center gap-2 p-3" style={{ borderTop: '1px solid #F1F5F9' }}>
-            <select value={addSel} onChange={(e) => setAddSel(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }}>
+            <Select value={addSel} onChange={(e) => setAddSel(e.target.value)} className="w-56">
               <option value="">Add nurse to roster…</option>
               {availableToAdd.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
-            </select>
+            </Select>
             <button onClick={() => { if (addSel) { setExtra((x) => [...x, addSel]); setAddSel('') } }}
               disabled={!addSel} className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg"
               style={{ background: '#F1F5F9', color: '#334155' }}>

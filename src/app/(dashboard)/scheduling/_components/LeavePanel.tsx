@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Plane, Check, X, AlertCircle, Plus } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import { requestLeave, reviewLeave, cancelLeave, listLeaveRequests } from '@/app/actions/scheduling'
 import type { LeaveRequest, LeaveType } from '@/lib/types'
 
@@ -91,19 +92,17 @@ export default function LeavePanel({ initialLeave, nurses, canApprove, actorId }
             {canApprove && (
               <div>
                 <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Nurse (blank = you)</label>
-                <select value={form.profile_id} onChange={(e) => setForm((f) => ({ ...f, profile_id: e.target.value }))}
-                  className="w-full text-sm px-3 py-2 rounded-xl" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }}>
+                <Select value={form.profile_id} onChange={(e) => setForm((f) => ({ ...f, profile_id: e.target.value }))}>
                   <option value="">Myself</option>
                   {nurses.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
-                </select>
+                </Select>
               </div>
             )}
             <div>
               <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Type</label>
-              <select value={form.leave_type} onChange={(e) => setForm((f) => ({ ...f, leave_type: e.target.value as LeaveType }))}
-                className="w-full text-sm px-3 py-2 rounded-xl capitalize" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }}>
+              <Select value={form.leave_type} onChange={(e) => setForm((f) => ({ ...f, leave_type: e.target.value as LeaveType }))} className="capitalize">
                 {LEAVE_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>From</label>

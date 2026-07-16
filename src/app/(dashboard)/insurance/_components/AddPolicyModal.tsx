@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Search, Loader2 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
+import Combobox from '@/components/ui/Combobox'
 import { addPolicy, listTpas, listProviders } from '@/app/actions/insurance'
 import { searchPatients } from '@/app/actions/patients'
 import type { Patient, InsuranceTpa } from '@/lib/types'
@@ -133,18 +134,10 @@ export default function AddPolicyModal({ onClose, onAdded }: Props) {
           {/* Provider — pick from the shared list or type your own (saved for reuse) */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Insurance Provider <span style={{ color: '#EF4444' }}>*</span></label>
-            <input
-              type="text" list="ins-provider-list"
-              value={provider} onChange={(e) => setProvider(e.target.value)}
+            <Combobox
+              value={provider} onChange={setProvider} options={providers}
               placeholder="Search or type an insurer…"
-              className="w-full px-3 py-3 rounded-xl text-sm"
-              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
             />
-            <datalist id="ins-provider-list">
-              {providers.map((p) => <option key={p} value={p} />)}
-            </datalist>
             <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Not in the list? Just type it — it&apos;s saved to your hospital&apos;s insurers for next time.</p>
           </div>
 

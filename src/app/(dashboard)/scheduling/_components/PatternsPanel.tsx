@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Repeat, Plus, Trash2, Users, X, AlertCircle } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import Select from '@/components/ui/Select'
 import { listPatterns, upsertPattern, deletePattern, setPatternMembers } from '@/app/actions/scheduling'
 import type { RosterPattern, ShiftDefinition } from '@/lib/types'
 
@@ -118,14 +119,14 @@ export default function PatternsPanel({ initialPatterns, initialShifts, wards, n
                       {members.length === 0 && <p className="text-[11px]" style={{ color: '#CBD5E1' }}>No nurses on this pattern yet.</p>}
                     </div>
                     <div className="flex flex-wrap items-end gap-2">
-                      <select value={mDraft.profile_id} onChange={(e) => setMDraft((f) => ({ ...f, profile_id: e.target.value }))} className={inputCls} style={inputStyle}>
+                      <Select value={mDraft.profile_id} onChange={(e) => setMDraft((f) => ({ ...f, profile_id: e.target.value }))} className="w-44">
                         <option value="">Nurse…</option>
                         {nurses.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
-                      </select>
-                      <select value={mDraft.ward_id} onChange={(e) => setMDraft((f) => ({ ...f, ward_id: e.target.value }))} className={inputCls} style={inputStyle}>
+                      </Select>
+                      <Select value={mDraft.ward_id} onChange={(e) => setMDraft((f) => ({ ...f, ward_id: e.target.value }))} className="w-40">
                         <option value="">Any ward</option>
                         {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
+                      </Select>
                       <input type="date" value={mDraft.anchor_date} onChange={(e) => setMDraft((f) => ({ ...f, anchor_date: e.target.value }))} className={inputCls} style={inputStyle} title="Cycle day-0 for this nurse" />
                       <button onClick={() => { if (mDraft.profile_id && mDraft.anchor_date) { setMembers((xs) => [...xs, mDraft]); setMDraft({ profile_id: '', ward_id: '', anchor_date: '', offset_days: 0 }) } }}
                         className="flex items-center gap-1 text-xs px-2.5 py-2 rounded-lg" style={{ background: '#F1F5F9', color: '#334155' }}>
