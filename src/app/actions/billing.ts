@@ -9,6 +9,7 @@ import {
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { autoIpdBill, syncNursingBillLine } from '@/lib/ipdBilling'
+import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -1046,10 +1047,9 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     insuranceSettled = (insPays ?? []).reduce((s, p) => s + (p.amount as number), 0)
   }
   const { data: apprClaims } = await supabase
-    .from('insurance_claims').select('approved_amount, claim_amount')
-    .eq('admission_id', admissionId).eq('status', 'approved')
-  const insuranceApproved = (apprClaims ?? []).reduce(
-    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? 0), 0)
+    .from('insurance_claims').select(INSURANCE_CREDIT_COLUMNS)
+    .eq('admission_id', admissionId).or('eligibility_status.eq.approved,status.eq.settled')
+  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
 
   return {
     combinedBillNo,

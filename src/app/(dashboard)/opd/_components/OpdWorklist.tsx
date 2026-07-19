@@ -10,7 +10,6 @@ import { getTodaysQueue, getAppointmentsBillStatuses } from '@/app/actions/appoi
 import { startVisit } from '@/app/actions/opd'
 import type { Appointment } from '@/lib/types'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
-import VerifyCashlessModal from './VerifyCashlessModal'
 
 type BillStatus = { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }
 
@@ -26,12 +25,7 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
   const [billStatuses, setBillStatuses] = useState(initialBillStatuses)
   const [loading, setLoading]           = useState(false)
   const [actionId, setActionId]         = useState<string | null>(null)
-  const [verifyingAppt, setVerifyingAppt] = useState<Appointment | null>(null)
   const isReadOnly = useIsReadOnly()
-
-  async function refreshBillStatuses() {
-    setBillStatuses(await getAppointmentsBillStatuses(queue.map((a) => a.id)))
-  }
 
   async function refresh() {
     setLoading(true)
@@ -167,11 +161,11 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                               Collect payment before starting →
                             </button>
                             <button
-                              onClick={() => setVerifyingAppt(a)}
+                              onClick={() => router.push(`/insurance/${a.patient_id}`)}
                               className="flex items-center gap-1 text-xs font-medium"
                               style={{ background: 'none', border: 'none', color: '#4F46E5', cursor: 'pointer', padding: 0 }}>
                               <ShieldCheck className="w-3 h-3" />
-                              Verify cashless →
+                              Verify cashless on Insurance page →
                             </button>
                           </div>
                         )}
@@ -215,17 +209,6 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
             )
           })}
         </div>
-      )}
-
-      {verifyingAppt && billStatuses[verifyingAppt.id] && (
-        <VerifyCashlessModal
-          patientId={verifyingAppt.patient_id}
-          patientName={verifyingAppt.patient?.full_name ?? 'Patient'}
-          billId={billStatuses[verifyingAppt.id].id}
-          billAmount={billStatuses[verifyingAppt.id].total}
-          onClose={() => setVerifyingAppt(null)}
-          onResolved={refreshBillStatuses}
-        />
       )}
     </div>
   )

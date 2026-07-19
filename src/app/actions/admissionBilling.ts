@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -110,16 +111,16 @@ export async function getAdmissionFinancials(
     }
   }
 
-  // Approved-but-unsettled insurance is a receivable that covers the balance at
-  // discharge (the TPA settles days/weeks later). Only the patient's own share
-  // must be collected before discharge.
+  // Insurance credit against the patient's balance. Pre-settlement this is the
+  // eligibility-approved receivable (pre-auth lets the patient leave without
+  // paying); post-settlement it reflects what was actually received unless the
+  // shortfall was written off — see claimInsuranceCredit for the full rule.
   const { data: apprClaims } = await supabase
     .from('insurance_claims')
-    .select('approved_amount, claim_amount')
+    .select(INSURANCE_CREDIT_COLUMNS)
     .eq('admission_id', admissionId)
-    .eq('status', 'approved')
-  const insuranceApproved = (apprClaims ?? []).reduce(
-    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? 0), 0)
+    .or('eligibility_status.eq.approved,status.eq.settled')
+  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
 
   const advanceSpent  = totalAdvance - totalRefunded
   const balanceDue    = Math.max(0, totalBilled - totalPaid)

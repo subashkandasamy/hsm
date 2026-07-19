@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
+import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import { syncNursingBillLine } from '@/lib/ipdBilling'
 import { AssignNurseSchema } from '@/lib/schemas'
 import type { AdmissionNurseAssignment, PickerNurse, NursePickerData } from '@/lib/types'
@@ -22,6 +23,10 @@ export async function assignNurse(params: {
   const parsed = AssignNurseSchema.safeParse(params)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const { admissionId, nurseId, shift, date } = parsed.data
+
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
+
   const supabase = await createClient()
 
   // Resolve the (active) shift definition — its id is the stable per-shift billing key.

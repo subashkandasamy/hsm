@@ -2,15 +2,18 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, RefreshCw, BedDouble, Stethoscope } from 'lucide-react'
+import { UserPlus, RefreshCw, BedDouble, Stethoscope, ShieldAlert, FileWarning } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import { listAdmissions } from '@/app/actions/ipd'
 import { getWardBoard } from '@/app/actions/wards'
+import { listDeclarationsForAdmissions } from '@/app/actions/ipdDeclaration'
 import AdmitModal from '../../wards/_components/AdmitModal'
-import type { Admission, Ward, WardWithBeds, ProcedureTariff } from '@/lib/types'
+import StartTreatmentModal from './StartTreatmentModal'
+import UploadDeclarationModal from './UploadDeclarationModal'
+import type { Admission, Ward, WardWithBeds, ProcedureTariff, IpdDeclaration } from '@/lib/types'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 function daysAdmitted(admittedAt: string): number {
@@ -19,6 +22,7 @@ function daysAdmitted(admittedAt: string): number {
 
 interface Props {
   initialAdmissions: Admission[]
+  initialDeclarations?: Record<string, IpdDeclaration>
   wards: Ward[]
   doctors: { id: string; full_name: string }[]
   procedureTariffs?: ProcedureTariff[]
@@ -26,19 +30,23 @@ interface Props {
   advancePercentage?: number
 }
 
-export default function IpdClient({ initialAdmissions, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
+export default function IpdClient({ initialAdmissions, initialDeclarations = {}, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
   const [admissions, setAdmissions] = useState<Admission[]>(initialAdmissions)
+  const [declarations, setDeclarations] = useState<Record<string, IpdDeclaration>>(initialDeclarations)
   const [statusFilter, setStatusFilter] = useState<'admitted' | 'discharged' | 'all'>('admitted')
   const [loading, setLoading] = useState(false)
   const [showAdmit, setShowAdmit] = useState(false)
   const [wardBoard, setWardBoard] = useState<WardWithBeds[]>([])
+  const [startTreatmentFor, setStartTreatmentFor] = useState<Admission | null>(null)
+  const [uploadDeclarationFor, setUploadDeclarationFor] = useState<Admission | null>(null)
 
   async function refresh(status: typeof statusFilter) {
     setLoading(true)
     const data = await listAdmissions(status === 'all' ? {} : { status })
     setAdmissions(data)
+    setDeclarations(await listDeclarationsForAdmissions(data.map((a) => a.id)))
     setLoading(false)
   }
 
@@ -46,6 +54,21 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
     const board = await getWardBoard()
     setWardBoard(board)
     setShowAdmit(true)
+  }
+
+  function declStateFor(a: Admission): 'blocked' | 'pending_upload' | 'ok' {
+    if (!a.treatment_started_at) return 'blocked'
+    if (declarations[a.id]?.status === 'manual_pending_upload') return 'pending_upload'
+    return 'ok'
+  }
+
+  // Undeclared admissions can't open the clinical detail page at all — the
+  // row click redirects into the Start Treatment flow instead of navigating,
+  // so staff can't land on a Clinical/Treatment/Nursing form that will only
+  // fail server-side once submitted.
+  function openRow(a: Admission) {
+    if (a.status === 'admitted' && declStateFor(a) === 'blocked') { setStartTreatmentFor(a); return }
+    router.push(`/ipd/${a.id}`)
   }
 
   const displayed = admissions
@@ -114,8 +137,11 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
             {displayed.map((a) => {
               const days = daysAdmitted(a.admitted_at)
               const isAdmitted = a.status === 'admitted'
+              const declState = declStateFor(a)
               return (
-                <button key={a.id} onClick={() => router.push(`/ipd/${a.id}`)}
+                <div key={a.id} role="button" tabIndex={0}
+                  onClick={() => openRow(a)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') openRow(a) }}
                   className="w-full text-left rounded-2xl overflow-hidden"
                   style={{ background: 'rgba(255,255,255,0.92)', border: '1px solid #E2E8F0', cursor: 'pointer', display: 'block', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                   <div className="flex items-stretch">
@@ -157,9 +183,21 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
                       <p className="text-xs mt-1.5" style={{ color: '#94A3B8' }}>
                         Admitted <DateText date={a.admitted_at} />
                       </p>
+                      {isAdmitted && declState !== 'ok' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); declState === 'blocked' ? setStartTreatmentFor(a) : setUploadDeclarationFor(a) }}
+                          className="mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
+                          style={declState === 'blocked'
+                            ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }
+                            : { background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                          {declState === 'blocked'
+                            ? <><ShieldAlert className="w-3.5 h-3.5" /> Start Treatment — Declaration Required</>
+                            : <><FileWarning className="w-3.5 h-3.5" /> Declaration Pending Upload</>}
+                        </button>
+                      )}
                     </div>
                   </div>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -178,10 +216,11 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
               <tbody>
                 {displayed.map((a, i) => {
                   const isAdmitted = a.status === 'admitted'
+                  const declState = declStateFor(a)
                   return (
                     <tr key={a.id}
                       style={{ borderBottom: i < displayed.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}
-                      onClick={() => router.push(`/ipd/${a.id}`)}
+                      onClick={() => openRow(a)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.03)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                       {/* Colored left strip */}
@@ -214,8 +253,21 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
                         </span>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className="text-xs px-2.5 py-1 rounded-lg font-medium"
-                          style={{ background: '#EFF6FF', color: '#1D4ED8' }}>View →</span>
+                        {isAdmitted && declState !== 'ok' ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); declState === 'blocked' ? setStartTreatmentFor(a) : setUploadDeclarationFor(a) }}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                            style={declState === 'blocked'
+                              ? { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }
+                              : { background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                            {declState === 'blocked'
+                              ? <><ShieldAlert className="w-3.5 h-3.5" /> Start Treatment</>
+                              : <><FileWarning className="w-3.5 h-3.5" /> Upload Pending</>}
+                          </button>
+                        ) : (
+                          <span className="text-xs px-2.5 py-1 rounded-lg font-medium"
+                            style={{ background: '#EFF6FF', color: '#1D4ED8' }}>View →</span>
+                        )}
                       </td>
                     </tr>
                   )
@@ -236,6 +288,25 @@ export default function IpdClient({ initialAdmissions, wards, doctors, procedure
           procedureTariffs={procedureTariffs}
           generalTariffPrice={generalTariffPrice}
           advancePercentage={advancePercentage}
+        />
+      )}
+
+      {startTreatmentFor && (
+        <StartTreatmentModal
+          admissionId={startTreatmentFor.id}
+          patientName={startTreatmentFor.patient?.full_name ?? 'Patient'}
+          onClose={() => setStartTreatmentFor(null)}
+          onDone={() => { setStartTreatmentFor(null); refresh(statusFilter) }}
+        />
+      )}
+
+      {uploadDeclarationFor && (
+        <UploadDeclarationModal
+          admissionId={uploadDeclarationFor.id}
+          patientId={uploadDeclarationFor.patient_id}
+          patientName={uploadDeclarationFor.patient?.full_name ?? 'Patient'}
+          onClose={() => setUploadDeclarationFor(null)}
+          onDone={() => { setUploadDeclarationFor(null); refresh(statusFilter) }}
         />
       )}
     </div>

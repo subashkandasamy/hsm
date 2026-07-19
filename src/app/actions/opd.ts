@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
+import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import type { Visit, Prescription, VisitFinancials } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -38,11 +39,10 @@ export async function getVisitFinancials(visitId: string): Promise<VisitFinancia
 
   const { data: apprClaims } = await supabase
     .from('insurance_claims')
-    .select('approved_amount, claim_amount, estimated_amount')
+    .select(INSURANCE_CREDIT_COLUMNS)
     .eq('visit_id', visitId)
-    .eq('status', 'approved')
-  const insuranceApproved = (apprClaims ?? []).reduce(
-    (s, c) => s + ((c.approved_amount as number | null) ?? (c.claim_amount as number | null) ?? (c.estimated_amount as number | null) ?? 0), 0)
+    .or('eligibility_status.eq.approved,status.eq.settled')
+  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
 
   const balanceDue = Math.max(0, totalBilled - totalPaid)
   const patientBalanceDue = Math.max(0, balanceDue - insuranceApproved)
@@ -101,8 +101,11 @@ export async function startVisit(
   // A verified cashless claim (front-desk eligibility check, approved before
   // the visit even starts) covers the bill the same way an approved claim
   // covers the balance at IPD discharge — the patient doesn't need to pay
-  // what the insurer already owes. No visit exists yet at this point, so
-  // this can only be a bill-scoped claim.
+  // what the insurer already owes. Keyed off eligibility_status specifically
+  // (the provisional pre-auth decision), not the final claim status — that's
+  // what actually unlocks treatment; the final claim only settles the money
+  // later, often after the patient has already been seen. No visit exists
+  // yet at this point, so this can only be a bill-scoped claim.
   let cashlessCovered = false
   if (hasBill && !hasPaid) {
     const activeBillIds = (allConsultBills ?? []).filter((b) => b.status !== 'cancelled').map((b) => b.id as string)
@@ -111,7 +114,7 @@ export async function startVisit(
         .from('insurance_claims')
         .select('id', { count: 'exact', head: true })
         .in('bill_id', activeBillIds)
-        .in('status', ['approved', 'settled'])
+        .eq('eligibility_status', 'approved')
       cashlessCovered = (count ?? 0) > 0
     }
   }

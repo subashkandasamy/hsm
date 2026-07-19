@@ -147,27 +147,36 @@ export const NAV_CONFIG: NavGroup[] = [
     ],
   },
   {
-    label: 'Administrative & Financial',
+    label: 'Billing & Insurance',
     items: [
       { label: 'Billing',    href: '/billing',    icon: 'Receipt',    requiredPermission: 'billing:read' },
       { label: 'Insurance',  href: '/insurance',  icon: 'ShieldPlus', requiredPermission: 'insurance:read', moduleKey: 'insurance' },
-      { label: 'Inventory',  href: '/inventory',  icon: 'Warehouse',  requiredPermission: 'inventory:read', moduleKey: 'inventory' },
     ],
   },
   {
-    label: 'Platform',
+    label: 'Operations',
     items: [
-      { label: 'Staff & HR',     href: '/staff',                   icon: 'UserCog',       requiredPermission: 'hr:read',              moduleKey: 'hr' },
-      { label: 'Scheduling',     href: '/scheduling',              icon: 'CalendarClock', requiredPermission: 'scheduling:read' },
-      { label: 'Notifications',  href: '/notifications',                icon: 'Bell',          requiredPermission: 'notifications:send' },
-      { label: 'Audit Log',      href: '/audit',                        icon: 'ClipboardList', requiredPermission: 'audit:read' },
-      { label: 'Subscription',   href: '/account/subscription',         icon: 'CreditCard',    requiredPermission: 'account:subscription' },
-      { label: 'Departments',    href: '/settings/departments',         icon: 'Building2',     requiredPermission: 'departments:manage' },
-      { label: 'Tariffs & Fees', href: '/settings/tariffs',             icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
-      { label: 'IPD Billing',    href: '/settings/ipd-billing',         icon: 'BedDouble',     requiredPermission: 'ipd:config' },
-      { label: 'Hospital Profile', href: '/settings/profile',            icon: 'Building2',     requiredPermission: 'settings:write' },
-      { label: 'Module Settings',href: '/settings/modules',             icon: 'ToggleLeft',    requiredPermission: 'settings:modules' },
-      { label: 'Settings',       href: '/settings',                     icon: 'Settings',      requiredPermission: 'settings:read' },
+      { label: 'Inventory',     href: '/inventory',    icon: 'Warehouse',     requiredPermission: 'inventory:read', moduleKey: 'inventory' },
+      { label: 'Staff & HR',    href: '/staff',        icon: 'UserCog',       requiredPermission: 'hr:read',        moduleKey: 'hr' },
+      { label: 'Scheduling',    href: '/scheduling',   icon: 'CalendarClock', requiredPermission: 'scheduling:read' },
+      { label: 'Notifications', href: '/notifications', icon: 'Bell',         requiredPermission: 'notifications:send' },
+    ],
+  },
+  {
+    label: 'Settings',
+    items: [
+      { label: 'Departments',      href: '/settings/departments', icon: 'Building2',       requiredPermission: 'departments:manage' },
+      { label: 'Tariffs & Fees',   href: '/settings/tariffs',     icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
+      { label: 'IPD Billing',      href: '/settings/ipd-billing', icon: 'BedDouble',       requiredPermission: 'ipd:config' },
+      { label: 'Hospital Profile', href: '/settings/profile',     icon: 'Building2',       requiredPermission: 'settings:write' },
+      { label: 'Module Settings',  href: '/settings/modules',     icon: 'ToggleLeft',      requiredPermission: 'settings:modules' },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { label: 'Subscription', href: '/account/subscription', icon: 'CreditCard',    requiredPermission: 'account:subscription' },
+      { label: 'Audit Log',    href: '/audit',                icon: 'ClipboardList', requiredPermission: 'audit:read' },
     ],
   },
 ]

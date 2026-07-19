@@ -496,7 +496,7 @@ export async function getAppointmentsBillStatuses(
       .from('insurance_claims')
       .select('bill_id')
       .in('bill_id', billIds)
-      .in('status', ['approved', 'settled'])
+      .eq('eligibility_status', 'approved')
     for (const c of claims ?? []) if (c.bill_id) coveredBillIds.add(c.bill_id as string)
   }
 

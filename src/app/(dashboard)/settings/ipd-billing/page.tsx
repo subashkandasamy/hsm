@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getActorProfile } from '@/lib/server-utils'
 import { hasPermission } from '@/lib/rbac'
 import { getIpdConfig, getAdvancePercentage, listCustomCharges } from '@/app/actions/ipdConfig'
+import { DEFAULT_DECLARATION_TEMPLATE } from '@/lib/ipdDeclarationTemplate'
 import PageHeader from '@/components/ui/PageHeader'
 import IpdBillingConfigClient from './_components/IpdBillingConfig'
 import type { IpdBillingConfig } from '@/lib/types'
@@ -27,6 +28,7 @@ export default async function IpdBillingPage() {
     charge_admission_fee:   false,
     admission_fee_amount:   0,
     service_charge_per_day: 0,
+    declaration_template:   DEFAULT_DECLARATION_TEMPLATE,
     updated_at:             new Date().toISOString(),
   }
 

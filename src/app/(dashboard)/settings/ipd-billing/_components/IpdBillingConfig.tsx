@@ -8,6 +8,7 @@ import {
   updateIpdConfig, setAdvancePercentage,
   createCustomCharge, updateCustomCharge, deleteCustomCharge,
 } from '@/app/actions/ipdConfig'
+import { DEFAULT_DECLARATION_TEMPLATE } from '@/lib/ipdDeclarationTemplate'
 import type { IpdBillingConfig, IpdCustomCharge } from '@/lib/types'
 
 interface Props {
@@ -31,6 +32,8 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
   const [advPct, setAdvPct] = useState(String(initPct))
   const [admFeeInput, setAdmFeeInput] = useState(String(config.admission_fee_amount))
   const [svcInput, setSvcInput] = useState(String(config.service_charge_per_day))
+  const [templateInput, setTemplateInput] = useState(config.declaration_template || DEFAULT_DECLARATION_TEMPLATE)
+  const [templateSaved, setTemplateSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -138,6 +141,22 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
       if (!res.success) { setChargeError(res.error); return }
       setCharges((prev) => prev.filter((c) => c.id !== id))
     })
+  }
+
+  function saveTemplate() {
+    if (!templateInput.trim()) { setError('Declaration text cannot be empty'); return }
+    setError('')
+    startTransition(async () => {
+      const res = await updateIpdConfig({ declaration_template: templateInput })
+      if (!res.success) { setError(res.error); return }
+      setCfg((prev) => ({ ...prev, declaration_template: templateInput }))
+      setTemplateSaved(true)
+      setTimeout(() => setTemplateSaved(false), 2500)
+    })
+  }
+
+  function resetTemplate() {
+    setTemplateInput(DEFAULT_DECLARATION_TEMPLATE)
   }
 
   return (
@@ -409,6 +428,50 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
               ))}
             </div>
           )}
+        </div>
+      </GlassCard>
+
+      {/* Treatment declaration template */}
+      <GlassCard>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold" style={{ color: '#0F172A' }}>Treatment Declaration</h2>
+            {templateSaved && (
+              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: '#15803D' }}>
+                <Check className="w-3.5 h-3.5" /> Saved
+              </span>
+            )}
+          </div>
+          <p className="text-sm mb-4" style={{ color: '#64748B' }}>
+            The consent, financial-responsibility and liability text patients sign before any IPD treatment
+            can begin. Editing this only affects declarations generated after you save — admissions already
+            signed keep the exact wording they were shown.
+          </p>
+          <textarea
+            value={templateInput}
+            onChange={(e) => setTemplateInput(e.target.value)}
+            rows={14}
+            className="w-full px-3 py-2.5 rounded-xl text-sm border font-mono leading-relaxed"
+            style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
+          />
+          <div className="mt-4 flex justify-between items-center">
+            <button
+              onClick={resetTemplate}
+              disabled={isPending}
+              className="text-sm font-medium"
+              style={{ color: '#64748B' }}
+            >
+              Reset to default text
+            </button>
+            <button
+              onClick={saveTemplate}
+              disabled={isPending}
+              className="px-4 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: '#0D9488', color: '#fff' }}
+            >
+              Save Declaration Text
+            </button>
+          </div>
         </div>
       </GlassCard>
     </div>

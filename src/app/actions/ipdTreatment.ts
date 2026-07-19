@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, IpdPharmacyRequest,
   LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
@@ -105,6 +106,9 @@ export async function createOrder(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
+
   const supabase = await createClient()
   const orderId = crypto.randomUUID()
   const startAt = new Date()
@@ -195,6 +199,14 @@ export async function stopOrder(orderId: string): Promise<SimpleResult> {
   await requirePermission(actor.role, 'ipd:write')
 
   const supabase = await createClient()
+
+  const { data: orderRow } = await supabase
+    .from('ipd_medication_orders').select('admission_id').eq('id', orderId).maybeSingle()
+  if (orderRow?.admission_id) {
+    const gate = await assertTreatmentStarted(orderRow.admission_id as string)
+    if (!gate.success) return gate
+  }
+
   const { error } = await supabase
     .from('ipd_medication_orders')
     .update({ status: 'stopped', stop_at: new Date().toISOString() })
@@ -246,6 +258,13 @@ export async function updateSlotStatus(
   await requirePermission(actor.role, 'ipd:nursing')
 
   const supabase = await createClient()
+
+  const { data: scheduleRow } = await supabase
+    .from('ipd_admin_schedule').select('admission_id').eq('id', scheduleId).maybeSingle()
+  if (scheduleRow?.admission_id) {
+    const gate = await assertTreatmentStarted(scheduleRow.admission_id as string)
+    if (!gate.success) return gate
+  }
 
   // Block 'given' unless pharmacy has dispensed the medication for this order
   if (status === 'given') {
@@ -324,6 +343,9 @@ export async function extendSchedule(orderId: string): Promise<SimpleResult> {
     .single()
 
   if (!order || (order.status as string) !== 'active') return { success: true }
+
+  const gate = await assertTreatmentStarted(order.admission_id as string)
+  if (!gate.success) return gate
 
   const { data: latest } = await supabase
     .from('ipd_admin_schedule')
@@ -408,6 +430,9 @@ export async function copyPrescriptionsToIPD(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
+
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
 
   const supabase = await createClient()
 
@@ -512,6 +537,11 @@ export async function dispenseIpdRequest(
     .eq('id', requestId)
     .single()
 
+  if (req?.admission_id) {
+    const gate = await assertTreatmentStarted(req.admission_id as string)
+    if (!gate.success) return gate
+  }
+
   // billing_status stays 'unbilled' until we confirm the bill was created;
   // zero-price items have nothing to bill so they are immediately 'billed'
   const { error } = await supabase
@@ -613,6 +643,9 @@ export async function createIpdLabOrder(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
+
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
 
   const supabase = await createClient()
   const { data: tests } = await supabase
@@ -717,6 +750,9 @@ export async function createIpdRadiologyOrder(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:order')
+
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
 
   const supabase = await createClient()
   const { data: test } = await supabase

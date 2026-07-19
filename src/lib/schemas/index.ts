@@ -302,7 +302,19 @@ export const InsurancePolicySchema = z.object({
   valid_till:      z.string().nullable().optional(),
   coverage_amount: z.number().nullable().optional(),
   tpa_id:          z.string().uuid().nullable().optional(),
+  room_rent_limit_per_day: z.number().nullable().optional(),
+  sub_limit_notes:         z.string().nullable().optional(),
+  member_id:                 z.string().nullable().optional(),
+  policyholder_name:         z.string().nullable().optional(),
+  policyholder_relationship: z.enum(['self','spouse','parent','child','sibling','other']).nullable().optional(),
+  corporate_name:            z.string().nullable().optional(),
+  employee_id:               z.string().nullable().optional(),
+  copay_percent:             z.number().min(0).max(100).nullable().optional(),
+  policy_start_date:         z.string().nullable().optional(),
 })
+
+// Partial update of an existing policy — same fields as create, all optional.
+export const UpdatePolicySchema = InsurancePolicySchema.partial()
 
 // A claim targets exactly one encounter: an admission (IPD), an OPD visit,
 // or a single bill (legacy / one-off). At least one must be provided.
@@ -318,37 +330,172 @@ export const InsuranceClaimSchema = z.object({
   { message: 'A claim must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
 )
 
-// Pre-authorization / eligibility check raised against an IPD admission, an
-// OPD visit, or — before a visit even exists yet, e.g. at the OPD
-// payment-pending queue — a specific bill directly. Exactly one scope must
-// be given, mirroring InsuranceClaimSchema's three-way encounter scope.
-export const PreauthSchema = z.object({
-  admission_id:     z.string().uuid().nullable().optional(),
-  visit_id:         z.string().uuid().nullable().optional(),
-  bill_id:          z.string().uuid().nullable().optional(),
-  policy_id:        z.string().uuid('Select a policy'),
-  estimated_amount: z.number().positive('Estimated amount must be positive'),
-  remarks:          z.string().nullable().optional(),
+// Stage 1 "Add Policy" — creates the claim itself, scoped to an IPD admission,
+// an OPD visit, or — before a visit even exists yet, e.g. at the OPD
+// payment-pending queue — a specific bill directly. Exactly one scope must be
+// given. No amount yet — that's entered at Stage 2 once eligibility work begins.
+export const StartClaimSchema = z.object({
+  admission_id: z.string().uuid().nullable().optional(),
+  visit_id:     z.string().uuid().nullable().optional(),
+  bill_id:      z.string().uuid().nullable().optional(),
+  policy_id:    z.string().uuid('Select a policy'),
 }).refine(
   (v) => !!(v.admission_id || v.visit_id || v.bill_id),
-  { message: 'A pre-authorization must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
+  { message: 'A claim must be linked to an admission, a visit, or a bill', path: ['admission_id'] },
 )
 
-// Resolve an eligibility check in real time (front-desk verification is a
-// 2-3 minute check, not the slow multi-day TPA process) — approve or reject
-// directly, skipping the intermediate submitted/approved handshake.
-export const ResolveEligibilitySchema = z.object({
+// Stage 2 "Eligibility Check" fields — editable independently of the
+// approve/reject decision itself (DecideEligibilitySchema below). Includes the
+// pre-auth compliance data a TPA cashless form demands.
+export const CostBreakdownSchema = z.object({
+  room:         z.number().nonnegative().nullable().optional(),
+  icu:          z.number().nonnegative().nullable().optional(),
+  ot:           z.number().nonnegative().nullable().optional(),
+  professional: z.number().nonnegative().nullable().optional(),
+  pharmacy:     z.number().nonnegative().nullable().optional(),
+  implants:     z.number().nonnegative().nullable().optional(),
+  other:        z.number().nonnegative().nullable().optional(),
+})
+
+export const EligibilityFieldsSchema = z.object({
+  estimated_amount:        z.number().positive('Estimated amount must be positive').nullable().optional(),
+  diagnosis:               z.string().nullable().optional(),
+  room_category_requested: z.string().nullable().optional(),
+  icd_code:                z.string().nullable().optional(),
+  admission_type:          z.enum(['planned','emergency']).nullable().optional(),
+  admit_datetime:          z.string().nullable().optional(),
+  cost_breakdown:          CostBreakdownSchema.nullable().optional(),
+})
+
+// Insurer-side identifiers, editable at any stage as the TPA returns them.
+export const ClaimIdentifiersSchema = z.object({
+  preauth_number:       z.string().nullable().optional(),
+  insurer_claim_number: z.string().nullable().optional(),
+})
+
+// Free-form correction of any recorded value on a claim — the "Edit" action on
+// each stage, so a mistyped amount or field can be fixed without re-running the
+// stage transition. All optional; only supplied keys are written.
+export const ClaimFieldsSchema = z.object({
+  estimated_amount:            z.number().nonnegative().nullable().optional(),
+  diagnosis:                   z.string().nullable().optional(),
+  room_category_requested:     z.string().nullable().optional(),
+  icd_code:                    z.string().nullable().optional(),
+  admission_type:              z.enum(['planned','emergency']).nullable().optional(),
+  cost_breakdown:              CostBreakdownSchema.nullable().optional(),
+  eligibility_approved_amount: z.number().nonnegative().nullable().optional(),
+  claim_amount:                z.number().nonnegative().nullable().optional(),
+  approved_amount:             z.number().nonnegative().nullable().optional(),
+  copay_amount:                z.number().nonnegative().nullable().optional(),
+  settled_amount:              z.number().nonnegative().nullable().optional(),
+  tds_amount:                  z.number().nonnegative().nullable().optional(),
+  settlement_utr:              z.string().nullable().optional(),
+  settlement_notes:            z.string().nullable().optional(),
+  denial_reason:               z.string().nullable().optional(),
+})
+
+// A single disallowance / deduction line the TPA applied at settlement.
+export const ClaimDeductionSchema = z.object({
+  claim_id:       z.string().uuid(),
+  description:    z.string().min(1, 'Describe the deduction'),
+  amount:         z.number().positive('Amount must be positive'),
+  deduction_type: z.enum(['non_payable','room_rent','copay','reasonable_customary','other']),
+})
+
+// Tier 2 — desk operations
+export const SetClaimOwnerSchema = z.object({
+  owner_id:      z.string().uuid().nullable().optional(),
+  follow_up_due: z.string().nullable().optional(),
+})
+
+export const ChecklistItemSchema = z.object({
+  claim_id: z.string().uuid(),
+  item:     z.string().min(1, 'Item name required'),
+})
+
+export const EnhancementSchema = z.object({
+  claim_id:         z.string().uuid(),
+  requested_amount: z.number().positive('Requested amount must be positive'),
+  al_number:        z.string().nullable().optional(),
+  remarks:          z.string().nullable().optional(),
+})
+
+export const DecideEnhancementSchema = z.object({
+  id:              z.string().uuid(),
+  decision:        z.enum(['approved','rejected']),
+  approved_amount: z.number().positive().nullable().optional(),
+  al_number:       z.string().nullable().optional(),
+})
+
+// Tier 3 — enterprise parity
+export const TariffPackageSchema = z.object({
+  id:           z.string().uuid().optional(),
+  provider:     z.string().nullable().optional(),
+  tpa_id:       z.string().uuid().nullable().optional(),
+  package_name: z.string().min(1, 'Package name required').max(160),
+  package_code: z.string().max(60).nullable().optional(),
+  amount:       z.number().nonnegative('Amount must be zero or positive'),
+  is_active:    z.boolean().optional().default(true),
+})
+
+export const RemittanceBatchSchema = z.object({
+  id:            z.string().uuid().optional(),
+  reference:     z.string().min(1, 'Reference / UTR required').max(120),
+  insurer:       z.string().nullable().optional(),
+  total_amount:  z.number().nonnegative('Total must be zero or positive'),
+  received_date: z.string().nullable().optional(),
+  account_id:    z.string().uuid().nullable().optional(),
+  notes:         z.string().nullable().optional(),
+})
+
+// A single timestamped entry in a claim's enquiry log — the TPA back-and-forth
+// loop (queries raised, clarifications sent) tracked separately from the one
+// remarks field captured at each stage transition.
+export const ClaimNoteSchema = z.object({
+  claim_id: z.string().uuid(),
+  note:     z.string().min(1, 'Note cannot be empty'),
+})
+
+export const UpdateClaimNoteSchema = z.object({
+  id:   z.string().uuid(),
+  note: z.string().min(1, 'Note cannot be empty'),
+})
+
+// Stage 2's own decision — independent of the claim's main status (Stage 3/4).
+// Front-desk verification is a 2-3 minute check (corporate ID / policy card /
+// a quick portal lookup), not the slow multi-day TPA claim process.
+export const DecideEligibilitySchema = z.object({
   id:              z.string().uuid(),
   decision:        z.enum(['approved', 'rejected']),
   approved_amount: z.number().positive().nullable().optional(),
   remarks:         z.string().nullable().optional(),
+  denial_reason:   z.string().nullable().optional(),
 })
 
+// Stage 3 "Claim" transitions only — a claim is created directly in
+// 'awaiting_eligibility', so that status is never a transition target here,
+// and settlement is its own dedicated action (RecordSettlementSchema) since
+// it needs a bank account, not a generic status flip.
 export const AdvanceClaimSchema = z.object({
-  next_status:     z.enum(['preauth','submitted','approved','rejected','settled']),
+  next_status:     z.enum(['raised','submitted','approved','rejected']),
+  claim_amount:    z.number().positive().nullable().optional(),
   approved_amount: z.number().positive().nullable().optional(),
   copay_amount:    z.number().nonnegative().nullable().optional(),
   remarks:         z.string().nullable().optional(),
+  denial_reason:   z.string().nullable().optional(),
+})
+
+// Stage 4 — recording where the settlement landed and what was actually
+// received (gross), the TDS the insurer withheld, the remittance reference, and
+// how any shortfall against the eligibility-covered figure is resolved.
+export const RecordSettlementSchema = z.object({
+  id:                     z.string().uuid(),
+  settled_amount:         z.number().nonnegative('Settled amount must be zero or positive'),
+  settlement_account_id:  z.string().uuid('Select a bank account'),
+  settlement_notes:       z.string().nullable().optional(),
+  settlement_utr:         z.string().nullable().optional(),
+  tds_amount:             z.number().nonnegative().nullable().optional(),
+  shortfall_resolution:   z.enum(['write_off','recover_from_patient']).nullable().optional(),
 })
 
 // Enhancement: raise the claimed amount mid-stay (cost overran the estimate).
@@ -365,6 +512,15 @@ export const InsuranceTpaSchema = z.object({
   phone:          z.string().max(40).nullable().optional(),
   email:          z.string().max(160).nullable().optional(),
   notes:          z.string().max(500).nullable().optional(),
+  is_active:      z.boolean().optional().default(true),
+})
+
+export const InsuranceBankAccountSchema = z.object({
+  id:             z.string().uuid().optional(),
+  account_name:   z.string().min(1, 'Account name is required').max(120),
+  bank_name:      z.string().max(120).nullable().optional(),
+  account_number: z.string().max(40).nullable().optional(),
+  ifsc_code:      z.string().max(20).nullable().optional(),
   is_active:      z.boolean().optional().default(true),
 })
 
@@ -403,10 +559,13 @@ export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>
 export type InsurancePolicyInput = z.infer<typeof InsurancePolicySchema>
 export type InsuranceClaimInput = z.infer<typeof InsuranceClaimSchema>
 export type AdvanceClaimInput = z.infer<typeof AdvanceClaimSchema>
-export type PreauthInput = z.infer<typeof PreauthSchema>
-export type ResolveEligibilityInput = z.infer<typeof ResolveEligibilitySchema>
+export type StartClaimInput = z.infer<typeof StartClaimSchema>
+export type EligibilityFieldsInput = z.infer<typeof EligibilityFieldsSchema>
+export type DecideEligibilityInput = z.infer<typeof DecideEligibilitySchema>
+export type RecordSettlementInput = z.infer<typeof RecordSettlementSchema>
 export type EnhanceClaimInput = z.infer<typeof EnhanceClaimSchema>
 export type InsuranceTpaInput = z.infer<typeof InsuranceTpaSchema>
+export type InsuranceBankAccountInput = z.infer<typeof InsuranceBankAccountSchema>
 
 // ---- Phase 6: Inventory ----
 export const SupplierSchema = z.object({

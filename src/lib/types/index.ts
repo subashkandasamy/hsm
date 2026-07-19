@@ -160,6 +160,7 @@ export interface Admission {
   status: AdmissionStatus; discharge_summary: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
+  treatment_started_at?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'> | null
@@ -494,8 +495,22 @@ export interface CombinedBillData {
 
 // ---- Phase 5: Insurance ----
 
-export type InsuranceClaimStatus = 'draft' | 'preauth' | 'submitted' | 'approved' | 'rejected' | 'settled'
+// The Stage 3/4 (Claim/Settlement) lifecycle — independent of eligibility_status,
+// which tracks the earlier Stage 2 pre-authorization decision separately.
+export type InsuranceClaimStatus = 'draft' | 'awaiting_eligibility' | 'raised' | 'submitted' | 'approved' | 'rejected' | 'settled'
+export type InsuranceEligibilityStatus = 'pending' | 'approved' | 'rejected'
 export type InsuranceClaimType = 'cashless' | 'reimbursement'
+export type PolicyholderRelationship = 'self' | 'spouse' | 'parent' | 'child' | 'sibling' | 'other'
+export type ClaimAdmissionType = 'planned' | 'emergency'
+export type ShortfallResolution = 'write_off' | 'recover_from_patient'
+export type DeductionType = 'non_payable' | 'room_rent' | 'copay' | 'reasonable_customary' | 'other'
+
+// Pre-auth cost estimate broken out by head — mirrors the cost table on a TPA
+// cashless request form.
+export interface CostBreakdown {
+  room?: number; icu?: number; ot?: number; professional?: number
+  pharmacy?: number; implants?: number; other?: number
+}
 
 export interface InsuranceTpa {
   id: string; name: string; code: string | null; contact: string | null
@@ -507,8 +522,52 @@ export interface InsurancePolicy {
   id: string; patient_id: string; provider: string; policy_no: string
   valid_till: string | null; coverage_amount: number | null; created_at: string
   tpa_id: string | null
+  room_rent_limit_per_day: number | null
+  sub_limit_notes: string | null
+  member_id: string | null
+  policyholder_name: string | null
+  policyholder_relationship: PolicyholderRelationship | null
+  corporate_name: string | null
+  employee_id: string | null
+  copay_percent: number | null
+  policy_start_date: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   tpa?: Pick<InsuranceTpa, 'id' | 'name'>
+}
+
+export interface InsuranceClaimDeduction {
+  id: string
+  tenant_id: string
+  claim_id: string
+  description: string
+  amount: number
+  deduction_type: DeductionType
+  created_by: string | null
+  created_at: string
+}
+
+export interface InsuranceClaimChecklistItem {
+  id: string
+  tenant_id: string
+  claim_id: string
+  item: string
+  is_provided: boolean
+  provided_at: string | null
+  created_at: string
+}
+
+export type EnhancementStatus = 'pending' | 'approved' | 'rejected'
+export interface InsuranceClaimEnhancement {
+  id: string
+  tenant_id: string
+  claim_id: string
+  requested_amount: number
+  approved_amount: number | null
+  al_number: string | null
+  status: EnhancementStatus
+  remarks: string | null
+  created_by: string | null
+  created_at: string
 }
 
 export interface InsuranceClaim {
@@ -523,11 +582,110 @@ export interface InsuranceClaim {
   copay_amount: number
   claim_type: InsuranceClaimType
   status: InsuranceClaimStatus
-  remarks: string | null; submitted_at: string | null; created_at: string
+  eligibility_status: InsuranceEligibilityStatus
+  eligibility_approved_amount: number | null
+  eligibility_decided_at: string | null
+  diagnosis: string | null
+  room_category_requested: string | null
+  remarks: string | null
+  submitted_at: string | null
+  raised_at: string | null
+  approved_at: string | null
+  settled_at: string | null
+  settled_amount: number | null
+  settlement_account_id: string | null
+  settlement_notes: string | null
+  rejected_at: string | null
+  created_at: string
+  // Tier 1 — identifiers, pre-auth compliance, settlement integrity
+  preauth_number: string | null
+  insurer_claim_number: string | null
+  icd_code: string | null
+  admission_type: ClaimAdmissionType | null
+  admit_datetime: string | null
+  cost_breakdown: CostBreakdown | null
+  settlement_utr: string | null
+  tds_amount: number | null
+  shortfall_amount: number | null
+  shortfall_resolution: ShortfallResolution | null
+  // Tier 2 — desk operations
+  owner_id: string | null
+  follow_up_due: string | null
+  owner?: Pick<Profile, 'id' | 'full_name'> | null
+  // Tier 3 — enterprise parity
+  remittance_batch_id: string | null
+  denial_reason: string | null
   bill?: Pick<Bill, 'id' | 'bill_no' | 'total' | 'paid' | 'status'>
-  policy?: Pick<InsurancePolicy, 'id' | 'provider' | 'policy_no' | 'coverage_amount'>
+  policy?: Pick<InsurancePolicy, 'id' | 'provider' | 'policy_no' | 'coverage_amount' | 'room_rent_limit_per_day' | 'sub_limit_notes' | 'member_id' | 'policyholder_name' | 'policyholder_relationship' | 'corporate_name' | 'employee_id' | 'copay_percent'>
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   admission?: { id: string; admitted_at: string | null }
+  settlement_account?: Pick<InsuranceBankAccount, 'id' | 'account_name' | 'bank_name'>
+}
+
+export interface InsuranceBankAccount {
+  id: string; account_name: string; bank_name: string | null
+  account_number: string | null; ifsc_code: string | null
+  is_active: boolean; created_at?: string
+}
+
+export interface InsuranceTariffPackage {
+  id: string; provider: string | null; tpa_id: string | null
+  package_name: string; package_code: string | null; amount: number
+  is_active: boolean; created_at?: string
+}
+
+export interface InsuranceRemittanceBatch {
+  id: string; reference: string; insurer: string | null
+  total_amount: number; received_date: string | null
+  account_id: string | null; notes: string | null
+  created_by: string | null; created_at: string
+  // Rolled up in listing queries
+  claim_count?: number
+  reconciled_amount?: number
+}
+
+// One OPD visit or IPD admission for a patient's insurance page — shown as a
+// card whether or not any claim has been started on it yet. `claims` holds
+// every attempt on this encounter (0, 1, or several after a rejection retry).
+export interface InsurancePatientEncounter {
+  // 'appointment' covers the pre-visit window — a checked-in/booked OPD
+  // appointment whose consultation bill exists but whose visit hasn't started
+  // yet. It scopes the claim to that bill (billId), so cashless can be verified
+  // before the patient pays or the consult begins.
+  key: string
+  type: 'admission' | 'visit' | 'appointment'
+  id: string
+  label: string
+  date: string
+  treatmentValue?: number | null
+  billId?: string
+  claims: InsuranceClaim[]
+}
+
+// stage is a free-text snapshot label (e.g. 'awaiting_eligibility', 'eligibility_approved') —
+// not constrained to InsuranceClaimStatus since notes can be logged during eligibility_status
+// phases that don't correspond 1:1 with the claim's main status.
+export interface InsuranceClaimNote {
+  id: string
+  tenant_id: string
+  claim_id: string
+  stage: string
+  note: string
+  created_by: string | null
+  created_at: string
+  author?: Pick<Profile, 'id' | 'full_name'>
+}
+
+// A merged, chronological entry for the claim history feed — either a
+// manually-added enquiry note or a system-generated audit log entry.
+export interface InsuranceClaimHistoryEntry {
+  id: string
+  kind: 'note' | 'audit'
+  stage: string | null
+  action: string | null
+  note: string | null
+  actor_name: string | null
+  created_at: string
 }
 
 // Coverage remaining on a policy after existing non-rejected claims
@@ -706,6 +864,8 @@ export type DocumentCategory = 'external_report' | 'referral' | 'consent_form' |
 export interface PatientDocument {
   id: string; patient_id: string; title: string; category: DocumentCategory
   file_path: string; uploaded_by: string | null; uploaded_at: string
+  claim_id?: string | null
+  policy_id?: string | null
   uploader?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
@@ -952,7 +1112,30 @@ export interface IpdBillingConfig {
   charge_admission_fee: boolean
   admission_fee_amount: number
   service_charge_per_day: number
+  declaration_template: string
   updated_at: string
+}
+
+export type IpdDeclarationStatus = 'pending' | 'manual_pending_upload' | 'signed'
+export type IpdDeclarationSignMethod = 'digital' | 'physical_upload'
+export type IpdDeclarationSignerRelationship = 'self' | 'spouse' | 'parent' | 'child' | 'sibling' | 'other'
+
+export interface IpdDeclaration {
+  id: string
+  tenant_id: string
+  admission_id: string
+  status: IpdDeclarationStatus
+  sign_method: IpdDeclarationSignMethod | null
+  signer_name: string | null
+  signer_relationship: IpdDeclarationSignerRelationship | null
+  signature_data: string | null
+  declaration_text_snapshot: string | null
+  document_id: string | null
+  signed_at: string | null
+  marked_manual_by: string | null
+  marked_manual_at: string | null
+  created_at: string
+  created_by: string | null
 }
 
 export interface IpdCustomCharge {

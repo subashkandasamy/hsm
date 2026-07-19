@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
+import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type { Admission, IpdProgressNote } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -219,6 +220,9 @@ export async function addProgressNote(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
+
   const parsed = ProgressNoteSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
@@ -250,6 +254,9 @@ export async function postOpTransferToWard(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
+
+  const gate = await assertTreatmentStarted(admissionId)
+  if (!gate.success) return gate
 
   const { ward_id, bed_id, is_temp_ward, temp_slot } = input
   const supabase = await createClient()

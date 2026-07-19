@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { listAdmissions } from '@/app/actions/ipd'
 import { listWards } from '@/app/actions/wards'
 import { generateMissingDailyCharges } from '@/app/actions/billing'
+import { listDeclarationsForAdmissions } from '@/app/actions/ipdDeclaration'
 import { getActorProfile } from '@/lib/server-utils'
 import { createClient } from '@/lib/supabase/server'
 import IpdClient from './_components/IpdClient'
@@ -30,9 +31,12 @@ export default async function IpdPage() {
     }))
   )
 
+  const declarations = await listDeclarationsForAdmissions(admissions.map((a) => a.id))
+
   return (
     <IpdClient
       initialAdmissions={admissions}
+      initialDeclarations={declarations}
       wards={wards}
       doctors={(doctorsRes.data ?? []) as { id: string; full_name: string }[]}
       procedureTariffs={(tariffsRes.data ?? []) as ProcedureTariff[]}
