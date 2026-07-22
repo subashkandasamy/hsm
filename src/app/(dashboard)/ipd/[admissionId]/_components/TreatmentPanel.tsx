@@ -60,6 +60,8 @@ import {
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
 } from '@/app/actions/ipdTreatment'
 import { listDrugs } from '@/app/actions/pharmacy'
+import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
+import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, AdminStatus, Drug,
   LabOrder, LabTestCatalog, LabOrderStatus,
@@ -422,6 +424,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   const [saving, setSaving]             = useState(false)
   const [err, setErr]                   = useState('')
   const [cancelingId, setCancelingId]   = useState<string | null>(null)
+  const [viewOrder, setViewOrder]       = useState<LabOrder | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -552,13 +555,22 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                         <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Reported: {fmtDateTime(order.reported_at)}</p>
                       )}
                     </div>
-                    {canOrder && !isCancelled && order.status === 'ordered' && (
-                      <button onClick={() => handleCancel(order.id)} disabled={cancelingId === order.id}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs flex-shrink-0"
-                        style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
-                        <X className="w-3 h-3" />{cancelingId === order.id ? '…' : 'Cancel'}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {order.status === 'reported' && (
+                        <button onClick={() => setViewOrder(order)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          View Report
+                        </button>
+                      )}
+                      {canOrder && !isCancelled && order.status === 'ordered' && (
+                        <button onClick={() => handleCancel(order.id)} disabled={cancelingId === order.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                          style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
+                          <X className="w-3 h-3" />{cancelingId === order.id ? '…' : 'Cancel'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -566,6 +578,15 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
           </div>
         )}
       </CollapsibleSection>
+
+      {viewOrder && (
+        <LabReportModal
+          order={viewOrder}
+          canEdit={false}
+          onClose={() => setViewOrder(null)}
+          onEdit={() => {}}
+        />
+      )}
 
       {/* ── Order Lab Test Modal ─────────────────────────────── */}
       {showModal && (
@@ -773,6 +794,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
   const [saving, setSaving]                 = useState(false)
   const [err, setErr]                       = useState('')
   const [cancelingId, setCancelingId]       = useState<string | null>(null)
+  const [viewOrder, setViewOrder]           = useState<RadiologyOrder | null>(null)
 
   useEffect(() => {
     listIpdRadiologyOrders(admissionId).then((o) => { setOrders(o); setLoading(false) })
@@ -879,13 +901,22 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
                         <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Reported: {fmtDateTime(order.reported_at)}</p>
                       )}
                     </div>
-                    {canOrder && !isCancelled && order.status === 'ordered' && (
-                      <button onClick={() => handleCancel(order.id)} disabled={cancelingId === order.id}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs flex-shrink-0"
-                        style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
-                        <X className="w-3 h-3" />{cancelingId === order.id ? '…' : 'Cancel'}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {order.status === 'reported' && (
+                        <button onClick={() => setViewOrder(order)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          View Report
+                        </button>
+                      )}
+                      {canOrder && !isCancelled && order.status === 'ordered' && (
+                        <button onClick={() => handleCancel(order.id)} disabled={cancelingId === order.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                          style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
+                          <X className="w-3 h-3" />{cancelingId === order.id ? '…' : 'Cancel'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -893,6 +924,13 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
           </div>
         )}
       </CollapsibleSection>
+
+      {viewOrder && (
+        <RadiologyReportModal
+          order={viewOrder}
+          onClose={() => setViewOrder(null)}
+        />
+      )}
 
       {/* ── Order Scan Modal ─────────────────────────────────── */}
       {showModal && (

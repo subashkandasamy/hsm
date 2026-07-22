@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getVisit, getPatientVisits } from '@/app/actions/opd'
 import { getPatient } from '@/app/actions/patients'
-import { listLabCatalog } from '@/app/actions/lab'
-import { listRadiologyCatalog } from '@/app/actions/radiology'
+import { listLabCatalog, listLabOrders } from '@/app/actions/lab'
+import { listRadiologyCatalog, listRadiologyOrders } from '@/app/actions/radiology'
 import { listDrugs } from '@/app/actions/pharmacy'
 import { listAllergies } from '@/app/actions/allergies'
 import { getDentalChart, listTreatmentHistory, listDueRecalls } from '@/app/actions/dental'
@@ -42,12 +42,14 @@ export default async function OpdVisitPage({ params }: Props) {
 
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
 
-  const [patient, pastVisits, labCatalog, radiologyCatalog, drugs, allergies,
+  const [patient, pastVisits, labCatalog, radiologyCatalog, labOrders, radiologyOrders, drugs, allergies,
          wards, doctorsRes, tariffsRes, tenantRes, generalRes, tenantProfile] = await Promise.all([
     getPatient(visit.patient_id),
     getPatientVisits(visit.patient_id),
     listLabCatalog(),
     listRadiologyCatalog(),
+    listLabOrders({ visitId }),
+    listRadiologyOrders({ visitId }),
     listDrugs(),
     listAllergies(visit.patient_id),
     getWardBoard(),
@@ -95,6 +97,8 @@ export default async function OpdVisitPage({ params }: Props) {
       history={history}
       labCatalog={labCatalog}
       radiologyCatalog={radiologyCatalog}
+      labOrders={labOrders}
+      radiologyOrders={radiologyOrders}
       drugs={drugs}
       allergies={allergies}
       clinicalTemplate={template}

@@ -21,10 +21,12 @@ import {
 } from '@/app/actions/opd'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
-import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, Drug, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall, TenantProfile } from '@/lib/types'
+import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, Drug, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall, TenantProfile } from '@/lib/types'
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
+import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
+import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -48,6 +50,8 @@ interface Props {
   history: Visit[]
   labCatalog: LabTestCatalog[]
   radiologyCatalog: RadiologyCatalog[]
+  labOrders?: LabOrder[]
+  radiologyOrders?: RadiologyOrder[]
   drugs: Drug[]
   allergies: PatientAllergy[]
   clinicalTemplate?: ClinicalTemplate
@@ -75,7 +79,7 @@ function computeAge(dob: string | null) {
 }
 
 export default function ConsultationWorkspace({
-  visit: initialVisit, patient, history, labCatalog, radiologyCatalog, drugs, allergies,
+  visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], drugs, allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
   tenantProfile = null, plan = 'starter', tenantStatus = 'trial',
@@ -94,6 +98,9 @@ export default function ConsultationWorkspace({
   const [showRadOrder, setShowRadOrder] = useState(false)
   const [labOrdered, setLabOrdered] = useState(false)
   const [radOrdered, setRadOrdered] = useState(false)
+  // Report viewers (read-only for the doctor)
+  const [viewLabOrder, setViewLabOrder] = useState<LabOrder | null>(null)
+  const [viewRadOrder, setViewRadOrder] = useState<RadiologyOrder | null>(null)
 
   // Vitals form
   const [vitals, setVitals] = useState({
@@ -893,6 +900,63 @@ export default function ConsultationWorkspace({
                   </>
                 )
               })()}
+
+              {/* Investigation reports — read-only view/print once completed */}
+              {(labOrders.length > 0 || radiologyOrders.length > 0) && (
+                <div className="mt-5 pt-4" style={{ borderTop: '1px solid #F1F5F9' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2.5" style={{ color: '#64748B', letterSpacing: '0.5px' }}>
+                    Reports
+                  </p>
+                  <div className="space-y-1.5">
+                    {labOrders.map((o) => {
+                      const done = o.status === 'reported'
+                      return (
+                        <div key={o.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl" style={{ background: '#F8FAFC' }}>
+                          <FlaskConical className="w-4 h-4 flex-shrink-0" style={{ color: '#0D9488' }} />
+                          <span className="text-sm font-medium min-w-0 truncate" style={{ color: '#0F172A' }}>
+                            {(o.items ?? []).map((it) => it.test?.name).filter(Boolean).join(', ') || 'Lab tests'}
+                          </span>
+                          <StatusBadge status={done ? 'success' : 'pending'} label={done ? 'Reported' : o.status} />
+                          <div className="ml-auto flex-shrink-0">
+                            {done ? (
+                              <button onClick={() => setViewLabOrder(o)}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold"
+                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                View Report
+                              </button>
+                            ) : (
+                              <span className="text-xs" style={{ color: '#94A3B8' }}>Awaiting result</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {radiologyOrders.map((o) => {
+                      const done = o.status === 'reported'
+                      return (
+                        <div key={o.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl" style={{ background: '#F8FAFC' }}>
+                          <Scan className="w-4 h-4 flex-shrink-0" style={{ color: '#1D4ED8' }} />
+                          <span className="text-sm font-medium min-w-0 truncate" style={{ color: '#0F172A' }}>
+                            {o.test?.name ?? 'Imaging'}
+                          </span>
+                          <StatusBadge status={done ? 'success' : 'pending'} label={done ? 'Reported' : o.status} />
+                          <div className="ml-auto flex-shrink-0">
+                            {done ? (
+                              <button onClick={() => setViewRadOrder(o)}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold"
+                                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                View Report
+                              </button>
+                            ) : (
+                              <span className="text-xs" style={{ color: '#94A3B8' }}>Awaiting report</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </GlassCard>
           )}
 
@@ -964,6 +1028,22 @@ export default function ConsultationWorkspace({
         prefill={{ patientId: patient.id, patientName: patient.full_name, visitId: visit.id }}
         onSuccess={() => { setShowRadOrder(false); setRadOrdered(true) }}
       />
+
+      {viewLabOrder && (
+        <LabReportModal
+          order={viewLabOrder}
+          canEdit={false}
+          onClose={() => setViewLabOrder(null)}
+          onEdit={() => {}}
+        />
+      )}
+
+      {viewRadOrder && (
+        <RadiologyReportModal
+          order={viewRadOrder}
+          onClose={() => setViewRadOrder(null)}
+        />
+      )}
 
       {showAdmit && (
         <AdmitModal

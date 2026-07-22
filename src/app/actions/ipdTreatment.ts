@@ -627,7 +627,7 @@ export async function listIpdLabOrders(admissionId: string): Promise<LabOrder[]>
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_orders')
-    .select('*, orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
+    .select('*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
     .eq('admission_id', admissionId)
     .order('ordered_at', { ascending: false })
   return (data ?? []) as unknown as LabOrder[]
@@ -733,7 +733,7 @@ export async function listIpdRadiologyOrders(admissionId: string): Promise<Radio
   const supabase = await createClient()
   const { data } = await supabase
     .from('radiology_orders')
-    .select('*, orderer:profiles!ordered_by(id,full_name), test:radiology_catalog(*)')
+    .select('*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name), test:radiology_catalog(*)')
     .eq('admission_id', admissionId)
     .order('ordered_at', { ascending: false })
   return (data ?? []) as unknown as RadiologyOrder[]
