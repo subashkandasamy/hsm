@@ -161,6 +161,7 @@ export interface Admission {
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
   treatment_started_at?: string | null
+  source_visit_id?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'> | null

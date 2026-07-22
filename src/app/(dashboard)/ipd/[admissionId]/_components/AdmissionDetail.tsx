@@ -257,6 +257,15 @@ export default function AdmissionDetail({
                   <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                   Admitted <DateText date={adm.admitted_at} />
                 </span>
+                {adm.source_visit_id && (
+                  <Link href={`/opd/${adm.source_visit_id}`}
+                    className="flex items-center gap-1 whitespace-nowrap font-medium hover:underline"
+                    style={{ color: '#0D9488' }}
+                    title="Open the OPD consultation this admission came from — view its lab & radiology reports">
+                    <Stethoscope className="w-3.5 h-3.5 flex-shrink-0" />
+                    From OPD visit
+                  </Link>
+                )}
                 {adm.status === 'admitted' && (
                   <span className="flex items-center gap-1 font-semibold whitespace-nowrap" style={{ color: '#0D9488' }}>
                     <Clock className="w-3.5 h-3.5 flex-shrink-0" />
