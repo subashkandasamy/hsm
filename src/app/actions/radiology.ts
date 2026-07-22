@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { isBillCashlessCovered } from '@/lib/cashlessCover'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
 
@@ -144,12 +145,14 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
     // IPD path: bill was created at order time — gate on payment before scan
     const { data: billItem } = await supabase
       .from('bill_items')
-      .select('bill_id, bill:bills(id, status)')
+      .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
       .eq('ref_id', orderId)
       .eq('source', 'radiology')
       .maybeSingle()
-    const linkedBill = (billItem?.bill as unknown as { id: string; status: string } | null)
-    if (linkedBill && linkedBill.status !== 'paid') {
+    const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+    // Cashless-approved patients don't pay cash up front — an eligibility-approved
+    // claim on this encounter lifts the payment gate.
+    if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
       return { success: false, error: 'Awaiting payment — please collect payment before performing this scan' }
     }
 
@@ -165,13 +168,15 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
   // OPD path: gate on payment before performing the scan
   const { data: billItem } = await supabase
     .from('bill_items')
-    .select('bill_id, bill:bills(id, status)')
+    .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
     .eq('ref_id', orderId)
     .eq('source', 'radiology')
     .maybeSingle()
 
-  const linkedBill = (billItem?.bill as unknown as { id: string; status: string } | null)
-  if (linkedBill && linkedBill.status !== 'paid') {
+  const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+  // Cashless-approved patients don't pay cash up front — an eligibility-approved
+  // claim on this encounter lifts the payment gate.
+  if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
     return { success: false, error: 'Awaiting payment — please collect payment before performing this scan' }
   }
 

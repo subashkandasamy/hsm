@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { isBillCashlessCovered } from '@/lib/cashlessCover'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 
@@ -566,9 +567,11 @@ export async function dispatchMedicines(params: {
 
   const supabase = await createClient()
 
-  const { data: bill } = await supabase.from('bills').select('status').eq('id', billId).single()
+  const { data: bill } = await supabase.from('bills').select('id, status, visit_id, admission_id').eq('id', billId).single()
   if (!bill) return { success: false, error: 'Bill not found' }
-  if (bill.status !== 'paid') {
+  // Cashless-approved patients don't pay cash up front — an eligibility-approved
+  // claim on this bill's encounter lifts the dispatch gate.
+  if (bill.status !== 'paid' && !(await isBillCashlessCovered(supabase, bill as { id: string; status: string; visit_id: string | null; admission_id: string | null }))) {
     return { success: false, error: `Cannot dispatch — bill is "${bill.status}". Full payment must be received before dispatch.` }
   }
 
