@@ -13,6 +13,7 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import OrderLabModal from './OrderLabModal'
 import ResultEntryModal from './ResultEntryModal'
+import LabReportModal from './LabReportModal'
 import AddLabTestModal from './AddLabTestModal'
 import SampleLabelModal from '@/components/barcode/SampleLabelModal'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
@@ -57,6 +58,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [resultOrder, setResultOrder] = useState<LabOrder | null>(null)
+  const [viewOrder, setViewOrder] = useState<LabOrder | null>(null)
   const [labelOrder, setLabelOrder] = useState<LabOrder | null>(null)
 
   const closeAddTest = useCallback(() => { setShowAddTest(false); refresh() }, [])
@@ -249,10 +251,18 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                     </>
                   )}
                   {tab === 'reported' && (
-                    <StatusBadge
-                      status={order.billing_status === 'billed' ? 'info' : 'pending'}
-                      label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'}
-                    />
+                    <>
+                      <button
+                        onClick={() => setViewOrder(order)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                        View Report
+                      </button>
+                      <StatusBadge
+                        status={order.billing_status === 'billed' ? 'info' : 'pending'}
+                        label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'}
+                      />
+                    </>
                   )}
                 </div>
               </div>
@@ -274,6 +284,15 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
           order={resultOrder}
           onClose={() => setResultOrder(null)}
           onSuccess={() => { setResultOrder(null); refresh() }}
+        />
+      )}
+
+      {viewOrder && (
+        <LabReportModal
+          order={viewOrder}
+          canEdit={canProcess}
+          onClose={() => setViewOrder(null)}
+          onEdit={() => { setResultOrder(viewOrder); setViewOrder(null) }}
         />
       )}
 

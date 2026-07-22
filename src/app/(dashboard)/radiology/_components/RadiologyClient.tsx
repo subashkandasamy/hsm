@@ -88,6 +88,17 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
 
   const currentList = TABS.find((t) => t.key === tab)?.data ?? []
 
+  // Group the tab's orders by patient — one card per patient, scans nested.
+  const patientGroups = (() => {
+    const m = new Map<string, { name: string; uhid: string; orders: RadiologyOrder[] }>()
+    for (const o of currentList) {
+      const key = o.patient_id
+      if (!m.has(key)) m.set(key, { name: o.patient?.full_name ?? '—', uhid: o.patient?.uhid ?? '', orders: [] })
+      m.get(key)!.orders.push(o)
+    }
+    return [...m.values()]
+  })()
+
   return (
     <div>
       <PageHeader
@@ -138,86 +149,88 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
         </div>
       </div>
 
-      {currentList.length === 0 ? (
+      {patientGroups.length === 0 ? (
         <GlassCard className="p-6">
           <EmptyState title="No orders" description="Orders will appear here."
             icon={<Scan className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
         </GlassCard>
       ) : (
         <div className="space-y-3">
-          {currentList.map((order) => {
-            const mod = order.test?.modality?.toLowerCase()
-            const mc = mod ? (MODALITY_COLORS[mod] ?? { bg: '#F1F5F9', color: '#475569' }) : { bg: '#F1F5F9', color: '#475569' }
-            return (
-              <GlassCard key={order.id} className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: mc.bg, border: `1px solid ${mc.bg}` }}>
-                      <Scan className="w-5 h-5" style={{ color: mc.color }} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>
-                          {order.test?.name ?? '—'}
-                        </p>
-                        {order.test?.modality && (
-                          <span className="text-xs px-2 py-0.5 rounded-lg uppercase font-semibold"
-                            style={{ background: mc.bg, color: mc.color }}>
-                            {order.test.modality}
-                          </span>
+          {patientGroups.map((group) => (
+            <GlassCard key={group.uhid + group.name} className="p-4">
+              {/* Patient header */}
+              <div className="flex items-center gap-2 mb-3 pb-3" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{group.name}</p>
+                <span className="font-mono text-xs px-2 py-0.5 rounded-lg" style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{group.uhid}</span>
+                <span className="text-xs ml-auto" style={{ color: '#94A3B8' }}>
+                  {group.orders.length} scan{group.orders.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {/* Scans for this patient */}
+              <div className="space-y-2">
+                {group.orders.map((order) => {
+                  const mod = order.test?.modality?.toLowerCase()
+                  const mc = mod ? (MODALITY_COLORS[mod] ?? { bg: '#F1F5F9', color: '#475569' }) : { bg: '#F1F5F9', color: '#475569' }
+                  return (
+                    <div key={order.id} className="flex items-start justify-between gap-4 px-3 py-2.5 rounded-xl" style={{ background: '#F8FAFC' }}>
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ background: mc.bg, border: `1px solid ${mc.bg}` }}>
+                          <Scan className="w-4.5 h-4.5" style={{ color: mc.color }} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-sm" style={{ color: '#0F172A' }}>{order.test?.name ?? '—'}</p>
+                            {order.test?.modality && (
+                              <span className="text-xs px-2 py-0.5 rounded-lg uppercase font-semibold"
+                                style={{ background: mc.bg, color: mc.color }}>{order.test.modality}</span>
+                            )}
+                            <StatusBadge status={STATUS_MAP[order.status] ?? 'pending'} label={order.status} />
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: '#94A3B8' }}>
+                            <span>{order.orderer?.full_name}</span>
+                            <DateText date={order.ordered_at} />
+                            <Money amount={order.price_snapshot} />
+                          </div>
+                          {actionError?.id === order.id && (
+                            <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }}>⚠ {actionError.msg}</p>
+                          )}
+                          {tab === 'reported' && order.report && (
+                            <p className="text-xs mt-1.5 line-clamp-2" style={{ color: '#475569' }}>{order.report}</p>
+                          )}
+                          {tab === 'reported' && order.image_url && (
+                            <a href={order.image_url} target="_blank" rel="noreferrer" className="text-xs mt-1 inline-block" style={{ color: '#0D9488' }}>View Image →</a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {tab === 'pending' && canProcess && (
+                          <button onClick={() => handlePerform(order.id)} disabled={actionId === order.id}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
+                            {actionId === order.id ? 'Processing…' : 'Mark Performed'}
+                          </button>
                         )}
-                        <StatusBadge status={STATUS_MAP[order.status] ?? 'pending'} label={order.status} />
+                        {tab === 'performed' && canProcess && (
+                          <button onClick={() => setReportOrder(order)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                            Add Report
+                          </button>
+                        )}
+                        {tab === 'reported' && (
+                          <StatusBadge
+                            status={order.billing_status === 'billed' ? 'info' : 'pending'}
+                            label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'} />
+                        )}
                       </div>
-                      <p className="text-sm mt-0.5" style={{ color: '#475569' }}>
-                        {order.patient?.full_name} · <span className="font-mono text-xs">{order.patient?.uhid}</span>
-                      </p>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: '#94A3B8' }}>
-                        <span>{order.orderer?.full_name}</span>
-                        <DateText date={order.ordered_at} />
-                        <Money amount={order.price_snapshot} />
-                      </div>
-                      {actionError?.id === order.id && (
-                        <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }}>
-                          ⚠ {actionError.msg}
-                        </p>
-                      )}
-                      {tab === 'reported' && order.report && (
-                        <p className="text-xs mt-1.5 line-clamp-2" style={{ color: '#475569' }}>{order.report}</p>
-                      )}
-                      {tab === 'reported' && order.image_url && (
-                        <a href={order.image_url} target="_blank" rel="noreferrer"
-                          className="text-xs mt-1 inline-block"
-                          style={{ color: '#0D9488' }}>View Image →</a>
-                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {tab === 'pending' && canProcess && (
-                      <button onClick={() => handlePerform(order.id)} disabled={actionId === order.id}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
-                        {actionId === order.id ? 'Processing…' : 'Mark Performed'}
-                      </button>
-                    )}
-                    {tab === 'performed' && canProcess && (
-                      <button onClick={() => setReportOrder(order)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                        Add Report
-                      </button>
-                    )}
-                    {tab === 'reported' && (
-                      <StatusBadge
-                        status={order.billing_status === 'billed' ? 'info' : 'pending'}
-                        label={order.billing_status === 'billed' ? 'Billed' : 'Unbilled'}
-                      />
-                    )}
-                  </div>
-                </div>
-              </GlassCard>
-            )
-          })}
+                  )
+                })}
+              </div>
+            </GlassCard>
+          ))}
         </div>
       )}
 

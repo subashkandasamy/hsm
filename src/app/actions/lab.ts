@@ -288,7 +288,13 @@ export async function enterResults(
     }).eq('id', item_id)
   }
 
-  await supabase.from('lab_orders').update({ status: 'processing' }).eq('id', orderId)
+  // Editing an already-reported order (corrections) must keep it reported —
+  // don't kick it back to 'processing' and out of the Reported tab.
+  const { data: cur } = await supabase
+    .from('lab_orders').select('status').eq('id', orderId).single()
+  if (cur?.status !== 'reported') {
+    await supabase.from('lab_orders').update({ status: 'processing' }).eq('id', orderId)
+  }
   await logAudit(actor.id, 'results', 'lab_order', orderId)
   return { success: true }
 }
