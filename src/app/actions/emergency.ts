@@ -23,6 +23,32 @@ export async function registerEmergency(
   const supabase = await createClient()
   let patientId = parsed.data.patient_id ?? null
 
+  // For a known (already-registered) patient, block invalid ER registrations.
+  // Skipped for provisional/unknown arrivals — they always get a fresh patient
+  // id below, so neither duplication is possible.
+  if (patientId) {
+    // One physical presence in the ER — no duplicate active case per patient.
+    const { count: activeEr } = await supabase
+      .from('emergency_cases')
+      .select('id', { count: 'exact', head: true })
+      .eq('patient_id', patientId)
+      .in('status', ['waiting', 'in_treatment'])
+    if ((activeEr ?? 0) > 0) {
+      return { success: false, error: 'This patient already has an active emergency case. Resolve it before registering a new one.' }
+    }
+
+    // An inpatient isn't an ER walk-in — an admitted patient's emergencies are
+    // handled within IPD, not by registering a new casualty case.
+    const { count: activeAdm } = await supabase
+      .from('admissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('patient_id', patientId)
+      .eq('status', 'admitted')
+    if ((activeAdm ?? 0) > 0) {
+      return { success: false, error: 'This patient is already admitted in IPD. Discharge the admission before registering an emergency case.' }
+    }
+  }
+
   // If no patient identified, create a provisional patient
   if (!patientId) {
     const age = parsed.data.prov_age ?? 'Unknown'
