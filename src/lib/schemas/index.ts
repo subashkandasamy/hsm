@@ -84,6 +84,9 @@ export const WardCreateSchema = z.object({
 })
 export const AdmitPatientSchema = z.object({
   patient_id: z.string().uuid('Please select a patient'),
+  // The OPD visit this admission was launched from, when applicable — captured
+  // explicitly so the OPD→IPD link is exact and day-independent (not inferred).
+  visit_id: z.string().uuid().nullable().optional(),
   admitting_doctor_id: z.string().uuid('Please select an admitting doctor'),
   bed_id: z.string().uuid('Please select a bed').nullable().optional(),
   ward_id: z.string().uuid().nullable().optional(),

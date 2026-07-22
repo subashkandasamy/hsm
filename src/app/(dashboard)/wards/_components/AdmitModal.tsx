@@ -41,11 +41,13 @@ interface Props {
   preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   generalTariffPrice?: number
   advancePercentage?: number
+  /** OPD visit this admission is being launched from, if any — links IPD back to OPD. */
+  sourceVisitId?: string | null
 }
 
 export default function AdmitModal({
   open, onClose, onSuccess, doctors, wards, procedureTariffs = [], generalTariffPrice,
-  advancePercentage = 50, preselectedBed, preselectedPatient,
+  advancePercentage = 50, preselectedBed, preselectedPatient, sourceVisitId = null,
 }: Props) {
   const [patientQuery, setPatientQuery] = useState(preselectedPatient?.full_name ?? '')
   const [patientResults, setPatientResults] = useState<Patient[]>([])
@@ -136,6 +138,7 @@ export default function AdmitModal({
     setError(null)
     const result = await admitPatient({
       patient_id: selectedPatient.id,
+      visit_id: sourceVisitId ?? null,
       admitting_doctor_id: doctorId,
       bed_id: (directOt || isTempWard) ? null : bedId,
       ward_id: isTempWard ? wardId : null,

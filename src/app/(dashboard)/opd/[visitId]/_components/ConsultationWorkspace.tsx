@@ -1059,6 +1059,7 @@ export default function ConsultationWorkspace({
           generalTariffPrice={admitGeneralTariffPrice}
           advancePercentage={admitAdvancePercentage}
           preselectedPatient={{ id: patient.id, full_name: patient.full_name, uhid: patient.uhid }}
+          sourceVisitId={visit.id}
         />
       )}
 

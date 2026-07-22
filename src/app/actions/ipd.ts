@@ -21,7 +21,7 @@ export async function admitPatient(
   const parsed = AdmitPatientSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, admitting_doctor_id, bed_id, ward_id, reason, procedure_tariff_id, direct_ot, is_temp_ward, temp_slot } = parsed.data
+  const { patient_id, visit_id, admitting_doctor_id, bed_id, ward_id, reason, procedure_tariff_id, direct_ot, is_temp_ward, temp_slot } = parsed.data
   const admissionId = crypto.randomUUID()
   const supabase = await createClient()
 
@@ -187,23 +187,29 @@ export async function admitPatient(
     admissionCombinedNo = billNoData as string | null
   }
 
-  // Separately, record which OPD visit (if any) today this admission followed
-  // on from — independent of whether that visit happened to have a
-  // combined_bill_no yet — so insurance can treat OPD + IPD as one
-  // continuous encounter instead of two disconnected claims.
-  const { data: latestTodayVisit } = await supabase
-    .from('visits')
-    .select('id')
-    .eq('patient_id', patient_id)
-    .gte('visit_date', `${todayStr}T00:00:00`)
-    .lt('visit_date', `${todayStr}T23:59:59`)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Record which OPD visit this admission followed on from — so insurance can
+  // treat OPD + IPD as one continuous encounter instead of two disconnected
+  // claims. Prefer the exact visit the "Admit to IPD" button was launched from
+  // (passed explicitly); only when the admit wasn't started from a visit (e.g.
+  // ward-list or emergency) fall back to inferring the patient's latest visit
+  // today. The explicit link is exact and works across days.
+  let sourceVisitId: string | null = visit_id ?? null
+  if (!sourceVisitId) {
+    const { data: latestTodayVisit } = await supabase
+      .from('visits')
+      .select('id')
+      .eq('patient_id', patient_id)
+      .gte('visit_date', `${todayStr}T00:00:00`)
+      .lt('visit_date', `${todayStr}T23:59:59`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    sourceVisitId = (latestTodayVisit?.id as string | undefined) ?? null
+  }
 
   const admissionUpdate: Record<string, unknown> = {}
   if (admissionCombinedNo) admissionUpdate.combined_bill_no = admissionCombinedNo
-  if (latestTodayVisit?.id) admissionUpdate.source_visit_id = latestTodayVisit.id
+  if (sourceVisitId) admissionUpdate.source_visit_id = sourceVisitId
   if (Object.keys(admissionUpdate).length > 0) {
     await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }
