@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -257,15 +257,24 @@ export default function AdmissionDetail({
                   <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                   Admitted <DateText date={adm.admitted_at} />
                 </span>
-                {adm.source_visit_id && (
+                {adm.source_visit_id ? (
                   <Link href={`/opd/${adm.source_visit_id}`}
                     className="flex items-center gap-1 whitespace-nowrap font-medium hover:underline"
                     style={{ color: '#0D9488' }}
-                    title="Open the OPD consultation this admission came from — view its lab & radiology reports">
-                    <Stethoscope className="w-3.5 h-3.5 flex-shrink-0" />
-                    From OPD visit
+                    title={`Open the ${adm.source_emergency_case_id ? 'Emergency' : 'OPD'} consultation this admission came from — view its lab & radiology reports`}>
+                    {adm.source_emergency_case_id
+                      ? <Activity className="w-3.5 h-3.5 flex-shrink-0" />
+                      : <Stethoscope className="w-3.5 h-3.5 flex-shrink-0" />}
+                    From {adm.source_emergency_case_id ? 'ER' : 'OPD'} visit
                   </Link>
-                )}
+                ) : adm.source_emergency_case_id ? (
+                  <span className="flex items-center gap-1 whitespace-nowrap font-medium"
+                    style={{ color: '#DC2626' }}
+                    title="This admission was admitted directly from the Emergency department">
+                    <Activity className="w-3.5 h-3.5 flex-shrink-0" />
+                    From Emergency
+                  </span>
+                ) : null}
                 {adm.status === 'admitted' && (
                   <span className="flex items-center gap-1 font-semibold whitespace-nowrap" style={{ color: '#0D9488' }}>
                     <Clock className="w-3.5 h-3.5 flex-shrink-0" />

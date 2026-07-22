@@ -189,6 +189,30 @@ export async function getOrCreateEmergencyVisit(
   return { success: true, visitId }
 }
 
+// Returns this case's existing emergency visit id (most recent, any status), or
+// null — WITHOUT creating one. Used when admitting from ER so we only link the
+// admission to a visit that actually exists (i.e. the patient was consulted),
+// never fabricating an empty visit just to record the link.
+export async function getExistingEmergencyVisit(caseId: string): Promise<string | null> {
+  const supabase = await createClient()
+  const { data: ec } = await supabase
+    .from('emergency_cases')
+    .select('patient_id')
+    .eq('id', caseId)
+    .single()
+  if (!ec) return null
+
+  const { data: visit } = await supabase
+    .from('visits')
+    .select('id')
+    .eq('patient_id', ec.patient_id)
+    .eq('type', 'emergency')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return (visit?.id as string | undefined) ?? null
+}
+
 export async function resolveEmergency(
   caseId: string,
   outcome: 'discharge' | 'refer',

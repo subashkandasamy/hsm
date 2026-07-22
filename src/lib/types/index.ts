@@ -162,6 +162,7 @@ export interface Admission {
   combined_bill_no?: string | null
   treatment_started_at?: string | null
   source_visit_id?: string | null
+  source_emergency_case_id?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'> | null

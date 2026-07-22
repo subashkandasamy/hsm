@@ -11,6 +11,20 @@ import type { Admission, IpdProgressNote } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
+// True if the patient currently has an active (admitted) IPD admission. Lets
+// callers block a second admission up-front (e.g. from the ER board) instead of
+// only failing inside admitPatient() after the whole flow. admitPatient keeps
+// its own guard as the authoritative backstop.
+export async function hasActiveAdmission(patientId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { count } = await supabase
+    .from('admissions')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patientId)
+    .eq('status', 'admitted')
+  return (count ?? 0) > 0
+}
+
 export async function admitPatient(
   input: Record<string, unknown>
 ): Promise<{ success: true; admissionId: string } | { success: false; error: string }> {
@@ -21,7 +35,7 @@ export async function admitPatient(
   const parsed = AdmitPatientSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, visit_id, admitting_doctor_id, bed_id, ward_id, reason, procedure_tariff_id, direct_ot, is_temp_ward, temp_slot } = parsed.data
+  const { patient_id, visit_id, emergency_case_id, admitting_doctor_id, bed_id, ward_id, reason, procedure_tariff_id, direct_ot, is_temp_ward, temp_slot } = parsed.data
   const admissionId = crypto.randomUUID()
   const supabase = await createClient()
 
@@ -210,6 +224,7 @@ export async function admitPatient(
   const admissionUpdate: Record<string, unknown> = {}
   if (admissionCombinedNo) admissionUpdate.combined_bill_no = admissionCombinedNo
   if (sourceVisitId) admissionUpdate.source_visit_id = sourceVisitId
+  if (emergency_case_id) admissionUpdate.source_emergency_case_id = emergency_case_id
   if (Object.keys(admissionUpdate).length > 0) {
     await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }

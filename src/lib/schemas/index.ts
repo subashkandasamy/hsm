@@ -87,6 +87,9 @@ export const AdmitPatientSchema = z.object({
   // The OPD visit this admission was launched from, when applicable — captured
   // explicitly so the OPD→IPD link is exact and day-independent (not inferred).
   visit_id: z.string().uuid().nullable().optional(),
+  // The Emergency case this admission was admitted from, when applicable — a
+  // direct ER→IPD trail even when there was no consultation visit.
+  emergency_case_id: z.string().uuid().nullable().optional(),
   admitting_doctor_id: z.string().uuid('Please select an admitting doctor'),
   bed_id: z.string().uuid('Please select a bed').nullable().optional(),
   ward_id: z.string().uuid().nullable().optional(),

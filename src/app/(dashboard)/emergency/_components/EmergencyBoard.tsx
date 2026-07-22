@@ -13,9 +13,9 @@ import Textarea from '@/components/ui/Textarea'
 import EmptyState from '@/components/ui/EmptyState'
 import {
   listEmergencyCases, setTriage, attendCase,
-  resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit,
+  resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit, getExistingEmergencyVisit,
 } from '@/app/actions/emergency'
-import { admitPatient } from '@/app/actions/ipd'
+import { admitPatient, hasActiveAdmission } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
 import RegisterEmergencyModal from './RegisterEmergencyModal'
 import AdmitModal from '../../wards/_components/AdmitModal'
@@ -70,6 +70,27 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
 
   // Admit from ER
   const [admitErCase, setAdmitErCase] = useState<EmergencyCase | null>(null)
+  const [admitErVisitId, setAdmitErVisitId] = useState<string | null>(null)
+  const [admitBlockMsg, setAdmitBlockMsg] = useState<string | null>(null)
+  const [openingAdmitId, setOpeningAdmitId] = useState<string | null>(null)
+
+  // Open the shared admit flow for an ER case, pre-resolving its existing
+  // emergency visit (if the patient was consulted) so the admission links back
+  // to it for the doctor's lab/radiology reports. Never creates a visit.
+  // Blocks up-front if the patient is already admitted — an inpatient can't be
+  // admitted again from Emergency.
+  async function openAdmit(ec: EmergencyCase) {
+    if (!ec.patient?.id) { setAdmitErCase(ec); return }
+    setOpeningAdmitId(ec.id)
+    if (await hasActiveAdmission(ec.patient.id)) {
+      setOpeningAdmitId(null)
+      setAdmitBlockMsg(`${ec.patient.full_name} is already admitted in IPD. Discharge the existing admission before admitting again from Emergency.`)
+      return
+    }
+    setAdmitErCase(ec)
+    setAdmitErVisitId(await getExistingEmergencyVisit(ec.id))
+    setOpeningAdmitId(null)
+  }
 
   const [consultingId, setConsultingId] = useState<string | null>(null)
 
@@ -253,10 +274,11 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           </button>
                         )}
                         <button
-                          onClick={() => { setAdmitErCase(ec) }}
+                          onClick={() => openAdmit(ec)}
+                          disabled={openingAdmitId === ec.id}
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                          Admit to IPD
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: openingAdmitId === ec.id ? 'not-allowed' : 'pointer', opacity: openingAdmitId === ec.id ? 0.6 : 1 }}>
+                          {openingAdmitId === ec.id ? 'Checking…' : 'Admit to IPD'}
                         </button>
                         <button
                           onClick={() => { setResolveCase(ec); setResolveType(''); setOutcomeNote('') }}
@@ -374,14 +396,31 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
         </div>
       </Modal>
 
+      {/* Already-admitted block — an inpatient can't be re-admitted from ER */}
+      {admitBlockMsg && (
+        <Modal open onClose={() => setAdmitBlockMsg(null)} title="Already admitted" maxWidth="26rem">
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: '#475569' }}>{admitBlockMsg}</p>
+            <div className="flex justify-end">
+              <button onClick={() => setAdmitBlockMsg(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Admit from ER — uses shared AdmitModal, then marks ER case as admitted */}
       {admitErCase && (
         <AdmitModal
           open={true}
-          onClose={() => setAdmitErCase(null)}
+          onClose={() => { setAdmitErCase(null); setAdmitErVisitId(null) }}
           onSuccess={async (admissionId) => {
             await admitFromEmergency(admitErCase.id)
             setAdmitErCase(null)
+            setAdmitErVisitId(null)
             router.push(`/ipd/${admissionId}`)
           }}
           doctors={doctors}
@@ -394,6 +433,8 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
             full_name: admitErCase.patient.full_name,
             uhid: admitErCase.patient.uhid,
           } : undefined}
+          sourceVisitId={admitErVisitId}
+          emergencyCaseId={admitErCase.id}
         />
       )}
     </div>
