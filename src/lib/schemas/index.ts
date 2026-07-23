@@ -252,6 +252,17 @@ export const BloodUnitSchema = z.object({
   donor_id:     z.string().uuid().nullable().optional(),
   collected_at: z.string().nullable().optional(),
   expiry:       z.string().min(1, 'Expiry date is required'),
+  bag_number:   z.string().nullable().optional(),
+  volume_ml:    z.number().int().positive().nullable().optional(),
+})
+
+const BLOOD_MARKER = z.enum(['reactive', 'non_reactive'])
+export const BloodScreeningSchema = z.object({
+  hiv:      BLOOD_MARKER,
+  hbsag:    BLOOD_MARKER,
+  hcv:      BLOOD_MARKER,
+  syphilis: BLOOD_MARKER,
+  malaria:  BLOOD_MARKER,
 })
 
 export const BloodRequestSchema = z.object({

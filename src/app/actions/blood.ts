@@ -5,7 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
-import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema } from '@/lib/schemas'
+import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema } from '@/lib/schemas'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -94,6 +94,35 @@ export async function addBloodUnit(
   })
   const { data: row } = await supabase.from('blood_units').select('*').eq('id', id).single()
   return { success: true, unit: row as BloodUnit }
+}
+
+// Record TTI screening results for a unit. Passes only if every marker is
+// non-reactive; a single reactive marker fails the unit (and blocks issue).
+export async function recordScreening(
+  unitId: string,
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:screen')
+  const parsed = BloodScreeningSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const markers = parsed.data
+  const anyReactive = Object.values(markers).some((v) => v === 'reactive')
+  const status = anyReactive ? 'failed' : 'passed'
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('blood_units').update({
+    ...markers,
+    screening_status: status,
+    screened_by: actor.id,
+    screened_at: new Date().toISOString(),
+    // A failed unit is taken out of stock immediately.
+    ...(status === 'failed' ? { status: 'discarded' } : {}),
+  }).eq('id', unitId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'screen', 'blood_unit', unitId, { screening_status: status })
+  return { success: true }
 }
 
 export async function discardUnit(id: string): Promise<SimpleResult> {
@@ -310,6 +339,7 @@ export async function listAvailableUnitsForRequest(
     .eq('blood_group', req.blood_group)
     .eq('component', req.component)
     .eq('status', 'available')
+    .eq('screening_status', 'passed')
     .gte('expiry', today)
     .order('expiry', { ascending: true })
   return (data ?? []) as unknown as BloodUnit[]

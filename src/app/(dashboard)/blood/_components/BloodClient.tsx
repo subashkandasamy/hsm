@@ -15,6 +15,13 @@ import AddUnitModal from './AddUnitModal'
 import RaiseRequestModal from './RaiseRequestModal'
 import IssueUnitModal from './IssueUnitModal'
 import ComponentChargesModal from './ComponentChargesModal'
+import ScreeningModal from './ScreeningModal'
+
+const SCREENING_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  passed:  { bg: '#DCFCE7', color: '#15803D', label: 'Screened' },
+  pending: { bg: '#FEF3C7', color: '#B45309', label: 'Unscreened' },
+  failed:  { bg: '#FEE2E2', color: '#DC2626', label: 'Failed' },
+}
 
 const URGENCY_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   routine:   { bg: '#F1F5F9', color: '#475569', label: 'Routine' },
@@ -57,6 +64,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const canManage  = !!role && hasPermission(role, 'bloodbank:manage')
   const canRequest = !!role && hasPermission(role, 'bloodbank:request')
   const canIssue   = !!role && hasPermission(role, 'bloodbank:issue')
+  const canScreen  = !!role && hasPermission(role, 'bloodbank:screen')
 
   const [tab, setTab] = useState<TabKey>('inventory')
   const [inventory, setInventory] = useState(initialInventory)
@@ -69,6 +77,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const [showRequest, setShowRequest]   = useState(false)
   const [showCharges, setShowCharges]   = useState(false)
   const [issueRequest, setIssueRequest] = useState<BloodRequest | null>(null)
+  const [screenUnit, setScreenUnit]     = useState<BloodUnit | null>(null)
   const [actionId, setActionId]         = useState<string | null>(null)
 
   async function refresh() {
@@ -179,7 +188,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         <InventoryGrid inventory={inventory} alertCount={alertCount} />
       )}
       {tab === 'units' && (
-        <UnitsView units={units} canManage={canManage} onRefresh={refresh} />
+        <UnitsView units={units} canScreen={canScreen} onScreen={setScreenUnit} />
       )}
       {tab === 'requests' && (
         <RequestsView
@@ -201,6 +210,12 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         onClose={() => setShowRequest(false)} onSuccess={() => { setShowRequest(false); refresh() }} />
 
       <ComponentChargesModal open={showCharges} onClose={() => setShowCharges(false)} />
+
+      {screenUnit && (
+        <ScreeningModal unit={screenUnit}
+          onClose={() => setScreenUnit(null)}
+          onSuccess={() => { setScreenUnit(null); refresh() }} />
+      )}
 
       {issueRequest && (
         <IssueUnitModal open={true} request={issueRequest}
@@ -288,7 +303,7 @@ function InventoryGrid({ inventory, alertCount }: { inventory: BloodInventoryCel
 }
 
 // ---- Units View ----
-function UnitsView({ units, canManage, onRefresh }: { units: BloodUnit[]; canManage: boolean; onRefresh: () => void }) {
+function UnitsView({ units, canScreen, onScreen }: { units: BloodUnit[]; canScreen: boolean; onScreen: (u: BloodUnit) => void }) {
   const today = new Date().toISOString().split('T')[0]
   if (units.length === 0) {
     return <GlassCard className="p-6"><EmptyState title="No blood units" description="Add units via 'Add Unit' to begin tracking." icon={<Droplets className="w-6 h-6" style={{ color: '#94A3B8' }} />} /></GlassCard>
@@ -309,9 +324,26 @@ function UnitsView({ units, canManage, onRefresh }: { units: BloodUnit[]; canMan
                     {COMPONENT_LABELS[u.component]}
                   </span>
                 </div>
-                <StatusBadge status={UNIT_STATUS_MAP[u.status] ?? 'pending'} label={u.status} />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                    style={{ background: SCREENING_STYLE[u.screening_status]?.bg, color: SCREENING_STYLE[u.screening_status]?.color }}>
+                    {SCREENING_STYLE[u.screening_status]?.label ?? u.screening_status}
+                  </span>
+                  <StatusBadge status={UNIT_STATUS_MAP[u.status] ?? 'pending'} label={u.status} />
+                </div>
               </div>
+              {canScreen && u.screening_status === 'pending' && u.status === 'available' && (
+                <button onClick={() => onScreen(u)}
+                  className="mb-1.5 px-3 py-1 rounded-lg text-xs font-semibold"
+                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                  Record Screening
+                </button>
+              )}
               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+                {u.bag_number && (
+                  <div><span style={{ color: '#94A3B8' }}>Bag </span>
+                    <span className="font-mono" style={{ color: '#475569' }}>{u.bag_number}</span></div>
+                )}
                 <div><span style={{ color: '#94A3B8' }}>Donor </span>
                   <span style={{ color: '#475569' }}>{u.donor?.name ?? '—'}</span></div>
                 <div><span style={{ color: '#94A3B8' }}>Collected </span>
@@ -333,8 +365,8 @@ function UnitsView({ units, canManage, onRefresh }: { units: BloodUnit[]; canMan
       <table className="hidden md:table w-full text-sm">
         <thead>
           <tr style={{ background: 'rgba(248,250,252,0.9)', borderBottom: '1px solid #E2E8F0' }}>
-            {['Group', 'Component', 'Donor', 'Collected', 'Expiry', 'Status'].map((h) => (
-              <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold" style={{ color: '#475569' }}>{h}</th>
+            {['Group', 'Component', 'Bag', 'Donor', 'Expiry', 'Screening', 'Status', ''].map((h, i) => (
+              <th key={i} className="text-left px-4 py-2.5 text-xs font-semibold" style={{ color: '#475569' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -348,15 +380,28 @@ function UnitsView({ units, canManage, onRefresh }: { units: BloodUnit[]; canMan
                     style={{ background: '#FEE2E2', color: '#DC2626' }}>{u.blood_group}</span>
                 </td>
                 <td className="px-4 py-2.5 capitalize" style={{ color: '#475569' }}>{COMPONENT_LABELS[u.component]}</td>
+                <td className="px-4 py-2.5 font-mono text-xs" style={{ color: '#64748B' }}>{u.bag_number ?? '—'}</td>
                 <td className="px-4 py-2.5" style={{ color: '#475569' }}>{u.donor?.name ?? '—'}</td>
-                <td className="px-4 py-2.5" style={{ color: '#94A3B8' }}>
-                  {u.collected_at ? <DateText date={u.collected_at} /> : '—'}
-                </td>
                 <td className="px-4 py-2.5">
                   <span style={{ color: isExpired ? '#DC2626' : '#0F172A' }}><DateText date={u.expiry} /></span>
                 </td>
                 <td className="px-4 py-2.5">
+                  <span className="text-xs px-2 py-0.5 rounded font-semibold"
+                    style={{ background: SCREENING_STYLE[u.screening_status]?.bg, color: SCREENING_STYLE[u.screening_status]?.color }}>
+                    {SCREENING_STYLE[u.screening_status]?.label ?? u.screening_status}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5">
                   <StatusBadge status={UNIT_STATUS_MAP[u.status] ?? 'pending'} label={u.status} />
+                </td>
+                <td className="px-4 py-2.5">
+                  {canScreen && u.screening_status === 'pending' && u.status === 'available' && (
+                    <button onClick={() => onScreen(u)}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold"
+                      style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                      Screen
+                    </button>
+                  )}
                 </td>
               </tr>
             )

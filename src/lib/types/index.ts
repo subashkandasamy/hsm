@@ -392,10 +392,18 @@ export interface BloodDonor {
   last_donation_date: string | null; created_at: string
 }
 
+export type BloodScreeningStatus = 'pending' | 'passed' | 'failed'
+export type BloodMarkerResult = 'pending' | 'reactive' | 'non_reactive'
+
 export interface BloodUnit {
   id: string; blood_group: BloodGroup; component: BloodComponent
   donor_id: string | null; collected_at: string | null; expiry: string
   status: BloodUnitStatus; created_at: string
+  screening_status: BloodScreeningStatus
+  hiv: BloodMarkerResult; hbsag: BloodMarkerResult; hcv: BloodMarkerResult
+  syphilis: BloodMarkerResult; malaria: BloodMarkerResult
+  screened_by: string | null; screened_at: string | null
+  bag_number: string | null; volume_ml: number | null
   donor?: Pick<BloodDonor, 'id' | 'name'> | null
 }
 
@@ -956,7 +964,7 @@ export type Permission =
   | 'radiology:read' | 'radiology:order' | 'radiology:process' | 'radiology:manage'
   | 'pharmacy:read' | 'pharmacy:dispense' | 'pharmacy:manage'
   | 'ot:read' | 'ot:schedule' | 'ot:record' | 'ot:manage'
-  | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue'
+  | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue' | 'bloodbank:screen'
   | 'billing:read' | 'billing:write' | 'billing:manage' | 'billing:advance'
   | 'insurance:read' | 'insurance:write'
   | 'inventory:read' | 'inventory:manage'

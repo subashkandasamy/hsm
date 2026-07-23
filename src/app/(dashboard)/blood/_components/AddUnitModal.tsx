@@ -30,6 +30,8 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
   const [newDonorName, setNewDonorName] = useState('')
   const [collectedAt, setCollectedAt]   = useState('')
   const [expiry, setExpiry]             = useState('')
+  const [bagNumber, setBagNumber]       = useState('')
+  const [volume, setVolume]             = useState('')
   const [mode, setMode] = useState<'existing' | 'new' | 'none'>('none')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
@@ -61,11 +63,14 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
       donor_id:     resolvedDonorId,
       collected_at: collectedAt || null,
       expiry,
+      bag_number:   bagNumber.trim() || null,
+      volume_ml:    volume ? parseInt(volume, 10) : null,
     })
 
     setLoading(false)
     if (!result.success) { setError(result.error); return }
     setBloodGroup(''); setComponent(''); setDonorId(''); setExpiry(''); setCollectedAt(''); setNewDonorName('')
+    setBagNumber(''); setVolume('')
     onSuccess()
   }
 
@@ -88,6 +93,15 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
         </div>
 
         <div className="grid grid-cols-2 gap-3">
+          <FormField label="Bag Number">
+            <Input value={bagNumber} onChange={(e) => setBagNumber(e.target.value)} placeholder="e.g. BB-2026-0142" />
+          </FormField>
+          <FormField label="Volume (ml)">
+            <Input type="number" min={0} value={volume} onChange={(e) => setVolume(e.target.value)} placeholder="e.g. 350" />
+          </FormField>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <FormField label="Collected Date">
             <Input type="date" value={collectedAt} onChange={(e) => setCollectedAt(e.target.value)} />
           </FormField>
@@ -95,6 +109,10 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
             <Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} required />
           </FormField>
         </div>
+
+        <p className="text-xs" style={{ color: '#94A3B8' }}>
+          New units start <strong>Unscreened</strong> and can’t be issued until TTI screening is recorded and passed.
+        </p>
 
         {/* Donor section */}
         <div>
