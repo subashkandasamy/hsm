@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Modal from '@/components/ui/Modal'
-import FormField from '@/components/ui/FormField'
-import Input from '@/components/ui/Input'
 import DateText from '@/components/ui/DateText'
-import { issueUnit, listAvailableUnitsForRequest } from '@/app/actions/blood'
+import { issueUnit, listAvailableUnitsForRequest, listComponentCharges } from '@/app/actions/blood'
 import type { BloodRequest, BloodUnit } from '@/lib/types'
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -22,7 +20,7 @@ interface Props {
 export default function IssueUnitModal({ open, request, onClose, onSuccess }: Props) {
   const [units, setUnits] = useState<BloodUnit[]>([])
   const [selectedUnit, setSelectedUnit] = useState<BloodUnit | null>(null)
-  const [price, setPrice] = useState('500')
+  const [charge, setCharge] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,19 +28,22 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
   useEffect(() => {
     if (!open) return
     setFetching(true)
-    listAvailableUnitsForRequest(request.id).then((u) => {
+    Promise.all([
+      listAvailableUnitsForRequest(request.id),
+      listComponentCharges(),
+    ]).then(([u, charges]) => {
       setUnits(u); setSelectedUnit(null); setFetching(false)
+      setCharge(charges.find((c) => c.component === request.component)?.price ?? null)
     })
-  }, [open, request.id])
+  }, [open, request.id, request.component])
 
   async function handleIssue(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedUnit) { setError('Select a blood unit to issue'); return }
     setLoading(true); setError(null)
     const result = await issueUnit({
-      requestId:     request.id,
-      bloodUnitId:   selectedUnit.id,
-      priceSnapshot: parseFloat(price) || 0,
+      requestId:   request.id,
+      bloodUnitId: selectedUnit.id,
     })
     setLoading(false)
     if (!result.success) { setError(result.error); return }
@@ -125,9 +126,16 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
           )}
         </div>
 
-        <FormField label="Processing Fee (₹) per unit">
-          <Input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </FormField>
+        {/* Processing charge — from per-component configuration (read-only) */}
+        <div className="flex items-center justify-between rounded-xl px-3.5 py-2.5"
+          style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
+          <span className="text-sm" style={{ color: '#64748B' }}>Processing charge (per unit)</span>
+          {charge == null ? (
+            <span className="text-xs font-medium" style={{ color: '#B45309' }}>Not configured — set it in Charges</span>
+          ) : (
+            <span className="text-sm font-bold" style={{ color: '#0F172A' }}>₹{charge.toFixed(2)}</span>
+          )}
+        </div>
 
         {error && (
           <div className="text-sm rounded-xl px-3 py-2" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>

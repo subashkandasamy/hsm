@@ -4,10 +4,43 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema } from '@/lib/schemas'
-import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent } from '@/lib/types'
+import { autoIpdBill } from '@/lib/ipdBilling'
+import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema } from '@/lib/schemas'
+import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+const COMPONENT_LABELS: Record<BloodComponent, string> = {
+  whole: 'Whole Blood', prbc: 'Packed Red Cells', plasma: 'Plasma (FFP)', platelets: 'Platelets',
+}
+
+// ---- Component processing charges (per-tenant config) ----
+
+export async function listComponentCharges(): Promise<BloodComponentCharge[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('blood_component_charges').select('*').order('component')
+  return (data ?? []) as BloodComponentCharge[]
+}
+
+export async function upsertComponentCharge(
+  input: Record<string, unknown>
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:manage')
+  const parsed = BloodComponentChargeSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const supabase = await createClient()
+  const { error } = await supabase.from('blood_component_charges').upsert({
+    tenant_id: actor.tenant_id,
+    component: parsed.data.component,
+    price: parsed.data.price,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'tenant_id,component' })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'blood_component_charge', parsed.data.component, { price: parsed.data.price })
+  return { success: true }
+}
 
 const BLOOD_GROUPS: BloodGroup[]     = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
 const BLOOD_COMPONENTS: BloodComponent[] = ['whole','prbc','plasma','platelets']
@@ -200,7 +233,7 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
 // ---- Issue ----
 
 export async function issueUnit(input: {
-  requestId: string; bloodUnitId: string; priceSnapshot: number
+  requestId: string; bloodUnitId: string
 }): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -208,10 +241,19 @@ export async function issueUnit(input: {
 
   const supabase = await createClient()
 
-  // Get patient_id from request
+  // Request context (patient + encounter) and the unit's component (for pricing)
   const { data: req } = await supabase
-    .from('blood_requests').select('patient_id').eq('id', input.requestId).single()
+    .from('blood_requests').select('patient_id, admission_id').eq('id', input.requestId).single()
   if (!req) return { success: false, error: 'Request not found' }
+
+  const { data: unit } = await supabase
+    .from('blood_units').select('blood_group, component').eq('id', input.bloodUnitId).single()
+  if (!unit) return { success: false, error: 'Blood unit not found' }
+
+  // Price from the configured per-component processing charge (0 if unconfigured)
+  const { data: charge } = await supabase
+    .from('blood_component_charges').select('price').eq('component', unit.component).maybeSingle()
+  const price = (charge?.price as number | undefined) ?? 0
 
   const issueId = crypto.randomUUID()
   const { data: result, error: rpcErr } = await supabase.rpc('issue_blood_unit', {
@@ -219,13 +261,34 @@ export async function issueUnit(input: {
     p_request_id:     input.requestId,
     p_blood_unit_id:  input.bloodUnitId,
     p_patient_id:     req.patient_id,
-    p_price_snapshot: input.priceSnapshot,
+    p_price_snapshot: price,
     p_issued_by:      actor.id,
   })
 
   if (rpcErr) return { success: false, error: rpcErr.message }
   const rpcResult = result as { ok: boolean; error?: string }
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Issue failed' }
+
+  // IPD: auto-attach the processing charge to the admission bill so it isn't
+  // missed at the manual counter (OPD/OT issues stay billable via the counter).
+  if (req.admission_id && price > 0) {
+    const today = new Date().toISOString().split('T')[0]
+    await autoIpdBill(supabase, actor.id, {
+      tenantId:    actor.tenant_id,
+      admissionId: req.admission_id as string,
+      patientId:   req.patient_id as string,
+      billingDate: today,
+      billSource:  'blood',
+      lineItems: [{
+        source:      'blood',
+        ref_id:      issueId,
+        description: `Blood: ${unit.blood_group} ${COMPONENT_LABELS[unit.component as BloodComponent]}`,
+        qty:         1,
+        unit_price:  price,
+      }],
+    })
+    await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
+  }
 
   await logAudit(actor.id, 'issue_unit', 'blood_unit', input.bloodUnitId, {
     request_id: input.requestId, patient_id: req.patient_id,

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -24,6 +24,7 @@ import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
+import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
 import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
 import NursingPanel from './NursingPanel'
@@ -84,6 +85,7 @@ export default function AdmissionDetail({
   const canNote         = profile && hasPermission(profile.role, 'ipd:notes')
   const canNursing      = profile && hasPermission(profile.role, 'ipd:nursing')
   const canPrintWristband = profile && hasPermission(profile.role, 'barcode:print:patient')
+  const canRequestBlood = profile && hasPermission(profile.role, 'bloodbank:request')
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
@@ -102,6 +104,7 @@ export default function AdmissionDetail({
   // Transfer
   const [showWristband, setShowWristband] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [showBloodRequest, setShowBloodRequest] = useState(false)
   const [transferWardId, setTransferWardId] = useState('')
   const [transferBedId, setTransferBedId] = useState('')
   const [transferBeds, setTransferBeds] = useState<{ id: string; bed_no: string }[]>([])
@@ -330,6 +333,13 @@ export default function AdmissionDetail({
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                   <ArrowRightLeft className="w-4 h-4" /> Transfer
                 </button>
+                {canRequestBlood && (
+                  <button onClick={() => setShowBloodRequest(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                    style={{ background: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.2)', cursor: 'pointer' }}>
+                    <Droplets className="w-4 h-4" /> Request Blood
+                  </button>
+                )}
                 <button onClick={() => setShowDischarge(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
                   style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}
@@ -820,6 +830,20 @@ export default function AdmissionDetail({
           void scheduleId
         }}
       />
+
+      {/* Request Blood — pre-filled + linked to this admission (charge auto-bills here) */}
+      {showBloodRequest && adm.patient && (
+        <RaiseRequestModal
+          open={true}
+          onClose={() => setShowBloodRequest(false)}
+          onSuccess={() => setShowBloodRequest(false)}
+          prefill={{
+            patient: { id: adm.patient.id, full_name: adm.patient.full_name, uhid: adm.patient.uhid },
+            admissionId: adm.id,
+            encounterLabel: `IPD · ${adm.ward?.name ?? ''} ${adm.bed?.bed_no ?? ''}`.trim(),
+          }}
+        />
+      )}
     </div>
   )
 }

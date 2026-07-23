@@ -18,23 +18,43 @@ const COMPONENTS   = [
   { value: 'platelets', label: 'Platelets' },
 ] as const
 
+const URGENCIES = [
+  { value: 'routine',   label: 'Routine' },
+  { value: 'urgent',    label: 'Urgent' },
+  { value: 'emergency', label: 'Emergency' },
+] as const
+
+interface Prefill {
+  patient: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  admissionId?: string
+  otScheduleId?: string
+  visitId?: string
+  encounterLabel?: string
+}
+
 interface Props {
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  /** When opened from an IPD admission / OT / OPD encounter, pre-fills patient + links the request. */
+  prefill?: Prefill
 }
 
-export default function RaiseRequestModal({ open, onClose, onSuccess }: Props) {
-  const [patientQuery, setPatientQuery] = useState('')
+export default function RaiseRequestModal({ open, onClose, onSuccess, prefill }: Props) {
+  const [patientQuery, setPatientQuery] = useState(prefill?.patient.full_name ?? '')
   const [patientResults, setPatientResults] = useState<Patient[]>([])
-  const [patient, setPatient] = useState<Pick<Patient, 'id' | 'full_name' | 'uhid'> | null>(null)
+  const [patient, setPatient] = useState<Pick<Patient, 'id' | 'full_name' | 'uhid'> | null>(prefill?.patient ?? null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [bloodGroup, setBloodGroup] = useState('')
   const [component, setComponent]   = useState('')
   const [units, setUnits]           = useState('1')
+  const [urgency, setUrgency]       = useState<'routine' | 'urgent' | 'emergency'>('routine')
+  const [indication, setIndication] = useState('')
   const [notes, setNotes]           = useState('')
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
+
+  const locked = !!prefill
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) { setPatientResults([]); return }
@@ -58,18 +78,40 @@ export default function RaiseRequestModal({ open, onClose, onSuccess }: Props) {
       blood_group:    bloodGroup,
       component,
       units_required: parseInt(units, 10) || 1,
+      urgency,
+      indication:     indication.trim() || null,
       notes:          notes.trim() || null,
+      admission_id:   prefill?.admissionId ?? null,
+      ot_schedule_id: prefill?.otScheduleId ?? null,
+      visit_id:       prefill?.visitId ?? null,
     })
     setLoading(false)
     if (!result.success) { setError(result.error); return }
-    setPatientQuery(''); setPatient(null); setBloodGroup(''); setComponent(''); setUnits('1'); setNotes('')
+    if (!locked) { setPatientQuery(''); setPatient(null) }
+    setBloodGroup(''); setComponent(''); setUnits('1'); setUrgency('routine'); setIndication(''); setNotes('')
     onSuccess()
   }
 
   return (
     <Modal open={open} onClose={onClose} title="Raise Blood Request" maxWidth="34rem">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Encounter context (when raised from IPD/OT/OPD) */}
+        {locked && (
+          <div className="flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.2)' }}>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{prefill!.patient.full_name}</p>
+              <p className="font-mono text-xs" style={{ color: '#94A3B8' }}>{prefill!.patient.uhid}</p>
+            </div>
+            {prefill!.encounterLabel && (
+              <span className="text-xs px-2 py-0.5 rounded-lg font-semibold" style={{ background: '#0D9488', color: '#fff' }}>
+                {prefill!.encounterLabel}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Patient search */}
+        {!locked && (
         <FormField label="Patient" required>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
@@ -99,6 +141,7 @@ export default function RaiseRequestModal({ open, onClose, onSuccess }: Props) {
             )}
           </div>
         </FormField>
+        )}
 
         <div className="grid grid-cols-3 gap-3">
           <FormField label="Blood Group *">
@@ -118,8 +161,19 @@ export default function RaiseRequestModal({ open, onClose, onSuccess }: Props) {
           </FormField>
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Urgency *">
+            <Select value={urgency} onChange={(e) => setUrgency(e.target.value as typeof urgency)}>
+              {URGENCIES.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+            </Select>
+          </FormField>
+          <FormField label="Indication">
+            <Input value={indication} onChange={(e) => setIndication(e.target.value)} placeholder="e.g. Anaemia, surgery, trauma" />
+          </FormField>
+        </div>
+
         <FormField label="Notes">
-          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Clinical indication, urgency…" />
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes…" />
         </FormField>
 
         {error && (

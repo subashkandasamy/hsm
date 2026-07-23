@@ -14,6 +14,20 @@ import { hasPermission } from '@/lib/rbac'
 import AddUnitModal from './AddUnitModal'
 import RaiseRequestModal from './RaiseRequestModal'
 import IssueUnitModal from './IssueUnitModal'
+import ComponentChargesModal from './ComponentChargesModal'
+
+const URGENCY_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  routine:   { bg: '#F1F5F9', color: '#475569', label: 'Routine' },
+  urgent:    { bg: '#FEF3C7', color: '#B45309', label: 'Urgent' },
+  emergency: { bg: '#FEE2E2', color: '#DC2626', label: 'Emergency' },
+}
+
+function encounterTag(r: BloodRequest): string | null {
+  if (r.admission_id) return 'IPD'
+  if (r.ot_schedule_id) return 'OT'
+  if (r.visit_id) return 'OPD'
+  return null
+}
 
 const BLOOD_GROUPS: BloodGroup[]     = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
 const BLOOD_COMPONENTS: BloodComponent[] = ['whole','prbc','plasma','platelets']
@@ -53,6 +67,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
 
   const [showAddUnit, setShowAddUnit]   = useState(false)
   const [showRequest, setShowRequest]   = useState(false)
+  const [showCharges, setShowCharges]   = useState(false)
   const [issueRequest, setIssueRequest] = useState<BloodRequest | null>(null)
   const [actionId, setActionId]         = useState<string | null>(null)
 
@@ -109,6 +124,13 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
                 className="px-3 py-2 rounded-xl text-xs font-medium"
                 style={{ background: 'rgba(255,255,255,0.8)', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                 Expire Old Units
+              </button>
+            )}
+            {canManage && (
+              <button onClick={() => setShowCharges(true)}
+                className="px-3 py-2 rounded-xl text-xs font-medium"
+                style={{ background: 'rgba(255,255,255,0.8)', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                Charges
               </button>
             )}
             {canRequest && (
@@ -177,6 +199,8 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
 
       <RaiseRequestModal open={showRequest}
         onClose={() => setShowRequest(false)} onSuccess={() => { setShowRequest(false); refresh() }} />
+
+      <ComponentChargesModal open={showCharges} onClose={() => setShowCharges(false)} />
 
       {issueRequest && (
         <IssueUnitModal open={true} request={issueRequest}
@@ -371,10 +395,23 @@ function RequestsView({ requests, canIssue, canRequest, actionId, onCrossMatch, 
                 </span>
                 <span className="text-xs" style={{ color: '#64748B' }}>{r.units_required} unit{r.units_required !== 1 ? 's' : ''} required</span>
                 <StatusBadge status={STATUS_MAP[r.status] ?? 'pending'} label={r.status.replace('_', ' ')} />
+                {r.urgency && r.urgency !== 'routine' && (
+                  <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                    style={{ background: URGENCY_STYLE[r.urgency].bg, color: URGENCY_STYLE[r.urgency].color }}>
+                    {URGENCY_STYLE[r.urgency].label}
+                  </span>
+                )}
+                {encounterTag(r) && (
+                  <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                    style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
+                    {encounterTag(r)}
+                  </span>
+                )}
               </div>
               <p className="text-sm mt-1" style={{ color: '#475569' }}>
                 {r.patient?.full_name} · <span className="font-mono text-xs">{r.patient?.uhid}</span>
               </p>
+              {r.indication && <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Indication: {r.indication}</p>}
               {r.notes && <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{r.notes}</p>}
               <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
                 By {r.requester?.full_name ?? '—'} · <DateText date={r.requested_at} />

@@ -260,6 +260,18 @@ export const BloodRequestSchema = z.object({
   component:      z.enum(BLOOD_COMPONENTS),
   units_required: z.number().int().min(1, 'At least 1 unit required'),
   notes:          z.string().nullable().optional(),
+  // Encounter this request is raised for (one of admission / OT / OPD visit)
+  admission_id:   z.string().uuid().nullable().optional(),
+  ot_schedule_id: z.string().uuid().nullable().optional(),
+  visit_id:       z.string().uuid().nullable().optional(),
+  urgency:        z.enum(['routine', 'urgent', 'emergency']).default('routine'),
+  indication:     z.string().nullable().optional(),
+  required_by:    z.string().nullable().optional(),
+})
+
+export const BloodComponentChargeSchema = z.object({
+  component: z.enum(BLOOD_COMPONENTS),
+  price:     z.number().min(0, 'Price cannot be negative'),
 })
 
 export const BloodIssueSchema = z.object({

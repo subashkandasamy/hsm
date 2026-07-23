@@ -9,7 +9,7 @@ export interface IpdBillLineItem {
   unit_price: number
 }
 
-export type IpdBillSource = 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'ot' | 'consultation' | 'manual'
+export type IpdBillSource = 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'ot' | 'consultation' | 'manual' | 'blood'
 
 /**
  * Find-or-create the daily IPD bill for a given (admission, date, source) and
