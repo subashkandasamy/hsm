@@ -17,6 +17,7 @@ export interface TenantProfile {
   website: string | null
   cin_no: string | null
   gst_no: string | null
+  blood_bank_license?: string | null
   emergency_contact: string | null
   updated_at: string
 }
@@ -452,6 +453,20 @@ export interface BloodTransfusionReaction {
   id: string; transfusion_id: string
   reaction_type: BloodReactionType; severity: BloodReactionSeverity
   action_taken: string | null; reported_by: string | null; reported_at: string
+}
+
+export interface BloodStockSummary {
+  total: number; available: number; reserved: number; issued: number
+  unscreened: number; nearExpiry: number; expired: number; separated: number
+}
+
+export interface BloodUnitTrace {
+  unit: BloodUnit & { camp?: { name: string; camp_date: string } | null }
+  crossmatches: BloodCrossmatch[]
+  issues: Array<{
+    id: string; issued_at: string; patient_name: string; patient_uhid: string
+    transfusions: Array<BloodTransfusion & { reactions: BloodTransfusionReaction[] }>
+  }>
 }
 
 // An issued unit belonging to a request (for the transfusion picker)

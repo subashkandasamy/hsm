@@ -7,8 +7,8 @@ import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import { getInventory, listUnits, listRequests, cancelRequest, expireOldUnits, listCamps } from '@/app/actions/blood'
-import type { BloodInventoryCell, BloodUnit, BloodRequest, BloodDonor, BloodGroup, BloodComponent, BloodDonationCamp } from '@/lib/types'
+import { getInventory, listUnits, listRequests, cancelRequest, expireOldUnits, listCamps, getStockSummary } from '@/app/actions/blood'
+import type { BloodInventoryCell, BloodUnit, BloodRequest, BloodDonor, BloodGroup, BloodComponent, BloodDonationCamp, BloodStockSummary } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import AddUnitModal from './AddUnitModal'
@@ -20,6 +20,7 @@ import CrossMatchModal from './CrossMatchModal'
 import TransfusionModal from './TransfusionModal'
 import SeparateModal from './SeparateModal'
 import CampModal from './CampModal'
+import UnitTraceModal from './UnitTraceModal'
 
 // Eligibility: deferred if under active deferral or donated within 90 days.
 function donorEligible(d: BloodDonor): boolean {
@@ -99,14 +100,16 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const [separateUnit, setSeparateUnit] = useState<BloodUnit | null>(null)
   const [camps, setCamps]               = useState<BloodDonationCamp[]>([])
   const [showCamp, setShowCamp]         = useState(false)
+  const [traceUnit, setTraceUnit]       = useState<BloodUnit | null>(null)
+  const [summary, setSummary]           = useState<BloodStockSummary | null>(null)
   const [actionId, setActionId]         = useState<string | null>(null)
 
-  useEffect(() => { listCamps().then(setCamps) }, [])
+  useEffect(() => { listCamps().then(setCamps); getStockSummary().then(setSummary) }, [])
 
   async function refresh() {
     setLoading(true)
-    const [inv, u, r, c] = await Promise.all([getInventory(), listUnits(), listRequests(), listCamps()])
-    setInventory(inv); setUnits(u); setRequests(r); setCamps(c)
+    const [inv, u, r, c, sm] = await Promise.all([getInventory(), listUnits(), listRequests(), listCamps(), getStockSummary()])
+    setInventory(inv); setUnits(u); setRequests(r); setCamps(c); setSummary(sm)
     setLoading(false)
   }
 
@@ -201,11 +204,11 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
       </div>
 
       {tab === 'inventory' && (
-        <InventoryGrid inventory={inventory} alertCount={alertCount} />
+        <InventoryGrid inventory={inventory} alertCount={alertCount} summary={summary} />
       )}
       {tab === 'units' && (
         <UnitsView units={units} canScreen={canScreen} canManage={canManage}
-          onScreen={setScreenUnit} onSeparate={setSeparateUnit} />
+          onScreen={setScreenUnit} onSeparate={setSeparateUnit} onTrace={setTraceUnit} />
       )}
       {tab === 'requests' && (
         <RequestsView
@@ -256,6 +259,8 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
       <CampModal open={showCamp} onClose={() => setShowCamp(false)}
         onSuccess={() => { setShowCamp(false); refresh() }} />
 
+      {traceUnit && <UnitTraceModal unit={traceUnit} onClose={() => setTraceUnit(null)} />}
+
       {issueRequest && (
         <IssueUnitModal open={true} request={issueRequest}
           onClose={() => setIssueRequest(null)}
@@ -266,10 +271,26 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
 }
 
 // ---- Inventory Grid ----
-function InventoryGrid({ inventory, alertCount }: { inventory: BloodInventoryCell[]; alertCount: number }) {
-  const today = new Date().toISOString().split('T')[0]
+function InventoryGrid({ inventory, alertCount, summary }: { inventory: BloodInventoryCell[]; alertCount: number; summary: BloodStockSummary | null }) {
   return (
     <div>
+      {summary && (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+          {([
+            ['Available', summary.available, '#0D9488', '#F0FDFA'],
+            ['Reserved', summary.reserved, '#1D4ED8', '#EFF6FF'],
+            ['Issued', summary.issued, '#475569', '#F8FAFC'],
+            ['Unscreened', summary.unscreened, '#B45309', '#FFFBEB'],
+            ['Near Expiry', summary.nearExpiry, '#B45309', '#FEF3C7'],
+            ['Expired', summary.expired, '#DC2626', '#FEF2F2'],
+          ] as const).map(([label, val, color, bg]) => (
+            <div key={label} className="rounded-xl px-3 py-2.5" style={{ background: bg, border: '1px solid #E2E8F0' }}>
+              <p className="text-2xl font-bold" style={{ color }}>{val}</p>
+              <p className="text-xs" style={{ color: '#64748B' }}>{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
       {alertCount > 0 && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold"
           style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
@@ -342,7 +363,7 @@ function InventoryGrid({ inventory, alertCount }: { inventory: BloodInventoryCel
 }
 
 // ---- Units View ----
-function UnitsView({ units, canScreen, canManage, onScreen, onSeparate }: { units: BloodUnit[]; canScreen: boolean; canManage: boolean; onScreen: (u: BloodUnit) => void; onSeparate: (u: BloodUnit) => void }) {
+function UnitsView({ units, canScreen, canManage, onScreen, onSeparate, onTrace }: { units: BloodUnit[]; canScreen: boolean; canManage: boolean; onScreen: (u: BloodUnit) => void; onSeparate: (u: BloodUnit) => void; onTrace: (u: BloodUnit) => void }) {
   const today = new Date().toISOString().split('T')[0]
   if (units.length === 0) {
     return <GlassCard className="p-6"><EmptyState title="No blood units" description="Add units via 'Add Unit' to begin tracking." icon={<Droplets className="w-6 h-6" style={{ color: '#94A3B8' }} />} /></GlassCard>
@@ -449,6 +470,11 @@ function UnitsView({ units, canScreen, canManage, onScreen, onSeparate }: { unit
                         Separate
                       </button>
                     )}
+                    <button onClick={() => onTrace(u)}
+                      className="px-3 py-1 rounded-lg text-xs font-medium"
+                      style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                      Trace
+                    </button>
                   </div>
                 </td>
               </tr>

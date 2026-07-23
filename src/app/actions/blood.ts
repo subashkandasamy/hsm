@@ -7,7 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
-import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp } from '@/lib/types'
+import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -345,6 +345,64 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
   if (status) q = q.eq('status', status)
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as BloodRequest[]
+}
+
+// ---- Reporting + look-back traceability (Phase 6) ----
+
+export async function getStockSummary(): Promise<BloodStockSummary> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('blood_units').select('status, screening_status, expiry')
+  const today = new Date().toISOString().split('T')[0]
+  const soon = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  const s: BloodStockSummary = { total: 0, available: 0, reserved: 0, issued: 0, unscreened: 0, nearExpiry: 0, expired: 0, separated: 0 }
+  for (const u of data ?? []) {
+    s.total++
+    if (u.status === 'available') s.available++
+    if (u.status === 'reserved') s.reserved++
+    if (u.status === 'issued') s.issued++
+    if (u.status === 'separated') s.separated++
+    const active = u.status === 'available' || u.status === 'reserved'
+    if (active && u.screening_status !== 'passed') s.unscreened++
+    if (active && (u.expiry as string) < today) s.expired++
+    else if (active && (u.expiry as string) <= soon) s.nearExpiry++
+  }
+  return s
+}
+
+// Full donor→unit→recipient chain for regulatory look-back / recall.
+export async function getUnitTrace(unitId: string): Promise<BloodUnitTrace | null> {
+  const supabase = await createClient()
+  const { data: unit } = await supabase
+    .from('blood_units')
+    .select('*, donor:blood_donors(id, name), camp:blood_donation_camps(name, camp_date)')
+    .eq('id', unitId).single()
+  if (!unit) return null
+
+  const { data: crossmatches } = await supabase
+    .from('blood_crossmatches').select('*').eq('blood_unit_id', unitId).order('crossmatched_at', { ascending: false })
+
+  const { data: issues } = await supabase
+    .from('blood_issues')
+    .select('id, issued_at, request:blood_requests(patient:patients(full_name, uhid)), transfusions:blood_transfusions(*, reactions:blood_transfusion_reactions(*))')
+    .eq('blood_unit_id', unitId)
+
+  const mappedIssues = (issues ?? []).map((i) => {
+    const req = i.request as unknown as { patient?: { full_name: string; uhid: string } | null } | null
+    const tfs = (i.transfusions as unknown as Array<BloodTransfusion & { reactions: BloodTransfusionReaction[] }>) ?? []
+    return {
+      id: i.id as string,
+      issued_at: i.issued_at as string,
+      patient_name: req?.patient?.full_name ?? '—',
+      patient_uhid: req?.patient?.uhid ?? '—',
+      transfusions: tfs,
+    }
+  })
+
+  return {
+    unit: unit as unknown as BloodUnitTrace['unit'],
+    crossmatches: (crossmatches ?? []) as unknown as BloodCrossmatch[],
+    issues: mappedIssues,
+  }
 }
 
 // ---- Donation camps + component separation (Phase 5) ----

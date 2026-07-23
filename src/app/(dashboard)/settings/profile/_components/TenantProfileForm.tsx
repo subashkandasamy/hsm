@@ -41,6 +41,7 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
     fields: [
       { key: 'cin_no', label: 'CIN / Reg. No.', placeholder: 'L85110TZ1985PLC001659' },
       { key: 'gst_no', label: 'GST Number',      placeholder: '33AABCK1234A1Z5 (optional)' },
+      { key: 'blood_bank_license', label: 'Blood Bank Licence No.', placeholder: 'e.g. BB/TN/2024/00123 (optional)' },
     ],
   },
 ]
@@ -52,7 +53,7 @@ function initValues(profile: TenantProfile | null): FormValues {
     'name', 'tagline', 'tagline2',
     'address_line1', 'address_line2', 'city', 'state', 'pincode',
     'phone1', 'phone2', 'email', 'website', 'emergency_contact',
-    'cin_no', 'gst_no',
+    'cin_no', 'gst_no', 'blood_bank_license',
   ]
   const out: FormValues = {}
   for (const k of keys) out[k] = (profile?.[k] as string | null) ?? ''
