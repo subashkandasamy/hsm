@@ -6,7 +6,7 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { addBloodUnit, addDonor } from '@/app/actions/blood'
-import type { BloodDonor } from '@/lib/types'
+import type { BloodDonor, BloodDonationCamp } from '@/lib/types'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','AB+','AB-','O+','O-'] as const
 const COMPONENTS   = [
@@ -19,11 +19,13 @@ const COMPONENTS   = [
 interface Props {
   open: boolean
   donors: BloodDonor[]
+  camps: BloodDonationCamp[]
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props) {
+export default function AddUnitModal({ open, donors, camps, onClose, onSuccess }: Props) {
+  const [campId, setCampId] = useState('')
   const [bloodGroup, setBloodGroup] = useState('')
   const [component, setComponent]   = useState('')
   const [donorId, setDonorId]       = useState('')
@@ -65,12 +67,13 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
       expiry,
       bag_number:   bagNumber.trim() || null,
       volume_ml:    volume ? parseInt(volume, 10) : null,
+      camp_id:      campId || null,
     })
 
     setLoading(false)
     if (!result.success) { setError(result.error); return }
     setBloodGroup(''); setComponent(''); setDonorId(''); setExpiry(''); setCollectedAt(''); setNewDonorName('')
-    setBagNumber(''); setVolume('')
+    setBagNumber(''); setVolume(''); setCampId('')
     onSuccess()
   }
 
@@ -109,6 +112,15 @@ export default function AddUnitModal({ open, donors, onClose, onSuccess }: Props
             <Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} required />
           </FormField>
         </div>
+
+        {camps.length > 0 && (
+          <FormField label="Donation Camp (optional)">
+            <Select value={campId} onChange={(e) => setCampId(e.target.value)}>
+              <option value="">— Walk-in / not from a camp —</option>
+              {camps.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.camp_date})</option>)}
+            </Select>
+          </FormField>
+        )}
 
         <p className="text-xs" style={{ color: '#94A3B8' }}>
           New units start <strong>Unscreened</strong> and can’t be issued until TTI screening is recorded and passed.

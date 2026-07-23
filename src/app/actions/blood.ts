@@ -5,9 +5,9 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
-import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema } from '@/lib/schemas'
+import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
-import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit } from '@/lib/types'
+import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -345,6 +345,79 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
   if (status) q = q.eq('status', status)
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as BloodRequest[]
+}
+
+// ---- Donation camps + component separation (Phase 5) ----
+
+export async function listCamps(): Promise<BloodDonationCamp[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('blood_donation_camps').select('*').order('camp_date', { ascending: false })
+  return (data ?? []) as BloodDonationCamp[]
+}
+
+export async function createCamp(
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:manage')
+  const parsed = BloodDonationCampSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const supabase = await createClient()
+  const { error } = await supabase.from('blood_donation_camps').insert({
+    tenant_id: actor.tenant_id, ...parsed.data, created_by: actor.id,
+  })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'create', 'blood_camp', parsed.data.name, {})
+  return { success: true }
+}
+
+// Split a screened whole-blood unit into components. Each child inherits the
+// parent's group/donor/camp and screening result (screening is done on the
+// whole unit); the parent is marked 'separated' and consumed.
+export async function separateComponents(
+  wholeUnitId: string,
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:manage')
+  const parsed = BloodSeparationSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const supabase = await createClient()
+
+  const { data: unit } = await supabase.from('blood_units').select('*').eq('id', wholeUnitId).single()
+  if (!unit) return { success: false, error: 'Unit not found' }
+  if (unit.component !== 'whole') return { success: false, error: 'Only whole-blood units can be separated' }
+  if (unit.status !== 'available') return { success: false, error: 'Unit must be available to separate' }
+  if (unit.screening_status !== 'passed') return { success: false, error: 'Screen the unit before separating (children inherit screening)' }
+
+  const children = parsed.data.components.map((comp) => ({
+    tenant_id:        actor.tenant_id,
+    blood_group:      unit.blood_group,
+    component:        comp,
+    donor_id:         unit.donor_id,
+    camp_id:          unit.camp_id ?? null,
+    parent_unit_id:   wholeUnitId,
+    collected_at:     unit.collected_at,
+    expiry:           unit.expiry,
+    status:           'available',
+    // Screening inherited from the parent whole-blood unit
+    screening_status: 'passed',
+    hiv: unit.hiv, hbsag: unit.hbsag, hcv: unit.hcv, syphilis: unit.syphilis, malaria: unit.malaria,
+    screened_by: unit.screened_by, screened_at: unit.screened_at,
+    bag_number: unit.bag_number ? `${unit.bag_number}-${comp.toUpperCase().slice(0, 3)}` : null,
+    volume_ml: null,
+  }))
+
+  const { error: insErr } = await supabase.from('blood_units').insert(children)
+  if (insErr) return { success: false, error: insErr.message }
+
+  const { error: updErr } = await supabase.from('blood_units').update({ status: 'separated' }).eq('id', wholeUnitId)
+  if (updErr) return { success: false, error: updErr.message }
+
+  await logAudit(actor.id, 'separate', 'blood_unit', wholeUnitId, { components: parsed.data.components })
+  return { success: true }
 }
 
 // ---- Transfusion (Phase 4) ----

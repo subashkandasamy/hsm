@@ -1,14 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, RefreshCw, Droplets, AlertTriangle } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import { getInventory, listUnits, listRequests, cancelRequest, expireOldUnits } from '@/app/actions/blood'
-import type { BloodInventoryCell, BloodUnit, BloodRequest, BloodDonor, BloodGroup, BloodComponent } from '@/lib/types'
+import { getInventory, listUnits, listRequests, cancelRequest, expireOldUnits, listCamps } from '@/app/actions/blood'
+import type { BloodInventoryCell, BloodUnit, BloodRequest, BloodDonor, BloodGroup, BloodComponent, BloodDonationCamp } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import AddUnitModal from './AddUnitModal'
@@ -18,6 +18,19 @@ import ComponentChargesModal from './ComponentChargesModal'
 import ScreeningModal from './ScreeningModal'
 import CrossMatchModal from './CrossMatchModal'
 import TransfusionModal from './TransfusionModal'
+import SeparateModal from './SeparateModal'
+import CampModal from './CampModal'
+
+// Eligibility: deferred if under active deferral or donated within 90 days.
+function donorEligible(d: BloodDonor): boolean {
+  const today = new Date().toISOString().split('T')[0]
+  if (d.deferral_until && d.deferral_until >= today) return false
+  if (d.last_donation_date) {
+    const days = (Date.now() - new Date(d.last_donation_date).getTime()) / 86400000
+    if (days < 90) return false
+  }
+  return true
+}
 
 const SCREENING_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   passed:  { bg: '#DCFCE7', color: '#15803D', label: 'Screened' },
@@ -83,12 +96,17 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const [crossMatchRequest, setCrossMatchRequest] = useState<BloodRequest | null>(null)
   const [transfuseRequest, setTransfuseRequest] = useState<BloodRequest | null>(null)
   const [screenUnit, setScreenUnit]     = useState<BloodUnit | null>(null)
+  const [separateUnit, setSeparateUnit] = useState<BloodUnit | null>(null)
+  const [camps, setCamps]               = useState<BloodDonationCamp[]>([])
+  const [showCamp, setShowCamp]         = useState(false)
   const [actionId, setActionId]         = useState<string | null>(null)
+
+  useEffect(() => { listCamps().then(setCamps) }, [])
 
   async function refresh() {
     setLoading(true)
-    const [inv, u, r] = await Promise.all([getInventory(), listUnits(), listRequests()])
-    setInventory(inv); setUnits(u); setRequests(r)
+    const [inv, u, r, c] = await Promise.all([getInventory(), listUnits(), listRequests(), listCamps()])
+    setInventory(inv); setUnits(u); setRequests(r); setCamps(c)
     setLoading(false)
   }
 
@@ -186,7 +204,8 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         <InventoryGrid inventory={inventory} alertCount={alertCount} />
       )}
       {tab === 'units' && (
-        <UnitsView units={units} canScreen={canScreen} onScreen={setScreenUnit} />
+        <UnitsView units={units} canScreen={canScreen} canManage={canManage}
+          onScreen={setScreenUnit} onSeparate={setSeparateUnit} />
       )}
       {tab === 'requests' && (
         <RequestsView
@@ -201,9 +220,9 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
           onCancel={handleCancel}
         />
       )}
-      {tab === 'donors' && <DonorsView donors={donors} />}
+      {tab === 'donors' && <DonorsView donors={donors} camps={camps} canManage={canManage} onAddCamp={() => setShowCamp(true)} />}
 
-      <AddUnitModal open={showAddUnit} donors={donors}
+      <AddUnitModal open={showAddUnit} donors={donors} camps={camps}
         onClose={() => setShowAddUnit(false)} onSuccess={() => { setShowAddUnit(false); refresh() }} />
 
       <RaiseRequestModal open={showRequest}
@@ -227,6 +246,15 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         <TransfusionModal request={transfuseRequest}
           onClose={() => { setTransfuseRequest(null); refresh() }} />
       )}
+
+      {separateUnit && (
+        <SeparateModal unit={separateUnit}
+          onClose={() => setSeparateUnit(null)}
+          onSuccess={() => { setSeparateUnit(null); refresh() }} />
+      )}
+
+      <CampModal open={showCamp} onClose={() => setShowCamp(false)}
+        onSuccess={() => { setShowCamp(false); refresh() }} />
 
       {issueRequest && (
         <IssueUnitModal open={true} request={issueRequest}
@@ -314,7 +342,7 @@ function InventoryGrid({ inventory, alertCount }: { inventory: BloodInventoryCel
 }
 
 // ---- Units View ----
-function UnitsView({ units, canScreen, onScreen }: { units: BloodUnit[]; canScreen: boolean; onScreen: (u: BloodUnit) => void }) {
+function UnitsView({ units, canScreen, canManage, onScreen, onSeparate }: { units: BloodUnit[]; canScreen: boolean; canManage: boolean; onScreen: (u: BloodUnit) => void; onSeparate: (u: BloodUnit) => void }) {
   const today = new Date().toISOString().split('T')[0]
   if (units.length === 0) {
     return <GlassCard className="p-6"><EmptyState title="No blood units" description="Add units via 'Add Unit' to begin tracking." icon={<Droplets className="w-6 h-6" style={{ color: '#94A3B8' }} />} /></GlassCard>
@@ -406,13 +434,22 @@ function UnitsView({ units, canScreen, onScreen }: { units: BloodUnit[]; canScre
                   <StatusBadge status={UNIT_STATUS_MAP[u.status] ?? 'pending'} label={u.status} />
                 </td>
                 <td className="px-4 py-2.5">
-                  {canScreen && u.screening_status === 'pending' && u.status === 'available' && (
-                    <button onClick={() => onScreen(u)}
-                      className="px-3 py-1 rounded-lg text-xs font-semibold"
-                      style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                      Screen
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {canScreen && u.screening_status === 'pending' && u.status === 'available' && (
+                      <button onClick={() => onScreen(u)}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold"
+                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                        Screen
+                      </button>
+                    )}
+                    {canManage && u.component === 'whole' && u.status === 'available' && u.screening_status === 'passed' && (
+                      <button onClick={() => onSeparate(u)}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold"
+                        style={{ background: '#EEF2FF', color: '#4338CA', border: '1px solid #E0E7FF', cursor: 'pointer' }}>
+                        Separate
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             )
@@ -513,12 +550,39 @@ function RequestsView({ requests, canIssue, canRequest, canTransfuse, actionId, 
 }
 
 // ---- Donors View ----
-function DonorsView({ donors }: { donors: BloodDonor[] }) {
-  if (donors.length === 0) {
-    return <GlassCard className="p-6"><EmptyState title="No donors registered" description="Donors can be linked when adding blood units." /></GlassCard>
-  }
+function DonorsView({ donors, camps, canManage, onAddCamp }: { donors: BloodDonor[]; camps: BloodDonationCamp[]; canManage: boolean; onAddCamp: () => void }) {
   return (
-    <GlassCard className="overflow-hidden">
+    <div className="space-y-4">
+      {/* Donation camps */}
+      <GlassCard className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Donation Camps</h3>
+          {canManage && (
+            <button onClick={onAddCamp} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Plus className="w-3.5 h-3.5" /> New Camp
+            </button>
+          )}
+        </div>
+        {camps.length === 0 ? (
+          <p className="text-xs" style={{ color: '#94A3B8' }}>No camps yet.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {camps.map((c) => (
+              <div key={c.id} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm" style={{ background: 'rgba(248,250,252,0.8)' }}>
+                <span className="font-medium" style={{ color: '#0F172A' }}>{c.name}</span>
+                {c.location && <span className="text-xs" style={{ color: '#64748B' }}>{c.location}</span>}
+                <span className="text-xs ml-auto" style={{ color: '#94A3B8' }}><DateText date={c.camp_date} /></span>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
+      {donors.length === 0 ? (
+        <GlassCard className="p-6"><EmptyState title="No donors registered" description="Donors can be linked when adding blood units." /></GlassCard>
+      ) : (
+      <GlassCard className="overflow-hidden">
       {/* ── MOBILE CARDS (< md) ── */}
       <div className="md:hidden divide-y" style={{ borderColor: '#F1F5F9' }}>
         {donors.map((d) => (
@@ -528,9 +592,10 @@ function DonorsView({ donors }: { donors: BloodDonor[] }) {
               <span className="font-bold text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
                 style={{ background: '#FEE2E2', color: '#DC2626' }}>{d.blood_group}</span>
             </div>
-            <div className="flex gap-4 mt-1 text-xs" style={{ color: '#64748B' }}>
+            <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: '#64748B' }}>
               <span>{d.phone ?? 'No phone'}</span>
               {d.last_donation_date && <span>Last: <DateText date={d.last_donation_date} /></span>}
+              <EligibilityBadge donor={d} />
             </div>
           </div>
         ))}
@@ -540,7 +605,7 @@ function DonorsView({ donors }: { donors: BloodDonor[] }) {
       <table className="hidden md:table w-full text-sm">
         <thead>
           <tr style={{ background: 'rgba(248,250,252,0.9)', borderBottom: '1px solid #E2E8F0' }}>
-            {['Name', 'Blood Group', 'Phone', 'Last Donation'].map((h) => (
+            {['Name', 'Blood Group', 'Phone', 'Last Donation', 'Eligibility'].map((h) => (
               <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold" style={{ color: '#475569' }}>{h}</th>
             ))}
           </tr>
@@ -557,10 +622,23 @@ function DonorsView({ donors }: { donors: BloodDonor[] }) {
               <td className="px-4 py-2.5" style={{ color: '#64748B' }}>
                 {d.last_donation_date ? <DateText date={d.last_donation_date} /> : '—'}
               </td>
+              <td className="px-4 py-2.5"><EligibilityBadge donor={d} /></td>
             </tr>
           ))}
         </tbody>
       </table>
     </GlassCard>
+      )}
+    </div>
+  )
+}
+
+function EligibilityBadge({ donor }: { donor: BloodDonor }) {
+  const eligible = donorEligible(donor)
+  return (
+    <span className="text-xs px-2 py-0.5 rounded font-semibold"
+      style={eligible ? { background: '#DCFCE7', color: '#15803D' } : { background: '#FEF3C7', color: '#B45309' }}>
+      {eligible ? 'Eligible' : 'Deferred'}
+    </span>
   )
 }

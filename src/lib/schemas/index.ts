@@ -244,6 +244,22 @@ export const BloodDonorSchema = z.object({
   blood_group:        z.string().min(1, 'Blood group is required'),
   phone:              z.string().nullable().optional(),
   last_donation_date: z.string().nullable().optional(),
+  gender:             z.string().nullable().optional(),
+  age:                z.number().int().positive().nullable().optional(),
+  email:              z.string().nullable().optional(),
+  deferral_until:     z.string().nullable().optional(),
+})
+
+export const BloodDonationCampSchema = z.object({
+  name:      z.string().min(1, 'Camp name is required'),
+  location:  z.string().nullable().optional(),
+  camp_date: z.string().min(1, 'Camp date is required'),
+  organizer: z.string().nullable().optional(),
+  notes:     z.string().nullable().optional(),
+})
+
+export const BloodSeparationSchema = z.object({
+  components: z.array(z.enum(['prbc', 'plasma', 'platelets'])).min(1, 'Select at least one component'),
 })
 
 export const BloodUnitSchema = z.object({
@@ -254,6 +270,7 @@ export const BloodUnitSchema = z.object({
   expiry:       z.string().min(1, 'Expiry date is required'),
   bag_number:   z.string().nullable().optional(),
   volume_ml:    z.number().int().positive().nullable().optional(),
+  camp_id:      z.string().uuid().nullable().optional(),
 })
 
 const BLOOD_MARKER = z.enum(['reactive', 'non_reactive'])

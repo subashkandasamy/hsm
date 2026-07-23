@@ -390,6 +390,12 @@ export type BloodRequestStatus = 'requested' | 'cross_matched' | 'issued' | 'can
 export interface BloodDonor {
   id: string; name: string; blood_group: string; phone: string | null
   last_donation_date: string | null; created_at: string
+  gender: string | null; age: number | null; email: string | null; deferral_until: string | null
+}
+
+export interface BloodDonationCamp {
+  id: string; name: string; location: string | null; camp_date: string
+  organizer: string | null; notes: string | null; created_at: string
 }
 
 export type BloodScreeningStatus = 'pending' | 'passed' | 'failed'
@@ -404,6 +410,7 @@ export interface BloodUnit {
   syphilis: BloodMarkerResult; malaria: BloodMarkerResult
   screened_by: string | null; screened_at: string | null
   bag_number: string | null; volume_ml: number | null
+  camp_id: string | null; parent_unit_id: string | null
   donor?: Pick<BloodDonor, 'id' | 'name'> | null
 }
 
