@@ -285,6 +285,12 @@ export const BloodComponentChargeSchema = z.object({
   price:     z.number().min(0, 'Price cannot be negative'),
 })
 
+export const BloodCrossmatchSchema = z.object({
+  recipient_sample_no: z.string().nullable().optional(),
+  major_result: z.enum(['compatible', 'incompatible']),
+  minor_result: z.enum(['compatible', 'incompatible']).nullable().optional(),
+})
+
 export const BloodIssueSchema = z.object({
   request_id:    z.string().uuid(),
   blood_unit_id: z.string().uuid(),

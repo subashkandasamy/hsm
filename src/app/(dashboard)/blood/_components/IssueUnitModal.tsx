@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
-import { issueUnit, listAvailableUnitsForRequest, listComponentCharges } from '@/app/actions/blood'
+import { issueUnit, listCrossMatchedUnits, listComponentCharges } from '@/app/actions/blood'
 import type { BloodRequest, BloodUnit } from '@/lib/types'
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -29,7 +29,7 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
     if (!open) return
     setFetching(true)
     Promise.all([
-      listAvailableUnitsForRequest(request.id),
+      listCrossMatchedUnits(request.id),
       listComponentCharges(),
     ]).then(([u, charges]) => {
       setUnits(u); setSelectedUnit(null); setFetching(false)
@@ -72,17 +72,17 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
         {/* Unit selector */}
         <div>
           <p className="text-sm font-semibold mb-2" style={{ color: '#0F172A' }}>
-            Select Available Unit
+            Select Cross-matched Unit
             <span className="ml-1 text-xs font-normal" style={{ color: '#94A3B8' }}>
-              (only matching, available, non-expired units shown)
+              (only compatible, cross-matched, screened units shown)
             </span>
           </p>
           {fetching ? (
             <p className="text-sm text-center py-4" style={{ color: '#94A3B8' }}>Loading…</p>
           ) : units.length === 0 ? (
             <div className="py-6 text-center rounded-xl" style={{ border: '1px solid #E2E8F0', background: 'rgba(248,250,252,0.6)' }}>
-              <p className="text-sm font-medium" style={{ color: '#64748B' }}>No matching units available</p>
-              <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Add {request.blood_group} {request.component} units via the Blood Bank inventory.</p>
+              <p className="text-sm font-medium" style={{ color: '#64748B' }}>No cross-matched units ready</p>
+              <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Record a compatible cross-match for this request first.</p>
             </div>
           ) : (
             <div style={{ border: '1px solid #E2E8F0', borderRadius: '0.75rem', overflow: 'hidden', maxHeight: '14rem', overflowY: 'auto' }}>

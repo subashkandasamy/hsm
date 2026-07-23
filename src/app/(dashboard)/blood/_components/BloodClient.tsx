@@ -7,7 +7,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import { getInventory, listUnits, listRequests, crossMatch, cancelRequest, expireOldUnits } from '@/app/actions/blood'
+import { getInventory, listUnits, listRequests, cancelRequest, expireOldUnits } from '@/app/actions/blood'
 import type { BloodInventoryCell, BloodUnit, BloodRequest, BloodDonor, BloodGroup, BloodComponent } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -16,6 +16,7 @@ import RaiseRequestModal from './RaiseRequestModal'
 import IssueUnitModal from './IssueUnitModal'
 import ComponentChargesModal from './ComponentChargesModal'
 import ScreeningModal from './ScreeningModal'
+import CrossMatchModal from './CrossMatchModal'
 
 const SCREENING_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   passed:  { bg: '#DCFCE7', color: '#15803D', label: 'Screened' },
@@ -77,6 +78,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const [showRequest, setShowRequest]   = useState(false)
   const [showCharges, setShowCharges]   = useState(false)
   const [issueRequest, setIssueRequest] = useState<BloodRequest | null>(null)
+  const [crossMatchRequest, setCrossMatchRequest] = useState<BloodRequest | null>(null)
   const [screenUnit, setScreenUnit]     = useState<BloodUnit | null>(null)
   const [actionId, setActionId]         = useState<string | null>(null)
 
@@ -85,13 +87,6 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
     const [inv, u, r] = await Promise.all([getInventory(), listUnits(), listRequests()])
     setInventory(inv); setUnits(u); setRequests(r)
     setLoading(false)
-  }
-
-  async function handleCrossMatch(requestId: string) {
-    setActionId(requestId)
-    await crossMatch(requestId)
-    setActionId(null)
-    await refresh()
   }
 
   async function handleCancel(requestId: string) {
@@ -196,7 +191,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
           canIssue={canIssue}
           canRequest={canRequest}
           actionId={actionId}
-          onCrossMatch={handleCrossMatch}
+          onCrossMatch={setCrossMatchRequest}
           onIssue={setIssueRequest}
           onCancel={handleCancel}
         />
@@ -215,6 +210,12 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         <ScreeningModal unit={screenUnit}
           onClose={() => setScreenUnit(null)}
           onSuccess={() => { setScreenUnit(null); refresh() }} />
+      )}
+
+      {crossMatchRequest && (
+        <CrossMatchModal request={crossMatchRequest}
+          onClose={() => setCrossMatchRequest(null)}
+          onSuccess={() => { setCrossMatchRequest(null); refresh() }} />
       )}
 
       {issueRequest && (
@@ -418,7 +419,7 @@ function RequestsView({ requests, canIssue, canRequest, actionId, onCrossMatch, 
   canIssue: boolean
   canRequest: boolean
   actionId: string | null
-  onCrossMatch: (id: string) => void
+  onCrossMatch: (req: BloodRequest) => void
   onIssue: (req: BloodRequest) => void
   onCancel: (id: string) => void
 }) {
@@ -464,7 +465,7 @@ function RequestsView({ requests, canIssue, canRequest, actionId, onCrossMatch, 
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {r.status === 'requested' && canIssue && (
-                <button onClick={() => onCrossMatch(r.id)} disabled={actionId === r.id}
+                <button onClick={() => onCrossMatch(r)} disabled={actionId === r.id}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
                   Cross-match

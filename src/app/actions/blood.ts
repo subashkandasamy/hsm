@@ -5,7 +5,8 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
-import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema } from '@/lib/schemas'
+import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema } from '@/lib/schemas'
+import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -223,16 +224,103 @@ export async function raiseRequest(
   return { success: true, requestId: id }
 }
 
-export async function crossMatch(requestId: string): Promise<SimpleResult> {
+// Record a physical cross-match of a specific unit against the recipient's
+// sample. Compatible only when the major cross-match is compatible AND the
+// donor group is red-cell/plasma compatible with the recipient (allowing valid
+// substitutions like O- to any recipient). A compatible cross-match reserves
+// the unit and advances the request to cross_matched; the DB then permits issue.
+export async function recordCrossMatch(
+  requestId: string,
+  unitId: string,
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:issue')
+  const parsed = BloodCrossmatchSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
-  const { error } = await supabase.from('blood_requests')
-    .update({ status: 'cross_matched' }).eq('id', requestId).eq('status', 'requested')
-  if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'cross_match', 'blood_request', requestId)
+
+  const { data: req } = await supabase
+    .from('blood_requests').select('blood_group, component, status').eq('id', requestId).single()
+  if (!req) return { success: false, error: 'Request not found' }
+  const { data: unit } = await supabase
+    .from('blood_units').select('blood_group, component, status, screening_status, expiry').eq('id', unitId).single()
+  if (!unit) return { success: false, error: 'Blood unit not found' }
+
+  if (unit.component !== req.component) return { success: false, error: 'Component mismatch' }
+  if (unit.screening_status !== 'passed') return { success: false, error: 'Unit is not screening-passed' }
+  const groupCompatible = isCompatible(req.blood_group as BloodGroup, unit.blood_group as BloodGroup, req.component as BloodComponent)
+
+  const compatible =
+    groupCompatible &&
+    parsed.data.major_result === 'compatible' &&
+    parsed.data.minor_result !== 'incompatible'
+
+  const { error: xmErr } = await supabase.from('blood_crossmatches').insert({
+    tenant_id: actor.tenant_id,
+    request_id: requestId,
+    blood_unit_id: unitId,
+    recipient_sample_no: parsed.data.recipient_sample_no ?? null,
+    major_result: parsed.data.major_result,
+    minor_result: parsed.data.minor_result ?? null,
+    compatible,
+    technician_id: actor.id,
+  })
+  if (xmErr) return { success: false, error: xmErr.message }
+
+  if (compatible) {
+    // Reserve the unit and advance the request
+    await supabase.from('blood_units').update({ status: 'reserved' }).eq('id', unitId).eq('status', 'available')
+    if (req.status === 'requested') {
+      await supabase.from('blood_requests').update({
+        status: 'cross_matched',
+        recipient_sample_no: parsed.data.recipient_sample_no ?? null,
+      }).eq('id', requestId)
+    }
+  }
+
+  await logAudit(actor.id, 'cross_match', 'blood_request', requestId, { unit_id: unitId, compatible })
   return { success: true }
+}
+
+// Units eligible for cross-match: screening-passed, available, non-expired, of
+// the requested component, whose group is compatible with the recipient.
+export async function listCompatibleUnits(requestId: string): Promise<BloodUnit[]> {
+  const supabase = await createClient()
+  const { data: req } = await supabase
+    .from('blood_requests').select('blood_group, component').eq('id', requestId).single()
+  if (!req) return []
+  const groups = compatibleDonorGroups(req.blood_group as BloodGroup, req.component as BloodComponent)
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase.from('blood_units')
+    .select('*, donor:blood_donors(id, name)')
+    .eq('component', req.component)
+    .eq('status', 'available')
+    .eq('screening_status', 'passed')
+    .in('blood_group', groups)
+    .gte('expiry', today)
+    .order('expiry', { ascending: true })
+  return (data ?? []) as unknown as BloodUnit[]
+}
+
+// Units that have a compatible cross-match for this request and are still
+// reserved/available + screening-passed + non-expired — ready to issue.
+export async function listCrossMatchedUnits(requestId: string): Promise<BloodUnit[]> {
+  const supabase = await createClient()
+  const { data: xms } = await supabase
+    .from('blood_crossmatches').select('blood_unit_id, compatible').eq('request_id', requestId)
+  const unitIds = [...new Set((xms ?? []).filter((x) => x.compatible).map((x) => x.blood_unit_id as string))]
+  if (!unitIds.length) return []
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase.from('blood_units')
+    .select('*, donor:blood_donors(id, name)')
+    .in('id', unitIds)
+    .in('status', ['reserved', 'available'])
+    .eq('screening_status', 'passed')
+    .gte('expiry', today)
+    .order('expiry', { ascending: true })
+  return (data ?? []) as unknown as BloodUnit[]
 }
 
 export async function cancelRequest(id: string): Promise<SimpleResult> {
@@ -325,22 +413,3 @@ export async function issueUnit(input: {
   return { success: true }
 }
 
-// Available units matching a request's blood_group + component for the issue dialog
-export async function listAvailableUnitsForRequest(
-  requestId: string
-): Promise<BloodUnit[]> {
-  const supabase = await createClient()
-  const { data: req } = await supabase
-    .from('blood_requests').select('blood_group, component').eq('id', requestId).single()
-  if (!req) return []
-  const today = new Date().toISOString().split('T')[0]
-  const { data } = await supabase.from('blood_units')
-    .select('*, donor:blood_donors(id, name)')
-    .eq('blood_group', req.blood_group)
-    .eq('component', req.component)
-    .eq('status', 'available')
-    .eq('screening_status', 'passed')
-    .gte('expiry', today)
-    .order('expiry', { ascending: true })
-  return (data ?? []) as unknown as BloodUnit[]
-}

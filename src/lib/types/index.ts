@@ -415,8 +415,17 @@ export interface BloodRequest {
   requested_by: string | null; notes: string | null; requested_at: string
   admission_id: string | null; ot_schedule_id: string | null; visit_id: string | null
   urgency: BloodUrgency; indication: string | null; required_by: string | null
+  recipient_sample_no: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   requester?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+export interface BloodCrossmatch {
+  id: string; request_id: string; blood_unit_id: string
+  recipient_sample_no: string | null
+  major_result: 'compatible' | 'incompatible'
+  minor_result: 'compatible' | 'incompatible' | null
+  compatible: boolean; technician_id: string | null; crossmatched_at: string
 }
 
 export interface BloodComponentCharge {
