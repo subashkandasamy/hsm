@@ -1,12 +1,17 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { isBillCashlessCovered } from '@/lib/cashlessCover'
+import { requireTenantId } from '@/lib/tenant'
+import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
+
+const IMAGE_BUCKET = 'radiology'
+const SIGNED_URL_EXPIRY = 60 * 60 // 1 hour
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -143,13 +148,7 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
 
   if (order?.admission_id) {
     // IPD path: bill was created at order time — gate on payment before scan
-    const { data: billItem } = await supabase
-      .from('bill_items')
-      .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
-      .eq('ref_id', orderId)
-      .eq('source', 'radiology')
-      .maybeSingle()
-    const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+    const linkedBill = await resolveServiceBill(supabase, 'radiology', orderId)
     // Cashless-approved patients don't pay cash up front — an eligibility-approved
     // claim on this encounter lifts the payment gate.
     if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
@@ -166,14 +165,7 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
   }
 
   // OPD path: gate on payment before performing the scan
-  const { data: billItem } = await supabase
-    .from('bill_items')
-    .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
-    .eq('ref_id', orderId)
-    .eq('source', 'radiology')
-    .maybeSingle()
-
-  const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+  const linkedBill = await resolveServiceBill(supabase, 'radiology', orderId)
   // Cashless-approved patients don't pay cash up front — an eligibility-approved
   // claim on this encounter lifts the payment gate.
   if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
@@ -206,6 +198,52 @@ export async function uploadReport(
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'report', 'radiology_order', orderId)
   return { success: true }
+}
+
+// Returns a signed upload URL so the report modal can upload the scan image
+// directly to the private `radiology` bucket. We store the returned filePath in
+// radiology_orders.image_url (a storage path, not a public URL) and sign it for
+// reading on demand — the same PHI-safe pattern as patient documents.
+export async function getRadiologyImageUploadUrl(
+  orderId: string,
+  filename: string,
+): Promise<{ success: true; signedUrl: string; filePath: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:process')
+
+  const tenantId = await requireTenantId()
+  const ext = filename.split('.').pop() ?? 'bin'
+  const filePath = `tenants/${tenantId}/radiology/${orderId}/${crypto.randomUUID()}.${ext}`
+
+  const service = createServiceClient()
+  const { data, error } = await service.storage
+    .from(IMAGE_BUCKET)
+    .createSignedUploadUrl(filePath)
+
+  if (error || !data) return { success: false, error: error?.message ?? 'Failed to create upload URL' }
+  return { success: true, signedUrl: data.signedUrl, filePath }
+}
+
+// Returns a short-lived signed read URL for a radiology order's scan image, or
+// null if there is no image. Back-compatible: legacy rows may hold a full
+// http(s) URL (older public-URL scheme) — those are returned as-is.
+export async function getRadiologyImageUrl(
+  orderId: string,
+): Promise<{ url: string | null; isPdf: boolean }> {
+  const supabase = await createClient()
+  const { data: order } = await supabase
+    .from('radiology_orders').select('image_url').eq('id', orderId).maybeSingle()
+  const stored = (order?.image_url as string | null) ?? null
+  if (!stored) return { url: null, isPdf: false }
+
+  const isPdf = stored.toLowerCase().split('?')[0].endsWith('.pdf')
+  if (/^https?:\/\//i.test(stored)) return { url: stored, isPdf }
+
+  const service = createServiceClient()
+  const { data } = await service.storage
+    .from(IMAGE_BUCKET)
+    .createSignedUrl(stored, SIGNED_URL_EXPIRY)
+  return { url: data?.signedUrl ?? null, isPdf }
 }
 
 export async function cancelRadiologyOrder(orderId: string): Promise<SimpleResult> {

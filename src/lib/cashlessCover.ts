@@ -2,6 +2,37 @@ import type { createClient } from '@/lib/supabase/server'
 
 type Supa = Awaited<ReturnType<typeof createClient>>
 
+type LinkedBill = { id: string; status: string; visit_id: string | null; admission_id: string | null }
+
+// Resolve the bill that a lab/radiology order (or pharmacy dispense) belongs to,
+// via its bill_items. A single order can produce MULTIPLE bill_items sharing the
+// same ref_id — e.g. a lab order bills one line per test — so a `.single()` /
+// `.maybeSingle()` lookup silently returns null on >1 row and the payment gate
+// gets bypassed. All those items point at the same bill, so we dedupe by bill
+// and prefer an active (non-cancelled) one; re-billing after a cancellation can
+// leave stale items with the same ref_id pointing at a cancelled bill.
+export async function resolveServiceBill(
+  supabase: Supa,
+  source: 'lab' | 'radiology' | 'pharmacy',
+  refId: string,
+): Promise<LinkedBill | null> {
+  const { data: items } = await supabase
+    .from('bill_items')
+    .select('bill:bills(id, status, visit_id, admission_id)')
+    .eq('ref_id', refId)
+    .eq('source', source)
+
+  const byId = new Map<string, LinkedBill>()
+  for (const it of items ?? []) {
+    // PostgREST types a to-one embed loosely; at runtime `bill` is a single row.
+    const b = (it as unknown as { bill: LinkedBill | null }).bill
+    if (b) byId.set(b.id, b)
+  }
+  const bills = [...byId.values()]
+  if (!bills.length) return null
+  return bills.find((b) => b.status !== 'cancelled') ?? bills[0]
+}
+
 // True if the given bill's encounter has an eligibility-approved (cashless)
 // insurance claim — meaning the service may proceed without a cash payment, the
 // same way startVisit lets a cashless consultation begin. Keyed off

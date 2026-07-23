@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { isBillCashlessCovered } from '@/lib/cashlessCover'
+import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag } from '@/lib/types'
 
@@ -206,13 +206,7 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
 
   if (order?.admission_id) {
     // IPD path: bill was created at order time — gate on payment before collection
-    const { data: billItem } = await supabase
-      .from('bill_items')
-      .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
-      .eq('ref_id', orderId)
-      .eq('source', 'lab')
-      .maybeSingle()
-    const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+    const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
     // Cashless-approved patients don't pay cash up front — the insurer settles
     // later — so an eligibility-approved claim on this encounter lifts the gate.
     if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
@@ -228,14 +222,7 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
   }
 
   // OPD path: gate on payment before sample collection
-  const { data: billItem } = await supabase
-    .from('bill_items')
-    .select('bill_id, bill:bills(id, status, visit_id, admission_id)')
-    .eq('ref_id', orderId)
-    .eq('source', 'lab')
-    .maybeSingle()
-
-  const linkedBill = (billItem?.bill as unknown as { id: string; status: string; visit_id: string | null; admission_id: string | null } | null)
+  const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
   // Cashless-approved patients don't pay cash up front — the insurer settles
   // later — so an eligibility-approved claim on this encounter lifts the gate.
   if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
