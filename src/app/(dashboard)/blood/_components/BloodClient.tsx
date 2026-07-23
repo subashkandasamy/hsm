@@ -17,6 +17,7 @@ import IssueUnitModal from './IssueUnitModal'
 import ComponentChargesModal from './ComponentChargesModal'
 import ScreeningModal from './ScreeningModal'
 import CrossMatchModal from './CrossMatchModal'
+import TransfusionModal from './TransfusionModal'
 
 const SCREENING_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   passed:  { bg: '#DCFCE7', color: '#15803D', label: 'Screened' },
@@ -66,6 +67,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const canRequest = !!role && hasPermission(role, 'bloodbank:request')
   const canIssue   = !!role && hasPermission(role, 'bloodbank:issue')
   const canScreen  = !!role && hasPermission(role, 'bloodbank:screen')
+  const canTransfuse = !!role && hasPermission(role, 'bloodbank:transfuse')
 
   const [tab, setTab] = useState<TabKey>('inventory')
   const [inventory, setInventory] = useState(initialInventory)
@@ -79,6 +81,7 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
   const [showCharges, setShowCharges]   = useState(false)
   const [issueRequest, setIssueRequest] = useState<BloodRequest | null>(null)
   const [crossMatchRequest, setCrossMatchRequest] = useState<BloodRequest | null>(null)
+  const [transfuseRequest, setTransfuseRequest] = useState<BloodRequest | null>(null)
   const [screenUnit, setScreenUnit]     = useState<BloodUnit | null>(null)
   const [actionId, setActionId]         = useState<string | null>(null)
 
@@ -190,9 +193,11 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
           requests={requests}
           canIssue={canIssue}
           canRequest={canRequest}
+          canTransfuse={canTransfuse}
           actionId={actionId}
           onCrossMatch={setCrossMatchRequest}
           onIssue={setIssueRequest}
+          onTransfuse={setTransfuseRequest}
           onCancel={handleCancel}
         />
       )}
@@ -216,6 +221,11 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         <CrossMatchModal request={crossMatchRequest}
           onClose={() => setCrossMatchRequest(null)}
           onSuccess={() => { setCrossMatchRequest(null); refresh() }} />
+      )}
+
+      {transfuseRequest && (
+        <TransfusionModal request={transfuseRequest}
+          onClose={() => { setTransfuseRequest(null); refresh() }} />
       )}
 
       {issueRequest && (
@@ -414,13 +424,15 @@ function UnitsView({ units, canScreen, onScreen }: { units: BloodUnit[]; canScre
 }
 
 // ---- Requests View ----
-function RequestsView({ requests, canIssue, canRequest, actionId, onCrossMatch, onIssue, onCancel }: {
+function RequestsView({ requests, canIssue, canRequest, canTransfuse, actionId, onCrossMatch, onIssue, onTransfuse, onCancel }: {
   requests: BloodRequest[]
   canIssue: boolean
   canRequest: boolean
+  canTransfuse: boolean
   actionId: string | null
   onCrossMatch: (req: BloodRequest) => void
   onIssue: (req: BloodRequest) => void
+  onTransfuse: (req: BloodRequest) => void
   onCancel: (id: string) => void
 }) {
   if (requests.length === 0) {
@@ -476,6 +488,13 @@ function RequestsView({ requests, canIssue, canRequest, actionId, onCrossMatch, 
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                   Issue Unit
+                </button>
+              )}
+              {r.status === 'issued' && canTransfuse && (
+                <button onClick={() => onTransfuse(r)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
+                  Transfusion
                 </button>
               )}
               {(r.status === 'requested' || r.status === 'cross_matched') && canRequest && (

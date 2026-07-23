@@ -428,6 +428,32 @@ export interface BloodCrossmatch {
   compatible: boolean; technician_id: string | null; crossmatched_at: string
 }
 
+export interface BloodVitals { bp?: string; pulse?: string; temp?: string }
+
+export type BloodReactionType = 'febrile' | 'allergic' | 'hemolytic' | 'anaphylactic' | 'taco' | 'trali' | 'septic' | 'other'
+export type BloodReactionSeverity = 'mild' | 'moderate' | 'severe' | 'life_threatening'
+
+export interface BloodTransfusion {
+  id: string; issue_id: string; admission_id: string | null
+  started_at: string | null; ended_at: string | null
+  vitals_pre: BloodVitals | null; vitals_post: BloodVitals | null
+  administered_by: string | null; notes: string | null; created_at: string
+  reactions?: BloodTransfusionReaction[]
+}
+
+export interface BloodTransfusionReaction {
+  id: string; transfusion_id: string
+  reaction_type: BloodReactionType; severity: BloodReactionSeverity
+  action_taken: string | null; reported_by: string | null; reported_at: string
+}
+
+// An issued unit belonging to a request (for the transfusion picker)
+export interface BloodIssuedUnit {
+  id: string; blood_unit_id: string
+  blood_group: BloodGroup; component: BloodComponent; bag_number: string | null
+  transfusion?: BloodTransfusion | null
+}
+
 export interface BloodComponentCharge {
   id: string; tenant_id: string; component: BloodComponent; price: number; updated_at: string
 }
@@ -973,7 +999,7 @@ export type Permission =
   | 'radiology:read' | 'radiology:order' | 'radiology:process' | 'radiology:manage'
   | 'pharmacy:read' | 'pharmacy:dispense' | 'pharmacy:manage'
   | 'ot:read' | 'ot:schedule' | 'ot:record' | 'ot:manage'
-  | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue' | 'bloodbank:screen'
+  | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue' | 'bloodbank:screen' | 'bloodbank:transfuse'
   | 'billing:read' | 'billing:write' | 'billing:manage' | 'billing:advance'
   | 'insurance:read' | 'insurance:write'
   | 'inventory:read' | 'inventory:manage'

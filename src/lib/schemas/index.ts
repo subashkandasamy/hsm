@@ -291,6 +291,24 @@ export const BloodCrossmatchSchema = z.object({
   minor_result: z.enum(['compatible', 'incompatible']).nullable().optional(),
 })
 
+const BloodVitalsSchema = z.object({
+  bp:    z.string().nullable().optional(),
+  pulse: z.string().nullable().optional(),
+  temp:  z.string().nullable().optional(),
+})
+export const BloodTransfusionSchema = z.object({
+  started_at:  z.string().nullable().optional(),
+  ended_at:    z.string().nullable().optional(),
+  vitals_pre:  BloodVitalsSchema.nullable().optional(),
+  vitals_post: BloodVitalsSchema.nullable().optional(),
+  notes:       z.string().nullable().optional(),
+})
+export const BloodReactionSchema = z.object({
+  reaction_type: z.enum(['febrile', 'allergic', 'hemolytic', 'anaphylactic', 'taco', 'trali', 'septic', 'other']),
+  severity:      z.enum(['mild', 'moderate', 'severe', 'life_threatening']),
+  action_taken:  z.string().nullable().optional(),
+})
+
 export const BloodIssueSchema = z.object({
   request_id:    z.string().uuid(),
   blood_unit_id: z.string().uuid(),

@@ -5,9 +5,9 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
-import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema } from '@/lib/schemas'
+import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
-import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge } from '@/lib/types'
+import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -345,6 +345,95 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
   if (status) q = q.eq('status', status)
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as BloodRequest[]
+}
+
+// ---- Transfusion (Phase 4) ----
+
+// Issued units for a request, each with its transfusion record (if any) — for
+// the bedside transfusion / reaction flow.
+export async function listIssuedUnitsForRequest(requestId: string): Promise<BloodIssuedUnit[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('blood_issues')
+    .select(`id, blood_unit_id,
+      unit:blood_units(blood_group, component, bag_number),
+      transfusion:blood_transfusions(*, reactions:blood_transfusion_reactions(*))`)
+    .eq('request_id', requestId)
+    .order('issued_at', { ascending: true })
+  return (data ?? []).map((r) => {
+    const u = r.unit as unknown as { blood_group: BloodGroup; component: BloodComponent; bag_number: string | null } | null
+    const tf = r.transfusion as unknown as BloodIssuedUnit['transfusion'][] | null
+    return {
+      id: r.id as string,
+      blood_unit_id: r.blood_unit_id as string,
+      blood_group: (u?.blood_group ?? 'O+') as BloodGroup,
+      component: (u?.component ?? 'whole') as BloodComponent,
+      bag_number: u?.bag_number ?? null,
+      transfusion: Array.isArray(tf) ? (tf[0] ?? null) : (tf ?? null),
+    }
+  })
+}
+
+export async function recordTransfusion(
+  issueId: string,
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:transfuse')
+  const parsed = BloodTransfusionSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const supabase = await createClient()
+
+  // Resolve the admission via the issue's request, for encounter context.
+  const { data: issue } = await supabase
+    .from('blood_issues').select('request_id').eq('id', issueId).single()
+  let admissionId: string | null = null
+  if (issue?.request_id) {
+    const { data: req } = await supabase
+      .from('blood_requests').select('admission_id').eq('id', issue.request_id).single()
+    admissionId = (req?.admission_id as string | null) ?? null
+  }
+
+  const { error } = await supabase.from('blood_transfusions').insert({
+    tenant_id: actor.tenant_id,
+    issue_id: issueId,
+    admission_id: admissionId,
+    started_at: parsed.data.started_at ?? null,
+    ended_at: parsed.data.ended_at ?? null,
+    vitals_pre: parsed.data.vitals_pre ?? null,
+    vitals_post: parsed.data.vitals_post ?? null,
+    administered_by: actor.id,
+    notes: parsed.data.notes ?? null,
+  })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'transfuse', 'blood_issue', issueId, {})
+  return { success: true }
+}
+
+export async function recordTransfusionReaction(
+  transfusionId: string,
+  input: Record<string, unknown>,
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'bloodbank:transfuse')
+  const parsed = BloodReactionSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const supabase = await createClient()
+  const { error } = await supabase.from('blood_transfusion_reactions').insert({
+    tenant_id: actor.tenant_id,
+    transfusion_id: transfusionId,
+    reaction_type: parsed.data.reaction_type,
+    severity: parsed.data.severity,
+    action_taken: parsed.data.action_taken ?? null,
+    reported_by: actor.id,
+  })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'transfusion_reaction', 'blood_transfusion', transfusionId, {
+    reaction_type: parsed.data.reaction_type, severity: parsed.data.severity,
+  })
+  return { success: true }
 }
 
 // ---- Issue ----
