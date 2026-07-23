@@ -652,13 +652,37 @@ export async function listPackedAwaitingDispatch(): Promise<AwaitingDispatchPati
       .map(d => d.drug_id as string)
   )]
 
-  const [{ data: patients }, { data: bills }] = await Promise.all([
+  // Resolve the SPECIFIC pharmacy bill for each patient's undispatched dispenses
+  // via bill_items (source='pharmacy', ref_id = dispense id) — the same way lab
+  // and radiology resolve their order's bill. Previously this took the patient's
+  // most-recently-created bill, so an unrelated newer bill (e.g. a fresh
+  // consultation/bed bill) would mask the real pharmacy bill's paid status and
+  // wrongly block dispatch even after the medicines were paid for.
+  const allDispenseIds = patientIds.flatMap((pid) => dispenseIdsByPatient.get(pid) ?? [])
+  const [{ data: patients }, { data: pharmaItems }] = await Promise.all([
     supabase.from('patients').select('id, full_name, uhid').in('id', patientIds),
-    supabase.from('bills').select('id, patient_id, bill_no, status, total, paid')
-      .in('patient_id', patientIds)
-      .in('status', ['unpaid', 'partial', 'paid'])
-      .order('created_at', { ascending: false }),
+    allDispenseIds.length
+      ? supabase.from('bill_items').select('bill_id, ref_id').eq('source', 'pharmacy').in('ref_id', allDispenseIds)
+      : Promise.resolve({ data: [] as { bill_id: string; ref_id: string }[] }),
   ])
+
+  // dispense id -> its pharmacy bill id
+  const billIdByDispense = new Map<string, string>()
+  for (const it of (pharmaItems ?? []) as { bill_id: string; ref_id: string }[]) {
+    billIdByDispense.set(it.ref_id, it.bill_id)
+  }
+  // patient -> the pharmacy bill covering their undispatched dispenses
+  const billIdByPatient = new Map<string, string>()
+  for (const pid of patientIds) {
+    for (const did of dispenseIdsByPatient.get(pid) ?? []) {
+      const bid = billIdByDispense.get(did)
+      if (bid) { billIdByPatient.set(pid, bid); break }
+    }
+  }
+  const neededBillIds = [...new Set(billIdByPatient.values())]
+  const { data: bills } = neededBillIds.length
+    ? await supabase.from('bills').select('id, bill_no, status, total, paid').in('id', neededBillIds)
+    : { data: [] as { id: string; bill_no: string; status: string; total: number; paid: number }[] }
 
   const drugNameMap = new Map<string, string>()
   if (masterRefIds.length) {
@@ -681,14 +705,18 @@ export async function listPackedAwaitingDispatch(): Promise<AwaitingDispatchPati
 
   const patientMap = new Map((patients ?? []).map((p) => [p.id as string, p]))
 
-  const billByPatient = new Map<string, { id: string; bill_no: string; status: string; total: number; paid: number }>()
+  const billById = new Map<string, { id: string; bill_no: string; status: string; total: number; paid: number }>()
   for (const b of (bills ?? [])) {
-    if (!billByPatient.has(b.patient_id as string)) {
-      billByPatient.set(b.patient_id as string, {
-        id: b.id as string, bill_no: b.bill_no as string, status: b.status as string,
-        total: b.total as number, paid: b.paid as number,
-      })
-    }
+    billById.set(b.id as string, {
+      id: b.id as string, bill_no: b.bill_no as string, status: b.status as string,
+      total: b.total as number, paid: b.paid as number,
+    })
+  }
+  const billByPatient = new Map<string, { id: string; bill_no: string; status: string; total: number; paid: number }>()
+  for (const pid of patientIds) {
+    const bid = billIdByPatient.get(pid)
+    const b = bid ? billById.get(bid) : undefined
+    if (b) billByPatient.set(pid, b)
   }
 
   return patientIds.map((pid) => {
