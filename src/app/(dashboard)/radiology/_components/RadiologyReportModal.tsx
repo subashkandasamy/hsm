@@ -1,8 +1,10 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Printer, ExternalLink } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
+import { getRadiologyImageUrl } from '@/app/actions/radiology'
 import type { RadiologyOrder } from '@/lib/types'
 
 interface Props {
@@ -11,6 +13,18 @@ interface Props {
 }
 
 export default function RadiologyReportModal({ order, onClose }: Props) {
+  const [image, setImage] = useState<{ url: string | null; isPdf: boolean } | null>(null)
+  const [loadingImage, setLoadingImage] = useState(!!order.image_url)
+
+  useEffect(() => {
+    let active = true
+    if (!order.image_url) { setLoadingImage(false); return }
+    getRadiologyImageUrl(order.id).then((res) => {
+      if (active) { setImage(res); setLoadingImage(false) }
+    })
+    return () => { active = false }
+  }, [order.id, order.image_url])
+
   return (
     <Modal open onClose={onClose} title={`Radiology Report — ${order.patient?.full_name ?? '—'}`} maxWidth="44rem">
       <div className="space-y-4">
@@ -41,12 +55,31 @@ export default function RadiologyReportModal({ order, onClose }: Props) {
           </div>
         </div>
 
+        {/* Attached scan image */}
         {order.image_url && (
-          <a href={order.image_url} target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-medium"
-            style={{ color: '#0D9488' }}>
-            <ExternalLink className="w-3.5 h-3.5" /> View attached image
-          </a>
+          <div>
+            <p className="text-xs uppercase tracking-wide mb-1.5" style={{ color: '#0F766E', fontWeight: 700, letterSpacing: '0.5px' }}>
+              Scan Image
+            </p>
+            {loadingImage ? (
+              <p className="text-sm" style={{ color: '#94A3B8' }}>Loading image…</p>
+            ) : !image?.url ? (
+              <p className="text-sm" style={{ color: '#DC2626' }}>Image could not be loaded.</p>
+            ) : image.isPdf ? (
+              <a href={image.url} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-medium"
+                style={{ color: '#0D9488' }}>
+                <ExternalLink className="w-3.5 h-3.5" /> Open PDF report
+              </a>
+            ) : (
+              <a href={image.url} target="_blank" rel="noreferrer" className="block" title="Open full size">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={image.url} alt="Radiology scan"
+                  className="rounded-xl w-full"
+                  style={{ maxHeight: '22rem', objectFit: 'contain', background: '#0F172A', border: '1px solid #E2E8F0' }} />
+              </a>
+            )}
+          </div>
         )}
 
         {/* Actions */}

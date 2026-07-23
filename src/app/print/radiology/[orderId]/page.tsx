@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getRadiologyOrder } from '@/app/actions/radiology'
+import { getRadiologyOrder, getRadiologyImageUrl } from '@/app/actions/radiology'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
 import PrintRadiologyReport from './PrintRadiologyReport'
 import type { Patient } from '@/lib/types'
@@ -10,9 +10,10 @@ interface Props { params: Promise<{ orderId: string }> }
 export default async function PrintRadiologyReportPage({ params }: Props) {
   const { orderId } = await params
 
-  const [order, tenantProfile] = await Promise.all([
+  const [order, tenantProfile, image] = await Promise.all([
     getRadiologyOrder(orderId),
     getTenantProfile(),
+    getRadiologyImageUrl(orderId),
   ])
 
   if (!order) notFound()
@@ -29,6 +30,8 @@ export default async function PrintRadiologyReportPage({ params }: Props) {
       order={order}
       patient={(patient as Patient) ?? null}
       tenantProfile={tenantProfile}
+      imageUrl={image.url}
+      imageIsPdf={image.isPdf}
     />
   )
 }

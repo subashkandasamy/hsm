@@ -8,6 +8,8 @@ interface Props {
   order: RadiologyOrder
   patient: Patient | null
   tenantProfile: TenantProfile | null
+  imageUrl?: string | null
+  imageIsPdf?: boolean
 }
 
 function fmtDateTime(d: string | null | undefined) {
@@ -23,7 +25,7 @@ function computeAge(dob: string | null | undefined): string {
   return `${age} yrs`
 }
 
-export default function PrintRadiologyReport({ order, patient, tenantProfile: p }: Props) {
+export default function PrintRadiologyReport({ order, patient, tenantProfile: p, imageUrl, imageIsPdf }: Props) {
   useEffect(() => {
     const t = setTimeout(() => window.print(), 400)
     return () => clearTimeout(t)
@@ -127,9 +129,19 @@ export default function PrintRadiologyReport({ order, patient, tenantProfile: p 
           <div style={{ fontSize: '12px', lineHeight: 1.65, color: '#334155', whiteSpace: 'pre-wrap', minHeight: '120px' }}>
             {order.report?.trim() ? order.report : <span style={{ color: '#94A3B8' }}>No report text recorded.</span>}
           </div>
-          {order.image_url && (
+          {imageUrl && !imageIsPdf && (
+            <div style={{ marginTop: '14px' }}>
+              <p style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.6px', color: '#0F766E', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                Scan Image
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="Radiology scan"
+                style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', border: '1px solid #E2E8F0', borderRadius: '6px' }} />
+            </div>
+          )}
+          {imageUrl && imageIsPdf && (
             <p style={{ fontSize: '10px', color: '#475569', margin: '12px 0 0' }}>
-              Attached image: <span style={{ wordBreak: 'break-all' }}>{order.image_url}</span>
+              A PDF report is attached to this study (view it from the report screen).
             </p>
           )}
         </div>

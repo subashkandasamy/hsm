@@ -5,8 +5,7 @@ import { Upload, Image as ImageIcon } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Textarea from '@/components/ui/Textarea'
-import { uploadReport } from '@/app/actions/radiology'
-import { createClient } from '@/lib/supabase/client'
+import { uploadReport, getRadiologyImageUploadUrl } from '@/app/actions/radiology'
 import type { RadiologyOrder } from '@/lib/types'
 
 interface Props {
@@ -35,20 +34,26 @@ export default function ReportEntryModal({ open, order, onClose, onSuccess }: Pr
     if (!report.trim()) { setError('Report text is required'); return }
     setUploading(true); setError(null)
 
+    // Store the storage PATH (not a public URL) — the private `radiology` bucket
+    // is read back via short-lived signed URLs, the same PHI-safe pattern as
+    // patient documents. Upload directly via a server-issued signed upload URL.
     let imageUrl: string | null = order.image_url ?? null
 
     if (imageFile) {
-      const supabase = createClient()
-      const path = `${order.id}/${Date.now()}_${imageFile.name.replace(/\s+/g, '_')}`
-      const { data: uploadData, error: uploadErr } = await supabase.storage
-        .from('radiology')
-        .upload(path, imageFile, { upsert: true })
-
-      if (uploadErr) {
-        setError(`Image upload failed: ${uploadErr.message}. Report saved without image.`)
+      const urlRes = await getRadiologyImageUploadUrl(order.id, imageFile.name)
+      if (!urlRes.success) {
+        setError(`Image upload failed: ${urlRes.error}. Report saved without image.`)
       } else {
-        const { data: { publicUrl } } = supabase.storage.from('radiology').getPublicUrl(uploadData.path)
-        imageUrl = publicUrl
+        const put = await fetch(urlRes.signedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': imageFile.type || 'application/octet-stream' },
+          body: imageFile,
+        })
+        if (!put.ok) {
+          setError('Image upload failed — please try again. Report saved without image.')
+        } else {
+          imageUrl = urlRes.filePath
+        }
       }
     }
 
@@ -69,7 +74,7 @@ export default function ReportEntryModal({ open, order, onClose, onSuccess }: Pr
             style={{ minHeight: '8rem' }} />
         </FormField>
 
-        <FormField label="Image Upload" hint="JPEG, PNG, or PDF. Max 10 MB. Requires 'radiology' Storage bucket.">
+        <FormField label="Image Upload" hint="JPEG, PNG, or PDF. Max 10 MB. Stored securely; viewable from the report.">
           <div
             onClick={() => fileRef.current?.click()}
             className="flex flex-col items-center justify-center py-6 rounded-xl cursor-pointer"
@@ -84,12 +89,9 @@ export default function ReportEntryModal({ open, order, onClose, onSuccess }: Pr
               </div>
             ) : imagePreview ? (
               <div className="text-center">
-                <p className="text-xs mb-2" style={{ color: '#64748B' }}>Existing image on file</p>
-                <a href={imagePreview} target="_blank" rel="noreferrer"
-                  className="text-xs" style={{ color: '#0D9488' }} onClick={(e) => e.stopPropagation()}>
-                  View current image →
-                </a>
-                <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Click area to replace</p>
+                <ImageIcon className="w-8 h-8 mx-auto mb-2" style={{ color: '#0D9488' }} />
+                <p className="text-sm font-medium" style={{ color: '#0D9488' }}>Existing image on file</p>
+                <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Click to replace · view it from the report</p>
               </div>
             ) : (
               <div className="text-center">
