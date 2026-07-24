@@ -424,6 +424,8 @@ export interface BloodRequest {
   admission_id: string | null; ot_schedule_id: string | null; visit_id: string | null
   urgency: BloodUrgency; indication: string | null; required_by: string | null
   recipient_sample_no: string | null
+  // OPD only — the pre-issue billing status of the request's blood bill.
+  payment_status?: 'paid' | 'unpaid' | 'cashless' | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   requester?: Pick<Profile, 'id' | 'full_name'> | null
 }

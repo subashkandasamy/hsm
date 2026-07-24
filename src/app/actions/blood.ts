@@ -377,7 +377,54 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
   `).order('requested_at', { ascending: false })
   if (status) q = q.eq('status', status)
   const { data } = await q.limit(200)
-  return (data ?? []) as unknown as BloodRequest[]
+  const list = (data ?? []) as unknown as BloodRequest[]
+
+  // Attach the pre-issue payment status to pure-OPD requests so staff see
+  // paid / awaiting-payment / cashless before attempting to issue.
+  const opd = list.filter((r) => r.visit_id && !r.admission_id && !r.ot_schedule_id)
+  if (opd.length) {
+    const reqIds = opd.map((r) => r.id)
+    const { data: items } = await supabase
+      .from('bill_items')
+      .select('ref_id, bill:bills(id, status)')
+      .eq('source', 'blood')
+      .in('ref_id', reqIds)
+    const billByReq = new Map<string, { id: string; status: string }>()
+    for (const it of items ?? []) {
+      const b = (it as unknown as { ref_id: string; bill: { id: string; status: string } | null }).bill
+      if (b && !billByReq.has((it as { ref_id: string }).ref_id)) billByReq.set((it as { ref_id: string }).ref_id, b)
+    }
+
+    // Cashless: eligibility-approved claims scoped to these visits or blood bills.
+    const visitIds = [...new Set(opd.map((r) => r.visit_id).filter(Boolean))] as string[]
+    const billIds = [...billByReq.values()].map((b) => b.id)
+    const scopes: string[] = []
+    if (visitIds.length) scopes.push(`visit_id.in.(${visitIds.join(',')})`)
+    if (billIds.length) scopes.push(`bill_id.in.(${billIds.join(',')})`)
+    const coveredVisits = new Set<string>()
+    const coveredBills = new Set<string>()
+    if (scopes.length) {
+      const { data: claims } = await supabase
+        .from('insurance_claims')
+        .select('visit_id, bill_id')
+        .eq('eligibility_status', 'approved')
+        .or(scopes.join(','))
+      for (const c of claims ?? []) {
+        if (c.visit_id) coveredVisits.add(c.visit_id as string)
+        if (c.bill_id) coveredBills.add(c.bill_id as string)
+      }
+    }
+
+    for (const r of opd) {
+      const bill = billByReq.get(r.id)
+      if (!bill) { r.payment_status = null; continue }
+      if (bill.status === 'paid') r.payment_status = 'paid'
+      else if ((r.visit_id && coveredVisits.has(r.visit_id)) || coveredBills.has(bill.id)) r.payment_status = 'cashless'
+      else r.payment_status = 'unpaid'
+    }
+  }
+
+  return list
 }
 
 // ---- Reporting + look-back traceability (Phase 6) ----

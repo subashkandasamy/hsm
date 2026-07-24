@@ -45,6 +45,12 @@ const URGENCY_STYLE: Record<string, { bg: string; color: string; label: string }
   emergency: { bg: '#FEE2E2', color: '#DC2626', label: 'Emergency' },
 }
 
+const PAYMENT_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  paid:     { bg: '#DCFCE7', color: '#15803D', label: 'Paid' },
+  unpaid:   { bg: '#FEE2E2', color: '#DC2626', label: 'Awaiting payment' },
+  cashless: { bg: '#DBEAFE', color: '#1D4ED8', label: 'Cashless' },
+}
+
 function encounterTag(r: BloodRequest): string | null {
   if (r.admission_id) return 'IPD'
   if (r.ot_schedule_id) return 'OT'
@@ -526,6 +532,12 @@ function RequestsView({ requests, canIssue, canRequest, canTransfuse, actionId, 
                   <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
                     style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
                     {encounterTag(r)}
+                  </span>
+                )}
+                {r.payment_status && r.status !== 'cancelled' && PAYMENT_STYLE[r.payment_status] && (
+                  <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
+                    style={{ background: PAYMENT_STYLE[r.payment_status].bg, color: PAYMENT_STYLE[r.payment_status].color }}>
+                    {PAYMENT_STYLE[r.payment_status].label}
                   </span>
                 )}
               </div>
