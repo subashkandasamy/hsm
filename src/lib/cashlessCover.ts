@@ -13,7 +13,7 @@ type LinkedBill = { id: string; status: string; visit_id: string | null; admissi
 // leave stale items with the same ref_id pointing at a cancelled bill.
 export async function resolveServiceBill(
   supabase: Supa,
-  source: 'lab' | 'radiology' | 'pharmacy',
+  source: 'lab' | 'radiology' | 'pharmacy' | 'blood',
   refId: string,
 ): Promise<LinkedBill | null> {
   const { data: items } = await supabase

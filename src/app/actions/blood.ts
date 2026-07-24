@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
+import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
@@ -216,6 +217,38 @@ export async function raiseRequest(
     status:       'requested',
   })
   if (error) return { success: false, error: error.message }
+
+  // Pure-OPD requests bill up front (like a lab/radiology order) so payment can
+  // be collected before issue. IPD/OT charges are settled on the admission/OT
+  // bill instead, so they are billed at issue time, not here.
+  const isOpd = !!parsed.data.visit_id && !parsed.data.admission_id && !parsed.data.ot_schedule_id
+  if (isOpd) {
+    const { data: charge } = await supabase
+      .from('blood_component_charges').select('price').eq('component', parsed.data.component).maybeSingle()
+    const unitPrice = (charge?.price as number | undefined) ?? 0
+    const units = parsed.data.units_required
+    const total = unitPrice * units
+    if (total > 0) {
+      const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+      if (billNoData) {
+        const billId = crypto.randomUUID()
+        const { error: billErr } = await supabase.from('bills').insert({
+          id: billId, tenant_id: actor.tenant_id, patient_id: parsed.data.patient_id,
+          visit_id: parsed.data.visit_id, bill_no: billNoData as string,
+          subtotal: total, discount: 0, tax: 0, total, paid: 0, status: 'unpaid', created_by: actor.id,
+        })
+        if (!billErr) {
+          await supabase.from('bill_items').insert({
+            id: crypto.randomUUID(), tenant_id: actor.tenant_id, bill_id: billId,
+            source: 'blood', ref_id: id,
+            description: `Blood: ${parsed.data.blood_group} ${COMPONENT_LABELS[parsed.data.component]} ×${units}`,
+            qty: units, unit_price: unitPrice, amount: total,
+          })
+        }
+      }
+    }
+  }
+
   await logAudit(actor.id, 'raise_request', 'blood_request', id, {
     patient_id:  parsed.data.patient_id,
     blood_group: parsed.data.blood_group,
@@ -580,12 +613,23 @@ export async function issueUnit(input: {
 
   // Request context (patient + encounter) and the unit's component (for pricing)
   const { data: req } = await supabase
-    .from('blood_requests').select('patient_id, admission_id').eq('id', input.requestId).single()
+    .from('blood_requests').select('patient_id, admission_id, ot_schedule_id, visit_id, urgency').eq('id', input.requestId).single()
   if (!req) return { success: false, error: 'Request not found' }
 
   const { data: unit } = await supabase
     .from('blood_units').select('blood_group, component').eq('id', input.bloodUnitId).single()
   if (!unit) return { success: false, error: 'Blood unit not found' }
+
+  // Payment gate — OPD only. Pure outpatient blood must be paid (or covered by
+  // an eligibility-approved cashless claim) before issue, EXCEPT in an
+  // emergency, where clinical need overrides. IPD/OT bill on the encounter.
+  const isOpd = !!req.visit_id && !req.admission_id && !req.ot_schedule_id
+  if (isOpd && req.urgency !== 'emergency') {
+    const bill = await resolveServiceBill(supabase, 'blood', input.requestId)
+    if (bill && bill.status !== 'paid' && !(await isBillCashlessCovered(supabase, bill))) {
+      return { success: false, error: 'Awaiting payment — collect payment before issuing blood (or mark the request emergency)' }
+    }
+  }
 
   // Price from the configured per-component processing charge (0 if unconfigured)
   const { data: charge } = await supabase
@@ -607,7 +651,7 @@ export async function issueUnit(input: {
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Issue failed' }
 
   // IPD: auto-attach the processing charge to the admission bill so it isn't
-  // missed at the manual counter (OPD/OT issues stay billable via the counter).
+  // missed at the manual counter.
   if (req.admission_id && price > 0) {
     const today = new Date().toISOString().split('T')[0]
     await autoIpdBill(supabase, actor.id, {
@@ -625,6 +669,11 @@ export async function issueUnit(input: {
       }],
     })
     await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
+  } else if (isOpd) {
+    // OPD charge lives on the request bill raised at request time — mark the
+    // issue billed so the manual counter doesn't bill it a second time.
+    const bill = await resolveServiceBill(supabase, 'blood', input.requestId)
+    if (bill) await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
   }
 
   await logAudit(actor.id, 'issue_unit', 'blood_unit', input.bloodUnitId, {
