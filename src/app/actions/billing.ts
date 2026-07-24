@@ -638,32 +638,42 @@ export async function generateMissingDailyCharges(
     billedToday.get(aid)!.add(b.bill_source as string)
   }
 
-  // ── 3. Room rent + ICU monitoring + ventilator (one 'bed' bill/day) ──────────
+  // ── 3. Room rent (own 'bed' bill/day) ────────────────────────────────────────
+  if (chargeRoomRent) {
+    for (const adm of admissions) {
+      if (billedToday.get(adm.id)?.has('bed')) continue
+      const rate = adm.ward?.daily_rate ?? 0
+      if (rate <= 0) continue
+      await autoIpdBill(supabase, actor.id, {
+        tenantId: actor.tenant_id, admissionId: adm.id, patientId: adm.patient_id,
+        billingDate: today, billSource: 'bed',
+        lineItems: [{ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate }],
+      })
+    }
+  }
+
+  // ── 3b. ICU monitoring + ventilator (own 'icu' bill/day) ─────────────────────
+  // Separate bill_source so a mid-day ICU flag still bills even after the day's
+  // room bill was already created (the 'bed' guard no longer suppresses it).
   {
     const icuPerDay  = (cfg?.icu_charge_per_day        as number) ?? 0
     const ventPerDay = (cfg?.ventilator_charge_per_day as number) ?? 0
-    const { data: critRows } = await supabase
-      .from('admissions').select('id, is_critical_care, on_ventilator').in('id', admissionIds)
-    const critMap = new Map((critRows ?? []).map((r) => [r.id as string, r]))
-    for (const adm of admissions) {
-      if (billedToday.get(adm.id)?.has('bed')) continue
-      const items: import('@/lib/ipdBilling').IpdBillLineItem[] = []
-      const rate = adm.ward?.daily_rate ?? 0
-      if (chargeRoomRent && rate > 0) {
-        items.push({ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate })
+    if (icuPerDay > 0 || ventPerDay > 0) {
+      const { data: critRows } = await supabase
+        .from('admissions').select('id, is_critical_care, on_ventilator').in('id', admissionIds)
+      const critMap = new Map((critRows ?? []).map((r) => [r.id as string, r]))
+      for (const adm of admissions) {
+        if (billedToday.get(adm.id)?.has('icu')) continue
+        const crit = critMap.get(adm.id)
+        const items: import('@/lib/ipdBilling').IpdBillLineItem[] = []
+        if (crit?.is_critical_care && icuPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
+        if (crit?.on_ventilator && ventPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
+        if (!items.length) continue
+        await autoIpdBill(supabase, actor.id, {
+          tenantId: actor.tenant_id, admissionId: adm.id, patientId: adm.patient_id,
+          billingDate: today, billSource: 'icu', lineItems: items,
+        })
       }
-      const crit = critMap.get(adm.id)
-      if (crit?.is_critical_care && icuPerDay > 0) {
-        items.push({ source: 'bed', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
-      }
-      if (crit?.on_ventilator && ventPerDay > 0) {
-        items.push({ source: 'bed', ref_id: null, description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
-      }
-      if (!items.length) continue
-      await autoIpdBill(supabase, actor.id, {
-        tenantId: actor.tenant_id, admissionId: adm.id, patientId: adm.patient_id,
-        billingDate: today, billSource: 'bed', lineItems: items,
-      })
     }
   }
 
@@ -917,6 +927,7 @@ export async function listBills(filters?: {
 
 const COMBINED_BILL_SECTIONS: Array<{ label: string; sources: string[] }> = [
   { label: 'Room Charges',      sources: ['bed'] },
+  { label: 'Critical Care',     sources: ['icu'] },
   { label: 'Nursing Charges',   sources: ['nursing', 'nursing_morning', 'nursing_night'] },
   { label: 'Laboratory',        sources: ['lab'] },
   { label: 'Radiology',         sources: ['radiology'] },

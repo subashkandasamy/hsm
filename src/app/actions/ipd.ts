@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
+import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type { Admission, IpdProgressNote } from '@/lib/types'
 
@@ -229,6 +230,12 @@ export async function admitPatient(
     await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }
 
+  // Direct ICU admission: if admitted to an ICU bed, flag critical care + open
+  // the ICU episode automatically.
+  if (bed_id && await bedIsIcu(supabase, bed_id)) {
+    await enterIcu(supabase, actor.tenant_id, admissionId, bed_id, ward_id ?? null, actor.id)
+  }
+
   await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })
   return { success: true, admissionId }
 }
@@ -374,13 +381,25 @@ export async function transferBed(
   const rpcResult = result as { ok: boolean; error?: string }
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Transfer failed' }
 
+  // Critical-care follows the bed: entering an ICU bed flags critical care +
+  // opens an ICU episode; leaving ICU for a normal bed clears it + closes the
+  // episode. Room→room and ICU→ICU moves don't touch the manual flag.
+  const wasIcu = await bedIsIcu(supabase, admission.bed_id as string | null)
+  const nowIcu = await bedIsIcu(supabase, newBedId)
+  if (!wasIcu && nowIcu) {
+    const { data: nb } = await supabase.from('beds').select('ward_id').eq('id', newBedId).maybeSingle()
+    await enterIcu(supabase, actor.tenant_id, admissionId, newBedId, (nb?.ward_id as string | null) ?? null, actor.id)
+  } else if (wasIcu && !nowIcu) {
+    await exitIcu(supabase, admissionId, actor.id)
+  }
+
   // Record as a progress note
   await supabase.from('ipd_progress_notes').insert({
     id:           crypto.randomUUID(),
     tenant_id:    actor.tenant_id,
     admission_id: admissionId,
     author_id:    actor.id,
-    note:         `Transferred to new bed.`,
+    note:         !wasIcu && nowIcu ? 'Transferred into ICU.' : wasIcu && !nowIcu ? 'Transferred out of ICU.' : 'Transferred to new bed.',
   })
 
   await logAudit(actor.id, 'transfer', 'admission', admissionId, {

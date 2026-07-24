@@ -24,6 +24,7 @@ export async function createWardRoomType(input: {
   name: string
   daily_rate: number
   is_multi_bed: boolean
+  is_icu?: boolean
 }): Promise<{ success: true; roomType: WardRoomType } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -41,6 +42,7 @@ export async function createWardRoomType(input: {
     name: trimmed,
     daily_rate: input.daily_rate,
     is_multi_bed: input.is_multi_bed,
+    is_icu: input.is_icu ?? false,
   })
   if (error) {
     if (error.code === '23505') return { success: false, error: 'Room type already exists' }
@@ -53,7 +55,7 @@ export async function createWardRoomType(input: {
 
 export async function updateWardRoomType(
   id: string,
-  input: { name: string; daily_rate: number }
+  input: { name: string; daily_rate: number; is_icu?: boolean }
 ): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -66,7 +68,7 @@ export async function updateWardRoomType(
   const supabase = await createClient()
   const { error } = await supabase
     .from('ward_room_types')
-    .update({ name: trimmed, daily_rate: input.daily_rate })
+    .update({ name: trimmed, daily_rate: input.daily_rate, ...(input.is_icu !== undefined ? { is_icu: input.is_icu } : {}) })
     .eq('id', id)
   if (error) {
     if (error.code === '23505') return { success: false, error: 'Room type name already exists' }
@@ -344,7 +346,7 @@ export async function getWardBoard(): Promise<WardWithBeds[]> {
 
   const { data: wards } = await supabase
     .from('wards')
-    .select('*, room_type_data:ward_room_types(id, name, daily_rate, is_multi_bed)')
+    .select('*, room_type_data:ward_room_types(id, name, daily_rate, is_multi_bed, is_icu)')
     .order('name')
   if (!wards?.length) return []
 

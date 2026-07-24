@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
+import { enterIcu, exitIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -68,10 +69,30 @@ export async function setCriticalCare(admissionId: string, input: Record<string,
   await requirePermission(actor.role, 'ipd:write')
   const parsed = CriticalCareSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const d = parsed.data
   const supabase = await createClient()
-  const { error } = await supabase.from('admissions').update(parsed.data).eq('id', admissionId)
-  if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'critical_care', 'admission', admissionId, parsed.data)
+
+  // is_critical_care transitions go through the ICU-episode helpers (open/close
+  // an icu_stay), so manual toggling stays consistent with bed-driven entry.
+  if (d.is_critical_care !== undefined) {
+    const { data: adm } = await supabase
+      .from('admissions').select('is_critical_care, bed_id, ward_id').eq('id', admissionId).single()
+    if (d.is_critical_care === true && !adm?.is_critical_care) {
+      await enterIcu(supabase, actor.tenant_id, admissionId, (adm?.bed_id as string | null) ?? null, (adm?.ward_id as string | null) ?? null, actor.id)
+    } else if (d.is_critical_care === false && adm?.is_critical_care) {
+      await exitIcu(supabase, admissionId, actor.id)
+    }
+  }
+  // Remaining flags (never is_critical_care here — handled above)
+  const rest: Record<string, unknown> = {}
+  if (d.on_ventilator !== undefined) rest.on_ventilator = d.on_ventilator
+  if (d.code_status !== undefined) rest.code_status = d.code_status ?? null
+  if (d.isolation !== undefined) rest.isolation = d.isolation ?? null
+  if (Object.keys(rest).length) {
+    const { error } = await supabase.from('admissions').update(rest).eq('id', admissionId)
+    if (error) return { success: false, error: error.message }
+  }
+  await logAudit(actor.id, 'critical_care', 'admission', admissionId, d)
   return { success: true }
 }
 

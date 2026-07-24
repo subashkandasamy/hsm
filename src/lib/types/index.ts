@@ -139,7 +139,7 @@ export interface Visit {
 // ---- Phase 2 ----
 
 export type BedStatus = 'available' | 'occupied' | 'maintenance'
-export interface WardRoomType { id: string; name: string; daily_rate: number; is_multi_bed: boolean; is_active: boolean; created_at: string }
+export interface WardRoomType { id: string; name: string; daily_rate: number; is_multi_bed: boolean; is_icu: boolean; is_active: boolean; created_at: string }
 export interface Ward {
   id: string; name: string; ward_type: string | null;
   room_type_id: string | null; floor: string | null; block: string | null;
@@ -149,7 +149,7 @@ export interface Bed { id: string; ward_id: string; bed_no: string; status: BedS
 export interface BedWithOccupant extends Bed { admission_id: string | null; patient_name: string | null; patient_uhid: string | null }
 export interface WardWithBeds extends Ward {
   beds: BedWithOccupant[]
-  room_type_data?: Pick<WardRoomType, 'id' | 'name' | 'daily_rate' | 'is_multi_bed'> | null
+  room_type_data?: Pick<WardRoomType, 'id' | 'name' | 'daily_rate' | 'is_multi_bed' | 'is_icu'> | null
 }
 
 export type AdmissionStatus = 'admitted' | 'discharged' | 'transferred'
@@ -537,7 +537,7 @@ export interface BloodInventoryCell {
 
 export type BillStatus = 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled'
 export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance' | 'advance'
-export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing' | 'nursing_morning' | 'nursing_night'
+export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'icu'
 
 export interface Tariff { id: string; key: string; label: string | null; amount: number }
 

@@ -767,6 +767,7 @@ function EditRoomTypeModal({ roomType, onClose, onSave }: {
 }) {
   const [name, setName]   = useState(roomType.name)
   const [rate, setRate]   = useState(String(roomType.daily_rate))
+  const [isIcu, setIsIcu] = useState(!!roomType.is_icu)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -776,7 +777,7 @@ function EditRoomTypeModal({ roomType, onClose, onSave }: {
     if (isNaN(dailyRate) || dailyRate < 0) { setError('Enter a valid rate'); return }
     if (!name.trim()) { setError('Name is required'); return }
     setLoading(true); setError(null)
-    const res = await updateWardRoomType(roomType.id, { name: name.trim(), daily_rate: dailyRate })
+    const res = await updateWardRoomType(roomType.id, { name: name.trim(), daily_rate: dailyRate, is_icu: isIcu })
     setLoading(false)
     if (!res.success) { setError(res.error); return }
     onSave({ name: name.trim(), daily_rate: dailyRate })
@@ -802,6 +803,15 @@ function EditRoomTypeModal({ roomType, onClose, onSave }: {
             </div>
           </div>
           <p className="text-xs" style={{ color: '#94A3B8' }}>Changing the rate updates all rooms of this type.</p>
+          <label className="flex items-center gap-3 cursor-pointer rounded-xl p-3"
+            style={{ border: `1px solid ${isIcu ? '#DC2626' : '#E2E8F0'}`, background: isIcu ? 'rgba(220,38,38,0.04)' : '#FAFAFA' }}>
+            <input type="checkbox" checked={isIcu} onChange={e => setIsIcu(e.target.checked)}
+              style={{ width: '1rem', height: '1rem', accentColor: '#DC2626', cursor: 'pointer' }} />
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#0F172A' }}>ICU / Critical Care</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Admit/transfer into this room auto-enables critical care.</p>
+            </div>
+          </label>
           {error && <p className="text-xs" style={{ color: '#DC2626' }}>{error}</p>}
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl text-sm"
@@ -826,6 +836,7 @@ function AddRoomTypeModal({ open, onClose, onAdd }: {
   const [name, setName] = useState('')
   const [rate, setRate] = useState('')
   const [isMultiBed, setIsMultiBed] = useState(false)
+  const [isIcu, setIsIcu] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -835,11 +846,11 @@ function AddRoomTypeModal({ open, onClose, onAdd }: {
     if (isNaN(dailyRate) || dailyRate < 0) { setError('Enter a valid rate'); return }
     if (!name.trim()) { setError('Name is required'); return }
     setLoading(true); setError(null)
-    const res = await createWardRoomType({ name: name.trim(), daily_rate: dailyRate, is_multi_bed: isMultiBed })
+    const res = await createWardRoomType({ name: name.trim(), daily_rate: dailyRate, is_multi_bed: isMultiBed, is_icu: isIcu })
     setLoading(false)
     if (!res.success) { setError(res.error); return }
     onAdd(res.roomType)
-    setName(''); setRate(''); setIsMultiBed(false)
+    setName(''); setRate(''); setIsMultiBed(false); setIsIcu(false)
     onClose()
   }
 
@@ -870,6 +881,15 @@ function AddRoomTypeModal({ open, onClose, onAdd }: {
             <div>
               <p className="text-sm font-medium" style={{ color: '#0F172A' }}>General ward (multiple beds)</p>
               <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Beds are numbered and added manually. Leave unchecked for single private rooms.</p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer rounded-xl p-3"
+            style={{ border: `1px solid ${isIcu ? '#DC2626' : '#E2E8F0'}`, background: isIcu ? 'rgba(220,38,38,0.04)' : '#FAFAFA' }}>
+            <input type="checkbox" checked={isIcu} onChange={e => setIsIcu(e.target.checked)}
+              style={{ width: '1rem', height: '1rem', accentColor: '#DC2626', cursor: 'pointer' }} />
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#0F172A' }}>ICU / Critical Care</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Admitting or transferring into this room auto-enables critical care (flow sheet, NEWS, ICU charges).</p>
             </div>
           </label>
           {error && <p className="text-xs" style={{ color: '#DC2626' }}>{error}</p>}

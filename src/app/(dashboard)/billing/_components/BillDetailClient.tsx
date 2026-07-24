@@ -51,6 +51,7 @@ const SOURCE_LABELS: Record<BillItemSource | 'advance_refund' | 'appointment_ref
   ot: 'Operation Theatre',
   ot_consumable: 'OT Consumables',
   blood: 'Blood Bank',
+  icu: 'Critical Care',
   dental: 'Dental',
   manual: 'Manual',
   advance_refund: 'Advance Refund',
