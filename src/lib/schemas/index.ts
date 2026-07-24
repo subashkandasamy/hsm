@@ -99,6 +99,27 @@ export const AdmitPatientSchema = z.object({
   is_temp_ward: z.boolean().optional(),
   temp_slot: z.string().max(50).nullable().optional(),
 })
+const DOCTOR_ROLES = ['attending', 'consultant', 'anaesthetist', 'physiotherapist', 'dietitian', 'psychiatrist', 'other'] as const
+
+export const AddCareTeamSchema = z.object({
+  doctor_id: z.string().uuid('Select a doctor'),
+  role:      z.enum(DOCTOR_ROLES).default('consultant'),
+})
+export const RequestConsultSchema = z.object({
+  doctor_id: z.string().uuid('Select a doctor'),
+  role:      z.enum(DOCTOR_ROLES).default('consultant'),
+  reason:    z.string().nullable().optional(),
+})
+export const LogVisitSchema = z.object({
+  doctor_id:  z.string().uuid('Select a doctor'),
+  visit_type: z.enum(['round', 'consult', 'procedure']).default('round'),
+  reason:     z.string().nullable().optional(),
+  note:       z.string().nullable().optional(),
+})
+export const CompleteVisitSchema = z.object({
+  note: z.string().nullable().optional(),
+})
+
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),
   vitals: VitalsSchema.optional(),

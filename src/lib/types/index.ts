@@ -170,6 +170,27 @@ export interface Admission {
   bed?: Pick<Bed, 'id' | 'bed_no'> | null
 }
 
+export type DoctorRole = 'attending' | 'consultant' | 'anaesthetist' | 'physiotherapist' | 'dietitian' | 'psychiatrist' | 'other'
+export type DoctorVisitType = 'round' | 'consult' | 'procedure'
+export type DoctorVisitStatus = 'requested' | 'completed' | 'cancelled'
+export type DoctorVisitBilling = 'unbilled' | 'billed' | 'waived'
+
+export interface CareTeamMember {
+  id: string; admission_id: string; doctor_id: string; role: DoctorRole
+  added_at: string; removed_at: string | null
+  doctor?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface DoctorVisit {
+  id: string; admission_id: string; doctor_id: string
+  visit_type: DoctorVisitType; status: DoctorVisitStatus
+  reason: string | null; note: string | null
+  fee_snapshot: number | null; billing_status: DoctorVisitBilling
+  visit_date: string; requested_by: string | null; completed_by: string | null
+  created_at: string; completed_at: string | null
+  doctor?: Pick<Profile, 'id' | 'full_name'>
+}
+
 export interface IpdProgressNote {
   id: string; admission_id: string; author_id: string | null; note: string
   vitals: Vitals | null; created_at: string

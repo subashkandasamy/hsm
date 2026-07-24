@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, RefreshCw, BedDouble, Stethoscope, ShieldAlert, FileWarning } from 'lucide-react'
+import { listMyConsults } from '@/app/actions/careTeam'
+import type { DoctorVisit } from '@/lib/types'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import DateText from '@/components/ui/DateText'
@@ -41,6 +43,9 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
   const [wardBoard, setWardBoard] = useState<WardWithBeds[]>([])
   const [startTreatmentFor, setStartTreatmentFor] = useState<Admission | null>(null)
   const [uploadDeclarationFor, setUploadDeclarationFor] = useState<Admission | null>(null)
+  const [myConsults, setMyConsults] = useState<(DoctorVisit & { patient_name?: string; uhid?: string })[]>([])
+
+  useEffect(() => { listMyConsults().then(setMyConsults) }, [])
 
   async function refresh(status: typeof statusFilter) {
     setLoading(true)
@@ -107,6 +112,28 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
           </div>
         }
       />
+
+      {/* My pending consults (specialist worklist) */}
+      {myConsults.length > 0 && (
+        <GlassCard className="p-4 mb-4" >
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#B45309' }}>
+            My Pending Consults ({myConsults.length})
+          </p>
+          <div className="space-y-1.5">
+            {myConsults.map((c) => (
+              <button key={c.id} onClick={() => router.push(`/ipd/${c.admission_id}`)}
+                className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left"
+                style={{ background: '#FFFBEB', border: '1px solid #FDE68A', cursor: 'pointer' }}>
+                <Stethoscope className="w-4 h-4 flex-shrink-0" style={{ color: '#B45309' }} />
+                <span className="text-sm font-medium" style={{ color: '#0F172A' }}>{c.patient_name ?? '—'}</span>
+                <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{c.uhid}</span>
+                {c.reason && <span className="text-xs truncate" style={{ color: '#64748B' }}>· {c.reason}</span>}
+                <span className="text-xs ml-auto font-semibold" style={{ color: '#B45309' }}>Open →</span>
+              </button>
+            ))}
+          </div>
+        </GlassCard>
+      )}
 
       {/* Status filter tabs */}
       <div className="overflow-x-auto -mx-4 px-4 mb-5">

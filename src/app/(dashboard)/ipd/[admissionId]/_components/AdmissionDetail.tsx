@@ -27,6 +27,7 @@ import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderM
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
 import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
+import CareTeamPanel from './CareTeamPanel'
 import NursingPanel from './NursingPanel'
 
 import type {
@@ -473,6 +474,11 @@ export default function AdmissionDetail({
       {/* ── Clinical tab ── */}
       {activeTab === 'clinical' && (
         <div className="space-y-4">
+
+          {/* Care team & doctor visits (multi-doctor + per-visit billing) */}
+          {adm.status === 'admitted' && (
+            <CareTeamPanel admissionId={adm.id} doctors={otDoctors} canWrite={!!canWrite} />
+          )}
 
           {/* Patient info card */}
           <GlassCard className="p-4">
