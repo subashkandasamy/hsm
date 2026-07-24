@@ -120,6 +120,27 @@ export const CompleteVisitSchema = z.object({
   note: z.string().nullable().optional(),
 })
 
+const optInt = z.number().int().nullable().optional()
+export const IcuObservationSchema = z.object({
+  hr: optInt, sbp: optInt, dbp: optInt, map: optInt, cvp: optInt, spo2: optInt, rr: optInt,
+  temp: z.number().nullable().optional(),
+  gcs_e: optInt, gcs_v: optInt, gcs_m: optInt, gcs_total: optInt, rass: optInt, pain_score: optInt,
+  vent_mode: z.string().nullable().optional(), fio2: optInt, peep: optInt, tidal_volume: optInt, vent_rate: optInt,
+  notes: z.string().nullable().optional(),
+})
+export const FluidBalanceSchema = z.object({
+  direction: z.enum(['intake', 'output']),
+  category:  z.string().min(1, 'Category is required'),
+  volume_ml: z.number().int().min(0, 'Volume must be ≥ 0'),
+  notes:     z.string().nullable().optional(),
+})
+export const CriticalCareSchema = z.object({
+  is_critical_care: z.boolean().optional(),
+  on_ventilator:    z.boolean().optional(),
+  code_status:      z.enum(['full', 'dnr', 'dni', 'comfort']).nullable().optional(),
+  isolation:        z.enum(['none', 'contact', 'droplet', 'airborne']).nullable().optional(),
+})
+
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),
   vitals: VitalsSchema.optional(),

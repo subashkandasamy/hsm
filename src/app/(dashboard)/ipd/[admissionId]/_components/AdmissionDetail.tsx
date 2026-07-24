@@ -28,6 +28,7 @@ import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestM
 import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
 import CareTeamPanel from './CareTeamPanel'
+import CriticalCarePanel from './CriticalCarePanel'
 import NursingPanel from './NursingPanel'
 
 import type {
@@ -90,7 +91,7 @@ export default function AdmissionDetail({
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing'>('clinical')
+  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing' | 'critical'>('clinical')
 
   // Progress note form
   const [note, setNote] = useState('')
@@ -457,6 +458,7 @@ export default function AdmissionDetail({
         {([
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
           { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
+          { key: 'critical',   label: 'Critical Care', Icon: Activity },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
         ] as const).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
@@ -691,6 +693,11 @@ export default function AdmissionDetail({
           canOrder={!!canWrite && !isClosed}
           canGive={!!canNursing && !isClosed}
         />
+      )}
+
+      {/* ── Critical Care tab ── */}
+      {activeTab === 'critical' && (
+        <CriticalCarePanel admission={adm} canWrite={!!canWrite} canNurse={!!canNursing} />
       )}
 
       {/* ── Nursing tab ── */}

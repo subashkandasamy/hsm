@@ -638,20 +638,31 @@ export async function generateMissingDailyCharges(
     billedToday.get(aid)!.add(b.bill_source as string)
   }
 
-  // ── 3. Room rent ─────────────────────────────────────────────────────────────
-  if (chargeRoomRent) {
+  // ── 3. Room rent + ICU monitoring + ventilator (one 'bed' bill/day) ──────────
+  {
+    const icuPerDay  = (cfg?.icu_charge_per_day        as number) ?? 0
+    const ventPerDay = (cfg?.ventilator_charge_per_day as number) ?? 0
+    const { data: critRows } = await supabase
+      .from('admissions').select('id, is_critical_care, on_ventilator').in('id', admissionIds)
+    const critMap = new Map((critRows ?? []).map((r) => [r.id as string, r]))
     for (const adm of admissions) {
       if (billedToday.get(adm.id)?.has('bed')) continue
+      const items: import('@/lib/ipdBilling').IpdBillLineItem[] = []
       const rate = adm.ward?.daily_rate ?? 0
-      if (rate <= 0) continue
-      const wardLabel = adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent'
+      if (chargeRoomRent && rate > 0) {
+        items.push({ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate })
+      }
+      const crit = critMap.get(adm.id)
+      if (crit?.is_critical_care && icuPerDay > 0) {
+        items.push({ source: 'bed', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
+      }
+      if (crit?.on_ventilator && ventPerDay > 0) {
+        items.push({ source: 'bed', ref_id: null, description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
+      }
+      if (!items.length) continue
       await autoIpdBill(supabase, actor.id, {
-        tenantId: actor.tenant_id,
-        admissionId: adm.id,
-        patientId: adm.patient_id,
-        billingDate: today,
-        billSource: 'bed',
-        lineItems: [{ source: 'bed', ref_id: null, description: wardLabel, qty: 1, unit_price: rate }],
+        tenantId: actor.tenant_id, admissionId: adm.id, patientId: adm.patient_id,
+        billingDate: today, billSource: 'bed', lineItems: items,
       })
     }
   }
@@ -666,7 +677,9 @@ export async function generateMissingDailyCharges(
       for (const sp of spRows ?? []) feeMap.set(sp.profile_id as string, (sp.consultation_fee as number) ?? 0)
     }
     for (const adm of admissions) {
-      if (billedToday.get(adm.id)?.has('consultation')) continue
+      // NB: don't skip on a 'consultation' bill existing — consultant visits
+      // (P0.1) also bill to 'consultation'. autoIpdBill dedups the attending's
+      // daily fee by ref_id = admission id, so it's added at most once/day.
       if (!adm.admitting_doctor_id) continue
       const fee = feeMap.get(adm.admitting_doctor_id) ?? 0
       if (fee <= 0) continue

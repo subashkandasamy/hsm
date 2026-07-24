@@ -28,6 +28,8 @@ export default async function IpdBillingPage() {
     charge_admission_fee:   false,
     admission_fee_amount:   0,
     service_charge_per_day: 0,
+    icu_charge_per_day:        0,
+    ventilator_charge_per_day: 0,
     declaration_template:   DEFAULT_DECLARATION_TEMPLATE,
     updated_at:             new Date().toISOString(),
   }

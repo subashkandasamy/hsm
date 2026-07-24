@@ -32,6 +32,8 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
   const [advPct, setAdvPct] = useState(String(initPct))
   const [admFeeInput, setAdmFeeInput] = useState(String(config.admission_fee_amount))
   const [svcInput, setSvcInput] = useState(String(config.service_charge_per_day))
+  const [icuInput, setIcuInput] = useState(String(config.icu_charge_per_day ?? 0))
+  const [ventInput, setVentInput] = useState(String(config.ventilator_charge_per_day ?? 0))
   const [templateInput, setTemplateInput] = useState(config.declaration_template || DEFAULT_DECLARATION_TEMPLATE)
   const [templateSaved, setTemplateSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -67,6 +69,8 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
         charge_admission_fee:   merged.charge_admission_fee,
         admission_fee_amount:   merged.admission_fee_amount,
         service_charge_per_day: merged.service_charge_per_day,
+        icu_charge_per_day:        merged.icu_charge_per_day,
+        ventilator_charge_per_day: merged.ventilator_charge_per_day,
       })
       if (!res.success) { setError(res.error); return }
       setSaved(true)
@@ -77,11 +81,13 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
   function saveAmounts() {
     const admFee = parseFloat(admFeeInput)
     const svc    = parseFloat(svcInput)
-    if (isNaN(admFee) || admFee < 0 || isNaN(svc) || svc < 0) {
+    const icu    = parseFloat(icuInput)
+    const vent   = parseFloat(ventInput)
+    if ([admFee, svc, icu, vent].some((n) => isNaN(n) || n < 0)) {
       setError('Amounts must be non-negative numbers')
       return
     }
-    const next = { ...cfg, admission_fee_amount: admFee, service_charge_per_day: svc }
+    const next = { ...cfg, admission_fee_amount: admFee, service_charge_per_day: svc, icu_charge_per_day: icu, ventilator_charge_per_day: vent }
     setCfg(next)
     save(next)
   }
@@ -273,6 +279,31 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
                     className="w-full pl-6 pr-3 py-2 rounded-xl text-sm border"
                     style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                   />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ICU + ventilator daily charges (Critical Care) */}
+          <div className="mt-5">
+            <div className="flex items-start gap-4">
+              <div className="w-10 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Critical Care — Daily Charges</p>
+                <p className="text-xs mt-0.5 mb-2" style={{ color: '#94A3B8' }}>
+                  Applied per day when the admission is flagged ICU / on ventilator. Set 0 to disable.
+                </p>
+                <div className="flex gap-4">
+                  {([['ICU monitoring / day', icuInput, setIcuInput], ['Ventilator / day', ventInput, setVentInput]] as const).map(([label, val, set]) => (
+                    <div key={label}>
+                      <label className="text-xs block mb-1" style={{ color: '#64748B' }}>{label}</label>
+                      <div className="relative w-40">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm" style={{ color: '#94A3B8' }}>₹</span>
+                        <input type="number" min={0} value={val} onChange={(e) => set(e.target.value)}
+                          className="w-full pl-6 pr-3 py-2 rounded-xl text-sm border" style={{ borderColor: '#CBD5E1', color: '#0F172A' }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

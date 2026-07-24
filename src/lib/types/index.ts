@@ -164,6 +164,8 @@ export interface Admission {
   treatment_started_at?: string | null
   source_visit_id?: string | null
   source_emergency_case_id?: string | null
+  is_critical_care?: boolean; on_ventilator?: boolean
+  code_status?: string | null; isolation?: string | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'> | null
@@ -189,6 +191,23 @@ export interface DoctorVisit {
   visit_date: string; requested_by: string | null; completed_by: string | null
   created_at: string; completed_at: string | null
   doctor?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface IcuObservation {
+  id: string; admission_id: string; recorded_at: string; recorded_by: string | null
+  hr: number | null; sbp: number | null; dbp: number | null; map: number | null; cvp: number | null
+  spo2: number | null; rr: number | null; temp: number | null
+  gcs_e: number | null; gcs_v: number | null; gcs_m: number | null; gcs_total: number | null
+  rass: number | null; pain_score: number | null
+  vent_mode: string | null; fio2: number | null; peep: number | null; tidal_volume: number | null; vent_rate: number | null
+  notes: string | null
+  recorder?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+export type FluidDirection = 'intake' | 'output'
+export interface IcuFluidEntry {
+  id: string; admission_id: string; recorded_at: string; recorded_by: string | null
+  direction: FluidDirection; category: string; volume_ml: number; notes: string | null
 }
 
 export interface IpdProgressNote {
@@ -1210,6 +1229,8 @@ export interface IpdBillingConfig {
   charge_admission_fee: boolean
   admission_fee_amount: number
   service_charge_per_day: number
+  icu_charge_per_day: number
+  ventilator_charge_per_day: number
   declaration_template: string
   updated_at: string
 }
