@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input'
 import {
   setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance,
 } from '@/app/actions/icu'
+import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
 import type { Admission, IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 const OBS_FIELDS: { key: string; label: string; step?: string }[] = [
@@ -77,9 +78,27 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   }
 
   const t = fluids?.totals
+  const newsFor = (o: IcuObservation) => computeNews({
+    rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total,
+    on_oxygen: (o.fio2 != null && o.fio2 > 21) || flags.on_ventilator,
+  })
+  const latestNews = obs.length ? newsFor(obs[0]) : null
 
   return (
     <div className="space-y-4">
+      {/* Deterioration alert (NEWS2) */}
+      {latestNews && latestNews.band !== 'low' && (
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3"
+          style={{ background: NEWS_BAND_STYLE[latestNews.band].bg, border: `1px solid ${latestNews.band === 'high' ? '#FECACA' : '#FDE68A'}` }}>
+          <span className="text-2xl font-bold" style={{ color: NEWS_BAND_STYLE[latestNews.band].color }}>{latestNews.score}</span>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: NEWS_BAND_STYLE[latestNews.band].color }}>
+              {latestNews.band === 'high' ? '⚠ High NEWS — urgent clinical review' : 'Elevated NEWS — increase monitoring / review'}
+            </p>
+            <p className="text-xs" style={{ color: '#64748B' }}>Latest early-warning score from the most recent observation.</p>
+          </div>
+        </div>
+      )}
       {/* Critical-care flags */}
       <GlassCard className="p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -183,15 +202,22 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
             <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'rgba(248,250,252,0.9)' }}>
-                  {['Time', 'HR', 'BP', 'MAP', 'SpO₂', 'RR', 'Temp', 'GCS', 'RASS', 'Pain', 'FiO₂', 'PEEP'].map((h) => (
+                  {['Time', 'NEWS', 'HR', 'BP', 'MAP', 'SpO₂', 'RR', 'Temp', 'GCS', 'RASS', 'Pain', 'FiO₂', 'PEEP'].map((h) => (
                     <th key={h} className="text-left px-2 py-1.5 font-semibold" style={{ color: '#475569' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {obs.map((o) => (
+                {obs.map((o) => {
+                  const n = newsFor(o)
+                  return (
                   <tr key={o.id} style={{ borderTop: '1px solid #F1F5F9' }}>
                     <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: '#94A3B8' }}>{new Date(o.recorded_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="px-2 py-1.5">
+                      {n.params > 0
+                        ? <span className="px-1.5 py-0.5 rounded font-bold" style={{ background: NEWS_BAND_STYLE[n.band].bg, color: NEWS_BAND_STYLE[n.band].color }}>{n.score}</span>
+                        : '—'}
+                    </td>
                     <td className="px-2 py-1.5">{o.hr ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.sbp != null && o.dbp != null ? `${o.sbp}/${o.dbp}` : '—'}</td>
                     <td className="px-2 py-1.5">{o.map ?? '—'}</td>
@@ -204,7 +230,8 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
                     <td className="px-2 py-1.5">{o.fio2 ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.peep ?? '—'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

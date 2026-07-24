@@ -5,9 +5,60 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
+import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+export interface DeterioratingPatient {
+  admission_id: string; patient_name: string; uhid: string
+  score: number; band: NewsBand; recorded_at: string
+}
+
+// Admitted critical-care patients whose latest NEWS is elevated — a
+// deterioration worklist for nursing/doctors.
+export async function getDeterioratingPatients(): Promise<DeterioratingPatient[]> {
+  const supabase = await createClient()
+  const { data: adms } = await supabase
+    .from('admissions')
+    .select('id, on_ventilator, patient:patients(full_name, uhid)')
+    .eq('status', 'admitted')
+    .eq('is_critical_care', true)
+  const admList = adms ?? []
+  if (!admList.length) return []
+  const ids = admList.map((a) => a.id as string)
+
+  const { data: obs } = await supabase
+    .from('icu_observations')
+    .select('admission_id, recorded_at, hr, sbp, spo2, rr, temp, gcs_total, fio2')
+    .in('admission_id', ids)
+    .order('recorded_at', { ascending: false })
+
+  const latest = new Map<string, NonNullable<typeof obs>[number]>()
+  for (const o of obs ?? []) {
+    const aid = o.admission_id as string
+    if (!latest.has(aid)) latest.set(aid, o)
+  }
+
+  const out: DeterioratingPatient[] = []
+  for (const a of admList) {
+    const o = latest.get(a.id as string)
+    if (!o) continue
+    const news = computeNews({
+      rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total,
+      on_oxygen: (o.fio2 != null && o.fio2 > 21) || !!a.on_ventilator,
+    })
+    if (news.band === 'medium' || news.band === 'high') {
+      const p = a.patient as unknown as { full_name?: string; uhid?: string } | null
+      out.push({
+        admission_id: a.id as string, patient_name: p?.full_name ?? '—', uhid: p?.uhid ?? '',
+        score: news.score, band: news.band, recorded_at: o.recorded_at as string,
+      })
+    }
+  }
+  // Highest score first
+  return out.sort((x, y) => y.score - x.score)
+}
 
 // ---- Critical-care flags ----
 

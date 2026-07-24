@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, RefreshCw, BedDouble, Stethoscope, ShieldAlert, FileWarning } from 'lucide-react'
 import { listMyConsults } from '@/app/actions/careTeam'
+import { getDeterioratingPatients, type DeterioratingPatient } from '@/app/actions/icu'
+import { NEWS_BAND_STYLE } from '@/lib/earlyWarning'
 import type { DoctorVisit } from '@/lib/types'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -44,8 +46,12 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
   const [startTreatmentFor, setStartTreatmentFor] = useState<Admission | null>(null)
   const [uploadDeclarationFor, setUploadDeclarationFor] = useState<Admission | null>(null)
   const [myConsults, setMyConsults] = useState<(DoctorVisit & { patient_name?: string; uhid?: string })[]>([])
+  const [deteriorating, setDeteriorating] = useState<DeterioratingPatient[]>([])
 
-  useEffect(() => { listMyConsults().then(setMyConsults) }, [])
+  useEffect(() => {
+    listMyConsults().then(setMyConsults)
+    getDeterioratingPatients().then(setDeteriorating)
+  }, [])
 
   async function refresh(status: typeof statusFilter) {
     setLoading(true)
@@ -112,6 +118,30 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
           </div>
         }
       />
+
+      {/* Deteriorating patients (NEWS2 early-warning) */}
+      {deteriorating.length > 0 && (
+        <GlassCard className="p-4 mb-4">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#DC2626' }}>
+            ⚠ Deteriorating Patients ({deteriorating.length})
+          </p>
+          <div className="space-y-1.5">
+            {deteriorating.map((d) => (
+              <button key={d.admission_id} onClick={() => router.push(`/ipd/${d.admission_id}`)}
+                className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left"
+                style={{ background: NEWS_BAND_STYLE[d.band].bg, border: `1px solid ${d.band === 'high' ? '#FECACA' : '#FDE68A'}`, cursor: 'pointer' }}>
+                <span className="text-lg font-bold" style={{ color: NEWS_BAND_STYLE[d.band].color, minWidth: '1.5rem' }}>{d.score}</span>
+                <span className="text-sm font-medium" style={{ color: '#0F172A' }}>{d.patient_name}</span>
+                <span className="font-mono text-xs" style={{ color: '#94A3B8' }}>{d.uhid}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: NEWS_BAND_STYLE[d.band].bg, color: NEWS_BAND_STYLE[d.band].color }}>
+                  NEWS {NEWS_BAND_STYLE[d.band].label}
+                </span>
+                <span className="text-xs ml-auto font-semibold" style={{ color: NEWS_BAND_STYLE[d.band].color }}>Open →</span>
+              </button>
+            ))}
+          </div>
+        </GlassCard>
+      )}
 
       {/* My pending consults (specialist worklist) */}
       {myConsults.length > 0 && (
