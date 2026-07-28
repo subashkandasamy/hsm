@@ -219,6 +219,8 @@ export interface PatientHistory {
 
 export interface IcdCode { code: string; title: string; category: string | null }
 
+export interface RxWarning { type: 'allergy' | 'interaction'; severity: 'major' | 'moderate' | 'minor'; message: string }
+
 export type ProblemStatus = 'active' | 'chronic' | 'resolved'
 export interface PatientProblem {
   id: string; patient_id: string; problem: string; icd_code: string | null

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, Droplet, AlertTriangle, ChevronDown, ChevronRight,
@@ -29,6 +29,7 @@ import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import HistoryProblemsPanel from './HistoryProblemsPanel'
 import IcdPicker from '@/components/ui/IcdPicker'
+import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -134,6 +135,19 @@ export default function ConsultationWorkspace({
   const [rxSaving, setRxSaving] = useState(false)
   const [rxError, setRxError] = useState<string | null>(null)
   const [removingRx, setRemovingRx] = useState<string | null>(null)
+  const [rxWarnings, setRxWarnings] = useState<import('@/lib/types').RxWarning[]>([])
+
+  // Prescribing safety — allergy + interaction check as the doctor types a drug.
+  useEffect(() => {
+    const name = newRx.drug_name.trim()
+    if (!isDoctor || isClosed || name.length < 3) { setRxWarnings([]); return }
+    let active = true
+    const t = setTimeout(async () => {
+      const w = await checkPrescriptionSafety(patient.id, name, prescriptions.map((p) => p.drug_name))
+      if (active) setRxWarnings(w)
+    }, 400)
+    return () => { active = false; clearTimeout(t) }
+  }, [newRx.drug_name, isDoctor, isClosed, patient.id, prescriptions])
 
   // Drug autocomplete
   const [drugSuggestions, setDrugSuggestions] = useState<Drug[]>([])
@@ -825,6 +839,20 @@ export default function ConsultationWorkspace({
                     />
                   </FormField>
                 </div>
+                {rxWarnings.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {rxWarnings.map((w, i) => {
+                      const major = w.severity === 'major' || w.type === 'allergy'
+                      return (
+                        <div key={i} className="flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                          style={major ? { background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' } : { background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
+                          <span>{w.type === 'allergy' ? '⚠ Allergy' : w.severity === 'major' ? '⚠ Major' : 'Interaction'}</span>
+                          <span style={{ fontWeight: 400 }}>{w.message}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
                 {rxError && (
                   <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{rxError}</p>
                 )}
