@@ -9,6 +9,7 @@ import {
   getPatientHistory, upsertPatientHistory,
   listPatientProblems, addProblem, setProblemStatus, deleteProblem,
 } from '@/app/actions/emrHistory'
+import IcdPicker from '@/components/ui/IcdPicker'
 import type { PatientProblem, ProblemStatus } from '@/lib/types'
 
 const HISTORY_FIELDS: { key: string; label: string; placeholder: string }[] = [
@@ -27,11 +28,9 @@ const STATUS_STYLE: Record<ProblemStatus, { bg: string; color: string; label: st
 interface Props {
   patientId: string
   canWrite: boolean
-  // Optional ICD picker injected by P1.2 (falls back to a plain input).
-  icdPicker?: (value: string, onPick: (code: string, title: string) => void) => React.ReactNode
 }
 
-export default function HistoryProblemsPanel({ patientId, canWrite, icdPicker }: Props) {
+export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
   const [hist, setHist] = useState<Record<string, string>>({})
   const [savedHist, setSavedHist] = useState(false)
   const [savingHist, setSavingHist] = useState(false)
@@ -97,10 +96,8 @@ export default function HistoryProblemsPanel({ patientId, canWrite, icdPicker }:
               </Select>
               <Input type="date" value={pOnset} onChange={(e) => setPOnset(e.target.value)} />
             </div>
-            {/* ICD code — picker injected by P1.2, else plain input */}
-            {icdPicker
-              ? icdPicker(pIcd, (code, title) => { setPIcd(code); setPIcdTitle(title) })
-              : <Input value={pIcd} onChange={(e) => setPIcd(e.target.value)} placeholder="ICD code (optional)" />}
+            {/* ICD-10 picker (auto-fills problem name if empty) */}
+            <IcdPicker onPick={(code, title) => { setPIcd(code); setPIcdTitle(title); if (!pName.trim()) setPName(title) }} />
             {pIcd && <p className="text-xs" style={{ color: '#64748B' }}>ICD: {pIcd}{pIcdTitle ? ` — ${pIcdTitle}` : ''}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>Cancel</button>

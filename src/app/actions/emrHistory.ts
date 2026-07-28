@@ -5,9 +5,24 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { PatientHistorySchema, PatientProblemSchema } from '@/lib/schemas'
-import type { PatientHistory, PatientProblem, ProblemStatus } from '@/lib/types'
+import type { PatientHistory, PatientProblem, ProblemStatus, IcdCode } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+// ---- ICD-10 lookup (P1.2) ----
+
+export async function searchIcd(query: string): Promise<IcdCode[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+  const supabase = await createClient()
+  const esc = q.replace(/[%,()]/g, ' ')
+  const { data } = await supabase
+    .from('icd_codes')
+    .select('code, title, category')
+    .or(`code.ilike.${esc}%,title.ilike.%${esc}%`)
+    .limit(20)
+  return (data ?? []) as IcdCode[]
+}
 
 // ---- Clinical history (one row per patient) ----
 

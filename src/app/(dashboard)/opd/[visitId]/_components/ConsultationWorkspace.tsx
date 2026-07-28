@@ -28,6 +28,7 @@ import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRa
 import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import HistoryProblemsPanel from './HistoryProblemsPanel'
+import IcdPicker from '@/components/ui/IcdPicker'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -529,6 +530,11 @@ export default function ConsultationWorkspace({
                   <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechComplaint.interim}…</p>
                 )}
               </FormField>
+              {isDoctor && !isClosed && (
+                <div className="mb-3">
+                  <IcdPicker onPick={(code, title) => setConsult((c) => ({ ...c, icd_code: code, diagnosis: c.diagnosis?.trim() ? c.diagnosis : title }))} />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Diagnosis">
                   <div className="relative">
