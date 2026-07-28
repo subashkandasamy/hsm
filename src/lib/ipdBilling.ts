@@ -88,7 +88,9 @@ export async function autoIpdBill(
 
   } else {
     // ── 2. Create new bill ───────────────────────────────────────────────────
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    // Pass tenant explicitly so this works headless (cron / service role), where
+    // current_tenant_id() is NULL — see migration 0099.
+    const { data: billNoData } = await supabase.rpc('get_next_bill_no', { p_tenant_id: tenantId })
     if (!billNoData) return null
 
     billId = crypto.randomUUID()
