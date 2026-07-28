@@ -61,6 +61,20 @@ export const VitalsSchema = z.object({
   temp: z.string().nullable().optional(), spo2: z.string().nullable().optional(),
   weight: z.string().nullable().optional(), height: z.string().nullable().optional(),
 })
+export const PatientHistorySchema = z.object({
+  past_medical:   z.string().nullable().optional(),
+  past_surgical:  z.string().nullable().optional(),
+  family_history: z.string().nullable().optional(),
+  social_history: z.string().nullable().optional(),
+  drug_history:   z.string().nullable().optional(),
+})
+export const PatientProblemSchema = z.object({
+  problem:    z.string().min(1, 'Problem is required'),
+  icd_code:   z.string().nullable().optional(),
+  status:     z.enum(['active', 'chronic', 'resolved']).default('active'),
+  onset_date: z.string().nullable().optional(),
+})
+
 export const ConsultationSchema = z.object({
   complaint: z.string().nullable().optional(), diagnosis: z.string().nullable().optional(),
   icd_code: z.string().nullable().optional(), notes: z.string().nullable().optional(),

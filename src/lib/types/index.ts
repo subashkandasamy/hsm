@@ -210,6 +210,21 @@ export interface IcuFluidEntry {
   direction: FluidDirection; category: string; volume_ml: number; notes: string | null
 }
 
+export interface PatientHistory {
+  patient_id: string
+  past_medical: string | null; past_surgical: string | null
+  family_history: string | null; social_history: string | null; drug_history: string | null
+  updated_at: string
+}
+
+export type ProblemStatus = 'active' | 'chronic' | 'resolved'
+export interface PatientProblem {
+  id: string; patient_id: string; problem: string; icd_code: string | null
+  status: ProblemStatus; onset_date: string | null
+  noted_at: string; resolved_at: string | null
+  noter?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
 export interface IpdProgressNote {
   id: string; admission_id: string; author_id: string | null; note: string
   vitals: Vitals | null; created_at: string

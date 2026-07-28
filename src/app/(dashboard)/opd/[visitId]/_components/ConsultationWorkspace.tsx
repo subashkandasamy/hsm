@@ -27,6 +27,7 @@ import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
 import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
+import HistoryProblemsPanel from './HistoryProblemsPanel'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -471,6 +472,11 @@ export default function ConsultationWorkspace({
               ))}
             </div>
           </GlassCard>
+
+          {/* History & problem list (patient-level EMR) */}
+          {isDoctor && (
+            <HistoryProblemsPanel patientId={patient.id} canWrite={!isClosed && isDoctor} />
+          )}
 
           {/* Consultation */}
           <GlassCard className="p-5">
