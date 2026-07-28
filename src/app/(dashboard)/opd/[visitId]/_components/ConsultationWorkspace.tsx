@@ -30,6 +30,7 @@ import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/Radiol
 import HistoryProblemsPanel from './HistoryProblemsPanel'
 import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
+import FollowUpCard from './FollowUpCard'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -998,6 +999,11 @@ export default function ConsultationWorkspace({
                 </div>
               )}
             </GlassCard>
+          )}
+
+          {/* Follow-up appointment */}
+          {isDoctor && !isClosed && (
+            <FollowUpCard patientId={patient.id} doctorId={visit.doctor_id} reason={consult.diagnosis || undefined} />
           )}
 
           {/* Action row: Admit to IPD + Close Visit */}

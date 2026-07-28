@@ -78,6 +78,9 @@ export async function bookAppointment(
   )
   if (tokenErr) return { success: false, error: tokenErr.message }
 
+  // Ensure the month partition exists (booking can be any future month)
+  await supabase.rpc('ensure_appointment_partition', { p_date: scheduledDate })
+
   const id = crypto.randomUUID()
   const { error } = await supabase.from('appointments').insert({
     id,

@@ -29,6 +29,7 @@ import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
 import CareTeamPanel from './CareTeamPanel'
 import CriticalCarePanel from './CriticalCarePanel'
+import FollowUpCard from '@/app/(dashboard)/opd/[visitId]/_components/FollowUpCard'
 import NursingPanel from './NursingPanel'
 
 import type {
@@ -480,6 +481,11 @@ export default function AdmissionDetail({
           {/* Care team & doctor visits (multi-doctor + per-visit billing) */}
           {adm.status === 'admitted' && (
             <CareTeamPanel admissionId={adm.id} doctors={otDoctors} canWrite={!!canWrite} />
+          )}
+
+          {/* Post-discharge follow-up booking */}
+          {adm.status === 'discharged' && canWrite && adm.patient && (
+            <FollowUpCard patientId={adm.patient_id} doctorId={adm.admitting_doctor_id} reason={adm.reason || undefined} />
           )}
 
           {/* Patient info card */}
