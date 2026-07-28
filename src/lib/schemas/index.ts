@@ -206,6 +206,20 @@ export const CriticalCareSchema = z.object({
   isolation:        z.enum(['none', 'contact', 'droplet', 'airborne']).nullable().optional(),
 })
 
+export const CarePlanSchema = z.object({
+  problem:       z.string().min(1, 'Problem is required'),
+  goal:          z.string().nullable().optional(),
+  interventions: z.string().nullable().optional(),
+  status:        z.enum(['active', 'met', 'discontinued']).default('active'),
+})
+export const HandoverSchema = z.object({
+  shift:          z.string().nullable().optional(),
+  situation:      z.string().nullable().optional(),
+  background:     z.string().nullable().optional(),
+  assessment:     z.string().nullable().optional(),
+  recommendation: z.string().nullable().optional(),
+})
+
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),
   vitals: VitalsSchema.optional(),

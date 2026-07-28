@@ -29,6 +29,7 @@ import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
 import TreatmentPanel from './TreatmentPanel'
 import CareTeamPanel from './CareTeamPanel'
 import CriticalCarePanel from './CriticalCarePanel'
+import NursingDocsPanel from './NursingDocsPanel'
 import FollowUpCard from '@/app/(dashboard)/opd/[visitId]/_components/FollowUpCard'
 import NursingPanel from './NursingPanel'
 
@@ -709,11 +710,14 @@ export default function AdmissionDetail({
       {/* ── Nursing tab ── */}
       {activeTab === 'nursing' && (
         adm.status === 'admitted' ? (
-          <NursingPanel
-            admissionId={adm.id}
-            canAssign={!!canNursing}
-            today={today}
-          />
+          <div className="space-y-4">
+            <NursingPanel
+              admissionId={adm.id}
+              canAssign={!!canNursing}
+              today={today}
+            />
+            <NursingDocsPanel admissionId={adm.id} canWrite={!!canNursing} />
+          </div>
         ) : (
           <GlassCard className="p-6">
             <p className="text-sm text-center" style={{ color: '#94A3B8' }}>

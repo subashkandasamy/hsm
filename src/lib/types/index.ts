@@ -260,6 +260,17 @@ export interface PatientProblem {
   noter?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
+export type CarePlanStatus = 'active' | 'met' | 'discontinued'
+export interface NursingCarePlan {
+  id: string; admission_id: string; problem: string; goal: string | null; interventions: string | null
+  status: CarePlanStatus; created_at: string
+}
+export interface NursingHandover {
+  id: string; admission_id: string; shift: string | null
+  situation: string | null; background: string | null; assessment: string | null; recommendation: string | null
+  created_at: string; author?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
 export interface IpdProgressNote {
   id: string; admission_id: string; author_id: string | null; note: string
   vitals: Vitals | null; created_at: string
