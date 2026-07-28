@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
 import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
+import { generateDailyChargesForAdmissions } from '@/lib/ipdDailyBilling'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type { Admission, IpdProgressNote } from '@/lib/types'
 
@@ -422,13 +423,25 @@ export async function dischargePatient(
 
   const { data: admission } = await supabase
     .from('admissions')
-    .select('bed_id, ward_id, status')
+    .select('bed_id, ward_id, status, patient_id, admitting_doctor_id, admitted_at, ward:wards(name, daily_rate)')
     .eq('id', admissionId)
     .single()
 
   if (!admission || admission.status !== 'admitted') {
     return { success: false, error: 'Admission not found or already discharged' }
   }
+
+  // Ensure the discharge day's charges exist before the balance gate — otherwise
+  // a same-day admit/discharge with no page load (and before the nightly cron)
+  // would leave the final day unbilled. Idempotent: dedups against any charges
+  // the page load or cron already generated today, so it never double-bills.
+  await generateDailyChargesForAdmissions(supabase, actor.id, actor.tenant_id, [{
+    id: admissionId,
+    patient_id: admission.patient_id as string,
+    admitting_doctor_id: (admission.admitting_doctor_id as string | null) ?? null,
+    admitted_at: (admission.admitted_at as string | null) ?? null,
+    ward: (admission.ward as unknown as { name: string; daily_rate: number }) ?? { name: '', daily_rate: 0 },
+  }])
 
   // Gate on the patient's own outstanding balance before discharge. An
   // approved-but-unsettled insurance claim covers its portion — the TPA settles
