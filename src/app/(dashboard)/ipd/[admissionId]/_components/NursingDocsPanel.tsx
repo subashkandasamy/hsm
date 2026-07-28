@@ -6,6 +6,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import DateText from '@/components/ui/DateText'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { listCarePlans, addCarePlan, setCarePlanStatus, listHandovers, addHandover } from '@/app/actions/nursingCare'
 import type { NursingCarePlan, NursingHandover, CarePlanStatus } from '@/lib/types'
 
@@ -104,7 +105,7 @@ export default function NursingDocsPanel({ admissionId, canWrite }: Props) {
             {SBAR.map(([k, l, ph]) => (
               <div key={k}>
                 <label className="text-xs block mb-1 font-semibold" style={{ color: '#64748B' }}>{l}</label>
-                <textarea value={ho[k] ?? ''} onChange={(e) => setHo((h) => ({ ...h, [k]: e.target.value }))} placeholder={ph} rows={2}
+                <SpeechTextarea value={ho[k] ?? ''} onChange={(v) => setHo((h) => ({ ...h, [k]: v }))} placeholder={ph} rows={2} disabled={!canWrite}
                   className="w-full px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #E2E8F0', color: '#0F172A', resize: 'vertical' }} />
               </div>
             ))}

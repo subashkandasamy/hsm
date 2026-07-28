@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Activity, Check } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveExamination } from '@/app/actions/opd'
 
 const SIGNS = ['pallor', 'icterus', 'cyanosis', 'clubbing', 'oedema', 'lymphadenopathy'] as const
@@ -83,10 +84,12 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
           )
         })}
       </div>
-      <textarea value={general} disabled={!canWrite} onChange={(e) => setGeneral(e.target.value)}
-        placeholder="General condition, build/nutrition, vitals summary…" rows={2}
-        className="w-full px-3 py-2 rounded-xl text-sm mb-3"
-        style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: canWrite ? '#fff' : '#F8FAFC', resize: 'vertical' }} />
+      <div className="mb-3">
+        <SpeechTextarea value={general} disabled={!canWrite} onChange={setGeneral}
+          placeholder="General condition, build/nutrition, vitals summary…" rows={2}
+          className="w-full px-3 py-2 rounded-xl text-sm"
+          style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: canWrite ? '#fff' : '#F8FAFC', resize: 'vertical' }} />
+      </div>
 
       {/* Systemic */}
       <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#64748B' }}>Systemic Examination</p>
@@ -94,8 +97,8 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
         {SYSTEMS.map((f) => (
           <div key={f.key}>
             <label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>{f.label}</label>
-            <textarea value={sys[f.key] ?? ''} disabled={!canWrite}
-              onChange={(e) => setSys((v) => ({ ...v, [f.key]: e.target.value }))}
+            <SpeechTextarea value={sys[f.key] ?? ''} disabled={!canWrite}
+              onChange={(v) => setSys((prev) => ({ ...prev, [f.key]: v }))}
               placeholder={f.placeholder} rows={2}
               className="w-full px-3 py-2 rounded-xl text-sm"
               style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: canWrite ? '#fff' : '#F8FAFC', resize: 'vertical' }} />

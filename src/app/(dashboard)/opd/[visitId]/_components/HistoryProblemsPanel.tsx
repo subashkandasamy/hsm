@@ -10,6 +10,7 @@ import {
   listPatientProblems, addProblem, setProblemStatus, deleteProblem,
 } from '@/app/actions/emrHistory'
 import IcdPicker from '@/components/ui/IcdPicker'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import type { PatientProblem, ProblemStatus } from '@/lib/types'
 
 const HISTORY_FIELDS: { key: string; label: string; placeholder: string }[] = [
@@ -137,8 +138,8 @@ export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
         {HISTORY_FIELDS.map((f) => (
           <div key={f.key}>
             <label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>{f.label}</label>
-            <textarea value={hist[f.key] ?? ''} disabled={!canWrite}
-              onChange={(e) => setHist((h) => ({ ...h, [f.key]: e.target.value }))}
+            <SpeechTextarea value={hist[f.key] ?? ''} disabled={!canWrite}
+              onChange={(v) => setHist((h) => ({ ...h, [f.key]: v }))}
               placeholder={f.placeholder} rows={2}
               className="w-full px-3 py-2 rounded-xl text-sm"
               style={{ border: '1px solid #E2E8F0', color: '#0F172A', background: canWrite ? '#fff' : '#F8FAFC', resize: 'vertical' }} />
