@@ -93,9 +93,9 @@ export default function NursingDocsPanel({ admissionId, canWrite }: Props) {
       <GlassCard className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#0F172A' }}>
-            <Repeat className="w-4 h-4" style={{ color: '#7C3AED' }} /> Shift Handover (SBAR)
+            <Repeat className="w-4 h-4" style={{ color: '#0D9488' }} /> Shift Handover (SBAR)
           </h3>
-          {canWrite && <button onClick={() => setShowHo((s) => !s)} className="px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer' }}>+ Handover</button>}
+          {canWrite && <button onClick={() => setShowHo((s) => !s)} className="px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>+ Handover</button>}
         </div>
         {showHo && (
           <div className="rounded-xl p-3 mb-3 space-y-2" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
@@ -109,7 +109,7 @@ export default function NursingDocsPanel({ admissionId, canWrite }: Props) {
                   className="w-full px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #E2E8F0', color: '#0F172A', resize: 'vertical' }} />
               </div>
             ))}
-            <div className="flex justify-end"><button onClick={saveHo} disabled={busy} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer' }}>{busy ? '…' : 'Save Handover'}</button></div>
+            <div className="flex justify-end"><button onClick={saveHo} disabled={busy} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>{busy ? '…' : 'Save Handover'}</button></div>
           </div>
         )}
         {handovers.length === 0 ? <p className="text-xs" style={{ color: '#94A3B8' }}>No handovers recorded.</p> : (
@@ -117,12 +117,12 @@ export default function NursingDocsPanel({ admissionId, canWrite }: Props) {
             {handovers.map((h) => (
               <div key={h.id} className="rounded-lg px-3 py-2" style={{ background: '#F8FAFC', border: '1px solid #F1F5F9' }}>
                 <div className="flex items-center gap-2 mb-1 text-xs">
-                  {h.shift && <span className="px-1.5 py-0.5 rounded font-semibold capitalize" style={{ background: '#EEF2FF', color: '#4338CA' }}>{h.shift}</span>}
+                  {h.shift && <span className="px-1.5 py-0.5 rounded font-semibold capitalize" style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{h.shift}</span>}
                   <span style={{ color: '#94A3B8' }}>{h.author?.full_name}</span>
                   <span className="ml-auto" style={{ color: '#94A3B8' }}><DateText date={h.created_at} /></span>
                 </div>
                 {([['S', h.situation], ['B', h.background], ['A', h.assessment], ['R', h.recommendation]] as const).filter(([, v]) => v).map(([l, v]) => (
-                  <p key={l} className="text-xs" style={{ color: '#475569' }}><span className="font-bold" style={{ color: '#7C3AED' }}>{l}:</span> {v}</p>
+                  <p key={l} className="text-xs" style={{ color: '#475569' }}><span className="font-bold" style={{ color: '#0D9488' }}>{l}:</span> {v}</p>
                 ))}
               </div>
             ))}
