@@ -210,6 +210,18 @@ export interface IcuFluidEntry {
   direction: FluidDirection; category: string; volume_ml: number; notes: string | null
 }
 
+export interface GrowthRecord {
+  id: string; patient_id: string; recorded_at: string
+  weight_kg: number | null; height_cm: number | null; head_circ_cm: number | null; muac_cm: number | null
+  notes: string | null
+}
+
+export type ImmunizationState = 'given' | 'due' | 'overdue' | 'upcoming'
+export interface ImmunizationStatusItem {
+  vaccine: string; dose_label: string; due_date: string
+  given_date: string | null; status: ImmunizationState
+}
+
 export interface PatientHistory {
   patient_id: string
   past_medical: string | null; past_surgical: string | null

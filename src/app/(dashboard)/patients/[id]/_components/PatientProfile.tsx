@@ -19,6 +19,7 @@ import PatientBarcodeModal from '@/components/barcode/PatientBarcodeModal'
 import AllergiesTab from './AllergiesTab'
 import TimelineTab from './TimelineTab'
 import DocumentsTab from './DocumentsTab'
+import PediatricsTab from './PediatricsTab'
 import type {
   Patient, Visit, Appointment, Bill, Admission,
   PatientAllergy, PatientDocument, TimelineEvent, DiagnosisSummary, Role,
@@ -82,7 +83,7 @@ function MonthHeader({ label, open, onToggle, count }: { label: string; open: bo
   )
 }
 
-type Tab = 'timeline' | 'encounters' | 'bills' | 'allergies' | 'documents' | 'info'
+type Tab = 'timeline' | 'encounters' | 'bills' | 'allergies' | 'documents' | 'pediatrics' | 'info'
 
 interface Props {
   patient: Patient
@@ -124,6 +125,11 @@ export default function PatientProfile({
   const canWriteAllergy  = hasPermission(role, 'emr:allergy:write')
   const canUploadDoc     = hasPermission(role, 'emr:document:upload')
   const canDeleteDoc     = hasPermission(role, 'emr:document:delete')
+  const canVitals        = hasPermission(role, 'opd:vitals')
+
+  // Pediatric tab for children (< 18y)
+  const ageYears = patient.dob ? (Date.now() - new Date(patient.dob).getTime()) / (365.25 * 86400000) : 99
+  const isChild = ageYears < 18
 
   const encounterCount = admissions.length + visits.length + appointments.length
   const regularBillCount = bills.filter(b => b.bill_source !== 'advance_refund').length
@@ -134,6 +140,7 @@ export default function PatientProfile({
     { key: 'bills',      label: 'Bills',      count: regularBillCount },
     { key: 'allergies',  label: 'Allergies',  count: allergies.length },
     { key: 'documents',  label: 'Documents',  count: documents.length, hidden: !canUploadDoc && !canReadEMR },
+    { key: 'pediatrics', label: 'Pediatrics', hidden: !isChild || !canReadEMR },
     { key: 'info',       label: 'Info' },
   ]
   const TABS = ALL_TABS.filter((t) => !t.hidden) as { key: Tab; label: string; count?: number }[]
@@ -289,6 +296,9 @@ export default function PatientProfile({
           canUpload={canUploadDoc}
           canDelete={canDeleteDoc}
         />
+      )}
+      {tab === 'pediatrics' && (
+        <PediatricsTab patientId={patient.id} dob={patient.dob} canWrite={canVitals} />
       )}
       {tab === 'info' && <InfoTab patient={patient} />}
 

@@ -61,6 +61,21 @@ export const VitalsSchema = z.object({
   temp: z.string().nullable().optional(), spo2: z.string().nullable().optional(),
   weight: z.string().nullable().optional(), height: z.string().nullable().optional(),
 })
+export const GrowthSchema = z.object({
+  recorded_at:  z.string().nullable().optional(),
+  weight_kg:    z.number().positive().nullable().optional(),
+  height_cm:    z.number().positive().nullable().optional(),
+  head_circ_cm: z.number().positive().nullable().optional(),
+  muac_cm:      z.number().positive().nullable().optional(),
+  notes:        z.string().nullable().optional(),
+})
+export const ImmunizationRecordSchema = z.object({
+  vaccine:    z.string().min(1),
+  dose_label: z.string().min(1),
+  given_date: z.string().nullable().optional(),
+  notes:      z.string().nullable().optional(),
+})
+
 export const PatientHistorySchema = z.object({
   past_medical:   z.string().nullable().optional(),
   past_surgical:  z.string().nullable().optional(),
