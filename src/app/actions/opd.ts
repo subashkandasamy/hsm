@@ -335,6 +335,24 @@ export async function getPatientVisits(patientId: string): Promise<Visit[]> {
   return data.map((v) => ({ ...v, prescriptions: rxByVisit.get(v.id as string) ?? [] })) as unknown as Visit[]
 }
 
+// Merge the general examination into clinical_data.general_exam without
+// disturbing other template data (dental/eye) held in the same jsonb.
+export async function saveExamination(
+  visitId: string,
+  exam: Record<string, unknown>
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'opd:write')
+  const supabase = await createClient()
+  const { data: v } = await supabase.from('visits').select('clinical_data').eq('id', visitId).single()
+  const merged = { ...((v?.clinical_data as Record<string, unknown> | null) ?? {}), general_exam: exam }
+  const { error } = await supabase.from('visits').update({ clinical_data: merged }).eq('id', visitId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'visit_examination', visitId)
+  return { success: true }
+}
+
 export async function saveClinicalData(
   visitId: string,
   clinicalData: Record<string, unknown>

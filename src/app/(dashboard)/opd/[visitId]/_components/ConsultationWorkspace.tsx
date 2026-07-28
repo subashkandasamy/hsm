@@ -31,6 +31,7 @@ import HistoryProblemsPanel from './HistoryProblemsPanel'
 import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import FollowUpCard from './FollowUpCard'
+import ExaminationPanel from './ExaminationPanel'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -492,6 +493,17 @@ export default function ConsultationWorkspace({
           {/* History & problem list (patient-level EMR) */}
           {isDoctor && (
             <HistoryProblemsPanel patientId={patient.id} canWrite={!isClosed && isDoctor} />
+          )}
+
+          {/* General + systemic examination (auto-BMI from vitals) */}
+          {isDoctor && (
+            <ExaminationPanel
+              visitId={visit.id}
+              initialExam={(visit.clinical_data as Record<string, unknown> | null)?.general_exam as Record<string, unknown> | null}
+              weight={vitals.weight}
+              height={vitals.height}
+              canWrite={!isClosed && isDoctor}
+            />
           )}
 
           {/* Consultation */}
