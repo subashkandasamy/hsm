@@ -32,6 +32,8 @@ import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import FollowUpCard from './FollowUpCard'
 import ExaminationPanel from './ExaminationPanel'
+import SendToPatientButton from '@/components/ui/SendToPatientButton'
+import { sendPrescriptionNotification } from '@/app/actions/notifications'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
 import AllergyBanner from '@/components/ui/AllergyBanner'
 import FrequencyPicker from './FrequencyPicker'
@@ -643,6 +645,11 @@ export default function ConsultationWorkspace({
                 style={{ background: '#F1F5F9', color: '#64748B' }}>
                 {prescriptions.length} Rx
               </span>
+              {isDoctor && prescriptions.length > 0 && (
+                <span className="ml-auto">
+                  <SendToPatientButton onSend={(ch) => sendPrescriptionNotification(visit.id, ch)} label="Send Rx" />
+                </span>
+              )}
             </h3>
 
             {prescriptions.length > 0 && (

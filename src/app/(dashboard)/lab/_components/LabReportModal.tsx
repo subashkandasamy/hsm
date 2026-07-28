@@ -3,6 +3,8 @@
 import { Printer, Pencil } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
+import SendToPatientButton from '@/components/ui/SendToPatientButton'
+import { sendReportNotification } from '@/app/actions/notifications'
 import type { LabOrder, LabOrderItem, LabFlag } from '@/lib/types'
 
 const FLAG_COLORS: Record<LabFlag, { bg: string; color: string; label: string }> = {
@@ -89,7 +91,10 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 justify-end pt-1">
+        <div className="flex flex-wrap gap-3 items-center justify-end pt-1">
+          <div className="mr-auto">
+            <SendToPatientButton onSend={(ch) => sendReportNotification('lab', order.id, ch)} label="Send report" />
+          </div>
           {canEdit && (
             <button onClick={onEdit}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium"

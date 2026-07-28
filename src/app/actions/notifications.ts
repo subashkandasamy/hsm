@@ -94,6 +94,45 @@ export async function sendPrescriptionNotification(
   })
 }
 
+// ── Send lab / radiology report to patient ────────────────────────────────────
+
+export async function sendReportNotification(
+  kind: 'lab' | 'radiology',
+  orderId: string,
+  channel: NotificationChannel
+): Promise<{ success: boolean; error?: string; fallback?: boolean }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'notifications:send')
+  const supabase = await createClient()
+
+  let patientId = ''
+  let patientName = 'patient'
+  let testLabel = 'your test'
+
+  if (kind === 'lab') {
+    const { data } = await supabase
+      .from('lab_orders')
+      .select('patient:patients(id, full_name), items:lab_order_items(test:lab_tests_catalog(name))')
+      .eq('id', orderId).single()
+    const p = data?.patient as unknown as { id: string; full_name: string } | null
+    if (!p) return { success: false, error: 'Order or patient not found' }
+    patientId = p.id; patientName = p.full_name
+    const names = (data?.items as unknown as { test?: { name?: string } | null }[] ?? []).map((i) => i.test?.name).filter(Boolean)
+    testLabel = names.length ? names.join(', ') : 'lab tests'
+    return notify({ patientId, channel, templateKey: 'lab_result_ready', params: [patientName, testLabel], refType: 'lab_order', refId: orderId, actorId: actor.id })
+  }
+
+  const { data } = await supabase
+    .from('radiology_orders')
+    .select('patient:patients(id, full_name), test:radiology_catalog(name)')
+    .eq('id', orderId).single()
+  const p = data?.patient as unknown as { id: string; full_name: string } | null
+  if (!p) return { success: false, error: 'Order or patient not found' }
+  patientId = p.id; patientName = p.full_name
+  testLabel = (data?.test as unknown as { name?: string } | null)?.name ?? 'imaging'
+  return notify({ patientId, channel, templateKey: 'radiology_report_ready', params: [patientName, testLabel], refType: 'radiology_order', refId: orderId, actorId: actor.id })
+}
+
 // ── Send appointment reminder ─────────────────────────────────────────────────
 
 export async function sendAppointmentReminder(

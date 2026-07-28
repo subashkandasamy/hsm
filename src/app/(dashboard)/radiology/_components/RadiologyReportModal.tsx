@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Printer, ExternalLink } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
+import SendToPatientButton from '@/components/ui/SendToPatientButton'
+import { sendReportNotification } from '@/app/actions/notifications'
 import { getRadiologyImageUrl } from '@/app/actions/radiology'
 import type { RadiologyOrder } from '@/lib/types'
 
@@ -83,7 +85,10 @@ export default function RadiologyReportModal({ order, onClose }: Props) {
         )}
 
         {/* Actions */}
-        <div className="flex gap-3 justify-end pt-1">
+        <div className="flex flex-wrap gap-3 items-center justify-end pt-1">
+          <div className="mr-auto">
+            <SendToPatientButton onSend={(ch) => sendReportNotification('radiology', order.id, ch)} label="Send report" />
+          </div>
           <a href={`/print/radiology/${order.id}`} target="_blank" rel="noreferrer"
             className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold"
             style={{ background: '#0D9488', color: '#fff', border: 'none', textDecoration: 'none' }}>
