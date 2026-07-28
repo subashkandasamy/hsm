@@ -27,6 +27,10 @@ export const GUIDE_CONTENT: Record<string, () => Promise<GuideContentModule>> = 
   'hospital-inventory-purchase-order-guide': () => import('./hospital-inventory-purchase-order-guide'),
   'health-insurance-tpa-claims-guide': () => import('./health-insurance-tpa-claims-guide'),
   'hospital-staff-attendance-hr-guide': () => import('./hospital-staff-attendance-hr-guide'),
+  'ot-scheduling-management-guide': () => import('./ot-scheduling-management-guide'),
+  'blood-bank-management-guide': () => import('./blood-bank-management-guide'),
+  'emergency-triage-management-guide': () => import('./emergency-triage-management-guide'),
+  'dental-clinic-software-guide': () => import('./dental-clinic-software-guide'),
 
   // Tier 3 — India compliance & standards
   'nurse-patient-ratio-india-nabh': () => import('./nurse-patient-ratio-india-nabh'),
