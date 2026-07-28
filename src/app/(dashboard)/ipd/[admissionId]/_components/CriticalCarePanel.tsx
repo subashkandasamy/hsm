@@ -6,7 +6,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import Input from '@/components/ui/Input'
 import {
-  setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance,
+  setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance, admissionBedIsIcu,
 } from '@/app/actions/icu'
 import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
 import type { Admission, IcuObservation, IcuFluidEntry } from '@/lib/types'
@@ -40,11 +40,12 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   const [fluidDir, setFluidDir] = useState<'intake' | 'output'>('intake')
   const [fluidCat, setFluidCat] = useState('iv'); const [fluidVol, setFluidVol] = useState('')
   const [busy, setBusy] = useState(false)
+  const [inIcuBed, setInIcuBed] = useState<boolean | null>(null)
 
   const load = useCallback(() => {
     Promise.all([listIcuObservations(admission.id), listFluidBalance(admission.id)]).then(([o, f]) => { setObs(o); setFluids(f) })
   }, [admission.id])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); admissionBedIsIcu(admission.id).then(setInIcuBed) }, [load, admission.id])
 
   async function saveFlags(patch: Partial<typeof flags>) {
     const next = { ...flags, ...patch }
@@ -119,7 +120,17 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
             </Select>
           </Field>
         </div>
-        {flags.is_critical_care && <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>ICU monitoring + ventilator daily charges apply per the IPD Billing settings.</p>}
+        {flags.is_critical_care && inIcuBed === false && (
+          <div className="mt-2 flex items-start gap-2 rounded-xl px-3 py-2" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <span style={{ color: '#B45309' }}>⚠</span>
+            <p className="text-xs" style={{ color: '#92400E' }}>
+              This patient isn’t in an ICU bed. Critical-care charting still works, but the
+              <strong> ICU monitoring charge won’t bill</strong> until they’re in an ICU room
+              (the ventilator charge still applies). Consider transferring to an ICU bed.
+            </p>
+          </div>
+        )}
+        {flags.is_critical_care && inIcuBed && <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>ICU monitoring + ventilator daily charges apply per the IPD Billing settings.</p>}
       </GlassCard>
 
       {/* Fluid balance */}

@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
-import { enterIcu, exitIcu } from '@/lib/icuStay'
+import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -59,6 +59,13 @@ export async function getDeterioratingPatients(): Promise<DeterioratingPatient[]
   }
   // Highest score first
   return out.sort((x, y) => y.score - x.score)
+}
+
+// True if the admission's current bed is an ICU bed (for the off-ICU warning).
+export async function admissionBedIsIcu(admissionId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: adm } = await supabase.from('admissions').select('bed_id').eq('id', admissionId).maybeSingle()
+  return bedIsIcu(supabase, (adm?.bed_id as string | null) ?? null)
 }
 
 // ---- Critical-care flags ----

@@ -660,13 +660,18 @@ export async function generateMissingDailyCharges(
     const ventPerDay = (cfg?.ventilator_charge_per_day as number) ?? 0
     if (icuPerDay > 0 || ventPerDay > 0) {
       const { data: critRows } = await supabase
-        .from('admissions').select('id, is_critical_care, on_ventilator').in('id', admissionIds)
+        .from('admissions')
+        .select('id, is_critical_care, on_ventilator, ward:wards(room_type:ward_room_types(is_icu))')
+        .in('id', admissionIds)
       const critMap = new Map((critRows ?? []).map((r) => [r.id as string, r]))
       for (const adm of admissions) {
         if (billedToday.get(adm.id)?.has('icu')) continue
         const crit = critMap.get(adm.id)
+        // ICU monitoring only when actually in an ICU bed (option B); the
+        // ventilator charge applies wherever the patient is ventilated.
+        const inIcuBed = !!((crit?.ward as unknown as { room_type?: { is_icu?: boolean } | null } | null)?.room_type?.is_icu)
         const items: import('@/lib/ipdBilling').IpdBillLineItem[] = []
-        if (crit?.is_critical_care && icuPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
+        if (crit?.is_critical_care && inIcuBed && icuPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
         if (crit?.on_ventilator && ventPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
         if (!items.length) continue
         await autoIpdBill(supabase, actor.id, {
