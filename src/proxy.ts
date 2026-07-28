@@ -88,6 +88,15 @@ export async function proxy(request: NextRequest) {
   ]
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 
+  // ── Machine-to-machine API endpoints ───────────────────────────────────────
+  // Cron (Bearer secret) and payment webhooks (HMAC signature) authenticate
+  // themselves inside the route handler. They have no session cookie, so they
+  // must skip the cookie-based auth redirect entirely — otherwise the request
+  // is bounced to /login before it ever reaches the handler.
+  if (pathname.startsWith('/api/cron/') || pathname.startsWith('/api/webhooks/')) {
+    return NextResponse.next()
+  }
+
   // ── If Supabase is not configured, gate all non-public traffic ─────────────
   if (!isValidUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)) {
     if (isPublicPath) return NextResponse.next()
