@@ -3,23 +3,87 @@ import { logAudit } from '@/lib/audit'
 import type { NotificationChannel, NotificationRefType } from '@/lib/types'
 
 // ── Provider interface ────────────────────────────────────────────────────────
-// Swap this implementation for any BSP (Gupshup, Interakt, AiSensy, Twilio,
-// MSG91) by replacing sendWhatsApp / sendSms without touching callers.
+// WhatsApp is delivered via the Meta WhatsApp Cloud API (direct, no BSP markup).
+// SMS is still a stub — swap sendSms for MSG91/Twilio when SMS fallback is wanted.
+//
+// Required env for live WhatsApp delivery (until these are set, sendWhatsApp
+// stays in stub mode so nothing breaks pre-configuration):
+//   WHATSAPP_PHONE_NUMBER_ID   – the Cloud API phone number id (Meta app)
+//   WHATSAPP_ACCESS_TOKEN      – Bearer token for the WhatsApp Business account
+// Optional:
+//   WHATSAPP_API_VERSION       – Graph API version (default 'v21.0')
+//   WHATSAPP_TEMPLATE_LANG     – template language code (default 'en_US';
+//                                MUST match the language of the approved template)
+//   WHATSAPP_DEFAULT_CC        – country code prepended to bare local numbers
+//                                (default '91' for India)
 
 interface ProviderResult { messageId: string | null; error: string | null }
+
+// Normalise a stored phone into the digits-with-country-code form Meta expects
+// (e.g. '+91 97397 84611' → '919739784611'). Returns null if unusable.
+function normalizePhone(raw: string): string | null {
+  const digits = (raw ?? '').replace(/\D/g, '')
+  if (digits.length < 8) return null // too short to be a real number
+  const cc = process.env.WHATSAPP_DEFAULT_CC || '91'
+  if (digits.length === 10) return cc + digits               // bare local → prepend CC
+  if (digits.startsWith('0')) return cc + digits.replace(/^0+/, '')
+  return digits                                              // assume already has CC
+}
 
 async function sendWhatsApp(
   phone: string,
   templateName: string | null,
   params: string[]
 ): Promise<ProviderResult> {
-  // Stub: replace the body of this function with real BSP HTTP call.
-  // The provider_template_name from notification_templates must be pre-approved
-  // by Meta / the BSP before this will actually deliver messages.
-  console.log('[Notify/WhatsApp stub]', { phone, templateName, params })
+  // The tenant must set provider_template_name (an approved Meta template) first.
   if (!templateName) return { messageId: null, error: 'Template not configured for WhatsApp' }
-  // Simulate success for development
-  return { messageId: `wa_${Date.now()}`, error: null }
+
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  const token = process.env.WHATSAPP_ACCESS_TOKEN
+
+  // Not configured yet → keep prior stub behaviour so dev/demo works without creds.
+  if (!phoneNumberId || !token) {
+    console.log('[Notify/WhatsApp stub — Meta not configured]', { phone, templateName, params })
+    return { messageId: `wa_stub_${Date.now()}`, error: null }
+  }
+
+  const to = normalizePhone(phone)
+  if (!to) return { messageId: null, error: `Invalid recipient phone: "${phone}"` }
+
+  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0'
+  const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en_US'
+
+  const payload: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: lang },
+      // Body variables ({{1}}, {{2}}…) only when the template actually has them.
+      ...(params.length
+        ? { components: [{ type: 'body', parameters: params.map((p) => ({ type: 'text', text: p })) }] }
+        : {}),
+    },
+  }
+
+  try {
+    const res = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const json = (await res.json().catch(() => ({}))) as {
+      messages?: { id: string }[]
+      error?: { message?: string }
+    }
+    if (!res.ok) {
+      return { messageId: null, error: `WhatsApp: ${json?.error?.message ?? `HTTP ${res.status}`}` }
+    }
+    return { messageId: json?.messages?.[0]?.id ?? null, error: null }
+  } catch (e) {
+    return { messageId: null, error: `WhatsApp request failed: ${e instanceof Error ? e.message : String(e)}` }
+  }
 }
 
 async function sendSms(phone: string, body: string): Promise<ProviderResult> {
@@ -116,7 +180,10 @@ export async function notify(input: NotifyInput): Promise<NotifyResult> {
   // 5. Send
   let result: ProviderResult
   if (channel === 'whatsapp') {
-    result = await sendWhatsApp(patient.phone, template?.provider_template_name ?? null, input.params)
+    // Meta template name: explicit provider_template_name override, else the
+    // template key itself (tenants name their approved Meta templates to match).
+    const metaTemplate = template?.provider_template_name || input.templateKey
+    result = await sendWhatsApp(patient.phone, metaTemplate, input.params)
   } else {
     // Build SMS body from body_preview with substitutions
     const body = (template?.body_preview ?? input.params.join(' — ')).replace(
