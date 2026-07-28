@@ -20,6 +20,7 @@ import AllergiesTab from './AllergiesTab'
 import TimelineTab from './TimelineTab'
 import DocumentsTab from './DocumentsTab'
 import PediatricsTab from './PediatricsTab'
+import ObstetricsTab from './ObstetricsTab'
 import type {
   Patient, Visit, Appointment, Bill, Admission,
   PatientAllergy, PatientDocument, TimelineEvent, DiagnosisSummary, Role,
@@ -83,7 +84,7 @@ function MonthHeader({ label, open, onToggle, count }: { label: string; open: bo
   )
 }
 
-type Tab = 'timeline' | 'encounters' | 'bills' | 'allergies' | 'documents' | 'pediatrics' | 'info'
+type Tab = 'timeline' | 'encounters' | 'bills' | 'allergies' | 'documents' | 'pediatrics' | 'obstetrics' | 'info'
 
 interface Props {
   patient: Patient
@@ -127,9 +128,12 @@ export default function PatientProfile({
   const canDeleteDoc     = hasPermission(role, 'emr:document:delete')
   const canVitals        = hasPermission(role, 'opd:vitals')
 
-  // Pediatric tab for children (< 18y)
+  const canWriteOpd      = hasPermission(role, 'opd:write')
+
+  // Pediatric tab for children (< 18y); obstetrics for adult females
   const ageYears = patient.dob ? (Date.now() - new Date(patient.dob).getTime()) / (365.25 * 86400000) : 99
   const isChild = ageYears < 18
+  const isFemaleAdult = patient.gender === 'female' && ageYears >= 12
 
   const encounterCount = admissions.length + visits.length + appointments.length
   const regularBillCount = bills.filter(b => b.bill_source !== 'advance_refund').length
@@ -141,6 +145,7 @@ export default function PatientProfile({
     { key: 'allergies',  label: 'Allergies',  count: allergies.length },
     { key: 'documents',  label: 'Documents',  count: documents.length, hidden: !canUploadDoc && !canReadEMR },
     { key: 'pediatrics', label: 'Pediatrics', hidden: !isChild || !canReadEMR },
+    { key: 'obstetrics', label: 'Obstetrics', hidden: !isFemaleAdult || !canReadEMR },
     { key: 'info',       label: 'Info' },
   ]
   const TABS = ALL_TABS.filter((t) => !t.hidden) as { key: Tab; label: string; count?: number }[]
@@ -299,6 +304,9 @@ export default function PatientProfile({
       )}
       {tab === 'pediatrics' && (
         <PediatricsTab patientId={patient.id} dob={patient.dob} canWrite={canVitals} />
+      )}
+      {tab === 'obstetrics' && (
+        <ObstetricsTab patientId={patient.id} canWrite={canWriteOpd} />
       )}
       {tab === 'info' && <InfoTab patient={patient} />}
 

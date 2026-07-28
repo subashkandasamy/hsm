@@ -61,6 +61,42 @@ export const VitalsSchema = z.object({
   temp: z.string().nullable().optional(), spo2: z.string().nullable().optional(),
   weight: z.string().nullable().optional(), height: z.string().nullable().optional(),
 })
+export const AncRecordSchema = z.object({
+  lmp:             z.string().nullable().optional(),
+  gravida:         z.number().int().min(0).nullable().optional(),
+  para:            z.number().int().min(0).nullable().optional(),
+  abortions:       z.number().int().min(0).nullable().optional(),
+  blood_group:     z.string().nullable().optional(),
+  high_risk:       z.boolean().optional(),
+  high_risk_notes: z.string().nullable().optional(),
+})
+export const AncVisitSchema = z.object({
+  visit_date:       z.string().nullable().optional(),
+  weight_kg:        z.number().positive().nullable().optional(),
+  bp:               z.string().nullable().optional(),
+  pallor:           z.boolean().nullable().optional(),
+  fundal_height_cm: z.number().positive().nullable().optional(),
+  fetal_heart_rate: z.number().int().nullable().optional(),
+  fetal_movements:  z.string().nullable().optional(),
+  urine_albumin:    z.string().nullable().optional(),
+  urine_sugar:      z.string().nullable().optional(),
+  hb:               z.number().positive().nullable().optional(),
+  notes:            z.string().nullable().optional(),
+})
+export const PartographSchema = z.object({
+  cervix_cm:            z.number().int().min(0).max(10).nullable().optional(),
+  fetal_heart_rate:     z.number().int().nullable().optional(),
+  contractions_per10:   z.number().int().min(0).nullable().optional(),
+  contraction_duration: z.string().nullable().optional(),
+  descent:              z.string().nullable().optional(),
+  liquor:               z.string().nullable().optional(),
+  moulding:             z.string().nullable().optional(),
+  bp:                   z.string().nullable().optional(),
+  pulse:                z.number().int().nullable().optional(),
+  temp:                 z.number().nullable().optional(),
+  notes:                z.string().nullable().optional(),
+})
+
 export const GrowthSchema = z.object({
   recorded_at:  z.string().nullable().optional(),
   weight_kg:    z.number().positive().nullable().optional(),

@@ -222,6 +222,25 @@ export interface ImmunizationStatusItem {
   given_date: string | null; status: ImmunizationState
 }
 
+export interface AncRecord {
+  id: string; patient_id: string; lmp: string | null; edd: string | null
+  gravida: number | null; para: number | null; abortions: number | null
+  blood_group: string | null; high_risk: boolean; high_risk_notes: string | null
+  status: 'active' | 'delivered' | 'closed'
+}
+export interface AncVisit {
+  id: string; anc_id: string; visit_date: string
+  weight_kg: number | null; bp: string | null; pallor: boolean | null
+  fundal_height_cm: number | null; fetal_heart_rate: number | null; fetal_movements: string | null
+  urine_albumin: string | null; urine_sugar: string | null; hb: number | null; notes: string | null
+}
+export interface PartographObs {
+  id: string; anc_id: string; recorded_at: string
+  cervix_cm: number | null; fetal_heart_rate: number | null; contractions_per10: number | null
+  contraction_duration: string | null; descent: string | null; liquor: string | null; moulding: string | null
+  bp: string | null; pulse: number | null; temp: number | null; notes: string | null
+}
+
 export interface PatientHistory {
   patient_id: string
   past_medical: string | null; past_surgical: string | null
