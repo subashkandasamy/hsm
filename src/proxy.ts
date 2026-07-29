@@ -1,5 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { solutionSlugs } from '@/lib/solutions/registry'
+
+// Public marketing/solution landing pages (buyer-intent SEO pages) — kept in one
+// place so every page added to the SOLUTIONS registry is automatically reachable
+// without login, the same way /guides and /pricing are.
+const MARKETING_SOLUTION_PATHS = solutionSlugs().map((s) => `/${s}`)
 
 // ── Tenant cache (in-process, 1-min TTL) ──────────────────────────────────────
 interface CachedTenant {
@@ -85,6 +91,8 @@ export async function proxy(request: NextRequest) {
     '/native-entry', '/find-hospital',
     // Public marketing / legal pages
     '/terms', '/privacy', '/security', '/guides',
+    // Commercial solution landing pages (SEO)
+    ...MARKETING_SOLUTION_PATHS,
   ]
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 
