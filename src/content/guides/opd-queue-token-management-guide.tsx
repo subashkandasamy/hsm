@@ -25,6 +25,16 @@ export default function Guide() {
         digitizing.
       </p>
 
+      <h2>What is an OPD token system?</h2>
+      <p>
+        An <strong>OPD token system</strong> gives each patient a sequential number &mdash; a token &mdash; when they
+        register, so they&apos;re called in order instead of physically crowding at the doctor&apos;s door. It&apos;s the
+        core of any <strong>patient token system</strong> in a hospital: the token fixes a patient&apos;s place in the
+        queue, a display or their phone shows how close they are, and the doctor&apos;s screen calls the next token
+        when they&apos;re ready. Done well, a token system in a hospital lets scheduled appointments and walk-ins
+        share one fair line rather than two competing crowds.
+      </p>
+
       <h2>How an OPD queue actually flows</h2>
       <WorkflowDiagram
         title="A walk-in patient's OPD queue journey"

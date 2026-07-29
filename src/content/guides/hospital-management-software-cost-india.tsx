@@ -24,10 +24,11 @@ export default function Guide() {
   return (
     <>
       <p>
-        Hospital management software pricing in India varies enormously &mdash; from a few thousand rupees a
-        month for a small clinic to lakhs a year for a large multi-specialty hospital. Most of that spread
-        comes down to three things: hospital size, how many modules you actually need, and whether the
-        pricing model is flat or metered. This guide breaks down realistic numbers by hospital size.
+        The price of hospital management software in India varies enormously &mdash; from a few thousand rupees a
+        month for a small clinic to lakhs a year for a large multi-specialty hospital. Most of that spread comes
+        down to three things: hospital size, how many modules you actually need, and whether the pricing model is
+        flat or metered. This guide breaks down the realistic cost by hospital size, and what actually pushes the
+        price up.
       </p>
 
       <h2>Typical pricing by hospital size</h2>

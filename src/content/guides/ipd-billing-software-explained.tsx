@@ -34,6 +34,16 @@ export default function Guide() {
       </p>
       <p>This guide explains how IPD billing actually works, department by department, with a worked example.</p>
 
+      <h2>What IPD billing means</h2>
+      <p>
+        <strong>IPD</strong> is short for <strong>In-Patient Department</strong> &mdash; the part of a hospital that
+        looks after admitted patients who occupy a bed, as opposed to OPD (Out-Patient Department) for walk-in
+        visits. <strong>IPD billing</strong>, then, is the process of collecting all the{' '}
+        <strong>IPD charges in a hospital</strong> for an admitted patient &mdash; bed rent, nursing, doctor rounds,
+        lab, pharmacy and procedures &mdash; into one combined bill that the patient settles at discharge. The whole
+        skill of it is adding those charges as they happen instead of reconstructing them at the end.
+      </p>
+
       <h2>Where IPD charges come from</h2>
       <p>
         Every department a patient touches during their stay contributes a line item to the final bill. The
