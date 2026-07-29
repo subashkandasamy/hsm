@@ -40,6 +40,7 @@ export interface SolutionMeta {
 const GROUP_SOFTWARE = 'Software for your hospital'
 const GROUP_BUYING = 'Choosing & buying'
 const GROUP_SPECIALTY = 'By specialty & facility'
+const GROUP_MODULE = 'Department software'
 
 export const SOLUTIONS: Record<string, SolutionMeta> = {
   'lab-management-software': {
@@ -860,6 +861,327 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
       { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  // ── Department software (Phase 5) ─────────────────────────────────────────
+  'pharmacy-management-software': {
+    slug: 'pharmacy-management-software',
+    eyebrow: 'Pharmacy Management Software',
+    group: GROUP_MODULE,
+    tagline: 'Stock, batch and expiry, dispensing against prescriptions, and billing — for the OPD counter and the IPD ward.',
+    metaTitle: 'Pharmacy Management Software for Hospitals (India)',
+    description:
+      'Uyirly is hospital pharmacy management software for India — drug stock with batch and expiry, dispensing against prescriptions, OPD and IPD billing, and Schedule H/H1/X records. Free trial.',
+    keywords: [
+      'pharmacy management software',
+      'hospital pharmacy software',
+      'pharmacy software',
+      'pharmacy billing software',
+      'pharmacy inventory software',
+      'medical store software',
+      'pharmacy management system',
+    ],
+    primaryKeyword: 'pharmacy management software',
+    h1: 'Pharmacy management software for hospitals',
+    subhead:
+      'A hospital pharmacy has to do three hard things at once — hold stock with batch and expiry under control, dispense the right drug against the right prescription, and bill it correctly for both the OPD counter and the IPD ward. Uyirly’s pharmacy management software does all three on the same patient record, with drug-schedule compliance built in.',
+    heroBullets: [
+      'Drug stock with batch and expiry tracking',
+      'Dispensing against the prescription, for OPD and IPD',
+      'Pharmacy billing on the patient’s bill, no re-entry',
+      'Schedule H / H1 / X records captured automatically',
+    ],
+    sections: [
+      {
+        h2: 'Stock that knows its batch and expiry',
+        body:
+          'The single most expensive mistake a pharmacy makes is letting stock expire on the shelf, or dispensing a batch it shouldn’t. Uyirly tracks every drug by batch and expiry, warns before items expire, and dispenses oldest-valid-first, so the pharmacy inventory stays accurate and money doesn’t quietly walk out as write-offs. It’s the difference between pharmacy software and a stock register that’s always slightly out of date.',
+        bullets: [
+          'Batch-wise stock with expiry alerts',
+          'Low-stock and reorder flags feed purchase orders',
+          'Every issue traceable back to a batch',
+        ],
+      },
+      {
+        h2: 'Dispensing tied to the prescription',
+        body:
+          'A pharmacy is only as safe as the link between what was prescribed and what was handed over. In Uyirly the doctor’s prescription flows to the pharmacy, which dispenses against it — so the medicine matches the consultation, and the charge lands on the same patient bill. There’s no re-keying the drug list, and nothing is dispensed against a bill that doesn’t exist.',
+      },
+      {
+        h2: 'One counter for OPD retail and IPD wards',
+        body:
+          'A hospital pharmacy serves two very different flows: walk-in OPD customers who pay at the counter, and ward medication charged to an admitted patient’s running bill. Uyirly handles both from one system — a walk-in sale is billed and receipted in one screen, while ward issues post straight to the IPD bill — so the pharmacy isn’t running two disconnected processes.',
+        bullets: [
+          'OPD retail sale billed and receipted in one screen',
+          'IPD ward issues post to the admitted patient’s bill',
+          'Returns and adjustments handled cleanly',
+        ],
+      },
+      {
+        h2: 'Drug-schedule compliance, built in',
+        body:
+          'A pharmacy that treats every drug the same is quietly non-compliant the moment it dispenses a Schedule H1 antibiotic. Uyirly carries each drug’s schedule (H, H1, X) in the catalogue and captures the register fields H1 dispensing requires — prescriber, patient, drug, quantity — so compliance is a by-product of dispensing, not a separate logbook kept on the side.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Does the pharmacy software track batch and expiry?',
+        a: 'Yes. Every drug is tracked by batch and expiry, with alerts before items expire and oldest-valid-first dispensing, so stock stays accurate and expiry write-offs shrink. Low-stock flags feed reorder and purchase orders.',
+      },
+      {
+        q: 'Can it bill both OPD walk-in sales and IPD ward medication?',
+        a: 'Yes. A walk-in OPD customer is billed and receipted in one screen, while medication issued to an admitted patient posts straight to their IPD bill — both from the same pharmacy module, on the same patient record.',
+      },
+      {
+        q: 'Does it handle Schedule H, H1 and X drug records?',
+        a: 'Yes. Each drug carries its schedule classification, and Schedule H1 dispensing automatically captures the required register fields (prescriber, patient, drug, quantity) instead of relying on a separate physical logbook.',
+      },
+    ],
+    related: [
+      { label: 'Hospital pharmacy management, explained', href: '/guides/hospital-pharmacy-management-software-guide' },
+      { label: 'Schedule H, H1 & X drugs', href: '/guides/drug-schedule-h-h1-x-pharmacy-compliance' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  'radiology-information-system-software': {
+    slug: 'radiology-information-system-software',
+    eyebrow: 'Radiology (RIS) Software',
+    group: GROUP_MODULE,
+    tagline: 'Order to scan to report — modality worklist, structured reporting and templates on one patient record.',
+    metaTitle: 'Radiology Information System (RIS) Software India',
+    description:
+      'Uyirly is radiology information system (RIS) software for Indian hospitals — order to scan to verified report, modality worklist, reporting templates and billing on one patient record. Free trial.',
+    keywords: [
+      'radiology information system',
+      'ris software',
+      'radiology software',
+      'radiology management software',
+      'radiology reporting software',
+      'radiology information system software',
+    ],
+    primaryKeyword: 'radiology information system',
+    h1: 'Radiology information system (RIS) software',
+    subhead:
+      'A radiology department’s job is to turn an order into a verified report without anything getting lost in between. Uyirly’s RIS runs that whole path — order, modality worklist, scan, structured report — on the same patient record and billing as the rest of the hospital, so a scan ordered in a consultation comes back as a report the doctor can actually see.',
+    heroBullets: [
+      'Order → worklist → scan → verified report in one flow',
+      'Modality worklist so technicians know what’s pending',
+      'Reporting templates for faster, consistent reports',
+      'Billing and patient record shared with the hospital',
+    ],
+    sections: [
+      {
+        h2: 'What a radiology information system does',
+        body:
+          'A RIS (radiology information system) manages the workflow and reports of a radiology department — distinct from a PACS, which stores the images themselves. The RIS is what makes sure an order becomes a worklist entry, the scan gets done, the report gets written and verified, and the result reaches the ordering doctor. Uyirly is the RIS layer: the workflow, the reporting and the billing, connected to one patient record.',
+      },
+      {
+        h2: 'A worklist the technicians actually use',
+        body:
+          'The everyday failure of a busy radiology department is a scan that no one realises is pending. Uyirly gives technicians a live modality worklist — what’s ordered, what’s in progress, what’s done — so nothing sits forgotten and the department can see its own backlog at a glance.',
+        bullets: [
+          'Orders flow from OPD/IPD into the radiology worklist',
+          'Live status: ordered, in-progress, reported, verified',
+          'Overdue scans surfaced instead of lost',
+        ],
+      },
+      {
+        h2: 'Structured reporting with templates',
+        body:
+          'Radiology reports are faster and more consistent when the radiologist starts from a template rather than a blank page. Uyirly supports reporting templates per study type, so a chest X-ray or an ultrasound report follows the same structure every time, and the verified report is formatted into a clean PDF ready to hand to the patient or attach to their record.',
+      },
+      {
+        h2: 'Connected to the rest of the hospital',
+        body:
+          'A standalone radiology system means re-registering the patient and reconciling the bill separately. In Uyirly the RIS shares the same patient record and billing as OPD, IPD and the lab — so a scan ordered during a consultation lands on the same patient and the same bill, and the report joins the patient’s history alongside their lab results.',
+        bullets: [
+          'Scans ordered in a consultation reach radiology with no re-registration',
+          'Radiology charges post to the patient’s running bill',
+          'Reports sit on one history with lab and consultation records',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'What is the difference between RIS and PACS?',
+        a: 'A RIS (radiology information system) manages the workflow and reports — orders, worklist, reporting, billing — while a PACS stores and displays the actual images. They complement each other. Uyirly provides the RIS workflow and reporting on one shared patient record.',
+      },
+      {
+        q: 'Does it handle reporting templates?',
+        a: 'Yes. Radiologists can report from templates per study type, so reports are faster and consistent, and the verified report is formatted into a clean PDF for the patient or their record.',
+      },
+      {
+        q: 'Can radiology share the same patient record as the rest of the hospital?',
+        a: 'Yes. A scan ordered in an OPD or IPD consultation flows to radiology without re-registering the patient, the charge posts to their bill, and the report joins the same patient history as their lab and consultation records.',
+      },
+    ],
+    related: [
+      { label: 'Radiology & RIS reporting, explained', href: '/guides/radiology-ris-reporting-guide' },
+      { label: 'Lab management software (LIMS)', href: '/lab-management-software' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  'blood-bank-management-software': {
+    slug: 'blood-bank-management-software',
+    eyebrow: 'Blood Bank Software',
+    group: GROUP_MODULE,
+    tagline: 'Donors, stock by group and component, cross-match and full issue traceability — with expiry under control.',
+    metaTitle: 'Blood Bank Management Software (India)',
+    description:
+      'Uyirly is blood bank management software for India — donor records, stock by blood group and component, cross-matching, issue traceability and expiry control, on one hospital system. Free trial.',
+    keywords: [
+      'blood bank management software',
+      'blood bank software',
+      'blood bank management system',
+      'blood bank information system',
+      'blood bank software india',
+    ],
+    primaryKeyword: 'blood bank management software',
+    h1: 'Blood bank management software you can trust',
+    subhead:
+      'A blood bank runs on traceability: every unit has to be accounted for from donor to recipient, stored by group and component, cross-matched before issue, and never used past expiry. Uyirly’s blood bank management software tracks all of it on one system, so the bank is auditable and safe rather than run on a register and hope.',
+    heroBullets: [
+      'Donor records and donation history',
+      'Stock by blood group and component',
+      'Cross-matching before issue',
+      'Full unit traceability, donor to recipient',
+    ],
+    sections: [
+      {
+        h2: 'Every unit accounted for, donor to recipient',
+        body:
+          'The whole point of a blood bank system is that no unit is ever unaccounted for. Uyirly gives each unit an identity from the moment it’s donated and tracks it through testing, storage, cross-match and issue, so at any time you know exactly what’s in stock, where each unit came from, and where it went. That traceability is what a paper register can never reliably give you.',
+      },
+      {
+        h2: 'Stock by group and component',
+        body:
+          'Blood isn’t one thing — it’s groups and components (whole blood, packed cells, plasma, platelets), each with its own shelf life. Uyirly holds stock by group and component with expiry tracking, so you can see availability at a glance, use oldest-valid-first, and get warned before units expire instead of discovering it during a shortage.',
+        bullets: [
+          'Live availability by blood group and component',
+          'Expiry tracking with warnings before units lapse',
+          'Component separation recorded against the source unit',
+        ],
+      },
+      {
+        h2: 'Cross-match and safe issue',
+        body:
+          'A unit should only leave the bank against a valid request and a completed cross-match. Uyirly ties issue to the request and the cross-match result, records who authorised it, and keeps the recipient link — so issuing blood is a controlled, logged step, not a note in a book.',
+      },
+      {
+        h2: 'Part of the hospital, not a silo',
+        body:
+          'Because the blood bank shares the hospital’s patient records and billing, a cross-match request for an admitted patient and the charge for a unit issued both connect to the same patient — no separate registration, no reconciling the bill later. It’s one system, with the blood bank’s controls where they’re needed.',
+        bullets: [
+          'Requests linked to the patient’s admission',
+          'Issue charges post to the patient’s bill',
+          'Auditable log of every donation, test and issue',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Does it track blood units by group and component?',
+        a: 'Yes. Stock is held by blood group and component (whole blood, packed cells, plasma, platelets) with expiry tracking, so availability is visible at a glance and units are used oldest-valid-first with warnings before they expire.',
+      },
+      {
+        q: 'Does it support cross-matching and traceability?',
+        a: 'Yes. Issue is tied to a valid request and a completed cross-match, with the authoriser and recipient recorded, and every unit is traceable from donor through testing and storage to issue.',
+      },
+      {
+        q: 'Can it connect to the rest of the hospital system?',
+        a: 'Yes. The blood bank shares the hospital’s patient records and billing, so a cross-match request links to the patient’s admission and the charge for an issued unit posts to their bill — no separate registration.',
+      },
+    ],
+    related: [
+      { label: 'Blood bank management, explained', href: '/guides/blood-bank-management-guide' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  'operation-theatre-management-software': {
+    slug: 'operation-theatre-management-software',
+    eyebrow: 'OT Management Software',
+    group: GROUP_MODULE,
+    tagline: 'Schedule theatres, teams and cases — with pre-op checklists, consumables and OT notes on the patient record.',
+    metaTitle: 'Operation Theatre (OT) Management Software India',
+    description:
+      'Uyirly is operation theatre (OT) management software for India — theatre and surgery scheduling, surgical team allocation, pre-op checklists, consumables and OT notes on one patient record. Free trial.',
+    keywords: [
+      'operation theatre management software',
+      'ot management software',
+      'ot scheduling software',
+      'surgery scheduling software',
+      'operation theatre scheduling',
+      'ot management system',
+    ],
+    primaryKeyword: 'operation theatre management software',
+    h1: 'Operation theatre management software',
+    subhead:
+      'An operation theatre is the most tightly scheduled, highest-stakes room in the hospital — a clash or a missed pre-op check has real consequences. Uyirly’s OT management software schedules theatres, surgeons and cases, runs the pre-op checklist, tracks consumables and captures OT notes, all tied to the patient record and the bill.',
+    heroBullets: [
+      'Theatre and surgery scheduling without clashes',
+      'Surgeon, anaesthetist and room allocation',
+      'Pre-op checklists so nothing is missed',
+      'Consumables and OT notes on the patient record',
+    ],
+    sections: [
+      {
+        h2: 'Scheduling that prevents clashes',
+        body:
+          'The core of OT management is the schedule: a theatre, a surgeon, an anaesthetist and a slot, none of them double-booked. Uyirly schedules cases against theatre and team availability so two surgeries never land on the same table at the same time, and the day’s OT list is clear to everyone who needs it. That alone removes the most common source of theatre chaos.',
+        bullets: [
+          'Cases scheduled against theatre and team availability',
+          'A clear daily OT list for staff',
+          'Surgeon, anaesthetist and room allocated per case',
+        ],
+      },
+      {
+        h2: 'Pre-op checklists so nothing is missed',
+        body:
+          'A surgical safety checklist exists because missed steps in the OT are dangerous. Uyirly runs the pre-op checklist as part of the case, so consent, fasting status, investigations and the surgical site are confirmed before the patient enters — recorded, not remembered.',
+      },
+      {
+        h2: 'Consumables and OT notes captured in place',
+        body:
+          'What’s used in theatre and what happened during surgery both need to be recorded — for the bill and for the record. Uyirly captures consumables and implants used in the case (so they reach the bill) and the OT / operative notes (so they join the patient’s history), instead of these being written on a slip and re-entered later.',
+        bullets: [
+          'Consumables and implants recorded against the case',
+          'OT / operative notes on the patient record',
+          'Case charges post to the patient’s bill',
+        ],
+      },
+      {
+        h2: 'Connected to admission and billing',
+        body:
+          'A surgery doesn’t stand alone — it’s part of an admission, with a bed, medicines and a bill. Because OT sits inside the wider system, the case links to the patient’s admission, the consumables and procedure charges post to the same IPD bill, and the whole stay stays coherent from admission to discharge.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Does it prevent double-booking of theatres?',
+        a: 'Yes. Cases are scheduled against theatre and team availability, so a theatre, surgeon or anaesthetist can’t be double-booked, and the day’s OT list is clear to everyone involved.',
+      },
+      {
+        q: 'Does it include a pre-op checklist?',
+        a: 'Yes. The pre-op surgical safety checklist runs as part of the case — consent, fasting, investigations and surgical site confirmed and recorded before the patient enters theatre.',
+      },
+      {
+        q: 'Do consumables and OT notes reach the bill and record?',
+        a: 'Yes. Consumables and implants used in a case are recorded and post to the patient’s IPD bill, and the OT/operative notes join the patient’s record — no separate slip to re-enter.',
+      },
+    ],
+    related: [
+      { label: 'OT scheduling & management, explained', href: '/guides/ot-scheduling-management-guide' },
+      { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
     ],
     updated: '2026-07-29',
   },
