@@ -539,7 +539,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     eyebrow: 'Cloud HMS',
     group: GROUP_BUYING,
     tagline: 'Nothing to install, access anywhere, automatic backups — the case for a cloud/SaaS HMS.',
-    metaTitle: 'Cloud-Based Hospital Management System | Uyirly',
+    metaTitle: 'Cloud-Based Hospital Management System',
     description:
       'Uyirly is a cloud-based hospital management system — nothing to install, access from any device, automatic backups and updates, and pay-monthly pricing. 30-day free trial.',
     keywords: [
