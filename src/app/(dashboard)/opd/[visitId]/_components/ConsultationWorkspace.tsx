@@ -1023,7 +1023,7 @@ export default function ConsultationWorkspace({
 
           {/* Follow-up appointment */}
           {isDoctor && !isClosed && (
-            <FollowUpCard patientId={patient.id} doctorId={visit.doctor_id} reason={consult.diagnosis || undefined} />
+            <FollowUpCard patientId={patient.id} doctorId={visit.doctor_id} source="opd" visitId={visit.id} reason={consult.diagnosis || undefined} />
           )}
 
           {/* Action row: Admit to IPD + Close Visit */}

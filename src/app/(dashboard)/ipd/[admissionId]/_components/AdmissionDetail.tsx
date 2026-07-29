@@ -486,7 +486,7 @@ export default function AdmissionDetail({
 
           {/* Post-discharge follow-up booking */}
           {adm.status === 'discharged' && canWrite && adm.patient && (
-            <FollowUpCard patientId={adm.patient_id} doctorId={adm.admitting_doctor_id} reason={adm.reason || undefined} />
+            <FollowUpCard patientId={adm.patient_id} doctorId={adm.admitting_doctor_id} source="ipd" admissionId={adm.id} reason={adm.reason || undefined} />
           )}
 
           {/* Patient info card */}

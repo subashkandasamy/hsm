@@ -113,6 +113,22 @@ export interface Appointment {
   department?: Pick<Department, 'id' | 'name'>
 }
 
+export type FollowUpStatus = 'pending' | 'converted' | 'cancelled'
+export type FollowUpSource = 'opd' | 'ipd' | 'manual'
+export interface FollowUp {
+  id: string; tenant_id: string; patient_id: string
+  source: FollowUpSource
+  source_visit_id: string | null; source_admission_id: string | null
+  recommended_by: string | null; suggested_doctor_id: string | null
+  suggested_date: string | null; reason: string | null; note: string | null
+  status: FollowUpStatus; appointment_id: string | null
+  created_by: string | null; created_at: string
+  converted_at: string | null; cancelled_at: string | null
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
+  recommender?: Pick<Profile, 'id' | 'full_name'>
+  suggested_doctor?: Pick<Profile, 'id' | 'full_name'>
+}
+
 export interface Vitals { bp?: string; pulse?: string; temp?: string; spo2?: string; weight?: string; height?: string }
 
 export type VisitStatus = 'open' | 'closed'

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarPlus, RefreshCw, CheckCircle, XCircle, Clock, ListOrdered } from 'lucide-react'
+import { CalendarPlus, RefreshCw, CheckCircle, XCircle, Clock, ListOrdered, CalendarClock } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
@@ -16,6 +16,7 @@ import { startVisit } from '@/app/actions/opd'
 import { Pencil } from 'lucide-react'
 import type { Appointment } from '@/lib/types'
 import BookingModal from './BookingModal'
+import FollowUpsPanel from './FollowUpsPanel'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 interface Doctor { id: string; full_name: string; role: string }
@@ -52,6 +53,7 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
   const [loading, setLoading] = useState(false)
   const [showBook, setShowBook] = useState(false)
   const [view, setView] = useState<'schedule' | 'queue'>('schedule')
+  const [tab, setTab] = useState<'appointments' | 'followups'>('appointments')
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [editTarget, setEditTarget] = useState<Appointment | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -132,6 +134,24 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
         }
       />
 
+      {/* Main tabs */}
+      <div className="flex gap-1 p-1 rounded-xl mb-4 w-fit" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
+        {[
+          { key: 'appointments' as const, label: 'Appointments' },
+          { key: 'followups' as const, label: 'Follow-ups' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setTab(key)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
+            style={tab === key ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' } : { background: 'none', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+            {key === 'followups' && <CalendarClock className="w-4 h-4" />}{label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'followups' ? (
+        <FollowUpsPanel doctors={doctors} />
+      ) : (
+      <>
       {/* Error banner */}
       {actionError && (
         <div className="mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-between"
@@ -422,6 +442,8 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
             </table>
           </GlassCard>
         </>
+      )}
+      </>
       )}
 
       <BookingModal

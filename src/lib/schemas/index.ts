@@ -55,6 +55,25 @@ export const AppointmentCreateSchema = z.object({
   reason: z.string().nullable().optional(),
 })
 
+// Follow-up request: a soft "come back for review" intent, separate from an
+// appointment. Converting it into an appointment is what books + bills.
+export const FollowUpCreateSchema = z.object({
+  patient_id: z.string().uuid('Please select a patient'),
+  source: z.enum(['opd', 'ipd', 'manual']).default('manual'),
+  source_visit_id: z.string().uuid().nullable().optional(),
+  source_admission_id: z.string().uuid().nullable().optional(),
+  recommended_by: z.string().uuid().nullable().optional(),
+  suggested_doctor_id: z.string().uuid('Please select a doctor').nullable().optional(),
+  suggested_date: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+})
+export const FollowUpConvertSchema = z.object({
+  doctor_id: z.string().uuid('Please select a doctor'),
+  department_id: z.string().uuid().nullable().optional(),
+  scheduled_at: z.string().min(1, 'Date and time required'),
+})
+
 // ---- Visit / OPD ----
 export const VitalsSchema = z.object({
   bp: z.string().nullable().optional(), pulse: z.string().nullable().optional(),
@@ -722,6 +741,8 @@ export type DepartmentInput = z.infer<typeof DepartmentSchema>
 export type PatientCreateInput = z.infer<typeof PatientCreateSchema>
 export type PatientUpdateInput = z.infer<typeof PatientUpdateSchema>
 export type AppointmentCreateInput = z.infer<typeof AppointmentCreateSchema>
+export type FollowUpCreateInput = z.infer<typeof FollowUpCreateSchema>
+export type FollowUpConvertInput = z.infer<typeof FollowUpConvertSchema>
 export type VitalsInput = z.infer<typeof VitalsSchema>
 export type ConsultationInput = z.infer<typeof ConsultationSchema>
 export type PrescriptionInput = z.infer<typeof PrescriptionSchema>
@@ -831,13 +852,6 @@ export const MarkAttendanceSchema = z.object({
   check_in: z.string().nullable().optional(),
   check_out: z.string().nullable().optional(),
 })
-export const SetRosterSchema = z.object({
-  profile_id: z.string().uuid(),
-  date: z.string().min(1, 'Date required'),
-  shift: z.string().min(1).nullable().optional(),      // shift code (configurable)
-  ward_id: z.string().uuid().nullable().optional(),
-})
-
 // ---- Staff Scheduling & Nurse Rostering ----
 
 export const ShiftDefinitionSchema = z.object({
@@ -916,7 +930,6 @@ export type StockAdjustInput = z.infer<typeof StockAdjustSchema>
 export type CreateStaffInput = z.infer<typeof CreateStaffSchema>
 export type UpdateStaffInput = z.infer<typeof UpdateStaffSchema>
 export type MarkAttendanceInput = z.infer<typeof MarkAttendanceSchema>
-export type SetRosterInput = z.infer<typeof SetRosterSchema>
 export type ShiftDefinitionInput = z.infer<typeof ShiftDefinitionSchema>
 export type WardCoverageRuleInput = z.infer<typeof WardCoverageRuleSchema>
 export type WardInchargeInput = z.infer<typeof WardInchargeSchema>
