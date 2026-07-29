@@ -18,6 +18,7 @@ export default function MarketingNav({ ctaLabel = 'Get started' }: { ctaLabel?: 
           <span className="text-base font-bold" style={{ color: SLATE9 }}>Uyirly</span>
         </Link>
         <div className="flex items-center gap-4">
+          <Link href="/solutions" className="hidden sm:inline text-sm font-medium" style={{ color: '#475569' }}>Solutions</Link>
           <Link href="/guides" className="hidden sm:inline text-sm font-medium" style={{ color: '#475569' }}>Guides</Link>
           <Link href="/pricing" className="hidden sm:inline text-sm font-medium" style={{ color: '#475569' }}>Pricing</Link>
           <Link href="/signup"

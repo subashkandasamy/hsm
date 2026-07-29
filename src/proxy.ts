@@ -90,7 +90,7 @@ export async function proxy(request: NextRequest) {
     '/auth/callback', '/forgot-password', '/reset-password',
     '/native-entry', '/find-hospital',
     // Public marketing / legal pages
-    '/terms', '/privacy', '/security', '/guides',
+    '/terms', '/privacy', '/security', '/guides', '/solutions',
     // Commercial solution landing pages (SEO)
     ...MARKETING_SOLUTION_PATHS,
   ]

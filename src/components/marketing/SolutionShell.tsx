@@ -172,6 +172,7 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
       {/* Footer */}
       <footer className="py-10 px-4 sm:px-6 text-center" style={{ borderTop: `1px solid ${BORDER}` }}>
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm mb-4" style={{ color: SLATE5 }}>
+          <Link href="/solutions" className="hover:underline">Solutions</Link>
           <Link href="/guides" className="hover:underline">All Guides</Link>
           <Link href="/pricing" className="hover:underline">Pricing</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
