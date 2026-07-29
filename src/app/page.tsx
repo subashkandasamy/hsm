@@ -51,10 +51,11 @@ function Nav() {
 
         <nav className="hidden md:flex items-center gap-8">
           {[
-            { label: 'Features', href: '#features' },
-            { label: 'Modules',  href: '#modules'  },
-            { label: 'Pricing',  href: '/pricing'  },
-            { label: 'Guides',   href: '/guides'   },
+            { label: 'Features',  href: '#features'  },
+            { label: 'Modules',   href: '#modules'   },
+            { label: 'Solutions', href: '/solutions' },
+            { label: 'Pricing',   href: '/pricing'   },
+            { label: 'Guides',    href: '/guides'    },
           ].map(({ label, href }) => (
             <Link key={label} href={href}
               className="text-sm font-medium"
@@ -1074,6 +1075,7 @@ function Footer() {
             <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: S4 }}>Company</p>
             <ul className="space-y-3">
               {[
+                { label: 'Solutions', href: '/solutions'                 },
                 { label: 'Guides',  href: '/guides'                   },
                 { label: 'Terms',   href: '/terms'                    },
                 { label: 'Privacy', href: '/privacy'                  },
