@@ -34,6 +34,8 @@ export interface SolutionMeta {
   sections: SolutionSection[]
   faqs: { q: string; a: string }[]
   related: { label: string; href: string }[]
+  /** Optional small-print note (e.g. trademark / neutrality on comparison pages). */
+  disclaimer?: string
   updated: string // YYYY-MM-DD
 }
 
@@ -41,6 +43,10 @@ const GROUP_SOFTWARE = 'Software for your hospital'
 const GROUP_BUYING = 'Choosing & buying'
 const GROUP_SPECIALTY = 'By specialty & facility'
 const GROUP_MODULE = 'Department software'
+const GROUP_COMPARE = 'Compare & alternatives'
+
+const TM = (brand: string) =>
+  `${brand} is a trademark of its respective owner and is not affiliated with or endorsed by Uyirly. This page is an independent comparison based on Uyirly’s own capabilities; please verify any other product’s current features and pricing with them directly.`
 
 export const SOLUTIONS: Record<string, SolutionMeta> = {
   'lab-management-software': {
@@ -1183,6 +1189,249 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
     ],
+    updated: '2026-07-29',
+  },
+
+  // ── Compare & alternatives (Phase 4) ──────────────────────────────────────
+  // Neutral, nominative-fair-use comparison pages. No unverified claims about
+  // the competitor; focus on Uyirly's own facts + honest evaluation criteria.
+  'mocdoc-alternative': {
+    slug: 'mocdoc-alternative',
+    eyebrow: 'MocDoc Alternative',
+    group: GROUP_COMPARE,
+    tagline: 'Comparing MocDoc? Here’s how Uyirly approaches the same job — and what to weigh before you choose.',
+    metaTitle: 'MocDoc Alternative for Indian Hospitals — Uyirly',
+    description:
+      'Considering a MocDoc alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial, and what to compare before you decide.',
+    keywords: [
+      'mocdoc alternative',
+      'alternative to mocdoc',
+      'mocdoc competitors',
+      'mocdoc vs uyirly',
+      'hospital software like mocdoc',
+    ],
+    primaryKeyword: 'mocdoc alternative',
+    h1: 'A MocDoc alternative built for Indian hospitals',
+    subhead:
+      'MocDoc is a well-known hospital, clinic and diagnostics management platform in India. If you’re weighing it up, it’s worth comparing more than one option — this page lays out how Uyirly approaches the same job, and the criteria that actually matter when you choose, so you can decide on your own hospital rather than a demo.',
+    heroBullets: [
+      'OPD, IPD, pharmacy, lab and billing on one platform',
+      'One patient record and one bill across departments',
+      'Flat monthly pricing — no per-bed or per-user metering',
+      '30-day free trial, no credit card',
+    ],
+    sections: [
+      {
+        h2: 'Why hospitals compare alternatives',
+        body:
+          'Choosing hospital software is a multi-year decision, so it makes sense to compare a few options rather than sign the first demo. The reasons hospitals look around are usually the same: they want modules that genuinely share one patient and one bill, pricing that stays predictable as they grow, workflows that fit how Indian hospitals actually run, and a way to try the software on real patients before committing. Judge every option — including Uyirly — against those, not a feature checklist.',
+      },
+      {
+        h2: 'What Uyirly is',
+        body:
+          'Uyirly is an all-in-one cloud hospital management system built for India: OPD, IPD, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA, blood bank, OT and staff, all on one shared patient record and one bill. It’s designed so a patient registered once flows through consultation, admission, tests, medicines and billing without being re-entered, and so the discharge bill and insurance claim are ready the moment the patient is cleared.',
+        bullets: [
+          'One patient and one bill across every department',
+          'GST-ready billing, TPA cashless claims, ABDM/ABHA-ready records',
+          'Cloud-based — nothing to install, works on any device',
+        ],
+      },
+      {
+        h2: 'What to weigh when you compare',
+        body:
+          'The honest way to compare any two hospital systems is to run the same real scenario through each: register a patient, order a lab test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Whichever handles that without re-entering the patient or hand-totalling the bill will save your staff time every day. Then check the pricing model — flat, or metered per bed/user — and whether you can trial it on real work.',
+        bullets: [
+          'Does one patient and one bill flow through every department?',
+          'Is pricing flat, or does it climb with beds and users?',
+          'Can you trial it on your own hospital before committing?',
+        ],
+      },
+      {
+        h2: 'Why Uyirly could be your alternative',
+        body:
+          'Uyirly’s bet is simple: flat monthly pricing with no per-bed fees, genuine all-in-one integration, native India-fit (GST, TPA, ABDM, NABH), and a 30-day free trial with no card so you judge it on your own patients and bills. If those are the things pulling you to look beyond your current shortlist, it’s worth a trial — the fairest comparison you can run.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is Uyirly a good alternative to MocDoc?',
+        a: 'It depends on what you need — the right choice varies by hospital size, specialties and budget. Uyirly is an all-in-one cloud HMS for Indian hospitals with flat pricing and a 30-day free trial, so the fairest way to judge it as an alternative is to run your real workflows through it and compare. We’d encourage you to verify any other product’s current features and pricing with them directly.',
+      },
+      {
+        q: 'How do I compare Uyirly and MocDoc fairly?',
+        a: 'Run the same scenario through both: register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Also compare the pricing model (flat vs per-bed/user) and whether you can trial on real patients. Integration and pricing model separate most systems more than feature lists do.',
+      },
+      {
+        q: 'Does Uyirly offer a free trial?',
+        a: 'Yes — a 30-day free trial with no credit card, so you can run your real front desk, consultations and billing before paying anything.',
+      },
+    ],
+    related: [
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    disclaimer: TM('MocDoc'),
+    updated: '2026-07-29',
+  },
+
+  'healthray-alternative': {
+    slug: 'healthray-alternative',
+    eyebrow: 'Healthray Alternative',
+    group: GROUP_COMPARE,
+    tagline: 'Looking beyond Healthray? See how Uyirly runs the whole hospital on one system — and what to compare.',
+    metaTitle: 'Healthray Alternative for Indian Hospitals — Uyirly',
+    description:
+      'Exploring a Healthray alternative? See how Uyirly connects OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial, and the criteria to compare before you choose.',
+    keywords: [
+      'healthray alternative',
+      'alternative to healthray',
+      'healthray competitors',
+      'healthray vs uyirly',
+      'hospital software like healthray',
+    ],
+    primaryKeyword: 'healthray alternative',
+    h1: 'A Healthray alternative for Indian hospitals',
+    subhead:
+      'Healthray is a hospital management software that has been getting attention in India. If it’s on your shortlist, comparing a second option is time well spent — here’s how Uyirly approaches the same problem of running a whole hospital on one system, and the things worth checking before you commit.',
+    heroBullets: [
+      'Every department on one shared patient record and bill',
+      'Discharge bill and TPA claim ready at checkout',
+      'Flat monthly pricing, no per-bed metering',
+      '30-day free trial, no credit card',
+    ],
+    sections: [
+      {
+        h2: 'Start from the job, not the brand',
+        body:
+          'A hospital system earns its keep by doing one thing well: keeping a single patient coherent as they move through registration, consultation, admission, tests, pharmacy and billing. Whatever names are on your shortlist, judge each on whether it does that cleanly. The rest — a longer feature list, a slicker demo — matters far less than whether the daily work flows without re-entry.',
+      },
+      {
+        h2: 'How Uyirly runs the whole hospital',
+        body:
+          'Uyirly connects OPD, IPD, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA, blood bank, OT and staff on one shared patient record. Bed charges accrue daily, tests and medicines post as they happen, and the discharge bill and insurance claim build themselves in real time — so discharge is fast and defensible rather than a manual reconciliation at the end.',
+        bullets: [
+          'One patient and one bill, no re-entry between departments',
+          'Daily IPD auto-billing; discharge bill ready at checkout',
+          'GST billing, TPA claims, ABDM/ABHA-ready records',
+        ],
+      },
+      {
+        h2: 'The comparison that tells you the truth',
+        body:
+          'Ask each vendor to show you a bill for a patient who is still admitted, mid-stay. A system where bed rent and nursing are already on that bill, current as of last night, has solved daily auto-billing. A system that calculates it at discharge is telling you discharge will be slow. That single test, plus the pricing model and a real free trial, separates the options faster than any feature grid.',
+        bullets: [
+          'Can it show a live, mid-stay bill that’s already accurate?',
+          'Is pricing flat, or metered per bed and per user?',
+          'Can you trial it on your own patients first?',
+        ],
+      },
+      {
+        h2: 'Why Uyirly could be the switch',
+        body:
+          'Uyirly leads with flat monthly pricing (no per-bed fees), all-in-one integration, native India-fit — GST, TPA, ABDM, NABH — and a 30-day free trial with no card. If those are what’s drawing you to compare, a trial on your own hospital is the most honest way to see whether it’s the right alternative for you.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is Uyirly a good alternative to Healthray?',
+        a: 'The best fit depends on your hospital’s size, specialties and budget. Uyirly is an all-in-one cloud HMS built for Indian hospitals, with flat pricing and a 30-day free trial, so the fairest way to judge it as an alternative is to run your real workflows through it. Please verify any other product’s current features and pricing with them directly.',
+      },
+      {
+        q: 'What should I compare between Uyirly and Healthray?',
+        a: 'Focus on integration (does one patient and one bill flow through every department?), the pricing model (flat vs per-bed/user), India-fit (GST, TPA, ABDM, NABH handled natively), and whether you can trial the software on real patients before committing.',
+      },
+      {
+        q: 'Can I try Uyirly before switching?',
+        a: 'Yes — Uyirly offers a 30-day free trial with no credit card, so you can run your real hospital workflows and compare before making any decision.',
+      },
+    ],
+    related: [
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    disclaimer: TM('Healthray'),
+    updated: '2026-07-29',
+  },
+
+  'docpulse-alternative': {
+    slug: 'docpulse-alternative',
+    eyebrow: 'DocPulse Alternative',
+    group: GROUP_COMPARE,
+    tagline: 'Comparing DocPulse? See how Uyirly connects clinic and hospital on one system — and what to check.',
+    metaTitle: 'DocPulse Alternative for Clinics & Hospitals — Uyirly',
+    description:
+      'Considering a DocPulse alternative? See how Uyirly runs clinics and hospitals on one platform — appointments, OPD, IPD, pharmacy and billing — with flat pricing and a 30-day free trial.',
+    keywords: [
+      'docpulse alternative',
+      'alternative to docpulse',
+      'docpulse competitors',
+      'docpulse vs uyirly',
+      'clinic software like docpulse',
+    ],
+    primaryKeyword: 'docpulse alternative',
+    h1: 'A DocPulse alternative for clinics and hospitals',
+    subhead:
+      'DocPulse is a clinic and hospital management platform used in India. If you’re comparing it, it’s worth seeing a second option that spans the same range — from a single clinic’s appointments and OPD to a full hospital’s IPD and billing. Here’s how Uyirly approaches it, and what to weigh before you choose.',
+    heroBullets: [
+      'Appointments and OPD queue through to IPD and billing',
+      'One patient record from clinic to hospital',
+      'Flat monthly pricing, no per-user metering',
+      '30-day free trial, no credit card',
+    ],
+    sections: [
+      {
+        h2: 'From a clinic to a hospital on one platform',
+        body:
+          'A lot of practices start as a clinic and grow — adding beds, a lab, more doctors. The software you pick should cover that whole arc without a migration. Uyirly runs a single clinic’s appointments, OPD queue, prescriptions and billing, and the same platform runs a full hospital’s IPD, pharmacy, lab and insurance — so the clinic you set up today extends into a hospital on one patient database.',
+      },
+      {
+        h2: 'What Uyirly connects',
+        body:
+          'Appointments and a live OPD token queue, prescriptions from a drug list, pharmacy dispensing, lab and radiology, IPD admissions and daily billing, insurance/TPA claims — all on one shared patient record and one bill. A test ordered in a consultation reaches the lab and its charge lands on the same bill; nothing is re-keyed between the front desk, the doctor and the pharmacy.',
+        bullets: [
+          'One patient record across clinic and hospital workflows',
+          'Prescription, pharmacy and billing tied to the consultation',
+          'GST billing, TPA claims, ABDM/ABHA-ready records',
+        ],
+      },
+      {
+        h2: 'What to check before you choose',
+        body:
+          'Run the same real scenario through each option: book an appointment, see the patient, prescribe, dispense, and produce a clean bill — then, for a hospital, admit a patient and reach discharge with an itemised bill ready. Whichever does that without re-entry wins the day-to-day. Then compare the pricing model and whether you can trial it on real work rather than a demo dataset.',
+        bullets: [
+          'Does the clinic-to-hospital path work without switching systems?',
+          'Is pricing flat, or metered per user?',
+          'Can you trial it on your own patients first?',
+        ],
+      },
+      {
+        h2: 'Why Uyirly could be your pick',
+        body:
+          'Uyirly leads with flat monthly pricing (no per-user fees), one platform from clinic to hospital, native India-fit — GST, TPA, ABDM, NABH — and a 30-day free trial with no card. If you want one system that grows from a clinic into a hospital, a trial on your own practice is the clearest way to compare.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is Uyirly a good alternative to DocPulse?',
+        a: 'It depends on your needs — clinic size, whether you run inpatient care, specialties and budget. Uyirly runs both clinic and hospital workflows on one platform with flat pricing and a 30-day free trial, so the fairest way to judge it as an alternative is to run your own workflows through it. Please verify any other product’s current features and pricing with them directly.',
+      },
+      {
+        q: 'Does Uyirly work for both a clinic and a hospital?',
+        a: 'Yes. The same platform runs a single clinic’s appointments, OPD, prescriptions and billing, and a full hospital’s IPD, pharmacy, lab and insurance — on one patient database, so a growing clinic extends into a hospital without re-platforming.',
+      },
+      {
+        q: 'Is there a free trial to compare with?',
+        a: 'Yes — a 30-day free trial with no credit card, so you can run your real clinic or hospital workflows before deciding.',
+      },
+    ],
+    related: [
+      { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+    ],
+    disclaimer: TM('DocPulse'),
     updated: '2026-07-29',
   },
 }

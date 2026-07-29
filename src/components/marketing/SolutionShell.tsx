@@ -167,6 +167,10 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
             </div>
           </section>
         )}
+        {/* Disclaimer (e.g. trademark/neutrality on comparison pages) */}
+        {meta.disclaimer && (
+          <p className="mt-10 text-xs leading-relaxed" style={{ color: SLATE4 }}>{meta.disclaimer}</p>
+        )}
       </main>
 
       {/* Footer */}
