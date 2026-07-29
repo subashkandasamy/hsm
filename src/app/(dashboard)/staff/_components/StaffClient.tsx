@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  Plus, RefreshCw, Users, CalendarCheck, CalendarClock,
+  Plus, RefreshCw, Users, CalendarCheck,
   Edit2, UserX, Phone, Mail, Briefcase, Search, Lock,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
@@ -14,17 +14,16 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, getAttendance, getRoster } from '@/app/actions/hr'
+import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, getAttendance } from '@/app/actions/hr'
 import { setDoctorConsultationFee } from '@/app/actions/tariffs'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import type { StaffMember, StaffAttendance, DutyRoster, Role } from '@/lib/types'
+import type { StaffMember, StaffAttendance, Role } from '@/lib/types'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
 import AddStaffModal from './AddStaffModal'
 import AttendancePanel from './AttendancePanel'
-import RosterPanel from './RosterPanel'
 
-type Tab = 'directory' | 'attendance' | 'roster'
+type Tab = 'directory' | 'attendance'
 
 const ROLE_LABELS: Record<Role, string> = {
   admin:        'Admin',
@@ -41,14 +40,12 @@ const ROLES: Role[] = ['doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacis
 interface Props {
   initialStaff: StaffMember[]
   initialAttendance: StaffAttendance[]
-  initialRoster: DutyRoster[]
   currentMonth: string
-  weekStart: string
   plan?: PlanKey
   tenantStatus?: TenantStatus
 }
 
-export default function StaffClient({ initialStaff, initialAttendance, initialRoster, currentMonth, weekStart, plan = 'starter', tenantStatus = 'trial' }: Props) {
+export default function StaffClient({ initialStaff, initialAttendance, currentMonth, plan = 'starter', tenantStatus = 'trial' }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canManage    = !!role && hasPermission(role, 'hr:manage')
@@ -102,7 +99,6 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
   const TABS: { key: Tab; label: string; icon: React.ReactNode; locked?: boolean }[] = [
     { key: 'directory',  label: 'Directory',  icon: <Users className="w-4 h-4" /> },
     { key: 'attendance', label: 'Attendance', icon: <CalendarCheck className="w-4 h-4" />, locked: isStarterLocked },
-    { key: 'roster',     label: 'Roster',     icon: <CalendarClock className="w-4 h-4" />, locked: isStarterLocked },
   ]
 
   return (
@@ -401,17 +397,6 @@ export default function StaffClient({ initialStaff, initialAttendance, initialRo
             staff={staff}
             initialAttendance={initialAttendance}
             currentMonth={currentMonth}
-          />
-        )
-      )}
-
-      {/* Roster Tab */}
-      {tab === 'roster' && (
-        isStarterLocked ? <UpgradeCard feature="Duty roster management" /> : (
-          <RosterPanel
-            staff={staff}
-            initialRoster={initialRoster}
-            weekStart={weekStart}
           />
         )
       )}

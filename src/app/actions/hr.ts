@@ -7,9 +7,9 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import {
   CreateStaffSchema, UpdateStaffSchema,
-  MarkAttendanceSchema, SetRosterSchema,
+  MarkAttendanceSchema,
 } from '@/lib/schemas'
-import type { StaffMember, StaffAttendance, DutyRoster } from '@/lib/types'
+import type { StaffMember, StaffAttendance } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -230,47 +230,7 @@ export async function getAllAttendanceForDate(date: string): Promise<StaffAttend
   return (data ?? []) as unknown as StaffAttendance[]
 }
 
-// ---- Roster ----
-
-export async function setRoster(input: Record<string, unknown>): Promise<SimpleResult> {
-  await requireWriteAccess()
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'hr:manage')
-
-  const parsed = SetRosterSchema.safeParse(input)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-
-  const supabase = await createClient()
-  const { error } = await supabase.from('duty_roster').upsert(
-    {
-      id: crypto.randomUUID(),
-      tenant_id: actor.tenant_id,
-      profile_id: parsed.data.profile_id,
-      date: parsed.data.date,
-      shift: parsed.data.shift ?? null,
-      ward_id: parsed.data.ward_id ?? null,
-    },
-    { onConflict: 'profile_id,date', ignoreDuplicates: false }
-  )
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'roster', 'staff', parsed.data.profile_id, {
-    date: parsed.data.date, shift: parsed.data.shift,
-  })
-  return { success: true }
-}
-
-export async function getRoster(params: { weekStart: string }): Promise<DutyRoster[]> {
-  const supabase = await createClient()
-  const start = new Date(params.weekStart)
-  const end   = new Date(start)
-  end.setDate(end.getDate() + 6)
-
-  const { data } = await supabase
-    .from('duty_roster')
-    .select('*, profile:profiles(id, full_name, role), ward:wards(id, name)')
-    .gte('date', start.toISOString().slice(0, 10))
-    .lte('date', end.toISOString().slice(0, 10))
-    .order('date')
-  return (data ?? []) as unknown as DutyRoster[]
-}
+// Roster/duty scheduling lives entirely on the Scheduling page (scheduling.ts).
+// The Staff page's old duplicate roster (setRoster/getRoster on duty_roster)
+// was removed — it collided with the Scheduling roster on the same table and
+// bypassed its leave/permission/status logic.
