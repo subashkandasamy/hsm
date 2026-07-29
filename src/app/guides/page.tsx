@@ -5,7 +5,7 @@ import MarketingNav from '@/components/marketing/MarketingNav'
 import { GUIDES, TIER_LABELS, type GuideTier } from '@/lib/guides/registry'
 import { publishedSlugs } from '@/content/guides'
 
-const SITE = 'https://uyirly.com'
+const SITE = 'https://www.uyirly.com'
 const TEAL = '#0D9488'
 const SLATE9 = '#0F172A'
 const SLATE5 = '#64748B'

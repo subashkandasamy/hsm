@@ -197,7 +197,7 @@ const FAQS = [
 ]
 
 // ── Structured data (JSON-LD) ──────────────────────────────────────────────────
-const SITE = 'https://uyirly.com'
+const SITE = 'https://www.uyirly.com'
 
 const jsonLd = {
   '@context': 'https://schema.org',

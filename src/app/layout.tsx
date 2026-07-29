@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import PwaInit from '@/components/pwa/PwaInit'
 
-const SITE_URL = 'https://uyirly.com'
+const SITE_URL = 'https://www.uyirly.com'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

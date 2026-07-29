@@ -10,7 +10,7 @@ const SLATE6 = '#475569'
 const SLATE5 = '#64748B'
 const SLATE4 = '#94A3B8'
 const BORDER = '#E2E8F0'
-const SITE   = 'https://uyirly.com'
+const SITE   = 'https://www.uyirly.com'
 
 export const metadata: Metadata = {
   title: 'Hospital & Clinic Software Solutions | Uyirly',

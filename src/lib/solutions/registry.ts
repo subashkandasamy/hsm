@@ -638,7 +638,7 @@ export function solutionsByGroup(): { group: string; items: SolutionMeta[] }[] {
   return order.map((group) => ({ group, items: map.get(group)! }))
 }
 
-const SITE = 'https://uyirly.com'
+const SITE = 'https://www.uyirly.com'
 
 export function solutionMetadata(slug: string): Metadata {
   const meta = SOLUTIONS[slug]

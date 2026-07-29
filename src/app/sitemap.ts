@@ -3,7 +3,7 @@ import { GUIDES } from '@/lib/guides/registry'
 import { publishedSlugs } from '@/content/guides'
 import { SOLUTIONS, solutionSlugs } from '@/lib/solutions/registry'
 
-const SITE_URL = 'https://uyirly.com'
+const SITE_URL = 'https://www.uyirly.com'
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date()

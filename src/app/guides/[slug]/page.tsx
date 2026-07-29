@@ -4,7 +4,7 @@ import { getGuide } from '@/lib/guides/registry'
 import { GUIDE_CONTENT, publishedSlugs } from '@/content/guides'
 import GuideShell from '@/components/guides/GuideShell'
 
-const SITE = 'https://uyirly.com'
+const SITE = 'https://www.uyirly.com'
 
 export function generateStaticParams() {
   return publishedSlugs().map((slug) => ({ slug }))
