@@ -39,6 +39,7 @@ export interface SolutionMeta {
 
 const GROUP_SOFTWARE = 'Software for your hospital'
 const GROUP_BUYING = 'Choosing & buying'
+const GROUP_SPECIALTY = 'By specialty & facility'
 
 export const SOLUTIONS: Record<string, SolutionMeta> = {
   'lab-management-software': {
@@ -612,6 +613,252 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     related: [
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Data security & the DPDP Act', href: '/guides/hospital-software-data-security-dpdp' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  // ── By specialty & facility (Phase 3) ─────────────────────────────────────
+  'dental-clinic-software': {
+    slug: 'dental-clinic-software',
+    eyebrow: 'Dental Clinic Software',
+    group: GROUP_SPECIALTY,
+    tagline: 'Tooth-level charting, treatment plans across visits and recalls — with shared records, pharmacy and billing.',
+    metaTitle: 'Dental Clinic Software & Practice Management (India)',
+    description:
+      'Uyirly is dental clinic software for Indian dental practices — tooth charting, treatment plans, recall reminders, appointments and billing, with shared patient records. Free trial.',
+    keywords: [
+      'dental clinic software',
+      'dental practice management software',
+      'dental software',
+      'dentist software',
+      'dental management software',
+      'dental clinic management software',
+      'dental software india',
+    ],
+    primaryKeyword: 'dental clinic software',
+    h1: 'Dental clinic software built around the tooth',
+    subhead:
+      'Dentistry looks like OPD from a distance, but the record is completely different — everything is anchored to a specific tooth, and most of the work recurs over months. Uyirly gives the dental chair tooth-level charting, treatment plans that span visits, and recall reminders, while sharing the same patient records, pharmacy and billing as the rest of the practice.',
+    heroBullets: [
+      'Tooth-level charting with a standard dental notation',
+      'Treatment plans tracked across multiple visits',
+      'Recall scheduling and reminders — the engine of repeat revenue',
+      'Appointments, billing and pharmacy on one shared record',
+    ],
+    sections: [
+      {
+        h2: 'What dental software adds beyond a normal OPD screen',
+        body:
+          'A general OPD note is a paragraph of text; a dental record is a map. The core of any real dental clinic software is tooth-level charting — findings, procedures and plans recorded against individual teeth using a standard dental notation, so a dentist sees at a glance what has been done where. A generic hospital OPD form has no concept of individual teeth, which is exactly what dentistry revolves around, so software that just relabels an OPD screen as “dental” misses the point.',
+      },
+      {
+        h2: 'Treatment plans that span many visits',
+        body:
+          'A root canal or an orthodontic case isn’t one appointment — it’s a sequence. Dental practice management software has to hold the plan across visits, showing what’s done and what remains, so any dentist in the practice can pick up where the last one left off. Because the state lives on the teeth rather than in someone’s memory, a returning patient’s plan is right there the moment their chart opens.',
+        bullets: [
+          'Multi-visit treatment plans with done / pending status per tooth',
+          'Any dentist in the clinic can continue a colleague’s plan',
+          'Estimates and quotations built from the planned procedures',
+        ],
+      },
+      {
+        h2: 'Recalls are the clinic’s repeat revenue',
+        body:
+          'Cleanings, reviews and staged treatments all depend on the patient coming back at the right time. Recall scheduling — and a reminder that actually reaches the patient by SMS or WhatsApp — is both good clinical care and the main driver of a dental clinic’s income. Tying recalls to the patient record keeps the chair filled without anyone manually chasing a diary.',
+      },
+      {
+        h2: 'One record for a standalone clinic or a hospital dental department',
+        body:
+          'A standalone dental clinic gets exactly the specialty screen it needs. A dental department inside a multi-specialty hospital gets the same tooth-charting screen while sharing the hospital’s patient records, pharmacy and billing — so the dentist gets dentistry, and the hospital keeps one unified patient and one bill. Either way the appointments, prescriptions and payments live in the same system as the chart.',
+        bullets: [
+          'Standalone dental clinic or a hospital’s dental OPD',
+          'Shared patient records, pharmacy and billing',
+          'Cloud-based — nothing to install, works on any device',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'What does dental clinic software add beyond a normal OPD consultation?',
+        a: 'The key addition is tooth-level charting: recording findings, procedures and treatment plans against specific teeth using a dental notation, rather than one free-text note. A general OPD screen has no concept of individual teeth, which is exactly what dentistry revolves around. Good dental software also handles multi-visit treatment plans and recall reminders.',
+      },
+      {
+        q: 'Does it work for a single dentist as well as a multi-chair clinic?',
+        a: 'Yes. A single dentist uses it for charting, appointments, plans and billing on one screen. A multi-chair or multi-dentist clinic shares one patient database, so any dentist can continue a colleague’s treatment plan and the front desk runs one appointment book across all chairs.',
+      },
+      {
+        q: 'Can a multi-specialty hospital run its dental department in the same system?',
+        a: 'Yes. The dental OPD gets a dental-specific tooth-charting screen while sharing the same patient records, pharmacy and billing as the rest of the hospital — so the dentist gets tooth charting and the hospital keeps one unified patient and one bill.',
+      },
+    ],
+    related: [
+      { label: 'Dental clinic software: how it works', href: '/guides/dental-clinic-software-guide' },
+      { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  'nursing-home-management-software': {
+    slug: 'nursing-home-management-software',
+    eyebrow: 'Nursing Home Software',
+    group: GROUP_SPECIALTY,
+    tagline: 'Right-sized software for a nursing home — OPD, beds, pharmacy and billing without hospital bloat.',
+    metaTitle: 'Nursing Home Management Software (India)',
+    description:
+      'Uyirly is nursing home management software for India — OPD, beds and admissions, pharmacy, billing and patient records in one affordable cloud system that scales as you grow. Free trial.',
+    keywords: [
+      'nursing home management software',
+      'nursing home software',
+      'nursing home software india',
+      'nursing home management system',
+      'small hospital software',
+      'care home software',
+    ],
+    primaryKeyword: 'nursing home management software',
+    h1: 'Nursing home management software, right-sized',
+    subhead:
+      'A nursing home is a small hospital — a handful of beds, an OPD, a pharmacy and a lot of billing — and it shouldn’t have to run enterprise software built for a 300-bed institution. Uyirly gives a nursing home exactly what it needs: registration, OPD, admissions and beds, pharmacy and billing on one affordable cloud system, with room to grow into a full hospital later.',
+    heroBullets: [
+      'OPD, admissions and bed management in one place',
+      'Pharmacy and billing on the same patient record',
+      'Flat, affordable pricing — no per-bed metering',
+      'Cloud-based; scales into a full hospital when you grow',
+    ],
+    sections: [
+      {
+        h2: 'A nursing home is a small hospital',
+        body:
+          'The everyday work of a nursing home is the everyday work of a hospital, just smaller: register a patient, run the OPD, admit some to beds, dispense from the pharmacy, and bill it all correctly. The trap is that most software is either a toy that can’t handle admissions, or an enterprise system priced and built for a large hospital. Uyirly is sized for the middle — genuinely capable, without the bloat or the price tag.',
+      },
+      {
+        h2: 'Admissions and beds, done simply',
+        body:
+          'Even a 10- or 20-bed nursing home needs to admit patients, assign beds, accrue daily charges and discharge with a clean itemised bill. Uyirly handles admissions and bed management the same way a big hospital does, but with a simpler screen — so the front desk isn’t fighting a system designed for a hundred wards.',
+        bullets: [
+          'Admit, assign a bed, and accrue daily bed and nursing charges',
+          'Discharge with an itemised bill that’s ready, not reconstructed',
+          'Advance payments applied automatically against the running bill',
+        ],
+      },
+      {
+        h2: 'Affordable, and priced to not punish growth',
+        body:
+          'For a small facility, per-bed or per-user pricing is exactly the wrong model — it taxes you the moment you add a bed. Uyirly is flat monthly pricing with a 30-day free trial and no card, so a nursing home pays for the plan it needs, not for every bed or login. It’s the difference between software that fits a nursing home’s budget and software that outgrows it.',
+      },
+      {
+        h2: 'Grows into a full hospital without a migration',
+        body:
+          'A nursing home that adds a lab, a second doctor, or more beds shouldn’t have to switch systems and re-enter its patients. Uyirly is the same platform that runs full hospitals, so you turn on lab, radiology, insurance or OT when you’re ready — the nursing home you set up today extends into a hospital without re-platforming.',
+        bullets: [
+          'Add lab, radiology, insurance or OT modules as you grow',
+          'One patient database carries forward — no migration',
+          'Cloud-based: nothing to install, access from anywhere',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is Uyirly suitable for a small nursing home?',
+        a: 'Yes — it’s specifically sized for nursing homes and small hospitals. You get OPD, admissions and bed management, pharmacy and billing without the complexity of enterprise hospital software, and flat pricing that doesn’t charge per bed. A 30-day free trial lets you run your real front desk before paying.',
+      },
+      {
+        q: 'Can it handle inpatient admissions and daily billing?',
+        a: 'Yes. Even a small nursing home can admit patients, assign beds, accrue daily bed and nursing charges automatically, and discharge with an itemised bill — advances are applied against the running total, so discharge is fast rather than a manual reconciliation.',
+      },
+      {
+        q: 'What happens when the nursing home grows into a bigger hospital?',
+        a: 'Nothing to rip out. Uyirly is the same platform that runs full hospitals, so you switch on lab, radiology, insurance, OT and more as you need them. The same patient database carries forward, so there’s no migration when you scale up.',
+      },
+    ],
+    related: [
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-07-29',
+  },
+
+  'multi-specialty-hospital-software': {
+    slug: 'multi-specialty-hospital-software',
+    eyebrow: 'Multi-Specialty Hospital Software',
+    group: GROUP_SPECIALTY,
+    tagline: 'One patient across every specialty and department — the whole multi-specialty hospital on one system.',
+    metaTitle: 'Multi-Specialty Hospital Management Software (India)',
+    description:
+      'Uyirly is multi-specialty hospital management software for India — every department and specialty on one shared patient record and bill, with doctor-wise queues and all clinical modules. Free trial.',
+    keywords: [
+      'multi specialty hospital software',
+      'multi specialty hospital management software',
+      'multispecialty hospital management system',
+      'multi specialty hospital management system',
+      'multi speciality hospital software',
+    ],
+    primaryKeyword: 'multi specialty hospital software',
+    h1: 'Multi-specialty hospital software, one patient across every department',
+    subhead:
+      'A multi-specialty hospital’s hardest problem is keeping one patient coherent as they move between cardiology, orthopaedics, the lab, the pharmacy and the billing desk. Uyirly runs every specialty and every department on one shared patient record and one bill, with doctor-wise and department-wise queues, so the hospital works as a single system rather than a set of silos.',
+    heroBullets: [
+      'One patient record shared across every specialty',
+      'Doctor-wise and department-wise OPD queues',
+      'All modules — IPD, pharmacy, lab, radiology, OT, blood bank',
+      'One combined bill across departments, ready at discharge',
+    ],
+    sections: [
+      {
+        h2: 'One patient, seen by many specialties',
+        body:
+          'In a multi-specialty hospital a single patient might see a physician, get referred to a cardiologist, have a scan, collect medicines and settle one bill — all in a day. If each specialty keeps its own record, that patient fragments. Uyirly keeps one record per patient that every specialty reads from and writes to, so a referral carries the full history with it and nobody re-takes what another department already recorded.',
+      },
+      {
+        h2: 'Doctor-wise and department-wise queues',
+        body:
+          'A hospital-wide single queue makes no sense when twenty doctors across ten departments are consulting at once. Uyirly routes each token to the right doctor and department at registration and shows each doctor only their own queue — so a patient waiting for cardiology isn’t stuck behind orthopaedics, and reception isn’t manually deciding whose turn it is.',
+        bullets: [
+          'Tokens routed to the correct doctor and department at registration',
+          'Each doctor sees only their own live queue',
+          'Appointments and walk-ins share one fair line per doctor',
+        ],
+      },
+      {
+        h2: 'Every clinical module, actually connected',
+        body:
+          'A multi-specialty hospital needs the full stack — IPD and wards, pharmacy, lab, radiology, operation theatre, blood bank, emergency and insurance — and the value is that they share one patient and one bill. A test ordered in a consultation reaches the lab; the result reaches the doctor; the medicine and the bed charge land on the same running bill. It’s the difference between departments that cooperate and departments that merely coexist.',
+        bullets: [
+          'IPD, pharmacy, lab (LIS), radiology (RIS), OT, blood bank, emergency',
+          'Insurance/TPA claims built on the same accumulating bill',
+          'One combined, itemised bill across every department at discharge',
+        ],
+      },
+      {
+        h2: 'Built for Indian multi-specialty hospitals',
+        body:
+          'Uyirly handles what an Indian multi-specialty hospital actually deals with — GST-ready billing, insurance and TPA cashless claims, ABDM/ABHA-ready records and NABH-friendly documentation — on flat monthly pricing with no per-bed metering. It’s cloud-based, so multiple branches read from the same live patient database, and it scales from a growing hospital to a large institution on the same platform.',
+        bullets: [
+          'GST billing, TPA claims, ABDM/ABHA records, NABH documentation',
+          'Cloud-based, multi-branch on one live database',
+          'Flat pricing; 30-day free trial, no credit card',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: 'What makes software “multi-specialty” rather than a general HMS?',
+        a: 'The key is handling many specialties and doctors against one shared patient record — doctor-wise and department-wise queues, referrals that carry the full history, and one combined bill across departments. Uyirly is a full HMS built to run exactly this: every specialty and module on one patient and one bill.',
+      },
+      {
+        q: 'Can each department and doctor have their own queue?',
+        a: 'Yes. Tokens are routed to the right doctor and department at registration, and each doctor sees only their own live queue, so patients for one specialty aren’t blocked behind another. Appointments and walk-ins share one fair line per doctor.',
+      },
+      {
+        q: 'Does it include all the clinical modules a large hospital needs?',
+        a: 'Yes — IPD and wards, pharmacy, lab (LIS), radiology (RIS), operation theatre, blood bank, emergency, inventory, insurance/TPA and staff — all on one shared patient record and bill. Modules can be switched on as the hospital needs them.',
+      },
+    ],
+    related: [
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
       { label: 'Pricing', href: '/pricing' },
     ],
     updated: '2026-07-29',

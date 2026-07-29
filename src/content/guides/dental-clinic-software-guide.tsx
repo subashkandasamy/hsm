@@ -69,7 +69,8 @@ export default function Guide() {
       </CalloutBox>
 
       <p>
-        If you run a dental clinic or a hospital dental department,{' '}
+        If you run a dental clinic or a hospital dental department, see how Uyirly&apos;s{' '}
+        <Link href="/dental-clinic-software">dental clinic software</Link> handles tooth charting, or{' '}
         <Link href="/signup">start a free trial</Link> and chart a patient tooth by tooth — it is the fastest
         way to tell whether the software was built for dentistry or just bolted onto a general OPD form.
       </p>
