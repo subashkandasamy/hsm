@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { GUIDES } from '@/lib/guides/registry'
 import { publishedSlugs } from '@/content/guides'
+import { SOLUTIONS, solutionSlugs } from '@/lib/solutions/registry'
 
 const SITE_URL = 'https://uyirly.com'
 
@@ -16,6 +17,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly',
       priority: g.tier === 'pillar' ? 0.8 : 0.7,
     }))
+
+  // Commercial solution pages — buyer intent, high priority.
+  const solutionEntries: MetadataRoute.Sitemap = solutionSlugs().map((slug) => ({
+    url: `${SITE_URL}/${slug}`,
+    lastModified: new Date(SOLUTIONS[slug].updated),
+    changeFrequency: 'monthly',
+    priority: 0.9,
+  }))
 
   return [
     {
@@ -36,6 +45,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 0.85,
     },
+    ...solutionEntries,
     ...guideEntries,
     {
       url: `${SITE_URL}/signup`,
