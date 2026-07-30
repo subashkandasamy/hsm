@@ -806,6 +806,11 @@ export const ReceivePOSchema = z.object({
   receipts: z.array(z.object({
     po_item_id: z.string().uuid(),
     received_qty: z.coerce.number().int().min(0),
+    // Batch/expiry/cost captured at goods receipt (all optional — not every
+    // supply carries a lot or an expiry).
+    batch_no: z.string().nullable().optional(),
+    expiry: z.string().nullable().optional(),
+    unit_cost: z.coerce.number().min(0).nullable().optional(),
   })),
 })
 export const StockIssueSchema = z.object({

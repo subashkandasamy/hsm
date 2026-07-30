@@ -8,9 +8,55 @@ import {
   SupplierSchema, InventoryItemSchema, CreatePOSchema,
   ReceivePOSchema, StockIssueSchema, StockAdjustSchema,
 } from '@/lib/schemas'
-import type { Supplier, InventoryItem, PurchaseOrder, StockMovement } from '@/lib/types'
+import type { Supplier, InventoryItem, PurchaseOrder, StockMovement, InventoryBatch } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+type SB = Awaited<ReturnType<typeof createClient>>
+
+// ---- Batch helpers ----
+
+// qty_in_stock is a cached total; keep it equal to SUM(batch qty_available).
+async function recomputeItemQty(supabase: SB, itemId: string): Promise<void> {
+  const { data } = await supabase
+    .from('inventory_batches').select('qty_available').eq('item_id', itemId)
+  const total = (data ?? []).reduce((s, b) => s + ((b.qty_available as number) ?? 0), 0)
+  await supabase.from('inventory_items').update({ qty_in_stock: total }).eq('id', itemId)
+}
+
+// Consume `qty` from an item's batches, oldest-expiry-first (FEFO); undated
+// batches go last. Writes a stock_movement per batch touched. Returns false if
+// total available is short. (Small-hospital concurrency: fetch-then-update is
+// acceptable here, matching the pharmacy dispense pattern.)
+async function consumeFEFO(
+  supabase: SB, tenantId: string, itemId: string, qty: number,
+  reason: 'issue' | 'adjustment', note: string | null, actorId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: batches } = await supabase
+    .from('inventory_batches')
+    .select('id, qty_available, expiry, created_at')
+    .eq('item_id', itemId)
+    .gt('qty_available', 0)
+    .order('expiry', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+
+  const rows = (batches ?? []) as Array<{ id: string; qty_available: number }>
+  const total = rows.reduce((s, b) => s + b.qty_available, 0)
+  if (total < qty) return { ok: false, error: 'Insufficient stock' }
+
+  let remaining = qty
+  for (const b of rows) {
+    if (remaining <= 0) break
+    const take = Math.min(remaining, b.qty_available)
+    await supabase.from('inventory_batches')
+      .update({ qty_available: b.qty_available - take }).eq('id', b.id)
+    await supabase.from('stock_movements').insert({
+      id: crypto.randomUUID(), tenant_id: tenantId, item_id: itemId,
+      change: -take, reason, batch_id: b.id, note, created_by: actorId,
+    })
+    remaining -= take
+  }
+  return { ok: true }
+}
 
 // ---- Suppliers ----
 
@@ -173,7 +219,7 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
   const supabase = await createClient()
   const { data: po } = await supabase
     .from('purchase_orders')
-    .select('status, items:po_items(id, item_id, qty, received_qty)')
+    .select('status, supplier_id, items:po_items(id, item_id, qty, received_qty, unit_price)')
     .eq('id', parsed.data.po_id)
     .single()
 
@@ -181,7 +227,8 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
   if ((po.status as string) === 'received' || (po.status as string) === 'cancelled')
     return { success: false, error: `PO is already ${po.status}` }
 
-  const items = (po.items ?? []) as Array<{ id: string; item_id: string; qty: number; received_qty: number }>
+  const poSupplierId = (po.supplier_id as string | null) ?? null
+  const items = (po.items ?? []) as Array<{ id: string; item_id: string; qty: number; received_qty: number; unit_price: number }>
 
   for (const receipt of parsed.data.receipts) {
     if (receipt.received_qty <= 0) continue
@@ -191,11 +238,21 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
     const newReceived = poItem.received_qty + receipt.received_qty
     await supabase.from('po_items').update({ received_qty: newReceived }).eq('id', receipt.po_item_id)
 
-    // Additive increment — safe to fetch-then-update (no race risk for additions)
-    const { data: current } = await supabase
-      .from('inventory_items').select('qty_in_stock').eq('id', poItem.item_id).single()
-    const newQty = ((current?.qty_in_stock as number) ?? 0) + receipt.received_qty
-    await supabase.from('inventory_items').update({ qty_in_stock: newQty }).eq('id', poItem.item_id)
+    // Each goods receipt becomes a batch (with its lot no / expiry / cost),
+    // so expiry and FEFO are tracked from the moment stock arrives.
+    const batchId = crypto.randomUUID()
+    await supabase.from('inventory_batches').insert({
+      id: batchId,
+      tenant_id: actor.tenant_id,
+      item_id: poItem.item_id,
+      batch_no: receipt.batch_no?.trim() || null,
+      expiry: receipt.expiry || null,
+      qty_available: receipt.received_qty,
+      unit_cost: receipt.unit_cost ?? poItem.unit_price ?? null,
+      supplier_id: poSupplierId,
+      po_id: parsed.data.po_id,
+      created_by: actor.id,
+    })
 
     await supabase.from('stock_movements').insert({
       id: crypto.randomUUID(),
@@ -204,9 +261,12 @@ export async function receivePO(input: Record<string, unknown>): Promise<SimpleR
       change: receipt.received_qty,
       reason: 'purchase',
       ref_id: parsed.data.po_id,
+      batch_id: batchId,
       note: 'Received on PO',
       created_by: actor.id,
     })
+
+    await recomputeItemQty(supabase, poItem.item_id)
   }
 
   // Determine new PO status from updated po_items
@@ -237,34 +297,13 @@ export async function issueStock(input: Record<string, unknown>): Promise<Simple
 
   const supabase = await createClient()
 
-  // Conditional UPDATE: only touches the row when qty_in_stock >= requested qty.
-  // If the filter doesn't match (insufficient stock or race), data will be empty.
-  const { data, error } = await supabase
-    .from('inventory_items')
-    .select('id, qty_in_stock')
-    .eq('id', parsed.data.item_id)
-    .gte('qty_in_stock', parsed.data.qty)
-    .single()
-
-  if (error || !data) return { success: false, error: 'Insufficient stock' }
-
-  const newQty = (data.qty_in_stock as number) - parsed.data.qty
-  const { error: updateErr } = await supabase
-    .from('inventory_items')
-    .update({ qty_in_stock: newQty })
-    .eq('id', parsed.data.item_id)
-    .gte('qty_in_stock', parsed.data.qty) // double-guard
-  if (updateErr) return { success: false, error: updateErr.message }
-
-  await supabase.from('stock_movements').insert({
-    id: crypto.randomUUID(),
-    tenant_id: actor.tenant_id,
-    item_id: parsed.data.item_id,
-    change: -parsed.data.qty,
-    reason: 'issue',
-    note: parsed.data.note ?? null,
-    created_by: actor.id,
-  })
+  // FEFO: consume from the oldest-expiry batches first.
+  const res = await consumeFEFO(
+    supabase, actor.tenant_id, parsed.data.item_id, parsed.data.qty,
+    'issue', parsed.data.note ?? null, actor.id,
+  )
+  if (!res.ok) return { success: false, error: res.error }
+  await recomputeItemQty(supabase, parsed.data.item_id)
 
   await logAudit(actor.id, 'issue', 'inventory_item', parsed.data.item_id, { qty: parsed.data.qty })
   return { success: true }
@@ -280,29 +319,65 @@ export async function adjustStock(input: Record<string, unknown>): Promise<Simpl
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const supabase = await createClient()
-  const { data: item } = await supabase
-    .from('inventory_items').select('qty_in_stock').eq('id', parsed.data.item_id).single()
-  if (!item) return { success: false, error: 'Item not found' }
 
-  const newQty = (item.qty_in_stock as number) + parsed.data.change
-  if (newQty < 0) return { success: false, error: 'Adjustment would result in negative stock' }
+  if (parsed.data.change < 0) {
+    // Negative adjustment (damage/loss/correction) → remove FEFO across batches.
+    const res = await consumeFEFO(
+      supabase, actor.tenant_id, parsed.data.item_id, -parsed.data.change,
+      'adjustment', parsed.data.note, actor.id,
+    )
+    if (!res.ok) return { success: false, error: 'Adjustment would result in negative stock' }
+  } else {
+    // Positive adjustment (found stock/opening correction) → an undated batch.
+    const batchId = crypto.randomUUID()
+    const { error } = await supabase.from('inventory_batches').insert({
+      id: batchId, tenant_id: actor.tenant_id, item_id: parsed.data.item_id,
+      batch_no: 'ADJ', expiry: null, qty_available: parsed.data.change, created_by: actor.id,
+    })
+    if (error) return { success: false, error: error.message }
+    await supabase.from('stock_movements').insert({
+      id: crypto.randomUUID(), tenant_id: actor.tenant_id, item_id: parsed.data.item_id,
+      change: parsed.data.change, reason: 'adjustment', batch_id: batchId,
+      note: parsed.data.note, created_by: actor.id,
+    })
+  }
 
-  const { error } = await supabase
-    .from('inventory_items').update({ qty_in_stock: newQty }).eq('id', parsed.data.item_id)
-  if (error) return { success: false, error: error.message }
-
-  await supabase.from('stock_movements').insert({
-    id: crypto.randomUUID(),
-    tenant_id: actor.tenant_id,
-    item_id: parsed.data.item_id,
-    change: parsed.data.change,
-    reason: 'adjustment',
-    note: parsed.data.note,
-    created_by: actor.id,
-  })
-
+  await recomputeItemQty(supabase, parsed.data.item_id)
   await logAudit(actor.id, 'adjust', 'inventory_item', parsed.data.item_id, {
     change: parsed.data.change, note: parsed.data.note,
   })
   return { success: true }
+}
+
+// ---- Expiry & batches ----
+
+// Batches expiring within `withinDays` (default 90) OR already expired, plus a
+// derived days-to-expiry, for the Expiry alerts tab.
+export async function getExpiryAlerts(withinDays = 90): Promise<Array<InventoryBatch & { days_to_expiry: number }>> {
+  const supabase = await createClient()
+  const cutoff = new Date(Date.now() + withinDays * 86400000).toISOString().split('T')[0]
+  const { data } = await supabase
+    .from('inventory_batches')
+    .select('*, item:inventory_items(id, name, unit)')
+    .gt('qty_available', 0)
+    .not('expiry', 'is', null)
+    .lte('expiry', cutoff)
+    .order('expiry', { ascending: true })
+
+  const today = Date.now()
+  return ((data ?? []) as unknown as InventoryBatch[]).map((b) => ({
+    ...b,
+    days_to_expiry: Math.ceil((new Date(b.expiry as string).getTime() - today) / 86400000),
+  }))
+}
+
+export async function listItemBatches(itemId: string): Promise<InventoryBatch[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('inventory_batches')
+    .select('*')
+    .eq('item_id', itemId)
+    .gt('qty_available', 0)
+    .order('expiry', { ascending: true, nullsFirst: false })
+  return (data ?? []) as unknown as InventoryBatch[]
 }

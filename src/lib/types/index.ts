@@ -930,9 +930,19 @@ export type MovementReason = 'purchase' | 'issue' | 'adjustment'
 
 export interface StockMovement {
   id: string; item_id: string; change: number; reason: MovementReason
-  ref_id: string | null; note: string | null; created_by: string | null; created_at: string
+  ref_id: string | null; batch_id: string | null; note: string | null
+  created_by: string | null; created_at: string
   item?: Pick<InventoryItem, 'id' | 'name' | 'unit'>
   creator?: Pick<Profile, 'id' | 'full_name'>
+}
+
+export interface InventoryBatch {
+  id: string; tenant_id: string; item_id: string
+  batch_no: string | null; expiry: string | null
+  qty_available: number; unit_cost: number | null
+  supplier_id: string | null; po_id: string | null
+  created_by: string | null; created_at: string
+  item?: Pick<InventoryItem, 'id' | 'name' | 'unit'>
 }
 
 // ---- Phase 6: HR ----

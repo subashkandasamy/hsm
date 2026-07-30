@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   Plus, RefreshCw, AlertTriangle, Package, Truck, ClipboardList,
-  Edit2, ArrowDownCircle, SlidersHorizontal, CheckCircle2,
+  Edit2, ArrowDownCircle, SlidersHorizontal, CheckCircle2, CalendarClock,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
@@ -13,19 +13,21 @@ import DateText from '@/components/ui/DateText'
 import GlassCard from '@/components/ui/GlassCard'
 import EmptyState from '@/components/ui/EmptyState'
 import {
-  listItems, listSuppliers, listPurchaseOrders, getStockAlerts,
+  listItems, listSuppliers, listPurchaseOrders, getStockAlerts, getExpiryAlerts,
   markOrdered,
 } from '@/app/actions/inventory'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import type { InventoryItem, Supplier, PurchaseOrder, POStatus } from '@/lib/types'
+import type { InventoryItem, Supplier, PurchaseOrder, POStatus, InventoryBatch } from '@/lib/types'
+
+type ExpiryAlert = InventoryBatch & { days_to_expiry: number }
 import ItemFormModal from './ItemFormModal'
 import SupplierFormModal from './SupplierFormModal'
 import PoBuilderModal from './PoBuilderModal'
 import ReceivePOModal from './ReceivePOModal'
 import StockActionModal from './StockActionModal'
 
-type Tab = 'items' | 'suppliers' | 'orders' | 'alerts'
+type Tab = 'items' | 'suppliers' | 'orders' | 'alerts' | 'expiry'
 
 const PO_STATUS_MAP: Record<POStatus, string> = {
   draft: 'pending',
@@ -48,9 +50,10 @@ interface Props {
   initialSuppliers: Supplier[]
   initialPOs: PurchaseOrder[]
   initialAlerts: InventoryItem[]
+  initialExpiry: ExpiryAlert[]
 }
 
-export default function InventoryClient({ initialItems, initialSuppliers, initialPOs, initialAlerts }: Props) {
+export default function InventoryClient({ initialItems, initialSuppliers, initialPOs, initialAlerts, initialExpiry }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canManage = !!role && hasPermission(role, 'inventory:manage')
@@ -60,6 +63,7 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
   const [suppliers, setSuppliers] = useState(initialSuppliers)
   const [orders, setOrders]     = useState(initialPOs)
   const [alerts, setAlerts]     = useState(initialAlerts)
+  const [expiry, setExpiry]     = useState<ExpiryAlert[]>(initialExpiry)
   const [loading, setLoading]   = useState(false)
 
   // Modals
@@ -74,8 +78,8 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
 
   async function refresh() {
     setLoading(true)
-    const [i, s, o, a] = await Promise.all([listItems(), listSuppliers(), listPurchaseOrders(), getStockAlerts()])
-    setItems(i); setSuppliers(s); setOrders(o); setAlerts(a)
+    const [i, s, o, a, e] = await Promise.all([listItems(), listSuppliers(), listPurchaseOrders(), getStockAlerts(), getExpiryAlerts()])
+    setItems(i); setSuppliers(s); setOrders(o); setAlerts(a); setExpiry(e)
     setLoading(false)
   }
 
@@ -103,7 +107,8 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
     { key: 'items',     label: 'Items',     icon: <Package className="w-4 h-4" />,       count: items.length },
     { key: 'suppliers', label: 'Suppliers', icon: <Truck className="w-4 h-4" />,          count: suppliers.length },
     { key: 'orders',    label: 'Orders',    icon: <ClipboardList className="w-4 h-4" />,  count: orders.length },
-    { key: 'alerts',    label: 'Alerts',    icon: <AlertTriangle className="w-4 h-4" />,  count: alerts.length, urgent: alerts.length > 0 },
+    { key: 'alerts',    label: 'Low stock', icon: <AlertTriangle className="w-4 h-4" />,  count: alerts.length, urgent: alerts.length > 0 },
+    { key: 'expiry',    label: 'Expiry',    icon: <CalendarClock className="w-4 h-4" />,  count: expiry.length, urgent: expiry.some((e) => e.days_to_expiry <= 30) },
   ]
 
   return (
@@ -412,6 +417,52 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
                 </div>
               </GlassCard>
             ))}
+          </div>
+        )
+      )}
+
+      {tab === 'expiry' && (
+        expiry.length === 0 ? (
+          <GlassCard className="p-8">
+            <EmptyState
+              title="Nothing expiring soon"
+              description="No batches are expired or due within 90 days."
+            />
+          </GlassCard>
+        ) : (
+          <div className="space-y-3">
+            {expiry.map((b) => {
+              const expired = b.days_to_expiry < 0
+              const soon = b.days_to_expiry >= 0 && b.days_to_expiry <= 30
+              const tone = expired ? '#DC2626' : soon ? '#B45309' : '#0D9488'
+              const bg = expired ? 'rgba(239,68,68,0.08)' : soon ? 'rgba(251,191,36,0.12)' : 'rgba(13,148,136,0.08)'
+              return (
+                <GlassCard key={b.id} className="p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 flex-shrink-0 rounded-xl flex items-center justify-center"
+                        style={{ background: bg, border: `1px solid ${tone}30` }}>
+                        <CalendarClock className="w-4 h-4" style={{ color: tone }} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate" style={{ color: '#0F172A' }}>{b.item?.name ?? 'Item'}</p>
+                        <p className="text-xs" style={{ color: '#94A3B8' }}>
+                          Batch {b.batch_no ?? '—'} · Expiry {b.expiry}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 flex-shrink-0 text-right">
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: tone }}>
+                          {expired ? `Expired ${-b.days_to_expiry}d ago` : `${b.days_to_expiry}d left`}
+                        </p>
+                        <p className="text-xs" style={{ color: '#94A3B8' }}>{b.qty_available} {b.item?.unit ?? 'units'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </GlassCard>
+              )
+            })}
           </div>
         )
       )}
