@@ -205,14 +205,10 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
     .single()
 
   if (order?.admission_id) {
-    // IPD path: bill was created at order time — gate on payment before collection
-    const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
-    // Cashless-approved patients don't pay cash up front — the insurer settles
-    // later — so an eligibility-approved claim on this encounter lifts the gate.
-    if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
-      return { success: false, error: 'Awaiting payment — please collect payment before collecting the sample' }
-    }
-
+    // IPD path: NOT gated on payment. The charge was captured as a bill at order
+    // time and settles into the combined bill at discharge, so an admitted patient
+    // never waits on a cash payment to have their sample collected. (Only OPD cash
+    // is gated below; cashless is exempt in both paths.)
     const { error } = await supabase
       .from('lab_orders').update({ status: 'collected' }).eq('id', orderId).eq('status', 'ordered')
     if (error) return { success: false, error: error.message }

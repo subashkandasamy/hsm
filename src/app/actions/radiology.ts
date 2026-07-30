@@ -147,14 +147,10 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
     .single()
 
   if (order?.admission_id) {
-    // IPD path: bill was created at order time — gate on payment before scan
-    const linkedBill = await resolveServiceBill(supabase, 'radiology', orderId)
-    // Cashless-approved patients don't pay cash up front — an eligibility-approved
-    // claim on this encounter lifts the payment gate.
-    if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
-      return { success: false, error: 'Awaiting payment — please collect payment before performing this scan' }
-    }
-
+    // IPD path: NOT gated on payment. The charge was captured as a bill at order
+    // time and settles into the combined bill at discharge, so an admitted patient
+    // is never held back from their scan by a cash payment. (Only OPD cash is gated
+    // below; cashless is exempt in both paths.)
     const { error } = await supabase
       .from('radiology_orders').update({ status: 'performed' })
       .eq('id', orderId).eq('status', 'ordered')
