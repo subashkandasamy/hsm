@@ -344,12 +344,26 @@ export async function purgeTenantData(
   if (!tenant) return { success: false, error: 'Tenant not found' }
   if (confirmSlug !== tenant.slug) return { success: false, error: 'Slug confirmation does not match' }
 
+  // Capture the tenant's auth users BEFORE the RPC deletes their profiles rows.
+  const { data: profs } = await service.from('profiles').select('id').eq('tenant_id', tenantId)
+  const userIds = (profs ?? []).map((p) => p.id as string)
+
   const { error } = await service.rpc('purge_tenant_data', { p_tenant_id: tenantId })
   if (error) return { success: false, error: error.message }
+
+  // Remove the auth users too — auth.users lives outside the schema the purge
+  // function can reach. Best-effort: log failures but don't fail the purge.
+  let authFailures = 0
+  for (const uid of userIds) {
+    const { error: delErr } = await service.auth.admin.deleteUser(uid)
+    if (delErr) { authFailures++; console.error('[purgeTenantData] auth delete failed', uid, delErr.message) }
+  }
 
   await logAdminAction(service, actor.id, 'purge_tenant_data', tenantId, {
     tenant_name: tenant.name,
     tenant_slug: tenant.slug,
+    auth_users_deleted: userIds.length - authFailures,
+    auth_delete_failures: authFailures,
   })
   return { success: true }
 }
