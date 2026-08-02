@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Building2, Hospital, LogOut, ChevronRight, FileText, User } from 'lucide-react'
+import { Building2, Hospital, LogOut, ChevronRight, Search, User } from 'lucide-react'
 import { signOutPatient, type MyHospital } from '@/app/actions/patientPortal'
 
 const TEAL = '#0D9488'
@@ -73,10 +73,16 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 24, padding: '12px 14px', background: 'rgba(13,148,136,0.06)', borderRadius: 12, border: '1px solid rgba(13,148,136,0.12)' }}>
-          <FileText style={{ width: 16, height: 16, color: TEAL, flexShrink: 0 }} />
-          <p style={{ fontSize: 12.5, color: '#475569' }}>Tap a hospital to see your visits, prescriptions and reports. Online bill payment & appointments are coming next.</p>
-        </div>
+        <Link href="/find" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, marginTop: 24, padding: '14px 16px', background: TEAL, borderRadius: 14 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Search style={{ width: 16, height: 16, color: '#fff' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>Find a hospital &amp; book</p>
+            <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>Browse hospitals on Uyirly and book an appointment</p>
+          </div>
+          <ChevronRight style={{ width: 18, height: 18, color: 'rgba(255,255,255,0.9)', flexShrink: 0 }} />
+        </Link>
       </main>
     </div>
   )

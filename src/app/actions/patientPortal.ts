@@ -446,3 +446,66 @@ export async function getQueueStatus(patientId: string, appointmentId: string): 
     status: appt.status as string, completed, ahead, total, estWaitMin: ahead * 10,
   }
 }
+
+// ── Hospital directory (C) + self-registration (B) ────────────────────────────
+export interface DirectoryHospital { tenantId: string; name: string; city: string | null; slug: string; patientId: string | null }
+
+// Hospitals that have opted into the patient app directory. `patientId` is set
+// when the logged-in phone already has a record there (so we can link straight
+// to it instead of re-registering).
+export async function listDirectoryHospitals(search?: string): Promise<DirectoryHospital[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  let q = svc.from('tenants')
+    .select('id, name, city, slug')
+    .eq('directory_listed', true).in('status', ['trial', 'active'])
+    .order('name').limit(50)
+  const s = search?.trim()
+  if (s) q = q.or(`name.ilike.%${s}%,city.ilike.%${s}%`)
+  const { data } = await q
+
+  const last10 = session.phone.slice(-10)
+  const { data: mine } = await svc.from('patients').select('id, tenant_id, phone').ilike('phone', `%${last10}%`)
+  const myByTenant = new Map<string, string>()
+  for (const p of (mine ?? []) as Array<Record<string, unknown>>) {
+    if (normalizePhone(p.phone as string) === session.phone) myByTenant.set(p.tenant_id as string, p.id as string)
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map((t) => ({
+    tenantId: t.id as string, name: t.name as string, city: t.city as string | null,
+    slug: t.slug as string, patientId: myByTenant.get(t.id as string) ?? null,
+  }))
+}
+
+// Register the logged-in phone as a patient at a listed hospital. Flagged
+// self_registered (unverified) until the hospital's front desk confirms.
+export async function selfRegisterPatient(
+  tenantId: string, input: { full_name: string; gender?: string | null; dob?: string | null },
+): Promise<{ success: true; patientId: string } | { success: false; error: string }> {
+  const session = await getPatientSession()
+  if (!session) return { success: false, error: 'Please log in again' }
+  if (!input.full_name?.trim()) return { success: false, error: "Enter the patient's name" }
+
+  const svc = createServiceClient()
+  const { data: t } = await svc.from('tenants').select('id, directory_listed, status').eq('id', tenantId).maybeSingle()
+  if (!t || !(t.directory_listed as boolean) || !['trial', 'active'].includes(t.status as string))
+    return { success: false, error: 'This hospital is not open for online registration' }
+
+  // Already registered here with this phone → reuse it.
+  const last10 = session.phone.slice(-10)
+  const { data: existing } = await svc.from('patients').select('id, phone').eq('tenant_id', tenantId).ilike('phone', `%${last10}%`)
+  const match = ((existing ?? []) as Array<Record<string, unknown>>).find((p) => normalizePhone(p.phone as string) === session.phone)
+  if (match) return { success: true, patientId: match.id as string }
+
+  const { data: uhid } = await svc.rpc('get_next_uhid_for', { p_tenant_id: tenantId })
+  if (!uhid) return { success: false, error: 'Could not generate a UHID' }
+
+  const id = crypto.randomUUID()
+  const { error } = await svc.from('patients').insert({
+    id, tenant_id: tenantId, uhid: uhid as string,
+    full_name: input.full_name.trim(), phone: '+' + session.phone,
+    gender: input.gender || null, dob: input.dob || null, self_registered: true,
+  })
+  if (error) return { success: false, error: error.message }
+  return { success: true, patientId: id }
+}

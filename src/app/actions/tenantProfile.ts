@@ -37,6 +37,29 @@ export async function upsertTenantProfile(
   return { success: true }
 }
 
+// ── Patient app directory opt-in ──────────────────────────────────────────────
+export async function getDirectoryListing(): Promise<{ listed: boolean; city: string | null }> {
+  const actor = await getActorProfile()
+  const svc = createServiceClient()
+  const { data } = await svc.from('tenants').select('directory_listed, city').eq('id', actor.tenant_id).maybeSingle()
+  return { listed: !!data?.directory_listed, city: (data?.city as string | null) ?? null }
+}
+
+export async function setDirectoryListing(
+  input: { listed: boolean; city?: string | null }
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'settings:write')
+  // Service role: the tenants row isn't tenant-user-writable via RLS.
+  const svc = createServiceClient()
+  const { error } = await svc.from('tenants')
+    .update({ directory_listed: input.listed, city: input.city?.trim() || null })
+    .eq('id', actor.tenant_id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'tenant_directory', actor.tenant_id, { listed: input.listed })
+  return { success: true }
+}
+
 export async function uploadTenantLogo(
   formData: FormData
 ): Promise<{ success: true; url: string } | { success: false; error: string }> {
