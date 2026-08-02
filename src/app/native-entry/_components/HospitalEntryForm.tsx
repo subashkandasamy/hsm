@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
-import { Building2, ArrowRight, Loader2, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
+import { Building2, ArrowRight, Loader2, AlertCircle, CheckCircle, RefreshCw, User } from 'lucide-react'
 import { checkTenantExists } from '@/app/actions/tenantLookup'
 
 const PREF_KEY = 'uyirly_hospital_slug'
+const MODE_KEY = 'uyirly_mode' // 'patient' — remembered so the app skips the chooser next time
 
 function normalizeSlug(raw: string): string {
   return raw
@@ -20,7 +21,7 @@ interface Props {
 }
 
 export default function HospitalEntryForm({ forcePick = false }: Props) {
-  const [step, setStep] = useState<'loading' | 'pick' | 'confirmed'>('loading')
+  const [step, setStep] = useState<'loading' | 'choose' | 'pick' | 'confirmed'>('loading')
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
   const [confirmedName, setConfirmedName] = useState('')
@@ -34,14 +35,19 @@ export default function HospitalEntryForm({ forcePick = false }: Props) {
     async function checkSaved() {
       const { Preferences } = await import('@capacitor/preferences')
       const { value } = await Preferences.get({ key: PREF_KEY })
-      if (value) {
-        window.location.href = `https://${value}.uyirly.com/login`
-      } else {
-        setStep('pick')
-      }
+      if (value) { window.location.href = `https://${value}.uyirly.com/login`; return }
+      const { value: mode } = await Preferences.get({ key: MODE_KEY })
+      if (mode === 'patient') { window.location.href = 'https://my.uyirly.com'; return }
+      setStep('choose')
     }
-    checkSaved().catch(() => setStep('pick'))
+    checkSaved().catch(() => setStep('choose'))
   }, [forcePick])
+
+  async function handlePatient() {
+    const { Preferences } = await import('@capacitor/preferences')
+    await Preferences.set({ key: MODE_KEY, value: 'patient' })
+    window.location.href = 'https://my.uyirly.com'
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -80,6 +86,46 @@ export default function HospitalEntryForm({ forcePick = false }: Props) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ background: '#F8FAFC' }}>
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#0D9488' }} />
+      </div>
+    )
+  }
+
+  // ── Choose — patient or hospital staff ───────────────────────────────────────
+  if (step === 'choose') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg,#F8FAFC 0%,#ECFEFF 50%,#F0FDFA 100%)' }}>
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col items-center mb-8 text-center">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: '#CCFBF1', border: '1px solid rgba(13,148,136,0.25)' }}>
+              <Building2 className="w-8 h-8" style={{ color: '#0D9488' }} />
+            </div>
+            <h1 className="text-2xl font-bold" style={{ color: '#0F172A' }}>Welcome to Uyirly</h1>
+            <p className="mt-1 text-sm" style={{ color: '#64748B' }}>How would you like to sign in?</p>
+          </div>
+
+          <button onClick={handlePatient}
+            className="w-full rounded-2xl p-5 mb-3 text-left flex items-center gap-4"
+            style={{ background: '#0D9488', border: 'none', cursor: 'pointer' }}>
+            <User className="w-6 h-6 shrink-0" style={{ color: '#fff' }} />
+            <span>
+              <span className="block text-base font-semibold" style={{ color: '#fff' }}>I&apos;m a patient</span>
+              <span className="block text-xs" style={{ color: 'rgba(255,255,255,0.85)' }}>See your records, reports & appointments</span>
+            </span>
+            <ArrowRight className="w-5 h-5 ml-auto shrink-0" style={{ color: '#fff' }} />
+          </button>
+
+          <button onClick={() => setStep('pick')}
+            className="w-full rounded-2xl p-5 text-left flex items-center gap-4"
+            style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+            <Building2 className="w-6 h-6 shrink-0" style={{ color: '#0D9488' }} />
+            <span>
+              <span className="block text-base font-semibold" style={{ color: '#0F172A' }}>Hospital staff</span>
+              <span className="block text-xs" style={{ color: '#64748B' }}>Sign in to your hospital</span>
+            </span>
+            <ArrowRight className="w-5 h-5 ml-auto shrink-0" style={{ color: '#94A3B8' }} />
+          </button>
+        </div>
       </div>
     )
   }
