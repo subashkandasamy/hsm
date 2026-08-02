@@ -154,6 +154,17 @@ export async function proxy(request: NextRequest) {
         ? hostWithoutPort.replace('.localhost', '')
         : hostWithoutPort.replace(`.${rootDomain}`, '')
 
+      // ── Patient portal host (my.uyirly.com / my.localhost) ────────────────
+      // Not a tenant — the universal patient portal. Rewrite to /portal/*;
+      // the portal pages verify the patient session themselves (custom cookie).
+      if (slug === 'my') {
+        const url = request.nextUrl.clone()
+        if (!pathname.startsWith('/portal')) {
+          url.pathname = '/portal' + (pathname === '/' ? '' : pathname)
+        }
+        return NextResponse.rewrite(url)
+      }
+
       // ── Reserved slugs ────────────────────────────────────────────────────
       if (RESERVED_SLUGS.has(slug)) {
         if (slug === 'admin' || slug === 'platform') {

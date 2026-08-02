@@ -1,0 +1,69 @@
+// Server-only patient session helpers. Patients are NOT Supabase auth users —
+// they get a custom HMAC-signed session cookie set on `.uyirly.com` so one login
+// works across every tenant subdomain and the patient host (my.uyirly.com).
+import { cookies } from 'next/headers'
+import crypto from 'crypto'
+
+const COOKIE_NAME = 'uyirly_patient'
+const SECRET = process.env.COOKIE_SECRET ?? ''
+const MAX_AGE = 60 * 60 * 24 * 30 // 30 days
+const isProd = process.env.NODE_ENV === 'production'
+const ROOT = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
+
+// Normalise to digits-with-country-code (mirrors src/lib/notify normalizePhone).
+export function normalizePhone(raw: string): string | null {
+  const digits = (raw ?? '').replace(/\D/g, '')
+  if (digits.length < 8) return null
+  const cc = process.env.WHATSAPP_DEFAULT_CC || '91'
+  if (digits.length === 10) return cc + digits
+  if (digits.startsWith('0')) return cc + digits.replace(/^0+/, '')
+  return digits
+}
+
+interface PatientClaims { sub: string; phone: string; iat: number; exp: number }
+
+function sign(payload: PatientClaims): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const sig = crypto.createHmac('sha256', SECRET).update(body).digest('base64url')
+  return `${body}.${sig}`
+}
+
+function verify(token: string): PatientClaims | null {
+  const [body, sig] = token.split('.')
+  if (!body || !sig) return null
+  const expect = crypto.createHmac('sha256', SECRET).update(body).digest('base64url')
+  const a = Buffer.from(sig), b = Buffer.from(expect)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
+  try {
+    const claims = JSON.parse(Buffer.from(body, 'base64url').toString()) as PatientClaims
+    if (!claims.exp || claims.exp < Math.floor(Date.now() / 1000)) return null
+    return claims
+  } catch { return null }
+}
+
+export async function setPatientSession(accountId: string, phone: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  const token = sign({ sub: accountId, phone, iat: now, exp: now + MAX_AGE })
+  const jar = await cookies()
+  jar.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    path: '/',
+    domain: isProd ? `.${ROOT}` : undefined, // share across *.uyirly.com in prod
+    maxAge: MAX_AGE,
+  })
+}
+
+export async function clearPatientSession(): Promise<void> {
+  const jar = await cookies()
+  jar.delete(COOKIE_NAME)
+}
+
+export async function getPatientSession(): Promise<{ accountId: string; phone: string } | null> {
+  const jar = await cookies()
+  const token = jar.get(COOKIE_NAME)?.value
+  if (!token) return null
+  const claims = verify(token)
+  return claims ? { accountId: claims.sub, phone: claims.phone } : null
+}
