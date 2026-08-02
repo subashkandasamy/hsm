@@ -1,17 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarDays, Plane, Settings2, Repeat } from 'lucide-react'
+import { CalendarDays, Plane, Settings2, Repeat, Stethoscope } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import type { ShiftDefinition, WardCoverageRule, WardIncharge, RosterPattern, LeaveRequest } from '@/lib/types'
 import RosterGrid from './RosterGrid'
 import LeavePanel from './LeavePanel'
 import ConfigPanel from './ConfigPanel'
 import PatternsPanel from './PatternsPanel'
+import DoctorHoursPanel from './DoctorHoursPanel'
 
 interface Props {
   wards: { id: string; name: string }[]
   nurses: { id: string; full_name: string }[]
+  doctors: { id: string; full_name: string }[]
   initialShifts: ShiftDefinition[]
   initialCoverage: WardCoverageRule[]
   initialIncharges: WardIncharge[]
@@ -22,7 +24,7 @@ interface Props {
   actorId: string
 }
 
-type Tab = 'roster' | 'leave' | 'config' | 'patterns'
+type Tab = 'roster' | 'leave' | 'config' | 'patterns' | 'doctors'
 
 export default function SchedulingClient(props: Props) {
   const [tab, setTab] = useState<Tab>('roster')
@@ -30,6 +32,7 @@ export default function SchedulingClient(props: Props) {
   const tabs: { key: Tab; label: string; Icon: typeof CalendarDays; show: boolean }[] = [
     { key: 'roster',   label: 'Roster',           Icon: CalendarDays, show: true },
     { key: 'leave',    label: 'Leave',            Icon: Plane,        show: true },
+    { key: 'doctors',  label: 'Doctor Hours',     Icon: Stethoscope, show: props.canManage },
     { key: 'config',   label: 'Shifts & Coverage', Icon: Settings2,   show: props.canManage },
     { key: 'patterns', label: 'Patterns',         Icon: Repeat,       show: props.canManage },
   ]
@@ -70,6 +73,9 @@ export default function SchedulingClient(props: Props) {
           initialPatterns={props.initialPatterns}
           initialShifts={props.initialShifts}
           wards={props.wards} nurses={props.nurses} />
+      )}
+      {tab === 'doctors' && props.canManage && (
+        <DoctorHoursPanel doctors={props.doctors} />
       )}
     </div>
   )

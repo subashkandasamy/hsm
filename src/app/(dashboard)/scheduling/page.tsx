@@ -19,7 +19,7 @@ export default async function SchedulingPage() {
   if (!hasPermission(actor.role, 'scheduling:read')) redirect('/dashboard')
 
   const supabase = await createClient()
-  const [wards, shifts, coverageRules, incharges, patterns, leave, nursesRes] = await Promise.all([
+  const [wards, shifts, coverageRules, incharges, patterns, leave, nursesRes, doctorsRes] = await Promise.all([
     listWards(),
     listShiftDefinitions(),
     listCoverageRules(),
@@ -27,6 +27,7 @@ export default async function SchedulingPage() {
     listPatterns(),
     listLeaveRequests(),
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
+    supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true).order('full_name'),
   ])
 
   const canManage = hasPermission(actor.role, 'scheduling:manage')
@@ -36,6 +37,7 @@ export default async function SchedulingPage() {
     <SchedulingClient
       wards={(wards ?? []).map((w) => ({ id: w.id, name: w.name }))}
       nurses={(nursesRes.data ?? []) as { id: string; full_name: string }[]}
+      doctors={(doctorsRes.data ?? []) as { id: string; full_name: string }[]}
       initialShifts={shifts}
       initialCoverage={coverageRules}
       initialIncharges={incharges}
