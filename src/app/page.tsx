@@ -65,13 +65,18 @@ function Nav() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
-          <Link href="/find-hospital" className="inline-flex text-sm font-medium px-2 sm:px-4 py-2 rounded-xl"
+        <div className="flex items-center gap-2 sm:gap-3">
+          <a href="https://my.uyirly.com"
+            className="inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
+            style={{ color: T }}>
+            Patient login
+          </a>
+          <Link href="/find-hospital" className="hidden sm:inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
             style={{ color: S6 }}>
             Sign in
           </Link>
           <Link href="/signup"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold"
             style={{ background: T, color: '#fff', boxShadow: '0 4px 14px rgba(13,148,136,0.3)', transition: 'box-shadow 0.2s' }}>
             Start free trial
           </Link>
@@ -1075,6 +1080,7 @@ function Footer() {
             <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: S4 }}>Company</p>
             <ul className="space-y-3">
               {[
+                { label: 'Patient login', href: 'https://my.uyirly.com'  },
                 { label: 'Solutions', href: '/solutions'                 },
                 { label: 'Guides',  href: '/guides'                   },
                 { label: 'Terms',   href: '/terms'                    },
