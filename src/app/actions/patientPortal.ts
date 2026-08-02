@@ -168,13 +168,17 @@ export interface PatientRecords {
 }
 
 // Confirm this patient_id belongs to the logged-in phone (prevents enumeration).
-async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientId: string, phone: string): Promise<{ name: string; uhid: string; tenant: string } | null> {
+async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientId: string, phone: string): Promise<{ name: string; uhid: string; tenant: string; tenantId: string } | null> {
   const { data } = await svc
     .from('patients')
-    .select('phone, full_name, uhid, tenant:tenants(name)')
+    .select('phone, full_name, uhid, tenant_id, tenant:tenants(name)')
     .eq('id', patientId).maybeSingle()
   if (!data || normalizePhone(data.phone as string) !== phone) return null
-  return { name: data.full_name as string, uhid: data.uhid as string, tenant: (data.tenant as { name?: string } | null)?.name ?? 'Hospital' }
+  return {
+    name: data.full_name as string, uhid: data.uhid as string,
+    tenant: (data.tenant as { name?: string } | null)?.name ?? 'Hospital',
+    tenantId: data.tenant_id as string,
+  }
 }
 
 export async function getPatientHospitalRecords(patientId: string): Promise<PatientRecords | null> {
@@ -246,4 +250,80 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       report: r.report as string | null,
     })),
   }
+}
+
+// ── Appointments & requests at one hospital (Phase 4) ─────────────────────────
+export interface PatientAppointment { id: string; date: string; status: string; doctor: string; reason: string | null }
+export interface PatientRequest { id: string; source: string; suggestedDate: string | null; reason: string | null; status: string; doctor: string | null }
+export interface HospitalDoctor { id: string; name: string }
+
+export async function getPatientAppointments(patientId: string): Promise<PatientAppointment[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  if (!(await ownsPatient(svc, patientId, session.phone))) return []
+  const { data } = await svc
+    .from('appointments')
+    .select('id, scheduled_at, status, reason, doctor:profiles(full_name)')
+    .eq('patient_id', patientId).order('scheduled_at', { ascending: false }).limit(50)
+  return ((data ?? []) as Array<Record<string, unknown>>).map((a) => ({
+    id: a.id as string, date: a.scheduled_at as string, status: a.status as string,
+    doctor: (a.doctor as { full_name?: string } | null)?.full_name ?? '—',
+    reason: a.reason as string | null,
+  }))
+}
+
+// Pending follow-ups/requests for this patient — both doctor-recommended
+// (source opd/ipd) and their own portal requests (source patient).
+export async function getPatientRequests(patientId: string): Promise<PatientRequest[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  if (!(await ownsPatient(svc, patientId, session.phone))) return []
+  const { data } = await svc
+    .from('follow_ups')
+    .select('id, source, suggested_date, reason, status, suggested_doctor:profiles!suggested_doctor_id(full_name)')
+    .eq('patient_id', patientId).eq('status', 'pending').order('created_at', { ascending: false })
+  return ((data ?? []) as Array<Record<string, unknown>>).map((f) => ({
+    id: f.id as string, source: f.source as string, suggestedDate: f.suggested_date as string | null,
+    reason: f.reason as string | null, status: f.status as string,
+    doctor: (f.suggested_doctor as { full_name?: string } | null)?.full_name ?? null,
+  }))
+}
+
+export async function getHospitalDoctors(patientId: string): Promise<HospitalDoctor[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  const owner = await ownsPatient(svc, patientId, session.phone)
+  if (!owner) return []
+  const { data } = await svc
+    .from('profiles').select('id, full_name')
+    .eq('tenant_id', owner.tenantId).eq('role', 'doctor').eq('is_active', true).order('full_name')
+  return ((data ?? []) as Array<Record<string, unknown>>).map((d) => ({ id: d.id as string, name: d.full_name as string }))
+}
+
+// Patient requests an appointment → a pending follow_up (source 'patient') that
+// the hospital front desk confirms & converts. No auto-booked appointment/bill.
+export async function requestPatientAppointment(
+  patientId: string, input: { doctorId?: string | null; date: string; reason?: string | null },
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await getPatientSession()
+  if (!session) return { success: false, error: 'Please log in again' }
+  const svc = createServiceClient()
+  const owner = await ownsPatient(svc, patientId, session.phone)
+  if (!owner) return { success: false, error: 'Record not found' }
+  if (!input.date) return { success: false, error: 'Please pick a preferred date' }
+
+  const { error } = await svc.from('follow_ups').insert({
+    tenant_id: owner.tenantId,
+    patient_id: patientId,
+    source: 'patient',
+    suggested_doctor_id: input.doctorId || null,
+    suggested_date: input.date,
+    reason: input.reason?.trim() || 'Appointment requested via patient portal',
+    status: 'pending',
+  })
+  if (error) return { success: false, error: error.message }
+  return { success: true }
 }
