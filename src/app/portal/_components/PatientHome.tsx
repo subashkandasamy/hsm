@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Building2, Hospital, LogOut, ChevronRight, FileText } from 'lucide-react'
+import { Building2, Hospital, LogOut, ChevronRight, FileText, User } from 'lucide-react'
 import { signOutPatient, type MyHospital } from '@/app/actions/patientPortal'
 
 const TEAL = '#0D9488'
@@ -15,7 +15,11 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
     router.refresh()
   }
 
-  const name = hospitals[0]?.patient_name
+  // One phone can carry several people (a family sharing a number). Show each
+  // registered person as a profile; count distinct hospitals separately.
+  const people = hospitals.length
+  const hospitalCount = new Set(hospitals.map((h) => h.tenant_id)).size
+  const greeting = people === 1 ? `Hi, ${hospitals[0].patient_name}` : 'Welcome'
 
   return (
     <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
@@ -33,12 +37,14 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
       </header>
 
       <main style={{ maxWidth: 640, margin: '0 auto', padding: '24px 16px' }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A', marginBottom: 2 }}>
-          {name ? `Hi, ${name}` : 'Welcome'}
-        </h1>
-        <p style={{ fontSize: 14, color: '#64748B', marginBottom: 22 }}>+{phone} · {hospitals.length} hospital{hospitals.length !== 1 ? 's' : ''}</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A', marginBottom: 2 }}>{greeting}</h1>
+        <p style={{ fontSize: 14, color: '#64748B', marginBottom: 22 }}>
+          +{phone}{people > 0 ? ` · ${people} profile${people !== 1 ? 's' : ''} · ${hospitalCount} hospital${hospitalCount !== 1 ? 's' : ''}` : ''}
+        </p>
 
-        <h2 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94A3B8', marginBottom: 10 }}>Your hospitals</h2>
+        <h2 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94A3B8', marginBottom: 10 }}>
+          {people > 1 ? 'Select a profile' : 'Your profile'}
+        </h2>
 
         {hospitals.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #E2E8F0', padding: '28px 20px', textAlign: 'center' }}>
@@ -53,11 +59,13 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
             {hospitals.map((h) => (
               <Link key={h.patient_id} href={`/h/${h.patient_id}`} style={{ textDecoration: 'none', background: '#fff', borderRadius: 16, border: '1px solid #E2E8F0', padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Hospital style={{ width: 18, height: 18, color: TEAL }} />
+                  <User style={{ width: 18, height: 18, color: TEAL }} />
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <p style={{ fontSize: 15, fontWeight: 600, color: '#0F172A' }}>{h.hospital}</p>
-                  <p style={{ fontSize: 12, color: '#94A3B8' }}>UHID {h.uhid} · {h.patient_name}</p>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: '#0F172A' }}>{h.patient_name}</p>
+                  <p style={{ fontSize: 12, color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Hospital style={{ width: 12, height: 12 }} /> {h.hospital} · UHID {h.uhid}
+                  </p>
                 </div>
                 <ChevronRight style={{ width: 18, height: 18, color: '#CBD5E1', flexShrink: 0 }} />
               </Link>
