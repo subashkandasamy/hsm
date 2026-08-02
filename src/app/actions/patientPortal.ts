@@ -366,3 +366,83 @@ export async function getDoctorAvailability(patientId: string, doctorId: string,
   }
   return out
 }
+
+// ── Patient booking with token + live queue (Phase #3) ────────────────────────
+export interface QueueStatus {
+  token: number; date: string; doctor: string; status: string
+  completed: number; ahead: number; total: number; estWaitMin: number
+}
+
+// Book a real OPD appointment (allocates a token). NOTE: we compute the token
+// directly (max+1) rather than via get_next_appointment_token(), because that
+// RPC relies on current_tenant_id() which is NULL under the service role. No
+// bill is raised here — the hospital collects the consultation fee at check-in.
+export async function bookPatientAppointment(
+  patientId: string, doctorId: string, dateStr: string, startTime?: string,
+): Promise<{ success: true; token: number } | { success: false; error: string }> {
+  const session = await getPatientSession()
+  if (!session) return { success: false, error: 'Please log in again' }
+  const svc = createServiceClient()
+  const owner = await ownsPatient(svc, patientId, session.phone)
+  if (!owner) return { success: false, error: 'Record not found' }
+  const today = new Date().toISOString().split('T')[0]
+  if (!dateStr || dateStr < today) return { success: false, error: 'Pick a future date' }
+
+  // One active appointment per patient per day.
+  const dayLo = `${dateStr}T00:00:00`, dayHi = `${dateStr}T23:59:59`
+  const { data: dup } = await svc.from('appointments').select('id')
+    .eq('patient_id', patientId).gte('scheduled_at', dayLo).lte('scheduled_at', dayHi)
+    .in('status', ['booked', 'checked_in']).limit(1)
+  if (dup && dup.length) return { success: false, error: 'You already have an appointment on this date' }
+
+  // Ensure the month partition exists (bookings can be a future month).
+  await svc.rpc('ensure_appointment_partition', { p_date: dateStr })
+
+  // Next token for this doctor+date (service-role safe).
+  const { data: existing } = await svc.from('appointments').select('token_no')
+    .eq('doctor_id', doctorId).gte('scheduled_at', dayLo).lte('scheduled_at', dayHi).neq('status', 'cancelled')
+  const token = (existing ?? []).reduce((m, r) => Math.max(m, (r.token_no as number) ?? 0), 0) + 1
+
+  const { error } = await svc.from('appointments').insert({
+    id: crypto.randomUUID(), tenant_id: owner.tenantId, patient_id: patientId, doctor_id: doctorId,
+    department_id: null, scheduled_at: `${dateStr}T${startTime ?? '10:00'}:00`,
+    token_no: token, status: 'booked', reason: 'Booked via patient app',
+  })
+  if (error) return { success: false, error: error.message }
+  return { success: true, token }
+}
+
+// Live queue status for one of the patient's appointments.
+export async function getQueueStatus(patientId: string, appointmentId: string): Promise<QueueStatus | null> {
+  const session = await getPatientSession()
+  if (!session) return null
+  const svc = createServiceClient()
+  if (!(await ownsPatient(svc, patientId, session.phone))) return null
+
+  const { data: appt } = await svc.from('appointments')
+    .select('doctor_id, scheduled_at, token_no, status, doctor:profiles(full_name)')
+    .eq('id', appointmentId).eq('patient_id', patientId).maybeSingle()
+  if (!appt) return null
+
+  const dateStr = (appt.scheduled_at as string).split('T')[0]
+  const myToken = (appt.token_no as number) ?? 0
+  const { data: sameDay } = await svc.from('appointments')
+    .select('token_no, status')
+    .eq('doctor_id', appt.doctor_id as string)
+    .gte('scheduled_at', `${dateStr}T00:00:00`).lte('scheduled_at', `${dateStr}T23:59:59`)
+
+  let completed = 0, ahead = 0, total = 0
+  for (const a of (sameDay ?? []) as Array<Record<string, unknown>>) {
+    const t = (a.token_no as number) ?? 0, st = a.status as string
+    if (st === 'cancelled') continue
+    total++
+    if (t < myToken) {
+      if (st === 'done') completed++
+      else if (st === 'booked' || st === 'checked_in') ahead++
+    }
+  }
+  return {
+    token: myToken, date: dateStr, doctor: (appt.doctor as { full_name?: string } | null)?.full_name ?? '',
+    status: appt.status as string, completed, ahead, total, estWaitMin: ahead * 10,
+  }
+}
