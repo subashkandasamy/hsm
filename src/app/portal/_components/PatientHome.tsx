@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Building2, Hospital, LogOut, ChevronRight, FileText } from 'lucide-react'
 import { signOutPatient, type MyHospital } from '@/app/actions/patientPortal'
 
@@ -50,7 +51,7 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {hospitals.map((h) => (
-              <div key={h.patient_id} style={{ background: '#fff', borderRadius: 16, border: '1px solid #E2E8F0', padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Link key={h.patient_id} href={`/h/${h.patient_id}`} style={{ textDecoration: 'none', background: '#fff', borderRadius: 16, border: '1px solid #E2E8F0', padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Hospital style={{ width: 18, height: 18, color: TEAL }} />
                 </div>
@@ -59,14 +60,14 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
                   <p style={{ fontSize: 12, color: '#94A3B8' }}>UHID {h.uhid} · {h.patient_name}</p>
                 </div>
                 <ChevronRight style={{ width: 18, height: 18, color: '#CBD5E1', flexShrink: 0 }} />
-              </div>
+              </Link>
             ))}
           </div>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 24, padding: '12px 14px', background: 'rgba(13,148,136,0.06)', borderRadius: 12, border: '1px solid rgba(13,148,136,0.12)' }}>
           <FileText style={{ width: 16, height: 16, color: TEAL, flexShrink: 0 }} />
-          <p style={{ fontSize: 12.5, color: '#475569' }}>Records, reports, bills & appointments are coming next — this is the first step of your patient portal.</p>
+          <p style={{ fontSize: 12.5, color: '#475569' }}>Tap a hospital to see your visits, prescriptions and reports. Online bill payment & appointments are coming next.</p>
         </div>
       </main>
     </div>

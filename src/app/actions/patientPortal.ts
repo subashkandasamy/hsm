@@ -152,3 +152,98 @@ export async function getMyHospitals(): Promise<MyHospital[]> {
 export async function getPatientMe(): Promise<{ accountId: string; phone: string } | null> {
   return getPatientSession()
 }
+
+// ── Records at one hospital (Phase 2) ─────────────────────────────────────────
+export interface PatientRecords {
+  hospital: string
+  patientName: string
+  uhid: string
+  visits: Array<{
+    id: string; date: string; doctor: string; type: string
+    complaint: string | null; diagnosis: string | null; notes: string | null
+    prescriptions: Array<{ drug: string; dosage: string | null; frequency: string | null; duration: string | null; instructions: string | null }>
+  }>
+  labs: Array<{ id: string; date: string; status: string; items: Array<{ test: string; result: string | null; unit: string | null; flag: string }> }>
+  radiology: Array<{ id: string; date: string; status: string; test: string; report: string | null }>
+}
+
+// Confirm this patient_id belongs to the logged-in phone (prevents enumeration).
+async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientId: string, phone: string): Promise<{ name: string; uhid: string; tenant: string } | null> {
+  const { data } = await svc
+    .from('patients')
+    .select('phone, full_name, uhid, tenant:tenants(name)')
+    .eq('id', patientId).maybeSingle()
+  if (!data || normalizePhone(data.phone as string) !== phone) return null
+  return { name: data.full_name as string, uhid: data.uhid as string, tenant: (data.tenant as { name?: string } | null)?.name ?? 'Hospital' }
+}
+
+export async function getPatientHospitalRecords(patientId: string): Promise<PatientRecords | null> {
+  const session = await getPatientSession()
+  if (!session) return null
+  const svc = createServiceClient()
+  const owner = await ownsPatient(svc, patientId, session.phone)
+  if (!owner) return null
+
+  const [visitsRes, labRes, radRes] = await Promise.all([
+    svc.from('visits')
+      .select('id, type, visit_date, complaint, diagnosis, notes, doctor:profiles(full_name)')
+      .eq('patient_id', patientId).order('visit_date', { ascending: false }),
+    svc.from('lab_orders')
+      .select('id, status, ordered_at, reported_at, items:lab_order_items(result_value, result_text, unit, flag, test:lab_tests_catalog(name))')
+      .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
+    svc.from('radiology_orders')
+      .select('id, status, ordered_at, reported_at, report, test:radiology_catalog(name)')
+      .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
+  ])
+
+  const visits = (visitsRes.data ?? []) as Array<Record<string, unknown>>
+  const visitIds = visits.map((v) => v.id as string)
+  const rxByVisit = new Map<string, PatientRecords['visits'][number]['prescriptions']>()
+  if (visitIds.length) {
+    const { data: rx } = await svc
+      .from('prescriptions')
+      .select('visit_id, drug_name, dosage, frequency, duration, instructions')
+      .in('visit_id', visitIds)
+    for (const r of (rx ?? []) as Array<Record<string, unknown>>) {
+      const vid = r.visit_id as string
+      if (!rxByVisit.has(vid)) rxByVisit.set(vid, [])
+      rxByVisit.get(vid)!.push({
+        drug: r.drug_name as string, dosage: r.dosage as string | null,
+        frequency: r.frequency as string | null, duration: r.duration as string | null,
+        instructions: r.instructions as string | null,
+      })
+    }
+  }
+
+  return {
+    hospital: owner.tenant, patientName: owner.name, uhid: owner.uhid,
+    visits: visits.map((v) => ({
+      id: v.id as string,
+      date: v.visit_date as string,
+      doctor: (v.doctor as { full_name?: string } | null)?.full_name ?? '—',
+      type: v.type as string,
+      complaint: v.complaint as string | null,
+      diagnosis: v.diagnosis as string | null,
+      notes: v.notes as string | null,
+      prescriptions: rxByVisit.get(v.id as string) ?? [],
+    })),
+    labs: ((labRes.data ?? []) as Array<Record<string, unknown>>).map((l) => ({
+      id: l.id as string,
+      date: (l.reported_at ?? l.ordered_at) as string,
+      status: l.status as string,
+      items: ((l.items ?? []) as Array<Record<string, unknown>>).map((it) => ({
+        test: (it.test as { name?: string } | null)?.name ?? 'Test',
+        result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
+        unit: it.unit as string | null,
+        flag: it.flag as string,
+      })),
+    })),
+    radiology: ((radRes.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      id: r.id as string,
+      date: (r.reported_at ?? r.ordered_at) as string,
+      status: r.status as string,
+      test: (r.test as { name?: string } | null)?.name ?? 'Study',
+      report: r.report as string | null,
+    })),
+  }
+}
