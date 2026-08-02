@@ -327,3 +327,42 @@ export async function requestPatientAppointment(
   if (error) return { success: false, error: error.message }
   return { success: true }
 }
+
+// ── Doctor availability for booking (Phase #2/#3) ─────────────────────────────
+export interface AvailableSession { label: string | null; start: string; end: string; tokenCap: number | null }
+export interface AvailableDay { date: string; sessions: AvailableSession[] }
+
+// Next `days` calendar days on which this doctor has an active OPD session.
+export async function getDoctorAvailability(patientId: string, doctorId: string, days = 30): Promise<AvailableDay[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  const owner = await ownsPatient(svc, patientId, session.phone)
+  if (!owner) return []
+
+  const { data } = await svc
+    .from('doctor_availability')
+    .select('day_of_week, start_time, end_time, label, token_cap')
+    .eq('doctor_id', doctorId).eq('tenant_id', owner.tenantId).eq('is_active', true)
+    .order('start_time')
+
+  const byDow = new Map<number, AvailableSession[]>()
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const dow = r.day_of_week as number
+    if (!byDow.has(dow)) byDow.set(dow, [])
+    byDow.get(dow)!.push({
+      label: r.label as string | null,
+      start: (r.start_time as string).slice(0, 5),
+      end: (r.end_time as string).slice(0, 5),
+      tokenCap: r.token_cap as number | null,
+    })
+  }
+
+  const out: AvailableDay[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i)
+    const s = byDow.get(d.getDay())
+    if (s && s.length) out.push({ date: d.toISOString().split('T')[0], sessions: s })
+  }
+  return out
+}

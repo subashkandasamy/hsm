@@ -55,6 +55,19 @@ export const AppointmentCreateSchema = z.object({
   reason: z.string().nullable().optional(),
 })
 
+// Doctor OPD availability — weekly recurring sessions.
+export const DoctorSessionSchema = z.object({
+  day_of_week: z.coerce.number().int().min(0).max(6),
+  start_time: z.string().regex(/^\d{2}:\d{2}/, 'Use HH:MM'),
+  end_time: z.string().regex(/^\d{2}:\d{2}/, 'Use HH:MM'),
+  label: z.string().nullable().optional(),
+  token_cap: z.coerce.number().int().min(0).nullable().optional(),
+})
+export const DoctorAvailabilitySchema = z.object({
+  doctor_id: z.string().uuid(),
+  sessions: z.array(DoctorSessionSchema),
+})
+
 // Follow-up request: a soft "come back for review" intent, separate from an
 // appointment. Converting it into an appointment is what books + bills.
 export const FollowUpCreateSchema = z.object({

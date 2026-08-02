@@ -113,6 +113,12 @@ export interface Appointment {
   department?: Pick<Department, 'id' | 'name'>
 }
 
+export interface DoctorAvailability {
+  id: string; tenant_id: string; doctor_id: string
+  day_of_week: number; start_time: string; end_time: string
+  label: string | null; token_cap: number | null; is_active: boolean; created_at: string
+}
+
 export type FollowUpStatus = 'pending' | 'converted' | 'cancelled'
 export type FollowUpSource = 'opd' | 'ipd' | 'manual'
 export interface FollowUp {
