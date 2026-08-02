@@ -35,16 +35,17 @@ function shiftDate(date: string, days: number): string {
 }
 
 /** Admin (scheduling:manage) can manage any ward; a ward in-charge can manage only theirs. */
-async function assertCanManageWard(wardId: string): Promise<{ id: string; tenant_id: string; role: string }> {
+async function assertCanManageWard(wardId: string): Promise<{ id: string; tenant_id: string; role: string } | null> {
   const actor = await getActorProfile()
   if (hasPermission(actor.role, 'scheduling:manage')) return actor
   const supabase = await createClient()
   const { data } = await supabase
     .from('ward_incharges').select('id')
     .eq('ward_id', wardId).eq('profile_id', actor.id).maybeSingle()
-  if (!data) throw new Error('FORBIDDEN')
-  return actor
+  return data ? actor : null   // null = not allowed (caller returns a friendly error)
 }
+
+const WARD_FORBIDDEN = 'You can only manage wards you are in charge of'
 
 // ── shift definitions ─────────────────────────────────────────────────────────
 
@@ -302,7 +303,7 @@ export async function computeWardCoverage(wardId: string, date: string): Promise
     const minN = (rule?.min_nurses as number) ?? DEFAULT_MIN_NURSES
     const required = Math.max(minN, Math.ceil(beds / ratio))
     return {
-      ward_id: wardId, shift_code: s.code,
+      ward_id: wardId, date, shift_code: s.code,
       required, assigned: assignedByShift.get(s.code) ?? 0, occupied_beds: beds,
     }
   })
@@ -315,20 +316,51 @@ export async function getWardRoster(params: { wardId: string; weekStart: string 
   const supabase = await createClient()
   const { wardId, weekStart } = params
   const weekEnd = shiftDate(weekStart, 6)
+  const dates = eachDate(weekStart, weekEnd)
 
-  const [rosterRes, nursesRes, shifts, coverage, inchargeRes] = await Promise.all([
+  const [rosterRes, nursesRes, shifts, bedsRes, rulesRes, inchargeRes] = await Promise.all([
     supabase.from('duty_roster')
       .select('*, profile:profiles(id, full_name, role)')
       .eq('ward_id', wardId).gte('date', weekStart).lte('date', weekEnd).order('date'),
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
     listShiftDefinitions(true),
-    computeWardCoverage(wardId, weekStart),
+    supabase.from('admissions').select('id', { count: 'exact', head: true }).eq('ward_id', wardId).eq('status', 'admitted'),
+    supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('ward_id', wardId),
     supabase.from('ward_incharges').select('id').eq('ward_id', wardId).eq('profile_id', actor.id).maybeSingle(),
   ])
 
+  const rosterRows = (rosterRes.data ?? []) as unknown as DutyRoster[]
+  const beds = bedsRes.count ?? 0
+  const ruleMap = new Map((rulesRes.data ?? []).map((r) => [r.shift_code as string, r]))
+
+  // Assigned nurses per date+shift, from the week roster already fetched above
+  // (no extra per-day queries).
+  const assignedByKey = new Map<string, number>()
+  for (const r of rosterRows) {
+    const rr = r as unknown as { shift: string | null; date: string }
+    if (rr.shift) assignedByKey.set(`${rr.date}|${rr.shift}`, (assignedByKey.get(`${rr.date}|${rr.shift}`) ?? 0) + 1)
+  }
+
+  // Coverage is now computed for EVERY day of the week (previously only weekStart,
+  // which hid understaffing on the other six days).
+  const coverage: ShiftCoverage[] = []
+  for (const date of dates) {
+    for (const sh of shifts) {
+      const rule = ruleMap.get(sh.code)
+      const ratio = (rule?.patient_ratio as number) ?? DEFAULT_RATIO
+      const minN = (rule?.min_nurses as number) ?? DEFAULT_MIN_NURSES
+      coverage.push({
+        ward_id: wardId, date, shift_code: sh.code,
+        required: Math.max(minN, Math.ceil(beds / ratio)),
+        assigned: assignedByKey.get(`${date}|${sh.code}`) ?? 0,
+        occupied_beds: beds,
+      })
+    }
+  }
+
   const canManage = hasPermission(actor.role, 'scheduling:manage') || !!inchargeRes.data
   return {
-    roster: (rosterRes.data ?? []) as unknown as DutyRoster[],
+    roster: rosterRows,
     nurses: (nursesRes.data ?? []) as { id: string; full_name: string }[],
     shifts, coverage, canManage, weekStart,
   }
@@ -340,6 +372,7 @@ export async function setRosterCell(params: {
 }): Promise<Result> {
   await requireWriteAccess()
   const actor = await assertCanManageWard(params.wardId)
+  if (!actor) return { success: false, error: WARD_FORBIDDEN }
   const supabase = await createClient()
 
   // Block if the nurse is on approved leave that day
@@ -366,6 +399,7 @@ export async function setRosterCell(params: {
 export async function clearRosterCell(params: { wardId: string; profileId: string; date: string }): Promise<Result> {
   await requireWriteAccess()
   const actor = await assertCanManageWard(params.wardId)
+  if (!actor) return { success: false, error: WARD_FORBIDDEN }
   const supabase = await createClient()
   const { error } = await supabase.from('duty_roster').delete()
     .eq('profile_id', params.profileId).eq('date', params.date).eq('ward_id', params.wardId)
@@ -377,6 +411,7 @@ export async function clearRosterCell(params: { wardId: string; profileId: strin
 export async function publishRoster(params: { wardId: string; start: string; end: string }): Promise<Result> {
   await requireWriteAccess()
   const actor = await assertCanManageWard(params.wardId)
+  if (!actor) return { success: false, error: WARD_FORBIDDEN }
   const supabase = await createClient()
   const { error } = await supabase.from('duty_roster')
     .update({ status: 'published' })
@@ -399,6 +434,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const d = parsed.data
   const actor = await assertCanManageWard(d.ward_id)
+  if (!actor) return { success: false, error: WARD_FORBIDDEN }
   const supabase = await createClient()
 
   const dates = eachDate(d.start_date, d.end_date)

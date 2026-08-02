@@ -1029,7 +1029,7 @@ export interface RosterPatternMember {
 
 // Coverage computation result surfaced to the roster grid / picker
 export interface ShiftCoverage {
-  ward_id: string; shift_code: string
+  ward_id: string; date: string; shift_code: string
   required: number; assigned: number; occupied_beds: number
 }
 

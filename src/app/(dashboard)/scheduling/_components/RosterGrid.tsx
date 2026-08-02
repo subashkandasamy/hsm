@@ -61,6 +61,13 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
 
   const nurseName = useMemo(() => new Map((data?.nurses ?? []).map((n) => [n.id, n.full_name])), [data])
 
+  // Per-day shortfall = Σ max(0, required − assigned) across shifts, for each day.
+  const shortByDay = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of data?.coverage ?? []) m.set(c.date, (m.get(c.date) ?? 0) + Math.max(0, c.required - c.assigned))
+    return m
+  }, [data])
+
   // rows = nurses rostered this week + manually added
   const rowIds = useMemo(() => {
     const ids = new Set<string>(extra)
@@ -145,22 +152,10 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
           )}
         </div>
 
-        {/* Coverage legend for the week start */}
-        {data && data.coverage.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mt-3 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
-            <span className="text-[11px] flex items-center gap-1" style={{ color: '#94A3B8' }}>
-              <Users className="w-3 h-3" /> Coverage {new Date(weekStart + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}:
-            </span>
-            {data.coverage.map((c) => {
-              const short = c.assigned < c.required
-              return (
-                <span key={c.shift_code} className="text-[11px] px-2 py-0.5 rounded-md capitalize"
-                  style={short ? { background: '#FEF2F2', color: '#DC2626' } : { background: '#F0FDF4', color: '#0D9488' }}>
-                  {shifts.find((s) => s.code === c.shift_code)?.label ?? c.shift_code}: {c.assigned}/{c.required}
-                </span>
-              )
-            })}
-            <span className="text-[11px]" style={{ color: '#CBD5E1' }}>· {data.coverage[0]?.occupied_beds ?? 0} beds occupied</span>
+        {/* Coverage note — per-day shortfall is flagged in each day column below */}
+        {data && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 text-[11px]" style={{ borderTop: '1px solid #F1F5F9', color: '#94A3B8' }}>
+            <Users className="w-3 h-3" /> {data.coverage[0]?.occupied_beds ?? 0} beds occupied · required staff is ratio-driven; each day flags its own shortfall below.
           </div>
         )}
       </GlassCard>
@@ -179,9 +174,17 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
             <thead>
               <tr style={{ background: '#F8FAFC' }}>
                 <th className="text-left px-3 py-2 text-xs font-semibold sticky left-0" style={{ color: '#64748B', background: '#F8FAFC', minWidth: 150 }}>Nurse</th>
-                {days.map((d) => (
-                  <th key={d} className="px-2 py-2 text-xs font-semibold text-center" style={{ color: '#64748B' }}>{dow(d)}</th>
-                ))}
+                {days.map((d) => {
+                  const short = shortByDay.get(d) ?? 0
+                  return (
+                    <th key={d} className="px-2 py-2 text-xs font-semibold text-center" style={{ color: '#64748B' }}>
+                      <div>{dow(d)}</div>
+                      {short > 0
+                        ? <div className="text-[10px] font-medium" style={{ color: '#DC2626' }} title="Understaffed vs coverage ratio">{short} short</div>
+                        : <div className="text-[10px]" style={{ color: '#0D9488' }}>✓</div>}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
