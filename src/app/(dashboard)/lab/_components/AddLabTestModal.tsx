@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 
@@ -539,10 +540,10 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
-          <select value={form.sample_type} onChange={e => onSet('sample_type', e.target.value)} className={inp} style={{ ...bdr, paddingRight: '8px' }}>
+          <Select value={form.sample_type} onChange={e => onSet('sample_type', e.target.value)}>
             <option value="">—</option>
             {SAMPLE_TYPES.map(s => <option key={s} value={s.toLowerCase()}>{s}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Unit</label>

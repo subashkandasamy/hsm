@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, ScanLine, ChevronDown, ChevronRight } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import {
   createRadiologyTest, updateRadiologyTest,
   listAllRadiologyCatalog, listRadiologyMaster, activateRadiologyFromMaster,
@@ -311,16 +312,14 @@ export default function AddRadiologyTestModal({ open, onClose, onSuccess }: Prop
                 placeholder="Search procedures…"
                 className={`${inp} pl-9`} style={bdr} />
             </div>
-            <select value={catMod} onChange={e => setCatMod(e.target.value)}
-              className="px-3 py-2 rounded-xl text-sm border"
-              style={{ borderColor: '#E2E8F0', color: '#64748B', background: '#fff' }}>
+            <Select value={catMod} onChange={e => setCatMod(e.target.value)} className="w-44">
               <option value="">All modalities</option>
               {MODALITIES.map(m => {
                 const count = tests.filter(t => t.modality === m.value).length
                 if (count === 0) return null
                 return <option key={m.value} value={m.value}>{m.label} ({count})</option>
               })}
-            </select>
+            </Select>
           </div>
 
           {loading ? (
@@ -444,16 +443,14 @@ export default function AddRadiologyTestModal({ open, onClose, onSuccess }: Prop
                 placeholder="Search procedures…"
                 className={`${inp} pl-9`} style={bdr} />
             </div>
-            <select value={masterMod} onChange={e => setMasterMod(e.target.value)}
-              className="px-3 py-2 rounded-xl text-sm border"
-              style={{ borderColor: '#E2E8F0', color: '#64748B', background: '#fff' }}>
+            <Select value={masterMod} onChange={e => setMasterMod(e.target.value)} className="w-44">
               <option value="">All modalities</option>
               {MODALITIES.map(m => {
                 const count = masterTests.filter(t => t.modality === m.value).length
                 if (count === 0) return null
                 return <option key={m.value} value={m.value}>{m.label} ({count})</option>
               })}
-            </select>
+            </Select>
           </div>
 
           {masterLoading ? (
@@ -608,8 +605,7 @@ function ScanFormPanel({ form, err, saving, title, saveLabel, onSet, onSave, onC
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Modality</label>
-          <select value={form.modality} onChange={e => { onSet('modality', e.target.value); onSet('body_part', '') }}
-            className={inp} style={{ ...bdr, paddingRight: '8px' }}>
+          <Select value={form.modality} onChange={e => { onSet('modality', e.target.value); onSet('body_part', '') }}>
             <option value="">— Select —</option>
             {[
               { value: 'xray',          label: 'X-Ray' },
@@ -628,24 +624,23 @@ function ScanFormPanel({ form, err, saving, title, saveLabel, onSet, onSave, onC
               { value: 'ophthalmic',    label: 'Ophthalmic' },
               { value: 'special',       label: 'Special' },
             ].map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Group / Body Part</label>
           {form.modality ? (
-            <select
+            <Select
               value={form.body_part}
-              onChange={e => onSet('body_part', e.target.value)}
-              className={inp} style={{ ...bdr, paddingRight: '8px' }}>
+              onChange={e => onSet('body_part', e.target.value)}>
               <option value="">— Select group —</option>
               {(MODALITY_BODY_PARTS[form.modality] ?? []).map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
-            </select>
+            </Select>
           ) : (
-            <select disabled className={inp} style={{ ...bdr, paddingRight: '8px', opacity: 0.5, cursor: 'not-allowed' }}>
-              <option>— Select modality first —</option>
-            </select>
+            <Select disabled value="">
+              <option value="">— Select modality first —</option>
+            </Select>
           )}
         </div>
       </div>

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Money from '@/components/ui/Money'
+import Select from '@/components/ui/Select'
 import {
   recordAdvance,
   recordAdvanceRefund,
@@ -223,16 +224,14 @@ export default function FinancialPanel({
                 className="px-2 py-1.5 text-sm rounded border"
                 style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
               />
-              <select
+              <Select
                 value={advanceMethod}
                 onChange={(e) => setAdvanceMethod(e.target.value as typeof advanceMethod)}
-                className="px-2 py-1.5 text-sm rounded border"
-                style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
               >
                 {PAYMENT_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex gap-2">
               <button
@@ -271,16 +270,14 @@ export default function FinancialPanel({
                 className="px-2 py-1.5 text-sm rounded border"
                 style={{ borderColor: '#FDE68A', color: '#0F172A' }}
               />
-              <select
+              <Select
                 value={refundMethod}
                 onChange={(e) => setRefundMethod(e.target.value as typeof refundMethod)}
-                className="px-2 py-1.5 text-sm rounded border"
-                style={{ borderColor: '#FDE68A', color: '#0F172A' }}
               >
                 {PAYMENT_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex gap-2">
               <button

@@ -108,7 +108,7 @@ export default function ResultEntryModal({ open, order, onClose, onSuccess }: Pr
                   {flag.toUpperCase()}
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <FormField label="Numeric Value">
                   <Input type="number" step="any"
                     value={r.result_value}

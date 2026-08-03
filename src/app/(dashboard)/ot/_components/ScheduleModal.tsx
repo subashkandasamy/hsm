@@ -139,7 +139,7 @@ export default function ScheduleModal({ open, onClose, onSuccess, doctors, tarif
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <FormField label="Date" required>
             <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </FormField>

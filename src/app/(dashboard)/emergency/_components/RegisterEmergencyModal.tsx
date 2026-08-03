@@ -144,7 +144,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
             <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>
               Provisional Patient Details
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <FormField label="Name (if known)">
                 <Input value={provName} onChange={(e) => setProvName(e.target.value)}
                   placeholder="Unknown Male" />

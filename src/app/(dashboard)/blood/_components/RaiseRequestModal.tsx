@@ -143,7 +143,7 @@ export default function RaiseRequestModal({ open, onClose, onSuccess, prefill }:
         </FormField>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <FormField label="Blood Group *">
             <Select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} required>
               <option value="">— Select —</option>

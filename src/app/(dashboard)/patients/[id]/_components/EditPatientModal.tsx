@@ -122,7 +122,7 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
           </FormField>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <FormField label="Date of Birth" htmlFor="dob">
             <Input id="dob" type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} />
           </FormField>
