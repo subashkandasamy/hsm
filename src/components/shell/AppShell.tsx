@@ -26,7 +26,7 @@ export default function AppShell({
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <div className="print:hidden">
         <Sidebar
           role={role} tenantName={tenantName}
@@ -38,24 +38,24 @@ export default function AppShell({
         <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} />
       </div>
 
-      <main className="lg:ml-60 min-h-screen pb-safe-nav print:ml-0 print:pt-0 print:pb-0 print:min-h-0"
+      <main className="lg:ml-60 min-w-0 min-h-screen pb-safe-nav print:ml-0 print:pt-0 print:pb-0 print:min-h-0"
         style={{ background: 'transparent', paddingTop: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}>
 
         {/* Status banners */}
         <div className="print:hidden">
           {status === 'past_due' && (
-            <div className="mx-4 md:mx-6 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+            <div className="mx-4 md:mx-6 mt-4 flex flex-wrap items-center gap-x-1 gap-y-1 px-4 py-3 rounded-xl text-sm"
               style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#B45309' }}>
-              ⚠️&nbsp;Your last payment failed.&nbsp;
+              <span>⚠️ Your last payment failed.</span>
               <Link href="/account/subscription" className="font-semibold underline">Update payment</Link>
-              &nbsp;to avoid suspension.
+              <span>to avoid suspension.</span>
             </div>
           )}
           {status === 'trial' && (
-            <div className="mx-4 md:mx-6 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+            <div className="mx-4 md:mx-6 mt-4 flex flex-wrap items-center gap-x-1 gap-y-1 px-4 py-3 rounded-xl text-sm"
               style={{ background: 'rgba(13,148,136,0.07)', border: '1px solid rgba(13,148,136,0.18)', color: '#0F766E' }}>
-              🎉&nbsp;Free trial — full access to all modules.&nbsp;
-              <Link href="/account/subscription" className="font-semibold underline">Subscribe to keep access</Link>.
+              <span>🎉 Free trial — full access to all modules.</span>
+              <Link href="/account/subscription" className="font-semibold underline">Subscribe to keep access</Link>
             </div>
           )}
         </div>

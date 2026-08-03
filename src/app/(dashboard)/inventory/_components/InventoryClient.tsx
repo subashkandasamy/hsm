@@ -155,7 +155,7 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
       />
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit overflow-x-auto"
+      <div className="flex gap-1 mb-5 p-1 rounded-xl max-w-full overflow-x-auto"
         style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
         {TABS.map(({ key, label, icon, count, urgent }) => (
           <button key={key} onClick={() => setTab(key)}

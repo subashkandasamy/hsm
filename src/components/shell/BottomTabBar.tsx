@@ -91,7 +91,7 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
       className="glass-bottom-bar fixed bottom-0 left-0 right-0 z-30 md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="flex items-center justify-around h-16">
+      <div className="flex items-center h-16">
         {tabs.map((tab) => {
           const isActive = pathname === tab.href ||
             (tab.href !== '/dashboard' && pathname.startsWith(tab.href))
@@ -99,11 +99,11 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
             <Link
               key={tab.href}
               href={tab.href}
-              className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl min-w-[56px] min-h-[44px] justify-center"
+              className="flex-1 min-w-0 flex flex-col items-center gap-0.5 px-1 py-2 rounded-xl min-h-[44px] justify-center"
               style={{ color: isActive ? '#0D9488' : '#94A3B8' }}
             >
               <TabIcon name={tab.icon} />
-              <span className="text-[10px] font-medium leading-none">{tab.label}</span>
+              <span className="text-[10px] font-medium leading-none truncate max-w-full">{tab.label}</span>
             </Link>
           )
         })}
