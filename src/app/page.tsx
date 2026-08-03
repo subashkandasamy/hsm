@@ -7,6 +7,7 @@ import {
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
 } from 'lucide-react'
 import ScrollReveal from '@/components/ui/ScrollReveal'
+import MobileLoginMenu from './_components/MobileLoginMenu'
 
 export const metadata: Metadata = {
   title: 'Uyirly — Hospital Management Software for India',
@@ -67,7 +68,7 @@ function Nav() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           <a href="https://my.uyirly.com"
-            className="inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
+            className="hidden sm:inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
             style={{ color: T }}>
             Patient login
           </a>
@@ -75,6 +76,7 @@ function Nav() {
             style={{ color: S6 }}>
             Sign in
           </Link>
+          <MobileLoginMenu />
           <Link href="/signup"
             className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold"
             style={{ background: T, color: '#fff', boxShadow: '0 4px 14px rgba(13,148,136,0.3)', transition: 'box-shadow 0.2s' }}>
