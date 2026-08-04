@@ -55,7 +55,10 @@ html, body {
 
 body {
   background: linear-gradient(135deg, #F8FAFC 0%, #ECFEFF 50%, #F0FDFA 100%);
-  background-attachment: fixed;
+  /* NOTE: `background-attachment: fixed` was removed — on mobile it forces a
+     full-page repaint on every scroll frame, which made fixed/backdrop-blur
+     bars (landing header, dashboard top bar) visibly lag and "catch up" while
+     scrolling. The gradient scrolling with the page is imperceptible. */
   color: #0F172A;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -132,6 +135,9 @@ body {
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid #E2E8F0;
   box-shadow: 0 1px 8px 0 rgba(0, 0, 0, 0.04);
+  /* Own compositor layer so it doesn't repaint-lag while the page scrolls */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Bottom tab bar safe area — pushes content above system nav buttons on mobile,
@@ -174,6 +180,8 @@ body {
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid #E2E8F0;
   box-shadow: 0 -1px 12px 0 rgba(0, 0, 0, 0.06);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Drawer transition */

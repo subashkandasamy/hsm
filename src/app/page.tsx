@@ -41,7 +41,7 @@ const DARK = '#080F1C'
 function Nav() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50"
-      style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${S2}` }}>
+      style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: `1px solid ${S2}`, willChange: 'transform', transform: 'translateZ(0)' }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: T }}>
