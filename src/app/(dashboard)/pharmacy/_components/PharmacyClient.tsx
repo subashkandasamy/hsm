@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import SetupNudge from '@/components/ui/SetupNudge'
 import {
   Plus, RefreshCw, AlertTriangle, Package,
   CheckCircle2, Circle, User2, ChevronDown, ChevronRight,
@@ -203,6 +204,8 @@ export default function PharmacyClient({
           </div>
         }
       />
+
+      {stock.length === 0 && <SetupNudge message="Add medicines & stock to start dispensing" />}
 
       {/* Tabs — scrollable on mobile, compact on small screens */}
       <div className="overflow-x-auto mb-5 -mx-4 px-4">

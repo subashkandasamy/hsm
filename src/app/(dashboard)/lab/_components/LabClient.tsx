@@ -7,6 +7,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
+import SetupNudge from '@/components/ui/SetupNudge'
 import { collectSample, reportOrder, listLabOrders, listLabCatalog } from '@/app/actions/lab'
 import type { LabOrder, LabTestCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
@@ -142,6 +143,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
           </div>
         }
       />
+
+      {catalog.length === 0 && <SetupNudge message="Add your lab tests to start ordering" />}
 
       {/* Tabs */}
       <div className="overflow-x-auto -mx-4 px-4 mb-5">

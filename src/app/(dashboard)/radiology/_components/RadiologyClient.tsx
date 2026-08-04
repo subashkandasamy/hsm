@@ -8,6 +8,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import Money from '@/components/ui/Money'
 import EmptyState from '@/components/ui/EmptyState'
+import SetupNudge from '@/components/ui/SetupNudge'
 import { markPerformed, listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
 import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
@@ -130,6 +131,8 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
           </div>
         }
       />
+
+      {catalog.length === 0 && <SetupNudge message="Add your scans to start ordering" />}
 
       {/* Tabs */}
       <div className="overflow-x-auto -mx-4 px-4 mb-5">
