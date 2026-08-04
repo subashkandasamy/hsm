@@ -87,6 +87,27 @@ export default function Guide() {
         department downstream inherits the confusion. For how this sits inside the wider system, see our{' '}
         <Link href="/electronic-medical-records-software">electronic medical records software</Link> overview.
       </p>
+      <h2>How Uyirly keeps the patient record</h2>
+      <p>
+        <Link href="/electronic-medical-records-software">Uyirly</Link> gives every patient one UHID and hangs
+        everything on it &mdash; each OPD and IPD visit, every lab result and scan, every prescription, document
+        and bill &mdash; on a single timeline. The record fills in as you run the hospital, so nobody keeps it up
+        to date by hand. Access is by staff role, and every view and edit is audit-logged.
+      </p>
+      <ul>
+        <li>A single UHID that unifies a patient&apos;s whole history.</li>
+        <li>Consultations, vitals, labs, scans, prescriptions and bills on one timeline.</li>
+        <li>Role-based access for reception, doctors, lab, pharmacy and accounts.</li>
+        <li>ABDM/ABHA-ready, with data stored in India and every action audit-logged.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The EMR is the core of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link> &mdash; the same record every module reads and writes. See our{' '}
+        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM &amp; ABHA guide</Link>, or{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

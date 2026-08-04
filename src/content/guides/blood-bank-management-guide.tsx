@@ -81,6 +81,27 @@ export default function Guide() {
         unit from donation to cross-match to issue — the traceability trail it leaves is the clearest test of
         whether the software is built for safety.
       </p>
+      <h2>How Uyirly runs the blood bank</h2>
+      <p>
+        <Link href="/blood-bank-management-software">Uyirly&apos;s blood bank</Link> gives each unit an identity
+        from donation and tracks it through testing, storage, cross-match and issue &mdash; so at any moment you
+        know what is in stock, where each unit came from and where it went. Stock is held by blood group and
+        component with expiry warnings, and a unit is only issued against a valid request and a completed
+        cross-match, with the authoriser and recipient recorded.
+      </p>
+      <ul>
+        <li>Live availability by blood group and component, used oldest-valid-first.</li>
+        <li>Cross-match tied to the request before a unit can be issued.</li>
+        <li>Full traceability from donor to recipient, fully audit-logged.</li>
+        <li>Issue charges post to the patient&apos;s bill; requests link to the admission.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The blood bank is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, sharing the patient record and billing with the rest of the hospital. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

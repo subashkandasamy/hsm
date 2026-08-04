@@ -52,6 +52,27 @@ export default function Guide() {
         scheduling headaches), and whether the signed report lands back on the same patient record the order
         came from — rather than becoming a disconnected file the ordering doctor has to go looking for.
       </p>
+      <h2>How Uyirly runs radiology</h2>
+      <p>
+        <Link href="/radiology-information-system-software">Uyirly&apos;s radiology (RIS)</Link> turns an order
+        into a verified report without anything getting lost. A scan ordered in a consultation lands on the
+        modality worklist, so technicians always know what is pending; the radiologist reports from a template
+        for that study type; and the verified report becomes a clean letterhead PDF that reaches the ordering
+        doctor and the patient, with the charge already on the bill.
+      </p>
+      <ul>
+        <li>A live modality worklist &mdash; ordered, in progress, reported, verified.</li>
+        <li>Reporting templates per study type for faster, consistent reports.</li>
+        <li>Reports sit on the same patient history as their lab and consultation records.</li>
+        <li>Charges post to the patient&apos;s running bill with no re-registration.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Radiology is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, alongside the <Link href="/lab-management-software">lab</Link> on one patient record.
+        You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

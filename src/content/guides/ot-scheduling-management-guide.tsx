@@ -84,6 +84,27 @@ export default function Guide() {
         the theatre to seeing the consumables on the bill — to judge whether the flow matches how your OT
         really runs.
       </p>
+      <h2>How Uyirly runs the operation theatre</h2>
+      <p>
+        <Link href="/operation-theatre-management-software">Uyirly&apos;s OT module</Link> schedules cases against
+        theatre and team availability, so a theatre, surgeon or anaesthetist is never double-booked and the
+        day&apos;s OT list is clear to everyone. The pre-op safety checklist runs as part of the case, consumables
+        and implants are recorded against it, and the operative notes join the patient record &mdash; while the
+        charges post to the same IPD bill.
+      </p>
+      <ul>
+        <li>Clash-free scheduling with surgeon, anaesthetist and room per case.</li>
+        <li>Pre-op checklist &mdash; consent, fasting, investigations and surgical site &mdash; recorded before entry.</li>
+        <li>Consumables and implants captured against the case and posted to the bill.</li>
+        <li>Operative notes on the patient&apos;s record, tied to the admission.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        OT is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management software</Link>,
+        useful for any <Link href="/multi-specialty-hospital-software">multi-specialty hospital</Link>. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

@@ -80,6 +80,27 @@ export default function Guide() {
         <Link href="/signup">start a free trial</Link> and register a mock walk-in, triage it, and admit it —
         the speed of that path is the real measure of emergency software.
       </p>
+      <h2>How Uyirly handles emergency and triage</h2>
+      <p>
+        In <Link href="/hospital-management-software">Uyirly</Link>, an emergency patient can be registered in
+        seconds &mdash; even before full details are known &mdash; and triaged by severity so the sickest are seen
+        first. The system blocks duplicate ER registrations and stops an already-admitted patient being
+        registered again in the ER, and when a case needs admission it moves straight to IPD, carrying its
+        record so nothing is re-entered.
+      </p>
+      <ul>
+        <li>Rapid registration for walk-in and brought-in emergencies.</li>
+        <li>Triage by severity so the most critical patients are prioritised.</li>
+        <li>Duplicate and inpatient ER registrations blocked at the source.</li>
+        <li>One tap to admit from the ER into IPD, with full traceability.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Emergency is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, connected to <Link href="/guides/ipd-admission-bed-management-guide">IPD admissions</Link>
+        {' '}and billing. You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }
