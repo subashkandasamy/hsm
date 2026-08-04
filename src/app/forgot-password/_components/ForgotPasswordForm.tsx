@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import BrandMark from '@/components/ui/BrandMark'
 import Link from 'next/link'
 import { Mail, ArrowLeft, CheckCircle } from 'lucide-react'
 import { requestPasswordReset } from '@/app/actions/auth'
@@ -26,10 +27,7 @@ export default function ForgotPasswordForm({ hospitalName }: Props) {
       <div className="w-full max-w-md">
         {/* Branding */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <span style={{ color: '#0D9488', fontSize: '32px', fontWeight: 800, lineHeight: 1 }}>U</span>
-          </div>
+          <BrandMark size={56} className="mb-4" />
           <h1 className="text-2xl font-bold" style={{ color: '#0F172A' }}>
             {hospitalName ?? 'Uyirly'}
           </h1>

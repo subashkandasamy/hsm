@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import BrandMark from '@/components/ui/BrandMark'
 import { LayoutDashboard, UserCheck, Users, ShieldCheck, MapPin, CreditCard } from 'lucide-react'
 import SignupForm from './_components/SignupForm'
 
@@ -54,10 +55,7 @@ export default async function SignupPage({ searchParams }: Props) {
         {/* ── Left: what this is & what happens ── */}
         <div className="lg:pt-6">
           <div className="flex items-center gap-2.5 mb-6">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
-              style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-              <span style={{ color: '#0D9488', fontSize: '28px', fontWeight: 800, lineHeight: 1 }}>U</span>
-            </div>
+            <BrandMark size={44} />
             <span className="text-lg font-bold" style={{ color: '#0F172A' }}>Uyirly</span>
           </div>
 

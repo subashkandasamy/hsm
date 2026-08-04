@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import MobileLoginMenu from '@/app/_components/MobileLoginMenu'
+import BrandMark from '@/components/ui/BrandMark'
 
 const TEAL   = '#0D9488'
 const SLATE9 = '#0F172A'
@@ -15,9 +16,7 @@ export default function MarketingNav({ ctaLabel = 'Start free trial' }: { ctaLab
     <header className="landing-nav fixed top-0 left-0 right-0 z-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: TEAL }}>
-            <span style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>U</span>
-          </div>
+          <BrandMark size={32} />
           <span className="text-base font-bold" style={{ color: SLATE9 }}>Uyirly</span>
         </Link>
 

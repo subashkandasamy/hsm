@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/lib/types'
 import ScanInput from '@/components/barcode/ScanInput'
 import CameraScanButton from '@/components/barcode/CameraScanButton'
+import BrandMark from '@/components/ui/BrandMark'
 
 const ROLE_LABELS: Record<Role, string> = {
   admin:        'Administrator',
@@ -65,10 +66,7 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
         </button>
         {/* Hospital branding — always visible, so the collapsed sidebar needs no header */}
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <span style={{ color: '#0D9488', fontSize: '16px', fontWeight: 800, lineHeight: 1 }}>U</span>
-          </div>
+          <BrandMark size={28} className="flex-shrink-0" />
           <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{tenantName}</span>
         </div>
         {/* Native camera scanner (renders only in the Capacitor app) */}

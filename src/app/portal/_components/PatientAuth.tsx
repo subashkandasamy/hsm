@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import BrandMark from '@/components/ui/BrandMark'
 import { useRouter } from 'next/navigation'
 import { Phone, ArrowRight, ShieldCheck } from 'lucide-react'
 import { requestPatientOtp, verifyPatientOtp } from '@/app/actions/patientPortal'
@@ -39,9 +40,7 @@ export default function PatientAuth() {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(160deg,#ecfdf5,#f0fdfa 45%,#fff)', padding: '1.5rem' }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 28 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: TEAL, fontSize: '24px', fontWeight: 800, lineHeight: 1 }}>U</span>
-          </div>
+          <BrandMark size={40} />
           <span style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>Uyirly</span>
         </div>
 

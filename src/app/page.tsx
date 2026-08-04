@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import ScrollReveal from '@/components/ui/ScrollReveal'
 import MarketingNav from '@/components/marketing/MarketingNav'
+import BrandMark from '@/components/ui/BrandMark'
 
 export const metadata: Metadata = {
   title: 'Uyirly — Hospital Management Software for India',
@@ -1006,9 +1007,7 @@ function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           <div className="md:col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: T }}>
-                <span style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>U</span>
-              </div>
+              <BrandMark size={32} />
               <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
             </Link>
             <p className="text-sm leading-relaxed mb-4 max-w-xs" style={{ color: S5 }}>
