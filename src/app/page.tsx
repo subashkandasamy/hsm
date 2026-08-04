@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
-  CheckCircle, ArrowRight, X, Star, Activity,
+  CheckCircle, ArrowRight, X, Star, Activity, Linkedin,
   Stethoscope, BedDouble, FlaskConical, Scan, Pill, Scissors,
   Droplets, Receipt, ShieldPlus, Package, Users, Mic,
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
@@ -1016,6 +1016,14 @@ function Footer() {
             <a href="mailto:contact@uyirly.com" className="text-sm font-medium" style={{ color: T }}>
               contact@uyirly.com
             </a>
+            <div className="mt-4">
+              <a href="https://www.linkedin.com/company/uyirly" target="_blank" rel="noopener noreferrer"
+                aria-label="Uyirly on LinkedIn"
+                className="w-9 h-9 rounded-lg flex items-center justify-center"
+                style={{ border: `1px solid ${S2}`, color: T }}>
+                <Linkedin className="w-4 h-4" />
+              </a>
+            </div>
           </div>
 
           <div>

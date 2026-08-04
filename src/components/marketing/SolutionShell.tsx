@@ -274,6 +274,7 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
           <Link href="/terms" className="hover:underline">Terms</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
           <Link href="/security" className="hover:underline">Security</Link>
+          <a href="https://www.linkedin.com/company/uyirly" target="_blank" rel="noopener noreferrer" className="hover:underline">LinkedIn</a>
         </div>
         <p className="text-xs" style={{ color: SLATE4 }}>© {new Date().getFullYear()} Uyirly. Made in India.</p>
       </footer>
