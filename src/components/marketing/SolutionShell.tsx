@@ -275,7 +275,7 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
           <Link href="/privacy" className="hover:underline">Privacy</Link>
           <Link href="/security" className="hover:underline">Security</Link>
           <a href="https://www.linkedin.com/company/uyirly" target="_blank" rel="noopener noreferrer" className="hover:underline">LinkedIn</a>
-          <a href="https://www.facebook.com/profile.php?id=61592842021170" target="_blank" rel="noopener noreferrer" className="hover:underline">Facebook</a>
+          <a href="https://www.facebook.com/uyirly" target="_blank" rel="noopener noreferrer" className="hover:underline">Facebook</a>
         </div>
         <p className="text-xs" style={{ color: SLATE4 }}>© {new Date().getFullYear()} Uyirly. Made in India.</p>
       </footer>
