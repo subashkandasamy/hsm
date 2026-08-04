@@ -1078,6 +1078,9 @@ const jsonLd = {
       logo: `${SITE}/icons/icon-512.png`,
       description:
         'All-in-one hospital management software built for Indian hospitals, nursing homes and clinics.',
+      sameAs: [
+        'https://www.linkedin.com/company/uyirly',
+      ],
       areaServed: { '@type': 'Country', name: 'India' },
       contactPoint: {
         '@type': 'ContactPoint',
