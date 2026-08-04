@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { X, Printer, RefreshCw } from 'lucide-react'
-import BarcodeRenderer from './BarcodeRenderer'
+import QrRenderer from './QrRenderer'
 import { stampWristbandPrinted } from '@/app/actions/barcode'
 import type { Patient } from '@/lib/types'
 
@@ -105,14 +105,9 @@ export default function WristbandLabelModal({ patient, onClose }: Props) {
                 fontFamily: 'system-ui, sans-serif',
               }}
             >
-              {/* Barcode */}
+              {/* QR code */}
               <div style={{ flexShrink: 0 }}>
-                <BarcodeRenderer
-                  value={patient.uhid}
-                  height={40}
-                  width={1.2}
-                  displayValue={false}
-                />
+                <QrRenderer value={patient.uhid} size={64} />
               </div>
 
               {/* Patient info */}

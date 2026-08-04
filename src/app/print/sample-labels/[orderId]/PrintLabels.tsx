@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import JsBarcode from 'jsbarcode'
+import { useEffect } from 'react'
+import QrRenderer from '@/components/barcode/QrRenderer'
 import { ArrowLeft, Printer } from 'lucide-react'
 
 interface StickerGroup {
@@ -34,19 +34,6 @@ function Sticker({ orderId, group, patient, date }: {
   patient: { full_name: string; uhid: string } | null
   date: string
 }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-
-  useEffect(() => {
-    if (!svgRef.current) return
-    try {
-      JsBarcode(svgRef.current, orderId, {
-        format: 'CODE128', width: 0.9, height: 30,
-        displayValue: false, margin: 0,
-        background: '#ffffff', lineColor: '#000000',
-      })
-    } catch {}
-  }, [orderId])
-
   return (
     <div
       className="sticker"
@@ -80,7 +67,7 @@ function Sticker({ orderId, group, patient, date }: {
       {/* Barcode + text */}
       <div style={{ display: 'flex', gap: '5px', alignItems: 'flex-start', flex: 1, overflow: 'hidden' }}>
         <div style={{ flexShrink: 0 }}>
-          <svg ref={svgRef} />
+          <QrRenderer value={orderId} size={44} />
         </div>
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
           <p style={{ fontSize: '9pt', fontWeight: 700, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

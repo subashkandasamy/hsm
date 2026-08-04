@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import JsBarcode from 'jsbarcode'
+import { useEffect } from 'react'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { Patient } from '@/lib/types'
+import QrRenderer from '@/components/barcode/QrRenderer'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -11,27 +11,11 @@ function computeAge(dob: string | null): string {
 }
 
 export default function PrintCard({ patient }: { patient: Patient }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-
   useEffect(() => {
-    if (!svgRef.current) return
-    try {
-      JsBarcode(svgRef.current, patient.uhid, {
-        format: 'CODE128',
-        width: 1.6,
-        height: 36,
-        displayValue: true,
-        fontSize: 9,
-        margin: 0,
-        background: '#ffffff',
-        lineColor: '#000000',
-      })
-    } catch {}
-
-    // Small delay so the barcode SVG paint completes before print dialog opens
+    // Small delay so the QR SVG paints before the print dialog opens
     const t = setTimeout(() => window.print(), 350)
     return () => clearTimeout(t)
-  }, [patient.uhid])
+  }, [])
 
   const age = computeAge(patient.dob)
   const meta = [age !== '—' ? age : null, patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : null].filter(Boolean).join(' · ')
@@ -114,9 +98,11 @@ export default function PrintCard({ patient }: { patient: Patient }) {
           </div>
         </div>
 
-        {/* Barcode */}
+        {/* QR code */}
         <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'center' }}>
-          <svg ref={svgRef} style={{ maxWidth: '62mm' }} />
+          <div style={{ width: '16mm' }}>
+            <QrRenderer value={patient.uhid} size={140} />
+          </div>
         </div>
       </div>
     </>

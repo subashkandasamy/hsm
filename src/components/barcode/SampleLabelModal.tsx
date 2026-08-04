@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { X, Printer } from 'lucide-react'
-import BarcodeRenderer from './BarcodeRenderer'
+import QrRenderer from './QrRenderer'
 import { stampSampleLabelPrinted } from '@/app/actions/barcode'
 import type { LabOrder } from '@/lib/types'
 
@@ -97,9 +97,9 @@ export default function SampleLabelModal({ order, onClose }: Props) {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', overflow: 'hidden' }}>
-                {/* Barcode */}
-                <div style={{ flexShrink: 0, maxWidth: '55%' }}>
-                  <BarcodeRenderer value={order.id} height={32} width={0.9} displayValue={false} />
+                {/* QR code */}
+                <div style={{ flexShrink: 0 }}>
+                  <QrRenderer value={order.id} size={44} />
                 </div>
 
                 {/* Text — clipped to remaining space */}

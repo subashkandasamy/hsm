@@ -1,7 +1,7 @@
 'use client'
 
 import { X, Printer } from 'lucide-react'
-import BarcodeRenderer from './BarcodeRenderer'
+import QrRenderer from './QrRenderer'
 import type { Patient } from '@/lib/types'
 
 interface Props {
@@ -56,7 +56,7 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
         <div className="px-6 py-5 flex flex-col items-center gap-3">
           <div className="w-full flex justify-center py-3 px-4 rounded-xl"
             style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-            <BarcodeRenderer value={patient.uhid} height={56} width={1.8} displayValue={false} />
+            <QrRenderer value={patient.uhid} size={132} />
           </div>
 
           <p className="text-xl font-bold tracking-widest"
