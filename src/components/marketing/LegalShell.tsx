@@ -67,6 +67,7 @@ export default function LegalShell({ title, lastUpdated, intro, children }: Prop
           <Link href="/security" className="hover:underline">Security</Link>
           <Link href="/pricing" className="hover:underline">Pricing</Link>
           <a href="https://www.linkedin.com/company/uyirly" target="_blank" rel="noopener noreferrer" className="hover:underline">LinkedIn</a>
+          <a href="https://www.facebook.com/profile.php?id=61592842021170" target="_blank" rel="noopener noreferrer" className="hover:underline">Facebook</a>
           <a href="mailto:contact@uyirly.com" className="hover:underline">contact@uyirly.com</a>
         </div>
         <p className="text-xs" style={{ color: S4 }}>© {new Date().getFullYear()} Uyirly. Made in India.</p>
