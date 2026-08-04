@@ -56,6 +56,26 @@ export default function Guide() {
         actually moves, checked automatically against goods received so a short delivery gets caught before
         it becomes a shortage during a procedure.
       </p>
+      <h2>How Uyirly handles inventory and purchase orders</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> tracks general stores and consumables by
+        batch and expiry, issues oldest-valid-first, and flags items that are low or about to expire. When
+        stock runs low, you raise a purchase order to a supplier, receive it against the order, and the stock
+        updates itself &mdash; so the register is never out of date and nothing quietly expires on the shelf.
+      </p>
+      <ul>
+        <li>Batch and expiry tracking with low-stock and near-expiry alerts.</li>
+        <li>Reorder levels that turn into purchase orders in a click.</li>
+        <li>Receive a PO against its order; stock and cost update automatically.</li>
+        <li>Supplier records tied to each purchase order.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Inventory is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, alongside the <Link href="/pharmacy-management-software">pharmacy</Link> for drug
+        stock. You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

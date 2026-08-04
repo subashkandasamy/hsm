@@ -74,6 +74,27 @@ export default function Guide() {
         <Link href="/signup">start a free trial</Link> and chart a patient tooth by tooth — it is the fastest
         way to tell whether the software was built for dentistry or just bolted onto a general OPD form.
       </p>
+      <h2>How Uyirly handles dentistry</h2>
+      <p>
+        <Link href="/dental-clinic-software">Uyirly&apos;s dental screen</Link> is built around the tooth. Findings,
+        procedures and plans are recorded against individual teeth using a standard dental notation, treatment
+        plans span many visits with done and pending status per tooth, and recall reminders bring patients
+        back at the right time. It shares the same appointments, prescriptions, pharmacy and billing as the
+        rest of the practice, so a dentist gets dentistry and the clinic keeps one patient and one bill.
+      </p>
+      <ul>
+        <li>Tooth-level charting with a standard dental notation.</li>
+        <li>Multi-visit treatment plans any dentist in the clinic can continue.</li>
+        <li>Recall reminders by SMS/WhatsApp &mdash; the engine of repeat revenue.</li>
+        <li>Shared appointments, pharmacy and billing on one record.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Dental works standalone or as a department inside Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital software</Link>. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

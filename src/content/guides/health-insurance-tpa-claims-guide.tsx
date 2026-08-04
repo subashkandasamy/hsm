@@ -63,6 +63,27 @@ export default function Guide() {
         insurance&rdquo; and &ldquo;patient pays directly&rdquo; &mdash; because that split was tracked throughout the stay,
         not calculated for the first time at the discharge counter.
       </p>
+      <h2>How Uyirly handles insurance and TPA claims</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> runs a cashless claim through four clear
+        stages on the patient&apos;s own bill: add the policy, get the eligibility (pre-authorisation) approved,
+        raise and submit the claim, and record the settlement. The pre-authorisation is what unlocks a
+        cashless discharge, so the paperwork does not hold up the patient, and the claim is built from the
+        same itemised bill the hospital already produced.
+      </p>
+      <ul>
+        <li>Four stages &mdash; policy, eligibility check, claim, settlement &mdash; each logged.</li>
+        <li>Pre-authorisation approval covers the cashless discharge balance automatically.</li>
+        <li>A TPA master and bank-account list so claims and settlements are consistent.</li>
+        <li>Every action on a claim is recorded in one history.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Insurance is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, built on the same <Link href="/guides/ipd-billing-software-explained">IPD bill</Link>.
+        You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

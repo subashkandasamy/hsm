@@ -53,6 +53,27 @@ export default function Guide() {
         individually work fine &mdash; the gap only becomes visible when someone happens to compare them manually.
         Software where a no-show immediately flags against the roster passes it without anyone having to look.
       </p>
+      <h2>How Uyirly handles staff and attendance</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> keeps your staff on the same system as the
+        clinical work. Each person has a profile and a role that decides exactly what they can see and do &mdash;
+        a receptionist, a doctor, a nurse, a pharmacist and an accountant each get the right access. Attendance
+        is recorded against staff, and nurse rosters are built on the same platform, so who is on duty and who
+        is caring for which patient line up.
+      </p>
+      <ul>
+        <li>Staff profiles with role-based access across the whole system.</li>
+        <li>Attendance capture tied to each staff member.</li>
+        <li>Ward rosters and shift coverage on the same platform.</li>
+        <li>No separate HR tool to reconcile against the clinical side.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Staff &amp; HR is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See our <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster
+        guide</Link>, or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

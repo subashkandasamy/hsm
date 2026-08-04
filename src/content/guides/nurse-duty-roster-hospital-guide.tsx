@@ -150,6 +150,27 @@ export default function Guide() {
         it &mdash; and none of the six is difficult on its own. The hospitals that struggle with rostering are
         almost always missing one of these pieces entirely, not doing all six badly.
       </p>
+      <h2>How Uyirly builds the nurse roster</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> builds ward rosters on a simple week grid:
+        assign nurses to shifts per ward, apply a repeating shift pattern, and see each day&apos;s coverage against
+        the ward&apos;s required staffing &mdash; so an understaffed shift is flagged before it happens, not discovered
+        on the day. When the roster is ready you publish it, and the staff see their duty.
+      </p>
+      <ul>
+        <li>A week grid of nurses and shifts per ward.</li>
+        <li>Repeating shift patterns applied in one click.</li>
+        <li>Per-day coverage and shortfall flagged against the required ratio.</li>
+        <li>Publish the roster so staff know their shifts.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Rostering is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See our <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio
+        guide</Link> for the NABH context, or <Link href="/signup">start a 30-day free trial</Link> with no
+        credit card.
+      </p>
     </>
   )
 }
