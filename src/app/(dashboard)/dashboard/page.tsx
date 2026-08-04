@@ -10,6 +10,8 @@ import DoctorDashboard from './_components/DoctorDashboard'
 import ReceptionistDashboard from './_components/ReceptionistDashboard'
 import PharmacistDashboard from './_components/PharmacistDashboard'
 import GenericDashboard from './_components/GenericDashboard'
+import SetupProgressCard from './_components/SetupProgressCard'
+import { getSetupProgress } from '@/app/actions/setup'
 
 export default async function DashboardPage() {
   const user = await getCachedUser()
@@ -20,7 +22,14 @@ export default async function DashboardPage() {
 
   if (role === 'admin' || role === 'accountant') {
     const kpis = await getAdminDashboard().catch(() => null)
-    return <AdminDashboard kpis={kpis} />
+    // Setup guide is an admin responsibility only.
+    const setup = role === 'admin' ? await getSetupProgress().catch(() => null) : null
+    return (
+      <>
+        {setup && <SetupProgressCard progress={setup} />}
+        <AdminDashboard kpis={kpis} />
+      </>
+    )
   }
   if (role === 'doctor') {
     const kpis = await getDoctorDashboard().catch(() => null)
