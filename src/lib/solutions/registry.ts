@@ -210,44 +210,86 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     sections: [
       {
-        h2: 'What clinic management software should do',
+        h2: 'What is clinic management software?',
         body:
-          'The everyday failure of a paper clinic is that the front desk, the doctor and the pharmacy each keep their own version of the patient. Good clinic management software keeps exactly one: registration, the consultation, the prescription, the bill and the medicines dispensed all attach to a single patient record that everyone in the clinic reads from. Nothing is re-entered, nothing is lost between the desk and the doctor, and the clinic finally runs off one source of truth instead of three registers.',
-      },
-      {
-        h2: 'Appointments and a queue the waiting room actually needs',
-        body:
-          'Walk-ins and booked appointments arrive in the same waiting room, and fairness is about who is genuinely next — not who asks loudest. Uyirly gives patients online appointment booking and runs a live token queue that the front desk and the doctor share, so patients are called in order and the doctor’s screen always shows who is waiting. It’s the part of any clinic software that staff feel on day one.',
+          'Clinic management software is one system that runs your whole clinic — appointments, the OPD queue, doctor consultations, prescriptions, billing and the clinic pharmacy — on a single shared patient record. The everyday problem in a paper clinic is that the front desk, the doctor and the pharmacy each keep their own version of the patient. Good clinic software keeps exactly one. Nothing is re-typed, nothing is lost between the desk and the doctor, and the clinic runs off one source of truth instead of three registers.',
         bullets: [
-          'Online booking plus walk-in tokens in one ordered queue',
-          'The doctor’s worklist updates live as patients arrive and finish',
-          'Repeat patients found instantly by phone number or UHID',
+          'Online appointments and a live token queue',
+          'Doctor consultation notes, diagnoses and prescriptions',
+          'One-screen billing with GST-ready invoices',
+          'A clinic pharmacy that dispenses against the prescription',
+          'A shared patient history every doctor can see',
         ],
       },
       {
-        h2: 'Prescribe, bill and dispense without re-typing',
+        h2: 'Everything your clinic runs, on one screen',
         body:
-          'A consultation ends in a prescription and a bill, and often a strip of medicine from the clinic pharmacy. Uyirly carries the same order through all three: the doctor prescribes from a drug list, the charge lands on the bill, and the pharmacy dispenses against the same prescription. The money and the medicine always match the consultation — and a doctor can reuse a previous prescription in a couple of taps for a returning patient.',
+          '[Uyirly](/) puts every part of a busy clinic in one place. It fits a single-doctor clinic and scales to a multi-doctor polyclinic without changing anything. Here is what runs inside it.',
+        preview: 'opd',
+        subsections: [
+          {
+            h3: 'Appointments and the token queue',
+            body:
+              'Patients book online, and walk-ins get a token — both land in one ordered [OPD queue](/guides/opd-queue-token-management-guide) that the front desk and the doctor share. Patients are called in fair order, and the doctor’s worklist updates live as people arrive and finish. Repeat patients are found instantly by phone number or UHID.',
+          },
+          {
+            h3: 'Consultation and prescriptions',
+            body:
+              'The doctor writes notes, diagnosis and a prescription on screen, choosing medicines from a drug list. For a returning patient, a past prescription can be reused in a couple of taps — no re-writing the same regimen every visit.',
+          },
+          {
+            h3: 'Billing and GST invoices',
+            body:
+              'The consultation charge, any procedures and the pharmacy items all land on one bill, and the clinic prints a GST-ready invoice. The money always matches what was actually done in the consultation.',
+          },
+          {
+            h3: 'The clinic pharmacy',
+            body:
+              'The prescription flows straight to the clinic [pharmacy](/pharmacy-management-software), which dispenses against it, tracks stock and expiry, and adds the charge to the same patient bill. The medicine and the money stay in one place.',
+          },
+          {
+            h3: 'One shared patient history',
+            body:
+              'Because every visit hangs on one patient record, any doctor opens a patient and sees the full history — past complaints, prescriptions, lab results and bills — instead of flipping through an OPD card. For a polyclinic, a patient moving between specialists carries their record with them.',
+          },
+        ],
       },
       {
-        h2: 'One patient history, seen by the whole clinic',
+        h2: 'How to get your clinic online in a day',
         body:
-          'Because every visit hangs on one patient record, any doctor in the clinic opens a patient and sees the full history — past complaints, prescriptions, lab results and bills — instead of flipping through an OPD card. For a doctor clinic that means better continuity; for a polyclinic with several specialists it means a patient moving between departments carries their record with them.',
-        bullets: [
-          'Every visit, prescription and bill on one patient timeline',
-          'Works for a single doctor or many doctors on the same database',
-          'Lab and pharmacy results attached to the same record',
+          'There is nothing to install and no server to buy. Most clinics are seeing patients on Uyirly the same day they sign up.',
+        steps: [
+          { title: 'Start your free trial', body: 'Sign up on [uyirly.com](/signup) with your clinic name and mobile number — no credit card needed.' },
+          { title: 'Add your doctors and front desk', body: 'Invite your team so they can log in, each with the right access.' },
+          { title: 'Add your services and medicines', body: 'Set your consultation fees, add common medicines to the pharmacy, and you are ready to bill.' },
+          { title: 'See your first patient', body: 'Register a patient, run the token queue, write a prescription and print the bill — all in one flow.' },
         ],
+      },
+      {
+        h2: 'Clinic software vs a paper clinic',
+        body:
+          'Here is what changes the day you move a clinic from registers to Uyirly.',
+        table: {
+          headers: ['Everyday task', 'Paper clinic', 'With Uyirly'],
+          rows: [
+            ['Finding a repeat patient', 'Search the OPD card box', 'Found by phone/UHID in seconds'],
+            ['The waiting room', 'Whoever asks loudest', 'A fair, live token queue'],
+            ['Prescriptions', 'Re-written every visit', 'Reused in a couple of taps'],
+            ['Billing', 'Hand-written, no GST', 'One-screen GST invoice'],
+            ['Pharmacy stock', 'Guesswork', 'Tracked with expiry alerts'],
+            ['Patient history', 'Scattered across cards', 'One timeline every doctor sees'],
+          ],
+        },
       },
       {
         h2: 'Is there free clinic management software?',
         body:
-          'Plenty of tools advertise “free clinic management software”, and the catch is usually the same — free until you have real patients, then a per-user or per-patient meter starts running. Uyirly takes the honest version of free: a 30-day free trial with no credit card, so you can run your actual front desk, consultations and billing before paying anything. After that it’s a flat monthly plan, not a fee that grows every time you add a patient or a login.',
+          'Plenty of tools advertise “free clinic management software”, and the catch is usually the same — free until you have real patients, then a per-user or per-patient meter starts running. Uyirly takes the honest version of free: a **30-day free trial with no credit card**, so you can run your actual front desk, consultations and billing before paying anything. After that it is a flat monthly plan, not a fee that grows every time you add a patient or a login. See [pricing](/pricing) for details.',
       },
       {
         h2: 'Starts as a clinic, grows into a hospital',
         body:
-          'A clinic that adds beds, a lab, or a second and third doctor shouldn’t have to switch software and re-enter its patients. Uyirly is the same platform that runs full hospitals — OPD, IPD, pharmacy, lab, billing and staff — so the clinic you set up today extends into admissions, diagnostics and multiple doctors without a migration. It’s cloud-based, so there’s nothing to install and it works on any device.',
+          'A clinic that adds beds, a lab, or a second and third doctor should not have to switch software and re-enter its patients. Uyirly is the same platform that runs [full hospitals](/hospital-management-software) — OPD, IPD, pharmacy, lab, billing and staff — so the clinic you set up today extends into admissions, diagnostics and multiple doctors without a migration. It also fits [dental clinics](/dental-clinic-software) and [nursing homes](/nursing-home-management-software) on the same system.',
         bullets: [
           'Add a lab, pharmacy or beds without changing systems',
           'Multi-doctor and multi-location on one patient database',
@@ -258,7 +300,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     faqs: [
       {
         q: 'Is there a free version of the clinic management software?',
-        a: 'Uyirly offers a 30-day free trial with no credit card, so a clinic can run its real front desk, consultations and billing before paying anything. After the trial it moves to a flat monthly plan with no per-user or per-patient metering, which is usually cheaper in practice than “free” tools that charge as you grow.',
+        a: 'Uyirly offers a 30-day free trial with no credit card, so a clinic can run its real front desk, consultations and billing before paying anything. After the trial it moves to a flat monthly plan with no per-user or per-patient metering, which is usually cheaper in practice than “free” tools that charge as you grow. See [pricing](/pricing).',
       },
       {
         q: 'Does it work for a single-doctor clinic?',
@@ -269,16 +311,22 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         a: 'Yes. The prescription a doctor writes flows to the clinic pharmacy, which dispenses against it and adds the charge to the same patient bill — so the consultation, the medicine and the money all stay in one place.',
       },
       {
+        q: 'How long does it take to set up a clinic?',
+        a: 'Most clinics are up and running the same day. You sign up, add your doctors and front desk, set your fees and common medicines, and register your first patient. There is nothing to install because it is cloud-based.',
+      },
+      {
         q: 'Is the clinic software cloud-based?',
-        a: 'Yes. Uyirly is fully cloud-based — there is nothing to install, it works on any device, and your data is backed up automatically. You can sign up and start seeing patients the same day.',
+        a: 'Yes. Uyirly is fully cloud-based — there is nothing to install, it works on any device, your data is stored in India and backed up automatically. You can sign up and start seeing patients the same day.',
       },
     ],
     related: [
       { label: 'OPD queue & token management explained', href: '/guides/opd-queue-token-management-guide' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Dental clinic software', href: '/dental-clinic-software' },
+      { label: 'Electronic medical records (EMR)', href: '/electronic-medical-records-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'electronic-medical-records-software': {
@@ -312,39 +360,82 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     sections: [
       {
-        h2: 'The record is the point',
+        h2: 'What is EMR / EHR software?',
         body:
-          'Electronic medical records software earns its place by answering one question instantly: what has happened to this patient before? Uyirly gives every patient a single UHID and hangs everything on it — each OPD consultation, each admission, every lab result and scan, every prescription and bill — so a doctor opening the record sees the whole history on one timeline, not a folder someone has to reassemble. That is the difference between digital medical records and a pile of scanned paper.',
-      },
-      {
-        h2: 'EMR and EHR — and why the difference matters in India',
-        body:
-          'An EMR (electronic medical record) is the record within one hospital; an EHR (electronic health record) is the record designed to follow the patient between providers. India’s ABDM — the Ayushman Bharat Digital Mission — is building exactly that portability through the ABHA health ID. Uyirly is built for both: a complete EMR inside your facility, and ABDM/ABHA-ready so records can link to a patient’s national health account rather than staying locked in one building.',
+          'Electronic medical records software keeps a patient’s medical history in digital form instead of on paper. It answers one question instantly: what has happened to this patient before? [Uyirly](/hospital-management-software) gives every patient a single UHID (a unique hospital ID) and hangs everything on it — each OPD consultation, each admission, every lab result and scan, every prescription and bill. A doctor opening the record sees the whole history on one timeline, not a folder someone has to reassemble. That is the difference between a real EMR and a pile of scanned paper.',
         bullets: [
-          'A full EMR across OPD, IPD, lab, radiology and pharmacy',
-          'ABDM/ABHA-ready — link records to a patient’s ABHA',
-          'Scan-and-share style registration on the roadmap',
+          'One UHID that unifies a patient’s whole history',
+          'Consultations, vitals, labs, scans and medicines on one timeline',
+          'ABDM/ABHA-ready for India’s digital health mission',
+          'Cloud-based, role-based access, fully audit-logged',
         ],
       },
       {
-        h2: 'Structured records, not just typed notes',
+        h2: 'EMR vs EHR — and why it matters in India',
         body:
-          'Digital medical records software is only useful if you can find things in it later. Uyirly captures vitals, diagnoses, prescriptions, lab and radiology results as structured data attached to the visit — so a patient’s medication history, past diagnoses and trends in a lab value are searchable and visible at a glance, not buried in free text. Doctors get the context they need in seconds instead of leafing through old sheets.',
+          'People use the two terms loosely, but there is a simple difference. An **EMR** (electronic medical record) is the record within one hospital. An **EHR** (electronic health record) is designed to follow the patient between providers. India’s [ABDM](/guides/abdm-abha-health-id-hospitals-guide) — the Ayushman Bharat Digital Mission — is building exactly that portability through the ABHA health ID. Uyirly is built for both: a complete EMR inside your facility, and ABDM/ABHA-ready so records can link to a patient’s national health account instead of staying locked in one building.',
+        table: {
+          headers: ['', 'EMR', 'EHR'],
+          rows: [
+            ['Scope', 'One hospital or clinic', 'Follows the patient everywhere'],
+            ['Owner', 'The facility', 'The patient (via ABHA)'],
+            ['In India', 'Your day-to-day record', 'Linked through ABDM/ABHA'],
+            ['Uyirly', 'Full EMR built in', 'ABDM/ABHA-ready'],
+          ],
+        },
+      },
+      {
+        h2: 'What is inside a Uyirly medical record',
+        body:
+          'A record is only useful if you can find things in it later. Uyirly captures everything as structured data attached to the visit — searchable and visible at a glance, not buried in free text.',
+        subsections: [
+          {
+            h3: 'Patient profile and UHID',
+            body:
+              'Name, age, contact, allergies and a single UHID that ties every visit together — so a returning patient is found in seconds and never registered twice.',
+          },
+          {
+            h3: 'Consultations and vitals',
+            body:
+              'Every OPD and IPD visit records complaints, vitals, diagnosis and notes, so the doctor sees past visits and trends instead of leafing through old sheets.',
+          },
+          {
+            h3: 'Prescriptions and medication history',
+            body:
+              'Each prescription is saved to the timeline, so a doctor sees the full medication history and can reuse a past prescription in a couple of taps.',
+          },
+          {
+            h3: 'Lab and radiology results',
+            body:
+              'Results from the [lab](/lab-management-software) and [radiology](/radiology-information-system-software) attach to the same record, so a trend in a lab value is visible at a glance.',
+          },
+          {
+            h3: 'Documents and bills',
+            body:
+              'Scanned documents, discharge summaries and every bill sit on the same timeline — the whole patient in one place.',
+          },
+        ],
+      },
+      {
+        h2: 'How the record builds itself',
+        body:
+          'The best part of a connected EMR is that nobody has to keep it up to date by hand — it fills in as you run the hospital.',
+        steps: [
+          { title: 'Register once', body: 'The patient is registered with a UHID. Every future visit attaches to it automatically.' },
+          { title: 'Consult and prescribe', body: 'The doctor’s notes, diagnosis and prescription save to the timeline as they work.' },
+          { title: 'Order tests', body: 'A lab test or scan ordered from the consultation writes its result back to the same record.' },
+          { title: 'Dispense and bill', body: 'Medicines and charges post to the record on their own — so it stays complete with zero re-entry.' },
+        ],
       },
       {
         h2: 'One record, safely shared',
         body:
-          'A shared record is only safe if access is controlled. Uyirly is role-based — a receptionist, a doctor, a lab technician and an accountant each see exactly what their job needs — and every access and change is audit-logged. The record is one; who can read and edit which part of it is not. That combination is what makes an electronic health record system both useful across the hospital and defensible under India’s data-protection rules.',
+          'A shared record is only safe if access is controlled. Uyirly is role-based — a receptionist, a doctor, a lab technician and an accountant each see exactly what their job needs — and every view and change is audit-logged. The record is one; who can read and edit which part of it is not. That combination makes it both useful across the hospital and defensible under India’s [DPDP data-protection rules](/guides/hospital-software-data-security-dpdp), with data stored in India.',
         bullets: [
           'Role-based access for reception, doctors, lab, pharmacy and accounts',
           'Every view and edit audit-logged',
-          'Aligned with India’s DPDP data-protection expectations',
+          'Data stored in India, aligned with the DPDP Act',
         ],
-      },
-      {
-        h2: 'Records connected to the work, not a separate silo',
-        body:
-          'Many EMR systems sit apart from billing and operations, so the record and the money drift out of sync. In Uyirly the medical record is the same system that runs the queue, the lab, the pharmacy and the bill — so ordering a test, dispensing a medicine or raising an invoice all write to the same patient history automatically. The record stays complete without anyone re-entering it, because it’s a by-product of running the hospital.',
       },
     ],
     faqs: [
@@ -369,8 +460,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Patient records, EMR & UHID explained', href: '/guides/patient-records-emr-uhid-guide' },
       { label: 'ABDM & ABHA health ID for hospitals', href: '/guides/abdm-abha-health-id-hospitals-guide' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'hospital-management-software': {
@@ -746,32 +839,73 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'What “cloud-based” actually means for a hospital',
         body:
-          'A cloud-based hospital management system runs online, on managed infrastructure, and you reach it through a browser — which is why people also call it web-based or SaaS hospital software. The practical effect is that there is nothing to install and nothing to maintain on your own machines: no server humming in a back room, no local database to back up by hand, no IT person needed to patch it. You open a browser and the whole hospital is there.',
-      },
-      {
-        h2: 'Why cloud beats an on-premise server',
-        body:
-          'An on-premise hospital system means buying a server, paying someone to maintain it, and losing access the moment that machine or your local network fails. A cloud-based system removes all of that: Uyirly runs on managed infrastructure, so there’s nothing to install, nothing to patch, and the software is reachable from the front desk, the ward, the doctor’s home or a second branch alike. Your uptime stops depending on one box in one building.',
-      },
-      {
-        h2: 'Your data is safer in the cloud, not riskier',
-        body:
-          'The common worry is that the cloud is less secure — in practice it’s usually the opposite. A single clinic PC gets stolen, corrupted or hit by ransomware, often with no backup at all. Uyirly keeps data on managed infrastructure with automatic backups, encryption and role-based access, and every access is audit-logged, aligned with India’s DPDP Act expectations. The safe default isn’t a locked cupboard; it’s a system that backs itself up.',
+          'A cloud-based hospital management system runs online and you reach it through a web browser — which is why people also call it web-based, online or SaaS hospital software. The practical effect is simple: there is nothing to install and nothing to maintain on your own machines. No server humming in a back room, no local database to back up by hand, no IT person needed to patch it. You open a browser and your whole hospital is there. [Uyirly](/hospital-management-software) is exactly this kind of system.',
         bullets: [
-          'Automatic backups — no lost data when a local machine dies',
-          'Encryption and role-based access control',
-          'Audit logging aligned with India’s DPDP data-protection rules',
+          'No server to buy, install or maintain',
+          'Reachable from any device, any branch, in real time',
+          'Automatic backups and security updates',
+          'Pay monthly — a small running cost, not a big one-time buy',
         ],
       },
       {
-        h2: 'One record across branches and devices',
+        h2: 'Cloud vs an on-premise server',
         body:
-          'Because the system lives online, a multi-branch hospital, or a doctor moving between OPD and the ward, all read from the same live patient record — no syncing local databases, no “which PC has the latest version”. Add a branch and it’s on the same system the same day. For a group that runs more than one location, a web-based hospital management system is the only version of this that doesn’t become a data-merging nightmare.',
+          'On-premise hospital software means buying a server, paying someone to keep it running, and losing access the moment that machine or your local network fails. Here is the difference in plain terms.',
+        table: {
+          headers: ['', 'On-premise server', 'Cloud (Uyirly)'],
+          rows: [
+            ['Setup', 'Weeks of installation', 'Live the same day'],
+            ['Upfront cost', 'Buy a server + licences', 'Nothing to buy'],
+            ['Maintenance', 'You patch and maintain it', 'Handled for you'],
+            ['Backups', 'Manual, often forgotten', 'Automatic'],
+            ['Access', 'One building, one network', 'Any device, any branch'],
+            ['If the PC dies', 'Data can be lost', 'Data is safe in the cloud'],
+            ['Updates', 'Paid, occasional', 'Automatic, included'],
+          ],
+        },
       },
       {
-        h2: 'Pay monthly, start today',
+        h2: 'What you get with a cloud system',
         body:
-          'Cloud turns a large one-time server-and-licence purchase into a small, predictable monthly cost — and you can start immediately. Sign up and the hospital is live without procurement or installation; there’s no six-week deployment before anyone can register a patient. Uyirly is flat monthly pricing with a 30-day free trial and no credit card, so the cost of trying it is nothing but your time.',
+          'The move to cloud is not just about convenience — it removes whole categories of daily risk and cost.',
+        preview: 'dashboard',
+        subsections: [
+          {
+            h3: 'Nothing to install or maintain',
+            body:
+              'There is no server to buy, no software to install, and no IT person needed to keep it alive. You sign up and start — setup that used to take weeks now takes a day.',
+          },
+          {
+            h3: 'Access from anywhere, across branches',
+            body:
+              'Because it lives online, a doctor moving between OPD and the ward, or a group with several branches, all read the same live patient record. Add a branch and it is on the same system the same day — no syncing local databases, no “which PC has the latest version”.',
+          },
+          {
+            h3: 'Automatic backups and updates',
+            body:
+              'Your data is backed up automatically, and new features and security fixes arrive on their own. You are never stuck on an old version, and a stolen or corrupted PC no longer means lost records.',
+          },
+          {
+            h3: 'A native mobile app',
+            body:
+              'Because it is online, the same system is on the phone too — staff and patients get a native app, so you are not tied to a desktop in one room.',
+          },
+        ],
+      },
+      {
+        h2: 'Is your data safe in the cloud?',
+        body:
+          'The common worry is that the cloud is less secure — in practice it is usually the opposite. A single clinic PC gets stolen, corrupted or hit by ransomware, often with no backup at all. Uyirly keeps data on managed infrastructure **in India**, with automatic backups, encryption and role-based access, and every access is audit-logged, aligned with India’s [DPDP Act](/guides/hospital-software-data-security-dpdp). The safe default is not a locked cupboard; it is a system that backs itself up.',
+      },
+      {
+        h2: 'How to start today',
+        body:
+          'There is no procurement, no installation and no six-week deployment before anyone can register a patient.',
+        steps: [
+          { title: 'Sign up', body: 'Create your hospital on [uyirly.com](/signup) — no credit card, no server, nothing to install.' },
+          { title: 'Add your team and departments', body: 'Invite staff and switch on the modules you use. A setup guide walks you through it.' },
+          { title: 'Go live the same day', body: 'Register your first patient and run OPD, billing and pharmacy right away. Add branches or modules whenever you are ready.' },
+        ],
       },
     ],
     faqs: [
@@ -791,13 +925,18 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         q: 'Can it handle multiple branches?',
         a: 'Yes. Because it’s online, every branch reads and writes the same live patient database — no syncing local servers. Adding a location puts it on the same system the same day, which is exactly where a web-based hospital management system beats an on-premise one for groups.',
       },
+      {
+        q: 'Do I need to install anything?',
+        a: 'No. There is nothing to install and no server to buy. You use it in a web browser or the mobile app, and setup takes about a day instead of weeks. See [pricing](/pricing) for plans.',
+      },
     ],
     related: [
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Data security & the DPDP Act', href: '/guides/hospital-software-data-security-dpdp' },
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   // ── By specialty & facility (Phase 3) ─────────────────────────────────────
