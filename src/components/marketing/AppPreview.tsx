@@ -169,12 +169,62 @@ function PharmacyStock() {
   )
 }
 
+function SimpleList({ title, sub, rows }: { title: string; sub: string; rows: [string, string, string, string][] }) {
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${BORDER}` }}>
+      <div className="px-3 py-2.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <p className="text-xs font-semibold" style={{ color: SLATE9 }}>{title}</p>
+        <p className="text-[10px]" style={{ color: SLATE4 }}>{sub}</p>
+      </div>
+      <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+        {rows.map(([a, b, c, color], i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2">
+            <span className="text-xs flex-1 truncate" style={{ color: SLATE9 }}>{a}</span>
+            <span className="text-[10px] hidden sm:inline" style={{ color: SLATE5 }}>{b}</span>
+            <span className="text-[10px] font-medium" style={{ color: color || SLATE5, minWidth: 74, textAlign: 'right' }}>{c}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const VARIANTS: Record<string, { label: string; el: React.ReactNode }> = {
   dashboard: { label: 'uyirly.com · Dashboard', el: <Dashboard /> },
   bill: { label: 'uyirly.com · Billing', el: <Bill /> },
   opd: { label: 'uyirly.com · OPD Queue', el: <OpdQueue /> },
   lab: { label: 'uyirly.com · Laboratory', el: <LabWorklist /> },
   pharmacy: { label: 'uyirly.com · Pharmacy', el: <PharmacyStock /> },
+  radiology: {
+    label: 'uyirly.com · Radiology',
+    el: <SimpleList title="Radiology worklist" sub="Modality worklist"
+      rows={[
+        ['CT Brain Plain', 'Priya S', 'Reported', '#16A34A'],
+        ['X-Ray Chest PA', 'Arun M', 'In progress', TEAL],
+        ['USG Abdomen', 'Kavya R', 'Ordered', SLATE4],
+        ['MRI Knee', 'Suresh P', 'Ordered', SLATE4],
+      ]} />,
+  },
+  blood: {
+    label: 'uyirly.com · Blood Bank',
+    el: <SimpleList title="Blood stock" sub="By group & component"
+      rows={[
+        ['O+ · Packed cells', '', '18 units', '#16A34A'],
+        ['A+ · Packed cells', '', '9 units', TEAL],
+        ['B+ · Plasma', '', '4 units', '#B45309'],
+        ['O- · Packed cells', '', '2 units', '#DC2626'],
+      ]} />,
+  },
+  ot: {
+    label: 'uyirly.com · Operation Theatre',
+    el: <SimpleList title="Today's OT schedule" sub="OT-1 · OT-2"
+      rows={[
+        ['09:00 · Appendectomy', 'Dr. Rao · OT-1', 'Scheduled', TEAL],
+        ['11:30 · LSCS', 'Dr. Menon · OT-2', 'Scheduled', TEAL],
+        ['14:00 · Cataract', 'Dr. Iyer · OT-1', 'Pre-op done', '#16A34A'],
+        ['16:00 · ORIF', 'Dr. Khan · OT-2', 'Scheduled', SLATE4],
+      ]} />,
+  },
 }
 
 export default function AppPreview({ variant }: { variant: string }) {

@@ -1374,6 +1374,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'A worklist the technicians actually use',
         body:
           'The everyday failure of a busy radiology department is a scan that no one realises is pending. Uyirly gives technicians a live modality worklist — what’s ordered, what’s in progress, what’s done — so nothing sits forgotten and the department can see its own backlog at a glance.',
+        preview: 'radiology',
         bullets: [
           'Orders flow from OPD/IPD into the radiology worklist',
           'Live status: ordered, in-progress, reported, verified',
@@ -1395,6 +1396,18 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Reports sit on one history with lab and consultation records',
         ],
       },
+      {
+        h2: 'The order-to-report workflow',
+        body:
+          'A scan’s full journey through Uyirly — the same [radiology workflow](/guides/radiology-ris-reporting-guide) whether it is ordered from OPD or the ward.',
+        steps: [
+          { title: 'Order', body: 'The doctor orders the scan from a consultation; it appears on the radiology worklist.' },
+          { title: 'Scan', body: 'The technician performs the study and marks it done — the worklist status updates live.' },
+          { title: 'Report', body: 'The radiologist writes the report from a template for that study type.' },
+          { title: 'Verify', body: 'The report is checked and signed off before release.' },
+          { title: 'Deliver', body: 'The letterhead PDF reaches the doctor and patient, and the charge is already on the bill.' },
+        ],
+      },
     ],
     faqs: [
       {
@@ -1414,8 +1427,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Radiology & RIS reporting, explained', href: '/guides/radiology-ris-reporting-guide' },
       { label: 'Lab management software (LIMS)', href: '/lab-management-software' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'blood-bank-management-software': {
@@ -1453,6 +1467,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'Stock by group and component',
         body:
           'Blood isn’t one thing — it’s groups and components (whole blood, packed cells, plasma, platelets), each with its own shelf life. Uyirly holds stock by group and component with expiry tracking, so you can see availability at a glance, use oldest-valid-first, and get warned before units expire instead of discovering it during a shortage.',
+        preview: 'blood',
         bullets: [
           'Live availability by blood group and component',
           'Expiry tracking with warnings before units lapse',
@@ -1474,6 +1489,18 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Auditable log of every donation, test and issue',
         ],
       },
+      {
+        h2: 'From donor to recipient',
+        body:
+          'Every unit follows a controlled, logged path — the same [blood bank workflow](/guides/blood-bank-management-guide) end to end.',
+        steps: [
+          { title: 'Donation', body: 'A donor is registered and the unit is recorded with its group and donation details.' },
+          { title: 'Testing', body: 'The unit is screened and marked safe before it can be used.' },
+          { title: 'Storage', body: 'It is stored by group and component with an expiry date the system watches.' },
+          { title: 'Cross-match', body: 'On a request, the unit is cross-matched against the patient before issue.' },
+          { title: 'Issue', body: 'The unit is issued against the request, the authoriser and recipient are recorded, and the charge posts to the bill.' },
+        ],
+      },
     ],
     faqs: [
       {
@@ -1493,8 +1520,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Blood bank management, explained', href: '/guides/blood-bank-management-guide' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'operation-theatre-management-software': {
@@ -1528,6 +1556,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'Scheduling that prevents clashes',
         body:
           'The core of OT management is the schedule: a theatre, a surgeon, an anaesthetist and a slot, none of them double-booked. Uyirly schedules cases against theatre and team availability so two surgeries never land on the same table at the same time, and the day’s OT list is clear to everyone who needs it. That alone removes the most common source of theatre chaos.',
+        preview: 'ot',
         bullets: [
           'Cases scheduled against theatre and team availability',
           'A clear daily OT list for staff',
@@ -1554,6 +1583,18 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         body:
           'A surgery doesn’t stand alone — it’s part of an admission, with a bed, medicines and a bill. Because OT sits inside the wider system, the case links to the patient’s admission, the consumables and procedure charges post to the same IPD bill, and the whole stay stays coherent from admission to discharge.',
       },
+      {
+        h2: 'How a surgery flows through Uyirly',
+        body:
+          'From scheduling the case to the charges landing on the bill — the same [OT workflow](/guides/ot-scheduling-management-guide) every time.',
+        steps: [
+          { title: 'Schedule', body: 'Book the case against theatre, surgeon and anaesthetist availability — no clashes.' },
+          { title: 'Pre-op check', body: 'Run the safety checklist — consent, fasting, investigations and surgical site — before the patient enters.' },
+          { title: 'Surgery', body: 'The case proceeds; the team and room are already assigned.' },
+          { title: 'Record', body: 'Consumables, implants and operative notes are captured against the case.' },
+          { title: 'Bill', body: 'Procedure and consumable charges post to the patient’s IPD bill automatically.' },
+        ],
+      },
     ],
     faqs: [
       {
@@ -1573,8 +1614,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'OT scheduling & management, explained', href: '/guides/ot-scheduling-management-guide' },
       { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   // ── Compare & alternatives (Phase 4) ──────────────────────────────────────
