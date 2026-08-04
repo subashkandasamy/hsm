@@ -36,6 +36,8 @@ export interface SolutionSection {
   steps?: SolutionStep[]
   /** A comparison / feature table. */
   table?: SolutionTable
+  /** An on-brand product preview mockup: 'dashboard' | 'bill' | 'opd'. */
+  preview?: string
 }
 
 export interface SolutionMeta {
@@ -428,6 +430,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'What Uyirly’s hospital management software includes',
         body:
           '[Uyirly](/) is a complete, cloud-based hospital management system built for Indian hospitals, nursing homes and clinics. Here is what runs inside it, department by department. Every module below shares the same patient and the same bill, so nothing is an island.',
+        preview: 'opd',
         subsections: [
           {
             h3: 'OPD, appointments and the token queue',
@@ -465,6 +468,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'How everything stays connected — one patient, one bill',
         body:
           'The real value is not any single module. It is that they all share the same patient and the same bill. A test ordered in OPD reaches the lab on its own. The result reaches the doctor. The medicine the pharmacy gives out and the bed the patient sleeps in both land on the same running bill, ready at discharge. That is the difference between a true hospital information system and a set of separate tools that only share a password. In Uyirly, the discharge bill and the insurance claim are itemised and ready the moment the patient is cleared — faster discharges, fewer disputes, and no revenue leaking through charges nobody remembered to add.',
+        preview: 'bill',
       },
       {
         h2: 'How to get your hospital live on Uyirly',

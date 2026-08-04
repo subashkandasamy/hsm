@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Fragment, type ReactNode } from 'react'
 import { Check, ChevronRight, ArrowRight } from 'lucide-react'
 import MarketingNav from '@/components/marketing/MarketingNav'
+import AppPreview from '@/components/marketing/AppPreview'
 import type { SolutionMeta } from '@/lib/solutions/registry'
 
 const TEAL   = '#0D9488'
@@ -135,6 +136,8 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
             <section key={i}>
               <h2 className="text-2xl font-bold mb-3 leading-snug" style={{ color: SLATE9 }}>{s.h2}</h2>
               <p className="text-base leading-relaxed" style={{ color: SLATE6 }}>{renderRich(s.body)}</p>
+
+              {s.preview && <AppPreview variant={s.preview} />}
 
               {s.bullets && s.bullets.length > 0 && (
                 <ul className="mt-4 space-y-2">
