@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import PwaInit from '@/components/pwa/PwaInit'
 
@@ -92,6 +93,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full">
         <PwaInit />
         {children}
+        <Analytics />
       </body>
     </html>
   )
