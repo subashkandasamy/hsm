@@ -65,6 +65,28 @@ export default function Guide() {
         <li>Is there an audit log of record access and changes?</li>
         <li>What happens to your data, and how do you get it out, if you ever switch providers?</li>
       </ul>
+      <h2>How Uyirly protects your data</h2>
+      <p>
+        <Link href="/cloud-based-hospital-management-system">Uyirly</Link> is built so patient data is safe by
+        default. Data is stored in India and aligned with the DPDP Act. Each hospital&apos;s data is kept strictly
+        separate from every other hospital&apos;s, access is controlled by staff role so people only see what their
+        job needs, all traffic is encrypted, and every view and change is audit-logged. Backups are automatic,
+        so a stolen or broken PC never means lost records &mdash; which is exactly where a single clinic computer
+        is most at risk.
+      </p>
+      <ul>
+        <li>Data stored in India, aligned with the DPDP Act.</li>
+        <li>Strict separation between hospitals; role-based access within each.</li>
+        <li>Encryption in transit and an audit log of every action.</li>
+        <li>Automatic backups &mdash; no data lost when a local machine dies.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        These protections come built into Uyirly&apos;s{' '}
+        <Link href="/cloud-based-hospital-management-system">cloud hospital management system</Link>. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

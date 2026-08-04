@@ -65,6 +65,26 @@ export default function Guide() {
         <li>Reconcile record counts before declaring migration complete.</li>
         <li>Keep the old system read-only and accessible for a defined grace period.</li>
       </ul>
+      <h2>How Uyirly handles data migration</h2>
+      <p>
+        Moving to <Link href="/hospital-management-software">Uyirly</Link> does not mean re-typing years of
+        records before you can start. You can go live immediately with new patients and bring historical data
+        across in the background &mdash; patients, and the essentials like contact details and key history &mdash; so
+        the hospital is running from day one while the old data catches up. Because it is cloud-based, there
+        is no server to set up first, and your data is stored in India and backed up automatically.
+      </p>
+      <ul>
+        <li>Go live with new patients the same day; migrate history in parallel.</li>
+        <li>Patient records carry a single UHID, so nothing is duplicated.</li>
+        <li>Data stored in India with automatic backups.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        See our <Link href="/guides/switching-from-spreadsheets-to-hms">guide to switching from spreadsheets</Link>
+        {' '}for the rollout plan, or <Link href="/signup">start a 30-day free trial</Link> of{' '}
+        <Link href="/hospital-management-software">Uyirly</Link> with no credit card.
+      </p>
     </>
   )
 }

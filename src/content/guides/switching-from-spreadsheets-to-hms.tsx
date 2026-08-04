@@ -71,6 +71,27 @@ export default function Guide() {
         For what to evaluate when choosing the software itself, see our{' '}
         <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist for hospital software</Link>.
       </p>
+      <h2>How Uyirly makes the switch easy</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> is cloud-based, so there is nothing to install
+        and no server to buy &mdash; you sign up and start the same day. A built-in setup guide walks you through
+        it: add your team, switch on the departments you use, add your services and medicines, and register
+        your first patient. You can move one workflow at a time (registration and OPD first, then billing,
+        then the rest) and keep your old register as a backup for a week while staff settle in.
+      </p>
+      <ul>
+        <li>Nothing to install; live the same day.</li>
+        <li>A guided setup checklist that ticks itself off as you go.</li>
+        <li>Switch on modules in phases &mdash; no big-bang cutover.</li>
+        <li>Flat pricing and a free trial, so trying it costs nothing but your time.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        You can <Link href="/signup">start a 30-day free trial</Link> with no credit card and run your real
+        front desk before paying anything. See our{' '}
+        <Link href="/guides/hospital-free-trial-setup-guide">free-trial setup guide</Link> for the exact steps.
+      </p>
     </>
   )
 }

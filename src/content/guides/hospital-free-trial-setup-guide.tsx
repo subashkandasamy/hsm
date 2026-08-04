@@ -54,6 +54,27 @@ export default function Guide() {
         <Link href="/guides/switching-from-spreadsheets-to-hms">guide to switching from spreadsheets</Link>{' '}
         covers a phased rollout that avoids disrupting patient care during the transition.
       </p>
+      <h2>Starting your Uyirly free trial</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> gives a 30-day free trial with no credit card,
+        and most hospitals are seeing patients the same day. When you{' '}
+        <Link href="/signup">sign up</Link>, your hospital gets its own private, secure workspace, and a
+        built-in setup guide walks you through the rest.
+      </p>
+      <ol>
+        <li><strong>Sign up</strong> with your hospital name and mobile number &mdash; no card needed.</li>
+        <li><strong>Add your team</strong> so doctors, nurses and front desk can log in.</li>
+        <li><strong>Switch on your departments</strong> and add your services, medicines and billing rates.</li>
+        <li><strong>Register your first patient</strong> and watch the visit, prescription and bill flow together.</li>
+        <li><strong>Go live</strong> &mdash; add more modules whenever you are ready.</li>
+      </ol>
+
+      <h2>Getting started</h2>
+      <p>
+        You can <Link href="/signup">start your free trial</Link> now, or see how to move off registers in our{' '}
+        <Link href="/guides/switching-from-spreadsheets-to-hms">switching guide</Link>. After the trial it is
+        simple flat monthly pricing &mdash; see <Link href="/pricing">pricing</Link>.
+      </p>
     </>
   )
 }
