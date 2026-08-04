@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ScanLine } from 'lucide-react'
 import { resolveBarcodeScan } from '@/app/actions/barcode'
-import ScanPatientActions, { type ScanPatient } from './ScanPatientActions'
 
 // Native-only camera scanner (Capacitor app). On the web it renders nothing —
 // the desktop text box handles hardware scanners there. Feeds the decoded value
@@ -12,7 +11,6 @@ import ScanPatientActions, { type ScanPatient } from './ScanPatientActions'
 export default function CameraScanButton() {
   const router = useRouter()
   const [isNative, setIsNative] = useState(false)
-  const [patient, setPatient] = useState<ScanPatient | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -54,7 +52,7 @@ export default function CameraScanButton() {
 
       const result = await resolveBarcodeScan(value)
       if (result.type === 'patient') {
-        setPatient({ id: result.id, name: result.name, uhid: result.uhid })
+        router.push(`/patients/${result.id}`)
       } else if (result.type === 'lab_order') {
         router.push(`/lab?highlight=${result.id}`)
       } else {
@@ -75,18 +73,6 @@ export default function CameraScanButton() {
         style={{ color: '#0D9488', background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.2)' }}>
         <ScanLine className="w-5 h-5" />
       </button>
-
-      {/* Resolved patient → shared quick-action panel in a centered sheet */}
-      {patient && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4"
-          style={{ background: 'rgba(15,23,42,0.4)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setPatient(null) }}>
-          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
-            style={{ background: '#fff', border: '1px solid #E2E8F0' }}>
-            <ScanPatientActions patient={patient} onClose={() => setPatient(null)} />
-          </div>
-        </div>
-      )}
 
       {/* Transient message */}
       {msg && (
