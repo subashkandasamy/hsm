@@ -45,7 +45,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  role, tenantName, enabledModules,
+  role, enabledModules,
   plan = 'starter', status = 'trial',
   drawerOpen = false, onClose,
   collapsed = false, onToggleCollapse,
@@ -61,26 +61,10 @@ export default function Sidebar({
     return () => window.removeEventListener('keydown', handler)
   }, [drawerOpen, onClose])
 
-  // Branding header — used in the mobile drawer (desktop shows it in the top bar).
-  const brand = (
-    <div className="flex items-center gap-3 px-5 border-b"
-      style={{ paddingTop: 'calc(1.25rem + env(safe-area-inset-top, 0px))', paddingBottom: '1.25rem', borderColor: '#E2E8F0' }}>
-      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-        <Building2 className="w-4 h-4" style={{ color: '#0D9488' }} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>{tenantName}</p>
-        <p className="text-xs truncate" style={{ color: '#64748B' }}>Hospital Management</p>
-      </div>
-    </div>
-  )
-
   // `iconsOnly` collapses labels/headers (desktop rail). Mobile drawer always false.
   function renderNav(iconsOnly: boolean) {
     return (
-      <nav className={`flex-1 overflow-y-auto py-4 space-y-5 ${iconsOnly ? 'px-2' : 'px-3'}`}
-        style={{ paddingTop: iconsOnly ? 'calc(1rem + env(safe-area-inset-top, 0px))' : undefined }}>
+      <nav className={`flex-1 overflow-y-auto py-4 space-y-5 ${iconsOnly ? 'px-2' : 'px-3'}`}>
         {NAV_CONFIG.map((group) => {
           const visibleItems = group.items.filter((item) => {
             if (!hasPermission(role, item.requiredPermission as Permission)) return false
@@ -180,9 +164,9 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Desktop rail — collapsible, branding lives in the top bar */}
+      {/* Desktop rail — starts below the full-width top bar; collapsible */}
       <aside
-        className={`glass-sidebar fixed left-0 top-0 h-full flex-col z-40 hidden lg:flex transition-[width] duration-200 ${
+        className={`glass-sidebar fixed left-0 top-14 bottom-0 flex-col z-30 hidden lg:flex transition-[width] duration-200 ${
           collapsed ? 'w-16' : 'w-60'
         }`}>
         {!collapsed && planBadge}
@@ -198,17 +182,16 @@ export default function Sidebar({
         </button>
       </aside>
 
-      {/* Mobile drawer — unchanged (always full width + labels) */}
+      {/* Mobile drawer — slides in below the top bar (which stays on top) */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden"
+        <div className="fixed left-0 right-0 top-14 bottom-0 z-30 lg:hidden"
           style={{ background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }}
           onClick={onClose} aria-hidden="true" />
       )}
       <aside
-        className={`glass-sidebar fixed left-0 top-0 h-full w-72 flex flex-col z-50 lg:hidden transition-transform duration-300 ease-out ${
+        className={`glass-sidebar fixed left-0 top-14 bottom-0 w-72 flex flex-col z-40 lg:hidden transition-transform duration-300 ease-out ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}>
-        {brand}
         {planBadge}
         {renderNav(false)}
       </aside>

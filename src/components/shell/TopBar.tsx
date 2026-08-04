@@ -22,10 +22,9 @@ interface TopBarProps {
   role: Role
   tenantName: string
   onMenuClick?: () => void
-  collapsed?: boolean
 }
 
-export default function TopBar({ fullName, role, tenantName, onMenuClick, collapsed = false }: TopBarProps) {
+export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopBarProps) {
   const router = useRouter()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -50,7 +49,7 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick, collap
   }, [dropdownOpen])
 
   return (
-    <header className={`glass-topbar fixed top-0 left-0 right-0 z-30 transition-[left] duration-200 ${collapsed ? 'lg:left-16' : 'lg:left-60'}`}
+    <header className="glass-topbar fixed top-0 left-0 right-0 z-40"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="h-14 flex items-center justify-between px-4 md:px-6">
       {/* Left: hamburger (mobile) + hospital branding + scan input (desktop) */}
