@@ -77,6 +77,28 @@ export default function Guide() {
         as two separate lines that leave staff manually deciding whose turn it really is? Everything else
         &mdash; vitals capture, a visible display &mdash; is easier to bolt on later; these two aren&apos;t.
       </p>
+      <h2>How Uyirly runs the OPD queue</h2>
+      <p>
+        In <Link href="/clinic-management-software">Uyirly</Link>, every doctor gets a live token queue for
+        the day. When a patient is registered, a token is issued for the right doctor, and appointments and
+        walk-ins share one fair line &mdash; nobody has to shout &ldquo;who is next&rdquo;. The doctor&apos;s screen shows
+        only their own worklist and updates the moment a patient arrives or a consultation ends. A patient can
+        even see their token number and how many people are ahead, so they can wait comfortably or step away.
+      </p>
+      <ul>
+        <li>One ordered queue per doctor &mdash; appointments and walk-ins together.</li>
+        <li>A nurse can record vitals (BP, pulse, temperature, weight) before the doctor sees the patient.</li>
+        <li>Repeat patients are found instantly by phone number or UHID &mdash; no duplicate registration.</li>
+        <li>The consultation ends in a prescription and a charge that both land on the same patient bill.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The OPD queue is part of Uyirly&apos;s <Link href="/clinic-management-software">clinic</Link> and{' '}
+        <Link href="/hospital-management-software">hospital management software</Link>, on the same patient
+        record as billing and the pharmacy. You can <Link href="/signup">start a 30-day free trial</Link> with
+        no credit card and run your real OPD the same day.
+      </p>
     </>
   )
 }

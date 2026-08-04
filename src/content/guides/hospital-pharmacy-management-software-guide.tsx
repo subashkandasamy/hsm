@@ -91,6 +91,28 @@ export default function Guide() {
         didn&apos;t, the &ldquo;single pharmacy module&rdquo; is really two separate stock ledgers wearing one interface
         &mdash; and that gap is exactly where physical stock and recorded stock quietly drift apart.
       </p>
+      <h2>How Uyirly runs the pharmacy</h2>
+      <p>
+        <Link href="/pharmacy-management-software">Uyirly&apos;s pharmacy</Link> tracks every medicine by batch and
+        expiry, and dispenses oldest-valid-first, so stock stays accurate and money does not walk out as
+        expiry write-offs. A doctor&apos;s prescription flows straight to the pharmacy, which dispenses against it
+        &mdash; so the medicine matches the consultation and the charge lands on the same patient bill.
+      </p>
+      <ul>
+        <li>Batch-wise stock with expiry alerts before items lapse.</li>
+        <li>Oldest-valid-batch suggested first (FEFO), so nothing expires unused.</li>
+        <li>One counter for OPD walk-in sales and IPD ward issues.</li>
+        <li>Schedule H, H1 and X carried on each drug, with H1 register fields captured on dispensing.</li>
+        <li>Low-stock flags feed straight into purchase orders.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The pharmacy is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link> and shares the same patient and bill as the doctor. See our{' '}
+        <Link href="/guides/drug-schedule-h-h1-x-pharmacy-compliance">Schedule H, H1 &amp; X guide</Link> for
+        the compliance detail, or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

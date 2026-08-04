@@ -66,6 +66,28 @@ export default function Guide() {
         paper process rather than replacing it, which means every one of those benefits depends on someone
         remembering to also update the digital record.
       </p>
+      <h2>How Uyirly runs the lab</h2>
+      <p>
+        <Link href="/lab-management-software">Uyirly&apos;s lab</Link> follows every sample by barcode from
+        collection to a verified report. A test ordered in a consultation appears on the lab worklist with no
+        paper slip; the technician enters results against the reference ranges, which flag high and low values
+        automatically; a pathologist verifies before anything is released; and the letterhead PDF report is
+        delivered to the patient by WhatsApp or a patient portal.
+      </p>
+      <ul>
+        <li>Barcoded samples with a live worklist of pending, in-process and verified tests.</li>
+        <li>Reference ranges flag abnormal values automatically.</li>
+        <li>Verified reports become clean letterhead PDFs, delivered without a second visit.</li>
+        <li>Walk-in and ward orders both bill to the right patient with no re-registration.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The lab runs standalone or inside Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital management software</Link>, sharing the patient
+        record with OPD and <Link href="/radiology-information-system-software">radiology</Link>. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

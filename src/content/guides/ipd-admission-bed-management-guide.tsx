@@ -79,6 +79,27 @@ export default function Guide() {
         doesn&apos;t release the bed instantly, leaving a ready room sitting invisible while admissions elsewhere
         get delayed for &ldquo;no availability.&rdquo;
       </p>
+      <h2>How Uyirly handles admissions and beds</h2>
+      <p>
+        In <Link href="/hospital-management-software">Uyirly</Link>, admitting a patient takes a minute: pick
+        the patient, choose a free bed, and the admission starts. A live ward board shows which beds are free,
+        occupied or being cleaned, so the front desk never has to walk the wards to find a bed. Ward transfers,
+        the care team and daily charges are all tied to the same admission.
+      </p>
+      <ul>
+        <li>A live bed board across every ward &mdash; free, occupied and cleaning at a glance.</li>
+        <li>Admit, assign a bed, transfer between wards, and discharge in one flow.</li>
+        <li>Bed and nursing charges accrue automatically each day onto the running bill.</li>
+        <li>Emergency cases can be admitted straight from the ER, carrying their record with them.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        IPD is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management software</Link>
+        &mdash; the same platform also fits a <Link href="/nursing-home-management-software">nursing home</Link>{' '}
+        with a handful of beds. You can <Link href="/signup">start a 30-day free trial</Link> with no credit
+        card and admit a test patient the same day.
+      </p>
     </>
   )
 }

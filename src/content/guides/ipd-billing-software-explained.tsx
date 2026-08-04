@@ -128,6 +128,28 @@ export default function Guide() {
         &ldquo;we calculate that at discharge&rdquo; is telling you, in one sentence, that discharge will be slow and
         disputes will be common &mdash; no matter how good every other feature looks in a demo.
       </p>
+      <h2>How Uyirly builds the IPD bill</h2>
+      <p>
+        The slowest moment in most hospitals is discharge, because the final bill is added up by hand. In{' '}
+        <Link href="/hospital-management-software">Uyirly</Link> the bill builds itself as care happens. Bed
+        and nursing charges accrue automatically every day the patient is admitted, and every consultation,
+        test, medicine and procedure posts to the same running bill the moment it is done. When the patient is
+        cleared, the itemised bill and the insurance claim are already ready.
+      </p>
+      <ul>
+        <li>Daily auto-billing &mdash; bed rent and nursing charges add themselves each day.</li>
+        <li>Lab, pharmacy and OT charges post to the running bill with no re-entry.</li>
+        <li>Advance payments are applied against the total, so discharge is fast, not a reconciliation.</li>
+        <li>For cashless patients, the insurance eligibility unlocks the discharge balance automatically.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        IPD billing is built into Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>, on one shared patient record with OPD, pharmacy and the lab. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card and see a real, mid-stay
+        bill build itself.
+      </p>
     </>
   )
 }
