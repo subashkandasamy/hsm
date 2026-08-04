@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Building2, CheckCircle, ArrowRight, Mail } from 'lucide-react'
+import { CheckCircle, ArrowRight, Mail } from 'lucide-react'
+import MarketingNav from '@/components/marketing/MarketingNav'
 
 export const metadata: Metadata = {
   title: 'Pricing — Hospital Management Software from ₹2,999/mo | Uyirly',
@@ -20,29 +21,6 @@ const SLATE9 = '#0F172A'
 const SLATE5 = '#64748B'
 const SLATE4 = '#94A3B8'
 const BORDER = '#E2E8F0'
-
-// ── Nav (shared with home, minimal inline version) ────────────────────────────
-function Nav() {
-  return (
-    <header className="fixed top-0 left-0 right-0 z-50"
-      style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(16px)', borderBottom: `1px solid ${BORDER}` }}>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <Building2 className="w-4 h-4" style={{ color: TEAL }} />
-          </div>
-          <span className="text-base font-bold" style={{ color: SLATE9 }}>Uyirly</span>
-        </Link>
-        <Link href="/signup"
-          className="px-4 py-2 rounded-xl text-sm font-semibold"
-          style={{ background: TEAL, color: '#fff' }}>
-          Get started
-        </Link>
-      </div>
-    </header>
-  )
-}
 
 // ── Plan data ─────────────────────────────────────────────────────────────────
 type PlanDef = {
@@ -247,9 +225,9 @@ export default function PricingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <Nav />
+      <MarketingNav ctaLabel="Start free trial" />
 
-      <main className="pt-24">
+      <main className="pt-28">
         {/* Header */}
         <section className="py-16 px-4 sm:px-6 text-center"
           style={{ background: 'linear-gradient(180deg, rgba(204,251,241,0.3) 0%, transparent 100%)' }}>

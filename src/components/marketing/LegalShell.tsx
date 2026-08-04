@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Building2, ArrowLeft } from 'lucide-react'
+import MarketingNav from './MarketingNav'
 
 // Design tokens (shared with marketing pages)
 const T  = '#0D9488'
@@ -36,24 +36,11 @@ export default function LegalShell({ title, lastUpdated, intro, children }: Prop
     <div style={{ background: '#ffffff', minHeight: '100vh' }}>
       <style dangerouslySetInnerHTML={{ __html: PROSE_CSS }} />
 
-      {/* Nav */}
-      <header className="sticky top-0 z-50"
-        style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${S2}` }}>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: T }}>
-              <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
-            </div>
-            <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
-          </Link>
-          <Link href="/" className="flex items-center gap-1.5 text-sm font-medium" style={{ color: S6 }}>
-            <ArrowLeft className="w-4 h-4" /> Back to home
-          </Link>
-        </div>
-      </header>
+      {/* Nav — shared marketing header (consistent across all pages) */}
+      <MarketingNav />
 
       {/* Content */}
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 pt-28 pb-12">
         <h1 className="text-3xl sm:text-4xl font-bold mb-2" style={{ color: S9 }}>{title}</h1>
         <p className="text-sm mb-8" style={{ color: S4 }}>Last updated: {lastUpdated}</p>
 
