@@ -58,12 +58,14 @@ export async function getSetupProgress(): Promise<SetupProgress> {
 
   const doctorsQ = supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'doctor')
 
-  const [doctorsRes, hours, labTests, radTests, drugs, wards, tariffs, patients] = await Promise.all([
+  const [doctorsRes, hours, labTests, radTests, pharmacyStock, wards, tariffs, patients] = await Promise.all([
     doctorsQ,
     countIf(true, 'doctor_availability'),
     countIf(hasModule('lab'), 'lab_tests_catalog'),
     countIf(hasModule('radiology'), 'radiology_catalog'),
-    countIf(hasModule('pharmacy'), 'drugs'),
+    // Pharmacy is "set up" once stock exists — a batch can reference the global
+    // drug_master catalog, so a hospital may have stock with no tenant `drugs` row.
+    countIf(hasModule('pharmacy'), 'drug_batches'),
     countIf(hasModule('ipd'), 'wards'),
     countIf(true, 'procedure_tariffs'),
     countIf(true, 'patients'),
@@ -111,7 +113,7 @@ export async function getSetupProgress(): Promise<SetupProgress> {
       title: 'Add pharmacy medicines',
       description: 'Add your medicines and opening stock so you can dispense and bill.',
       href: '/pharmacy',
-      done: drugs > 0,
+      done: pharmacyStock > 0,
     },
     {
       key: 'wards', show: hasModule('ipd'),
