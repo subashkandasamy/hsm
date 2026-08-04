@@ -104,7 +104,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
     else if (slugState !== 'available') e.slug = slugReason || 'This address isn’t available — try another'
     if (!adminName.trim()) e.adminName = 'Enter your full name'
     if (!/^\d{10}$/.test(adminPhone)) e.phone = 'Enter a 10-digit mobile number'
-    if (!email.trim()) e.email = 'Enter your work email'
+    if (!email.trim()) e.email = 'Enter your email'
     else if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address'
     if (password.length < 8) e.password = 'Use at least 8 characters'
     if (!agreed) e.agreed = 'Please accept the Terms and Privacy Policy to continue'
@@ -300,13 +300,13 @@ export default function SignupForm({ plan = 'starter' }: Props) {
       {/* Email */}
       <div id="field-email">
         <label className="block text-sm font-medium mb-1.5" style={{ color: '#0F172A' }}>
-          Work email
+          Email
         </label>
         <input
           type="email"
           value={email}
           onChange={e => { setEmail(e.target.value); clearFieldError('email') }}
-          placeholder="admin@yourhospital.com"
+          placeholder="you@example.com"
           className="w-full px-3.5 py-2.5 rounded-xl text-sm transition-all border"
           style={{ ...inputBase, borderColor: borderFor('email') }}
           onFocus={e => Object.assign(e.currentTarget.style, focusStyle)}
@@ -426,7 +426,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
         style={{ background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.15)' }}>
         <div className="flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#475569' }}>
           <Mail className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#0D9488' }} />
-          <span>We&apos;ll email your <strong>login link and username</strong> to your work email, so you always have them.</span>
+          <span>We&apos;ll email your <strong>login link and username</strong> to this email address, so you always have them.</span>
         </div>
         <div className="flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#475569' }}>
           <KeyRound className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#0D9488' }} />
