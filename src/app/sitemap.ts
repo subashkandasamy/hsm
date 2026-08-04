@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next'
 import { GUIDES } from '@/lib/guides/registry'
 import { publishedSlugs } from '@/content/guides'
 import { SOLUTIONS, solutionSlugs } from '@/lib/solutions/registry'
+import { citySlugs } from '@/lib/locations/registry'
 
 const SITE_URL = 'https://www.uyirly.com'
 
@@ -52,6 +53,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.85,
     },
     ...solutionEntries,
+    // Location pages — "hospital management software in [city]"
+    ...citySlugs().map((slug) => ({
+      url: `${SITE_URL}/hospital-management-software/${slug}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    })),
     ...guideEntries,
     {
       url: `${SITE_URL}/signup`,

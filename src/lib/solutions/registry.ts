@@ -635,6 +635,11 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         body:
           'Because it is modular and cloud-based, the same platform fits many kinds of facility. Turn on the modules you need today and add the rest later. It works well for [clinics](/clinic-management-software), [nursing homes](/nursing-home-management-software), [multi-specialty hospitals](/multi-specialty-hospital-software), diagnostic [labs](/lab-management-software) and [dental clinics](/dental-clinic-software) — all on the same simple system.',
       },
+      {
+        h2: 'Hospital management software by city',
+        body:
+          'Uyirly is cloud-based, so hospitals anywhere in India can use it. See how it works for your city: [Chennai](/hospital-management-software/chennai), [Coimbatore](/hospital-management-software/coimbatore), [Madurai](/hospital-management-software/madurai), [Tiruchirappalli](/hospital-management-software/tiruchirappalli), [Salem](/hospital-management-software/salem), [Bengaluru](/hospital-management-software/bangalore), [Hyderabad](/hospital-management-software/hyderabad), [Delhi](/hospital-management-software/delhi), [Mumbai](/hospital-management-software/mumbai), [Pune](/hospital-management-software/pune), [Kochi](/hospital-management-software/kochi) and [Vijayawada](/hospital-management-software/vijayawada).',
+      },
     ],
     faqs: [
       {
