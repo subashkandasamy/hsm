@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
@@ -25,6 +25,21 @@ export default function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
+  // Desktop sidebar collapse (icons-only rail), remembered across visits.
+  const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('uyirly_sidebar_collapsed') === '1') {
+      setCollapsed(true)
+    }
+  }, [])
+  const toggleCollapse = useCallback(() => {
+    setCollapsed((v) => {
+      const next = !v
+      try { localStorage.setItem('uyirly_sidebar_collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
+  }, [])
+
   return (
     <div className="min-h-screen overflow-x-hidden">
       <div className="print:hidden">
@@ -32,13 +47,14 @@ export default function AppShell({
           role={role} tenantName={tenantName}
           enabledModules={enabledModules} plan={plan} status={status}
           drawerOpen={drawerOpen} onClose={closeDrawer}
+          collapsed={collapsed} onToggleCollapse={toggleCollapse}
         />
       </div>
       <div className="print:hidden">
-        <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} />
+        <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} collapsed={collapsed} />
       </div>
 
-      <main className="lg:ml-60 min-w-0 min-h-screen pb-safe-nav print:ml-0 print:pt-0 print:pb-0 print:min-h-0"
+      <main className={`${collapsed ? 'lg:ml-16' : 'lg:ml-60'} min-w-0 min-h-screen pb-safe-nav transition-[margin] duration-200 print:ml-0 print:pt-0 print:pb-0 print:min-h-0`}
         style={{ background: 'transparent', paddingTop: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}>
 
         {/* Status banners */}

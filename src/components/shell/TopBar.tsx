@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Menu } from 'lucide-react'
+import { LogOut, User, Menu, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/lib/types'
 import ScanInput from '@/components/barcode/ScanInput'
@@ -22,9 +22,10 @@ interface TopBarProps {
   role: Role
   tenantName: string
   onMenuClick?: () => void
+  collapsed?: boolean
 }
 
-export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopBarProps) {
+export default function TopBar({ fullName, role, tenantName, onMenuClick, collapsed = false }: TopBarProps) {
   const router = useRouter()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -49,21 +50,27 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
   }, [dropdownOpen])
 
   return (
-    <header className="glass-topbar fixed top-0 left-0 lg:left-60 right-0 z-30"
+    <header className={`glass-topbar fixed top-0 left-0 right-0 z-30 transition-[left] duration-200 ${collapsed ? 'lg:left-16' : 'lg:left-60'}`}
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="h-14 flex items-center justify-between px-4 md:px-6">
-      {/* Left: hamburger on mobile + scan input on desktop */}
-      <div className="flex items-center gap-3">
+      {/* Left: hamburger (mobile) + hospital branding + scan input (desktop) */}
+      <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
-          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl"
+          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl flex-shrink-0"
           style={{ color: '#64748B' }}
           aria-label="Open menu"
         >
           <Menu className="w-5 h-5" />
         </button>
-        {/* Short title on mobile only */}
-        <span className="lg:hidden text-sm font-semibold" style={{ color: '#0F172A' }}>{tenantName}</span>
+        {/* Hospital branding — always visible, so the collapsed sidebar needs no header */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
+            <Building2 className="w-3.5 h-3.5" style={{ color: '#0D9488' }} />
+          </div>
+          <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{tenantName}</span>
+        </div>
         {/* Global barcode scan input — desktop only */}
         <div className="hidden lg:block">
           <ScanInput />
