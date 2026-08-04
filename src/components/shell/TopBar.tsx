@@ -6,6 +6,7 @@ import { LogOut, User, Menu, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/lib/types'
 import ScanInput from '@/components/barcode/ScanInput'
+import CameraScanButton from '@/components/barcode/CameraScanButton'
 
 const ROLE_LABELS: Record<Role, string> = {
   admin:        'Administrator',
@@ -70,6 +71,8 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
           </div>
           <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{tenantName}</span>
         </div>
+        {/* Native camera scanner (renders only in the Capacitor app) */}
+        <CameraScanButton />
         {/* Global barcode scan input — desktop only */}
         <div className="hidden lg:block">
           <ScanInput />
