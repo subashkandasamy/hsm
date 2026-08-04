@@ -108,49 +108,81 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     sections: [
       {
-        h2: 'What lab management software actually does',
+        h2: 'What is lab management software (LIMS)?',
         body:
-          'A laboratory information management system — LIMS, or LIS when people mean the clinical-lab version — exists to make one thing impossible: a sample getting lost, or a result reaching the wrong patient. Good lab management software gives every sample a barcoded identity the instant it is collected, then tracks it through accessioning, testing and verification, so at any moment you know exactly where a test is and who touched it. That living audit trail is the one thing a paper register or an Excel sheet can never give a pathology lab.',
-      },
-      {
-        h2: 'Sample tracking that closes the biggest gap in a lab',
-        body:
-          'Most of a lab’s real risk sits between collection and result — the tube that gets mislabelled, the sample nobody logged, the report that goes out under the wrong name. Uyirly’s sample tracking follows each specimen by barcode through every stage, flags anything overdue, and ties the final value back to the exact tube it came from. Technicians stop hunting for samples and start clearing the worklist.',
+          'Lab management software — a laboratory information management system (LIMS), or LIS when people mean the clinical-lab version — runs a diagnostic lab or hospital pathology department end to end. It exists to make one thing impossible: a sample getting lost, or a result reaching the wrong patient. [Uyirly](/hospital-management-software) gives every sample a barcoded identity the instant it is collected, then tracks it through accessioning, testing and verification, so at any moment you know exactly where a test is and who touched it. That living audit trail is the one thing a paper register or an Excel sheet can never give a lab.',
         bullets: [
-          'Barcoded samples from the collection point onward',
-          'A live worklist of what’s pending, in-process and verified',
-          'Overdue and unaccessioned samples flagged automatically',
+          'Sample tracking from collection to verified result — no lost tubes',
+          'Test catalogue with reference ranges, panels and per-test pricing',
+          'Auto-formatted PDF reports, delivered by WhatsApp or portal',
+          'Lab billing and patient records built in — nothing re-entered',
         ],
       },
       {
-        h2: 'The test catalogue does the heavy lifting',
+        h2: 'What runs inside the lab module',
         body:
-          'Everything in a diagnostic lab flows from the test master. In Uyirly every test carries its reference ranges, units, sample type, method and price, and you can bundle tests into panels, profiles and health packages once. After that, ordering, reporting and billing all read from the same definition — so a CBC or an LFT is priced, collected and reported the same way no matter who books it or on which day.',
-        bullets: [
-          'Reference ranges flag high and low values on the report automatically',
-          'Panels, profiles and health packages with package pricing',
-          'Per-test and per-panel pricing flows straight to the bill',
+          'Everything a lab needs is in one place, and it all reads from the same test master and the same patient record.',
+        preview: 'lab',
+        subsections: [
+          {
+            h3: 'Sample tracking',
+            body:
+              'Most of a lab’s real risk sits between collection and result — the tube that gets mislabelled, the sample nobody logged. Uyirly follows each specimen by barcode through every stage, flags anything overdue, and ties the final value back to the exact tube it came from. Technicians stop hunting for samples and start clearing the worklist.',
+          },
+          {
+            h3: 'The test catalogue',
+            body:
+              'Every test carries its reference ranges, units, sample type, method and price, and tests bundle into panels, profiles and health packages. After that, ordering, reporting and billing all read from the same definition — so a CBC or an LFT is priced, collected and reported the same way every time.',
+          },
+          {
+            h3: 'Result entry and verification',
+            body:
+              'Technicians enter values against the reference ranges, which flag high and low results automatically, and a pathologist verifies before anything is released. Nothing goes out unsigned.',
+          },
+          {
+            h3: 'Reports and delivery',
+            body:
+              'The moment a value is verified, Uyirly formats it into a clean, letterhead PDF — ranges in place, the verifying pathologist named — and delivers it over WhatsApp or a patient portal. No second trip for a printout.',
+          },
+          {
+            h3: 'Lab billing',
+            body:
+              'Walk-in patients are billed in one screen, and tests ordered from a consultation post to the patient’s existing bill — so the money and the tests never drift apart.',
+          },
         ],
       },
       {
-        h2: 'Reports that are ready to hand over',
+        h2: 'The order-to-report workflow',
         body:
-          'The whole point of the software is the finished report, and reporting is where cheap lab software falls down. Uyirly formats results into a clean, letterhead PDF the moment a value is verified — reference ranges in place, the verifying pathologist named, interpretive notes and cumulative history where they help. Instead of asking a patient to come back for a printout, you deliver it over WhatsApp or a patient portal the minute it’s signed off.',
+          'Here is a test’s full journey through Uyirly — the same [lab workflow](/guides/lab-lis-workflow-guide) whether it is a walk-in or a ward order.',
+        steps: [
+          { title: 'Order', body: 'A doctor orders the test from a consultation, or a walk-in customer is registered and billed at the counter.' },
+          { title: 'Collect', body: 'The sample is collected and barcoded, so it can never be mixed up with another patient’s.' },
+          { title: 'Process', body: 'The lab enters results against reference ranges on a live worklist that shows what is pending, in process and done.' },
+          { title: 'Verify', body: 'A pathologist checks and signs off. Only verified results are released.' },
+          { title: 'Deliver', body: 'The letterhead PDF report goes to the patient by WhatsApp or portal, and the charge is already on the bill.' },
+        ],
       },
       {
-        h2: 'Lab billing and records are one system, not three',
+        h2: 'A LIMS vs a paper / Excel lab',
         body:
-          'Standalone LIMS force you to re-key the patient and reconcile the bill somewhere else. In Uyirly the lab shares the same patient record and billing as OPD, IPD and pharmacy. A test ordered from a doctor’s consultation lands on the same patient and the same bill; a walk-in lab customer is registered, billed and receipted in one screen; and every test a patient has ever had sits on one history. That’s the difference between lab software and a lab bolted onto a spreadsheet.',
-        bullets: [
-          'Tests ordered in OPD/IPD reach the lab with no re-registration',
-          'Lab charges join the patient’s running bill automatically',
-          'One patient history across lab, pharmacy, radiology and clinic',
-        ],
+          'Here is what changes the day a lab moves off registers and spreadsheets.',
+        table: {
+          headers: ['', 'Paper / Excel lab', 'With Uyirly LIMS'],
+          rows: [
+            ['Samples', 'Handwritten labels, easy to mix up', 'Barcoded, tracked at every step'],
+            ['Worklist', 'No live view of what is pending', 'Live pending / in-process / verified'],
+            ['Reference ranges', 'Checked by memory', 'High/low flagged automatically'],
+            ['Reports', 'Typed by hand', 'Auto-formatted letterhead PDF'],
+            ['Delivery', 'Patient returns for a printout', 'WhatsApp / patient portal'],
+            ['Billing', 'Separate register', 'On the patient’s bill automatically'],
+          ],
+        },
       },
       {
         h2: 'From a single pathology lab to a full hospital lab',
         body:
-          'A standalone diagnostic lab uses Uyirly for walk-in registration, sample tracking, reporting and billing on its own. A hospital pathology department uses the very same lab management system inside the wider platform, so tests ordered from the wards and OPD flow in without re-registering the patient and every charge lands on the patient’s bill. You don’t outgrow it — the lab you set up today is the lab that scales.',
+          'A standalone diagnostic lab uses Uyirly for walk-in registration, sample tracking, reporting and billing on its own. A [hospital](/hospital-management-software) pathology department uses the very same lab management system inside the wider platform, so tests ordered from the wards and OPD flow in without re-registering the patient and every charge lands on the patient’s bill. You do not outgrow it — the lab you set up today is the lab that scales.',
       },
     ],
     faqs: [
@@ -174,9 +206,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     related: [
       { label: 'How a lab LIS workflow actually works', href: '/guides/lab-lis-workflow-guide' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
-      { label: 'Radiology & RIS reporting', href: '/guides/radiology-ris-reporting-guide' },
+      { label: 'Radiology information system (RIS)', href: '/radiology-information-system-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'clinic-management-software': {
@@ -1215,34 +1248,70 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     sections: [
       {
-        h2: 'Stock that knows its batch and expiry',
+        h2: 'What pharmacy management software does',
         body:
-          'The single most expensive mistake a pharmacy makes is letting stock expire on the shelf, or dispensing a batch it shouldn’t. Uyirly tracks every drug by batch and expiry, warns before items expire, and dispenses oldest-valid-first, so the pharmacy inventory stays accurate and money doesn’t quietly walk out as write-offs. It’s the difference between pharmacy software and a stock register that’s always slightly out of date.',
+          'A hospital [pharmacy](/hospital-management-software) has to do three hard things at once: hold stock with batch and expiry under control, dispense the right drug against the right prescription, and bill it correctly for both the OPD counter and the IPD ward. Uyirly’s pharmacy management software does all three on the same patient record, with drug-schedule compliance built in — so the pharmacy stops being a separate register and becomes part of the same system as the doctor and the bill.',
         bullets: [
-          'Batch-wise stock with expiry alerts',
-          'Low-stock and reorder flags feed purchase orders',
-          'Every issue traceable back to a batch',
+          'Drug stock with batch and expiry tracking',
+          'Dispensing against the prescription, for OPD and IPD',
+          'Pharmacy billing on the patient’s bill, no re-entry',
+          'Schedule H / H1 / X records captured automatically',
         ],
       },
       {
-        h2: 'Dispensing tied to the prescription',
+        h2: 'What runs inside the pharmacy module',
         body:
-          'A pharmacy is only as safe as the link between what was prescribed and what was handed over. In Uyirly the doctor’s prescription flows to the pharmacy, which dispenses against it — so the medicine matches the consultation, and the charge lands on the same patient bill. There’s no re-keying the drug list, and nothing is dispensed against a bill that doesn’t exist.',
-      },
-      {
-        h2: 'One counter for OPD retail and IPD wards',
-        body:
-          'A hospital pharmacy serves two very different flows: walk-in OPD customers who pay at the counter, and ward medication charged to an admitted patient’s running bill. Uyirly handles both from one system — a walk-in sale is billed and receipted in one screen, while ward issues post straight to the IPD bill — so the pharmacy isn’t running two disconnected processes.',
-        bullets: [
-          'OPD retail sale billed and receipted in one screen',
-          'IPD ward issues post to the admitted patient’s bill',
-          'Returns and adjustments handled cleanly',
+          'One counter, one screen — for the walk-in OPD customer and the admitted ward patient alike.',
+        preview: 'pharmacy',
+        subsections: [
+          {
+            h3: 'Stock with batch and expiry',
+            body:
+              'The most expensive mistake a pharmacy makes is letting stock expire on the shelf, or dispensing a batch it should not. Uyirly tracks every drug by batch and expiry, warns before items expire, and dispenses oldest-valid-first — so inventory stays accurate and money does not walk out as write-offs. Low-stock flags feed straight into purchase orders.',
+          },
+          {
+            h3: 'Dispensing against the prescription',
+            body:
+              'The doctor’s prescription flows to the pharmacy, which dispenses against it — so the medicine matches the consultation and the charge lands on the same patient bill. There is no re-keying the drug list, and nothing is dispensed against a bill that does not exist.',
+          },
+          {
+            h3: 'OPD counter and IPD ward',
+            body:
+              'A walk-in OPD sale is billed and receipted in one screen, while medication issued to an admitted patient posts straight to their IPD bill — so the pharmacy is not running two disconnected processes.',
+          },
+          {
+            h3: 'Schedule H / H1 / X compliance',
+            body:
+              'Each drug carries its [schedule (H, H1, X)](/guides/drug-schedule-h-h1-x-pharmacy-compliance), and H1 dispensing captures the register fields the law needs — prescriber, patient, drug, quantity — so compliance is a by-product of dispensing, not a separate logbook.',
+          },
         ],
       },
       {
-        h2: 'Drug-schedule compliance, built in',
+        h2: 'How a medicine gets dispensed',
         body:
-          'A pharmacy that treats every drug the same is quietly non-compliant the moment it dispenses a Schedule H1 antibiotic. Uyirly carries each drug’s schedule (H, H1, X) in the catalogue and captures the register fields H1 dispensing requires — prescriber, patient, drug, quantity — so compliance is a by-product of dispensing, not a separate logbook kept on the side.',
+          'Here is the flow from prescription to a medicine in the patient’s hand.',
+        steps: [
+          { title: 'Prescription arrives', body: 'The doctor prescribes; the pharmacy sees it on screen — no paper slip to lose.' },
+          { title: 'Pick the batch', body: 'The system suggests the oldest valid batch, so nothing expires unused and nothing expired goes out.' },
+          { title: 'Dispense', body: 'The pharmacist dispenses against the prescription; stock drops automatically.' },
+          { title: 'Bill', body: 'The charge posts to the walk-in receipt or the admitted patient’s running bill — no double entry.' },
+        ],
+      },
+      {
+        h2: 'Pharmacy software vs a stock register',
+        body:
+          'What changes the day a pharmacy moves off a paper stock book.',
+        table: {
+          headers: ['', 'Stock register', 'With Uyirly'],
+          rows: [
+            ['Expiry', 'Found when it is too late', 'Flagged before it expires'],
+            ['Stock count', 'Always slightly out of date', 'Live and accurate'],
+            ['Dispensing', 'Copied from a paper slip', 'Against the actual prescription'],
+            ['Billing', 'Separate counter book', 'On the patient’s bill'],
+            ['Reorder', 'From memory', 'Low-stock flags feed purchase orders'],
+            ['Schedule H1', 'A physical logbook', 'Captured automatically'],
+          ],
+        },
       },
     ],
     faqs: [
@@ -1263,8 +1332,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Hospital pharmacy management, explained', href: '/guides/hospital-pharmacy-management-software-guide' },
       { label: 'Schedule H, H1 & X drugs', href: '/guides/drug-schedule-h-h1-x-pharmacy-compliance' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Hospital inventory & purchase orders', href: '/guides/hospital-inventory-purchase-order-guide' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'radiology-information-system-software': {

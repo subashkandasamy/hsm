@@ -114,10 +114,67 @@ function OpdQueue() {
   )
 }
 
+function LabWorklist() {
+  const rows = [
+    ['LAB-2481', 'CBC', 'Priya S', 'Verified', '#16A34A'],
+    ['LAB-2482', 'LFT', 'Arun M', 'In process', TEAL],
+    ['LAB-2483', 'Lipid Profile', 'Kavya R', 'Collected', SLATE5],
+    ['LAB-2484', 'Thyroid (T3 T4 TSH)', 'Suresh P', 'Pending', SLATE4],
+  ]
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${BORDER}` }}>
+      <div className="px-3 py-2.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <p className="text-xs font-semibold" style={{ color: SLATE9 }}>Lab worklist · Pathology</p>
+        <p className="text-[10px]" style={{ color: SLATE4 }}>Samples tracked by barcode</p>
+      </div>
+      <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+        {rows.map(([id, test, name, status, color], i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2">
+            <span className="text-[10px] font-mono font-semibold" style={{ color: TEAL, minWidth: 62 }}>{id}</span>
+            <span className="text-xs flex-1" style={{ color: SLATE9 }}>{test}</span>
+            <span className="text-[10px] hidden sm:inline" style={{ color: SLATE5 }}>{name}</span>
+            <span className="text-[10px] font-medium" style={{ color, minWidth: 66, textAlign: 'right' }}>{status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PharmacyStock() {
+  const rows = [
+    ['Paracetamol 500mg', 'Tablet', '1,240', 'B2291 · exp 08/2027', false],
+    ['Amoxicillin 500mg', 'Capsule', '86', 'B1180 · exp 03/2026', true],
+    ['Pantoprazole 40mg', 'Tablet', '540', 'B7742 · exp 11/2026', false],
+    ['ORS Sachet', 'Sachet', '22', 'B3310 · exp 01/2026', true],
+  ]
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: `1px solid ${BORDER}` }}>
+      <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <p className="text-xs font-semibold" style={{ color: SLATE9 }}>Pharmacy stock</p>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>2 low / expiring</span>
+      </div>
+      <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+        {rows.map(([name, form, qty, batch, warn], i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate" style={{ color: SLATE9 }}>{name}</p>
+              <p className="text-[10px]" style={{ color: SLATE4 }}>{form} · {batch}</p>
+            </div>
+            <span className="text-xs font-semibold tabular-nums" style={{ color: warn ? '#DC2626' : SLATE9 }}>{qty}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const VARIANTS: Record<string, { label: string; el: React.ReactNode }> = {
   dashboard: { label: 'uyirly.com · Dashboard', el: <Dashboard /> },
   bill: { label: 'uyirly.com · Billing', el: <Bill /> },
   opd: { label: 'uyirly.com · OPD Queue', el: <OpdQueue /> },
+  lab: { label: 'uyirly.com · Laboratory', el: <LabWorklist /> },
+  pharmacy: { label: 'uyirly.com · Pharmacy', el: <PharmacyStock /> },
 }
 
 export default function AppPreview({ variant }: { variant: string }) {
