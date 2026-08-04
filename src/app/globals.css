@@ -129,15 +129,29 @@ body {
   box-shadow: 2px 0 16px 0 rgba(14, 165, 233, 0.06);
 }
 
+/* Fixed bars: SOLID on mobile (no backdrop-filter) — a blurred translucent
+   fixed bar repaints every scroll frame on mobile GPUs, which makes it lag and
+   "catch up". The glassy blur is restored on desktop (md+) where it's cheap. */
+.landing-nav {
+  background: #ffffff;
+  border-bottom: 1px solid #E2E8F0;
+}
 .glass-topbar {
-  background: rgba(255, 255, 255, 0.80);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: #ffffff;
   border-bottom: 1px solid #E2E8F0;
   box-shadow: 0 1px 8px 0 rgba(0, 0, 0, 0.04);
-  /* Own compositor layer so it doesn't repaint-lag while the page scrolls */
-  transform: translateZ(0);
-  will-change: transform;
+}
+@media (min-width: 768px) {
+  .landing-nav {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .glass-topbar {
+    background: rgba(255, 255, 255, 0.80);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
 }
 
 /* Bottom tab bar safe area — pushes content above system nav buttons on mobile,
@@ -175,13 +189,10 @@ body {
 
 /* Bottom tab bar glass */
 .glass-bottom-bar {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Mobile-only (md:hidden) — solid, no backdrop-filter, to avoid scroll jank */
+  background: #ffffff;
   border-top: 1px solid #E2E8F0;
   box-shadow: 0 -1px 12px 0 rgba(0, 0, 0, 0.06);
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 /* Drawer transition */
