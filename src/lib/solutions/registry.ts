@@ -586,44 +586,97 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Why “top 10” lists don’t answer the question',
         body:
-          'Search “best hospital management software in India” and you get list after list of ten products in an order someone was paid to arrange. None of them knows your hospital — your size, your specialties, whether you run an insurance desk or a blood bank. The best HMS for a 20-bed nursing home is not the best one for a 300-bed multi-specialty. So treat the lists as a starting roster of names, and judge them against your own hospital using the criteria below.',
+          'Search “best hospital management software in India” and you get list after list of ten products in an order someone was paid to arrange. None of those lists knows your hospital — your size, your specialties, whether you run an insurance desk or a blood bank. The best HMS for a 20-bed nursing home is not the best one for a 300-bed multi-specialty hospital. So treat the lists as a starting set of names, and then judge each one against your own hospital using the checklist below. The “best” software is simply the one that fits **your** hospital the closest.',
       },
       {
-        h2: 'Judge integration, not the feature count',
+        h2: '7 things that actually decide the best HMS for your hospital',
         body:
-          'Every HMS lists the same modules. What separates the best hospital software from the rest is whether those modules truly share one patient and one bill, or just sit behind the same login. Test it directly: register a patient, order a lab test from a consultation, dispense a medicine, and see whether it all lands on one bill at discharge without re-entry. If it does, the software saves your staff time every single day. If it doesn’t, a long feature list won’t rescue it.',
-      },
-      {
-        h2: 'India-fit is not optional',
-        body:
-          'A hospital in India lives with GST rules, insurance and TPA cashless claims, ABDM/ABHA records and NABH expectations. Software built abroad, or for a different market, forces workarounds on all four — and workarounds are where errors and wasted hours hide. The best choice for an Indian hospital is one where these are native, not bolted on afterward.',
-        bullets: [
-          'GST-ready billing and India insurance/TPA claim workflows',
-          'ABDM/ABHA-ready records for the national health mission',
-          'NABH-friendly documentation and audit trails',
+          'Every vendor lists the same long feature list. These seven things are what really separate a good [hospital management system](/hospital-management-software) from one you will regret. Score each shortlisted product out of these seven and the winner usually becomes obvious.',
+        subsections: [
+          {
+            h3: '1. Is it truly one connected system?',
+            body:
+              'The biggest difference between products is whether every module shares one patient and one bill — or just sits behind the same login. Test it: register a patient, order a lab test from a consultation, dispense a medicine, and see if it all lands on one bill at discharge with no re-typing. If it does, the software saves your staff time every single day.',
+          },
+          {
+            h3: '2. Is it built for India?',
+            body:
+              'An Indian hospital lives with GST billing, [insurance and TPA cashless claims](/guides/health-insurance-tpa-claims-guide), [ABDM/ABHA records](/guides/abdm-abha-health-id-hospitals-guide) and [NABH expectations](/guides/nabh-accreditation-software-checklist). Software built for another market forces workarounds on all four — and workarounds are where errors hide. Pick one where these are built in, not bolted on.',
+          },
+          {
+            h3: '3. How is it priced?',
+            body:
+              'Per-bed and per-user pricing looks cheap on day one and punishes you the moment you grow. Flat monthly pricing keeps your cost predictable. Before you sign, ask exactly what raises the fee — beds, users, patients, locations or modules. See our [cost guide](/guides/hospital-management-software-cost-india) for what to expect.',
+          },
+          {
+            h3: '4. Cloud or on-premise?',
+            body:
+              'A [cloud-based system](/cloud-based-hospital-management-system) has nothing to install, no server to buy or maintain, automatic backups, and works on any device. On-premise software ties you to one machine and an IT person to keep it alive. For most hospitals today, cloud is the simpler and safer choice.',
+          },
+          {
+            h3: '5. Is it easy enough for your staff?',
+            body:
+              'Your front desk, nurses and doctors will use this all day. If it needs a week of training, it will not get used properly. Look for a clean, simple screen and a system your team can pick up in a day.',
+          },
+          {
+            h3: '6. Is your patient data safe and in India?',
+            body:
+              'Patient data is sensitive. Check that data is stored in India, that the vendor follows the DPDP Act, that access is controlled by staff role, and that everything is encrypted.',
+          },
+          {
+            h3: '7. What is the support and setup like?',
+            body:
+              'Ask how long setup takes, whether they help you move your existing data, and how you reach support when something breaks during a busy OPD. Good onboarding is the difference between going live in a day and struggling for a month.',
+          },
         ],
       },
       {
-        h2: 'Watch the pricing model, not just the price',
+        h2: 'Red flags to avoid',
         body:
-          'Per-bed and per-user pricing looks cheap on day one and punishes you the moment you grow — every new bed and every new login raises the bill. Flat monthly pricing aligns the vendor with your growth instead of taxing it. Before you sign anything, ask exactly what triggers a higher fee: beds, users, patients, locations, or modules. The cheapest quote is often the most expensive system two years in.',
+          'While you compare, watch for these warning signs. Any one of them can cost you far more than the software saves.',
+        bullets: [
+          'Pricing that climbs with every bed, user or patient',
+          'Modules that do not share one patient and one bill',
+          'GST, TPA, ABDM or NABH handled as “custom work”, not built in',
+          'On-premise only, with a server you must buy and maintain',
+          'No free trial — you can only see a scripted sales demo',
+          'Patient data stored outside India, or unclear on security',
+        ],
       },
       {
-        h2: 'A short checklist for comparing vendors',
+        h2: 'A simple scorecard to compare vendors',
         body:
-          'When you shortlist two or three systems, run each through the same real scenario and score them honestly. The one that handles your actual workflow with the least friction — and prices predictably — is your answer, regardless of where it sits on anyone’s top-10 list.',
-        bullets: [
-          'Does one patient and one bill flow through every department?',
-          'Are GST, TPA claims, ABDM and NABH native or bolted on?',
-          'Is pricing flat, or does it climb with beds, users or patients?',
-          'Is it cloud-based, so there’s no server to buy and maintain?',
-          'Can you trial it on real patients before you commit?',
+          'Run each shortlisted product through the same checklist and mark it honestly. The one with the most green ticks — not the one highest on a paid list — is the best hospital management software for you.',
+        table: {
+          headers: ['What to check', 'Good sign', 'Red flag'],
+          rows: [
+            ['Integration', 'One patient & one bill everywhere', 'Separate tools, re-entry needed'],
+            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Handled as custom work'],
+            ['Pricing', 'Flat monthly, no per-bed fees', 'Per bed / per user / per patient'],
+            ['Hosting', 'Cloud — nothing to install', 'On-premise server to maintain'],
+            ['Ease of use', 'Staff learn it in a day', 'Needs a week of training'],
+            ['Data & security', 'Stored in India, DPDP aligned', 'Unclear or stored abroad'],
+            ['Trial', 'Free trial on real patients', 'Demo only, no trial'],
+          ],
+        },
+      },
+      {
+        h2: 'How to actually choose — run a real trial',
+        body:
+          'The best way to pick is not a spreadsheet of features — it is a short, real test. Here is how to do it in a week:',
+        steps: [
+          { title: 'Shortlist two or three', body: 'Take names from the “top 10” lists, then keep only the ones that pass the checklist above on paper.' },
+          { title: 'Run the same real scenario in each', body: 'Register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and insurance claim ready.' },
+          { title: 'Ask your staff', body: 'Let a front-desk person and a nurse try each one. They will tell you in ten minutes which is easier to use.' },
+          { title: 'Check the real price', body: 'Ask for the total monthly cost at your current size and at double your size, so growth does not surprise you later.' },
+          { title: 'Decide on fit, not the list', body: 'Pick the one that handled your workflow with the least friction and priced predictably — regardless of where it sat on anyone’s list.' },
         ],
       },
       {
         h2: 'Where Uyirly fits',
         body:
-          'Uyirly is an all-in-one cloud HMS built for Indian hospitals: OPD, IPD, pharmacy, lab, radiology, billing, insurance, blood bank, OT and staff on one shared record and bill, with GST, TPA, ABDM and NABH handled natively and flat monthly pricing with no per-bed fees. We won’t claim to be “number one” — the honest way to judge it against any list is a free trial on your own hospital, with your own patients and your own bills.',
+          'We will not claim to be “number one” — that is for you to decide on your own hospital. But [Uyirly](/hospital-management-software) is built to score well on all seven points above: OPD, IPD, pharmacy, lab, radiology, billing, insurance, blood bank, OT and staff on **one shared record and one bill**, with GST, TPA, ABDM and NABH built in, cloud-based, data stored in India, and **flat monthly pricing with no per-bed fees**. The honest way to judge it against any list is a free trial with your own patients and your own bills.',
+        preview: 'dashboard',
         bullets: [
           'One patient and one bill across every department',
           'Flat pricing from ₹2,999/mo, no per-bed or per-user metering',
@@ -634,23 +687,33 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     faqs: [
       {
         q: 'Which is the best hospital management software in India?',
-        a: 'There is no single “best” for every hospital — the right choice depends on your size, specialties and budget. What matters is fit: a system where modules truly share one patient and one bill, that handles GST, insurance/TPA, ABDM and NABH natively, and prices flatly rather than per bed. Uyirly is built specifically for Indian hospitals on all of these, and offers a 30-day free trial so you can judge it on your own workflows rather than a sales demo.',
+        a: 'There is no single “best” for every hospital — the right choice depends on your size, specialties and budget. What matters is fit: a system where modules truly share one patient and one bill, that handles GST, insurance/TPA, ABDM and NABH natively, prices flatly rather than per bed, and is easy for your staff to use. [Uyirly](/hospital-management-software) is built for Indian hospitals on all of these, and offers a 30-day free trial so you can judge it on your own work rather than a sales demo.',
       },
       {
         q: 'How do I compare hospital management software vendors?',
-        a: 'Run the same real scenario through each: register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Whichever system does that without re-entering the patient or hand-totalling the bill is the one that will save your staff time every day. Feature lists all look similar; integration is where they differ.',
+        a: 'Run the same real scenario through each: register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Whichever system does that without re-entering the patient or hand-totalling the bill will save your staff time every day. Feature lists all look similar; integration and ease of use are where they differ.',
+      },
+      {
+        q: 'What should the best HMS cost in India?',
+        a: 'Watch the pricing model, not just the number. Per-bed and per-user pricing rises every time you grow. Flat monthly pricing keeps it predictable. Uyirly starts at ₹2,999/month with no per-bed or per-user fees. See the [cost guide](/guides/hospital-management-software-cost-india) and [pricing](/pricing) for details.',
       },
       {
         q: 'Is cheaper hospital software better for a small hospital?',
         a: 'Cheapest on day one is often the most expensive later — per-bed and per-user pricing rises every time you add a bed or a login. For a small hospital, flat monthly pricing on a platform that can scale up (so you never have to migrate) usually wins over a cheap tool you outgrow.',
       },
+      {
+        q: 'Should I choose cloud or on-premise hospital software?',
+        a: 'For most hospitals, cloud is the simpler and safer choice — nothing to install, no server to buy or maintain, automatic backups, and access from any device. On-premise ties you to one machine and someone to keep it running. Uyirly is fully cloud-based, with data stored in India.',
+      },
     ],
     related: [
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Hospital management software cost in India', href: '/guides/hospital-management-software-cost-india' },
+      { label: 'Cloud-based hospital management system', href: '/cloud-based-hospital-management-system' },
+      { label: 'What is a hospital management system?', href: '/guides/what-is-hospital-management-system' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'cloud-based-hospital-management-system': {
