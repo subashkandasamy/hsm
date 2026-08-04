@@ -7,7 +7,7 @@ import {
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
 } from 'lucide-react'
 import ScrollReveal from '@/components/ui/ScrollReveal'
-import MobileLoginMenu from './_components/MobileLoginMenu'
+import MarketingNav from '@/components/marketing/MarketingNav'
 
 export const metadata: Metadata = {
   title: 'Uyirly — Hospital Management Software for India',
@@ -38,53 +38,11 @@ const S1   = '#F8FAFC'
 const DARK = '#080F1C'
 
 // ── Nav ────────────────────────────────────────────────────────────────────────
+// The header is the shared MarketingNav (same on every page). Features & Modules
+// remain sections of this page (reachable by scrolling / the hero chips) but are
+// no longer separate nav items, so the nav matches the rest of the site.
 function Nav() {
-  return (
-    <header className="landing-nav fixed top-0 left-0 right-0 z-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: T }}>
-            <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
-          </div>
-          <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-8">
-          {[
-            { label: 'Features',  href: '#features'  },
-            { label: 'Modules',   href: '#modules'   },
-            { label: 'Solutions', href: '/solutions' },
-            { label: 'Pricing',   href: '/pricing'   },
-            { label: 'Guides',    href: '/guides'    },
-          ].map(({ label, href }) => (
-            <Link key={label} href={href}
-              className="text-sm font-medium"
-              style={{ color: S5, transition: 'color 0.2s' }}>
-              {label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-2 sm:gap-3">
-          <a href="https://my.uyirly.com"
-            className="hidden sm:inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
-            style={{ color: T }}>
-            Patient login
-          </a>
-          <Link href="/find-hospital" className="hidden sm:inline-flex text-sm font-medium px-2 sm:px-3 py-2 rounded-xl"
-            style={{ color: S6 }}>
-            Sign in
-          </Link>
-          <MobileLoginMenu />
-          <Link href="/signup"
-            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: T, color: '#fff', boxShadow: '0 4px 14px rgba(13,148,136,0.3)', transition: 'box-shadow 0.2s' }}>
-            Start free trial
-          </Link>
-        </div>
-      </div>
-    </header>
-  )
+  return <MarketingNav />
 }
 
 // ── Hero ───────────────────────────────────────────────────────────────────────
