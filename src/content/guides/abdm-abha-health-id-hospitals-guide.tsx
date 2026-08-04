@@ -53,6 +53,26 @@ export default function Guide() {
         <li>Some scheme empanelments and government programs increasingly favor or require ABDM-compatible systems.</li>
         <li>Adoption is still growing — a hospital doesn&apos;t need this on day one, but a vendor with no path toward it is worth questioning.</li>
       </ul>
+      <h2>How Uyirly fits ABDM and ABHA</h2>
+      <p>
+        <Link href="/electronic-medical-records-software">Uyirly</Link> keeps a complete electronic medical
+        record inside your hospital and is built to be ABDM/ABHA-ready, so a patient&apos;s records can link to
+        their ABHA (Ayushman Bharat Health Account) rather than staying locked in one building. Every patient
+        already has a single UHID that unifies their history, which is the foundation any national health-ID
+        linkage needs.
+      </p>
+      <ul>
+        <li>A full EMR today, ABDM/ABHA-ready for national linkage.</li>
+        <li>One UHID per patient &mdash; the base for linking to an ABHA.</li>
+        <li>Records stored in India, aligned with the DPDP Act.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        The EMR is the core of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See our <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link>,
+        or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

@@ -131,6 +131,27 @@ export default function Guide() {
         tax rules as configuration handles this cleanly; one that doesn&apos;t will need code changes every time the
         rules move.
       </p>
+      <h2>How Uyirly handles GST billing</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> produces GST-ready invoices as part of normal
+        billing, so you are not calculating tax by hand or keeping a separate book. Charges from every
+        department &mdash; consultation, room, lab, pharmacy, procedures &mdash; come together on one itemised bill,
+        and the invoice prints cleanly for the patient or the insurer. Because billing is connected to the
+        rest of the hospital, the numbers on the invoice always match the care that was actually given.
+      </p>
+      <ul>
+        <li>GST-ready invoices generated from the running bill.</li>
+        <li>One itemised bill across every department.</li>
+        <li>Clean printable invoices for patients and insurers.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Billing is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See a sample layout in our{' '}
+        <Link href="/guides/hospital-bill-format-ipd-opd-sample">hospital bill format guide</Link>, or{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

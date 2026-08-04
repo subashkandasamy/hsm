@@ -165,6 +165,26 @@ export default function Guide() {
         <Link href="/hospital-management-software">hospital management system</Link> whether schedule handling is
         built in or bolted on.
       </p>
+      <h2>How Uyirly keeps you compliant</h2>
+      <p>
+        <Link href="/pharmacy-management-software">Uyirly&apos;s pharmacy</Link> carries each drug&apos;s schedule
+        (H, H1, X) in the catalogue, so a Schedule H1 antibiotic is never treated like an ordinary medicine.
+        When an H1 drug is dispensed, the register fields the law needs &mdash; prescriber, patient, drug and
+        quantity &mdash; are captured automatically. Compliance becomes a by-product of dispensing rather than a
+        separate physical logbook someone has to remember to fill.
+      </p>
+      <ul>
+        <li>Schedule H, H1 and X carried on every drug in the catalogue.</li>
+        <li>H1 register fields captured automatically at dispensing.</li>
+        <li>Dispensing tied to the prescription, so records match reality.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        This is built into Uyirly&apos;s <Link href="/pharmacy-management-software">pharmacy management
+        software</Link>. See our <Link href="/guides/hospital-pharmacy-management-software-guide">pharmacy
+        management guide</Link>, or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

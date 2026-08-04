@@ -135,6 +135,26 @@ export default function Guide() {
         for how staffing sits inside the wider system, our{' '}
         <Link href="/hospital-management-software">hospital management software</Link> overview.
       </p>
+      <h2>How Uyirly helps you meet the ratio</h2>
+      <p>
+        Knowing the required nurse-to-patient ratio is one thing; staffing to it every shift is another.{' '}
+        <Link href="/hospital-management-software">Uyirly</Link> builds ward rosters on a week grid and shows
+        each day&apos;s coverage against the ward&apos;s required staffing, so an understaffed shift is flagged before
+        it happens rather than discovered on the day. Because the roster sits on the same platform as
+        admissions, the number of occupied beds and the nurses on duty line up.
+      </p>
+      <ul>
+        <li>Ward rosters with per-day coverage against the required ratio.</li>
+        <li>Understaffed shifts flagged in advance.</li>
+        <li>Occupied beds and staffing on one system, so the ratio is real, not on paper.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Rostering is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See our <Link href="/guides/nurse-duty-roster-hospital-guide">nurse duty roster
+        guide</Link>, or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

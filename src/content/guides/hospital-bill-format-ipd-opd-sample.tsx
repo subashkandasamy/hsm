@@ -90,6 +90,26 @@ export default function Guide() {
         clean, itemized bill out at discharge is one of the clearest signs a hospital&apos;s{' '}
         <Link href="/hospital-management-software">management software</Link> is doing its job.
       </p>
+      <h2>How Uyirly produces the bill</h2>
+      <p>
+        In <Link href="/hospital-management-software">Uyirly</Link> you do not assemble the bill &mdash; it builds
+        itself. For OPD, the consultation, tests and pharmacy items land on one receipt. For IPD, bed and
+        nursing charges accrue daily and every test, medicine and procedure posts to the running bill, so the
+        itemised bill and a GST-ready invoice are ready the moment the patient is discharged. Advances are
+        already applied, so there is no manual totalling at the counter.
+      </p>
+      <ul>
+        <li>One itemised bill across consultation, room, lab, pharmacy and procedures.</li>
+        <li>GST-ready invoice, printable for the patient or insurer.</li>
+        <li>IPD bill ready at discharge, with advances applied.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        Billing is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
+        software</Link>. See <Link href="/guides/ipd-billing-software-explained">IPD billing explained</Link>,
+        or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }

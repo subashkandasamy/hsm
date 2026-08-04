@@ -56,6 +56,27 @@ export default function Guide() {
         <li>Is medication dispensing traceable back to a prescription and the dispensing staff member?</li>
         <li>Can incident and infection-control logs be pulled as reports, not searched for in paper files?</li>
       </ul>
+      <h2>How Uyirly supports NABH readiness</h2>
+      <p>
+        Much of what NABH looks for &mdash; complete records, controlled access and a clear audit trail &mdash; is a
+        by-product of running the hospital on <Link href="/hospital-management-software">Uyirly</Link> rather
+        than a separate exercise. Records are structured and complete, access is by staff role, and every view
+        and change is audit-logged, so preparing for an audit is about pulling reports, not reconstructing
+        registers.
+      </p>
+      <ul>
+        <li>Structured, complete digital records instead of scattered paper.</li>
+        <li>Role-based access, so only the right staff see the right data.</li>
+        <li>Audit trails on every action, with data stored in India.</li>
+        <li>Consistent workflows &mdash; consent, checklists, prescriptions &mdash; captured as you work.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        These controls come built into Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital management software</Link>. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+      </p>
     </>
   )
 }
