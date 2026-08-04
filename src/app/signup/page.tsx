@@ -78,7 +78,7 @@ export default async function SignupPage({ searchParams }: Props) {
                 <div className="relative flex-shrink-0">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center"
                     style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)' }}>
-                    <Icon className="w-4.5 h-4.5" style={{ color: '#0D9488', width: 18, height: 18 }} />
+                    <Icon className="flex-shrink-0" style={{ color: '#0D9488', width: 18, height: 18 }} />
                   </div>
                   <span className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
                     style={{ background: '#0D9488', color: '#fff' }}>{i + 1}</span>

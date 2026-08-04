@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useCallback } from 'react'
 import Link from 'next/link'
-import { CheckCircle, XCircle, Loader2, Eye, EyeOff, Check, AlertCircle } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Eye, EyeOff, Check, AlertCircle, Mail, KeyRound } from 'lucide-react'
 import { checkSlugAvailable, signupHospital } from '@/app/actions/onboarding'
 
 type SlugState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
@@ -148,16 +148,20 @@ export default function SignupForm({ plan = 'starter' }: Props) {
       <div className="text-center py-4">
         <CheckCircle className="w-12 h-12 mx-auto mb-4" style={{ color: '#0D9488' }} />
         <h2 className="text-lg font-bold mb-2" style={{ color: '#0F172A' }}>Your hospital is ready!</h2>
-        <p className="text-sm mb-6" style={{ color: '#64748B' }}>
+        <p className="text-sm mb-4" style={{ color: '#64748B' }}>
           This is your private login address — bookmark it. You and your staff will sign in here every day:
         </p>
         <a
           href={`https://${fallbackSlug}.${rootDomain}/login`}
-          className="text-sm font-semibold underline underline-offset-2"
+          className="text-sm font-semibold underline underline-offset-2 break-all"
           style={{ color: '#0D9488' }}
         >
           {fallbackSlug}.{rootDomain}
         </a>
+        <p className="text-xs mt-6 leading-relaxed" style={{ color: '#94A3B8' }}>
+          We&apos;ve also emailed this link and your username to you. Please remember the password you just
+          set — for your security, it&apos;s not included in the email.
+        </p>
       </div>
     )
   }
@@ -170,6 +174,10 @@ export default function SignupForm({ plan = 'starter' }: Props) {
           style={{ borderColor: '#E2E8F0', borderTopColor: '#0D9488' }} />
         <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Setting up your hospital dashboard…</p>
         <p className="text-xs" style={{ color: '#94A3B8' }}>You&apos;ll be signed in automatically in a moment.</p>
+        <p className="text-xs px-4 leading-relaxed" style={{ color: '#94A3B8' }}>
+          We&apos;ve emailed your login link and username so you can get back in anytime. Remember the
+          password you just set.
+        </p>
       </div>
     )
   }
@@ -413,6 +421,19 @@ export default function SignupForm({ plan = 'starter' }: Props) {
         <ErrorText k="agreed" />
       </div>
 
+      {/* What to expect after signup — email + password reminder */}
+      <div className="rounded-xl px-3.5 py-3 space-y-2"
+        style={{ background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.15)' }}>
+        <div className="flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#475569' }}>
+          <Mail className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#0D9488' }} />
+          <span>We&apos;ll email your <strong>login link and username</strong> to your work email, so you always have them.</span>
+        </div>
+        <div className="flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#475569' }}>
+          <KeyRound className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#0D9488' }} />
+          <span>Please <strong>remember the password</strong> you set above — for your security, we never include it in the email.</span>
+        </div>
+      </div>
+
       {error && (
         <div className="rounded-xl px-3.5 py-2.5 text-sm flex items-start gap-2"
           style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
@@ -435,7 +456,7 @@ export default function SignupForm({ plan = 'starter' }: Props) {
       >
         {isPending
           ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating your hospital…</>
-          : `Create my hospital & start free trial${plan === 'growth' ? ' — Growth' : ''}`
+          : `Create my hospital${plan === 'growth' ? ' (Growth)' : ''}`
         }
       </button>
 
