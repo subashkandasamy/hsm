@@ -1031,6 +1031,33 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Cloud-based — nothing to install, works on any device',
         ],
       },
+      {
+        h2: 'How a dental visit flows',
+        body:
+          'From the chair to the bill, everything hangs on the tooth chart — so a returning patient’s plan is right there when the chart opens.',
+        steps: [
+          { title: 'Chart', body: 'Record findings on individual teeth using a standard dental notation.' },
+          { title: 'Plan', body: 'Build a multi-visit treatment plan and an estimate from the planned procedures.' },
+          { title: 'Treat', body: 'Mark procedures done per tooth as you work; any dentist can continue the plan.' },
+          { title: 'Recall', body: 'Schedule the next visit and send an SMS/WhatsApp reminder — the engine of repeat revenue.' },
+          { title: 'Bill', body: 'Consultation, procedures and pharmacy items land on one bill.' },
+        ],
+      },
+      {
+        h2: 'A generic OPD screen vs real dental software',
+        body:
+          'A general [OPD screen](/clinic-management-software) has no idea what a tooth is. Here is the difference.',
+        table: {
+          headers: ['', 'Generic OPD screen', 'Uyirly dental'],
+          rows: [
+            ['The record', 'One free-text note', 'Charting per tooth'],
+            ['Treatment', 'Single visit', 'Multi-visit plans, done/pending per tooth'],
+            ['Follow-up', 'Manual diary', 'Recall reminders by SMS/WhatsApp'],
+            ['Continuity', 'Depends on memory', 'Any dentist continues the plan'],
+            ['Billing', 'Separate', 'On the same shared bill'],
+          ],
+        },
+      },
     ],
     faqs: [
       {
@@ -1050,8 +1077,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Dental clinic software: how it works', href: '/guides/dental-clinic-software-guide' },
       { label: 'Clinic management software', href: '/clinic-management-software' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'nursing-home-management-software': {
@@ -1090,6 +1118,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'Admissions and beds, done simply',
         body:
           'Even a 10- or 20-bed nursing home needs to admit patients, assign beds, accrue daily charges and discharge with a clean itemised bill. Uyirly handles admissions and bed management the same way a big hospital does, but with a simpler screen — so the front desk isn’t fighting a system designed for a hundred wards.',
+        preview: 'bill',
         bullets: [
           'Admit, assign a bed, and accrue daily bed and nursing charges',
           'Discharge with an itemised bill that’s ready, not reconstructed',
@@ -1111,6 +1140,17 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Cloud-based: nothing to install, access from anywhere',
         ],
       },
+      {
+        h2: 'A day in a nursing home on Uyirly',
+        body:
+          'The same flow a big [hospital](/hospital-management-software) runs, on a simpler screen sized for a small facility.',
+        steps: [
+          { title: 'Register', body: 'A patient is registered once with a UHID and found instantly next time.' },
+          { title: 'OPD or admit', body: 'See them in OPD, or admit and assign a bed — daily bed and nursing charges start accruing.' },
+          { title: 'Treat and dispense', body: 'Prescriptions and pharmacy items post to the same patient and bill.' },
+          { title: 'Discharge', body: 'The itemised bill is ready, advances applied — no manual reconstruction.' },
+        ],
+      },
     ],
     faqs: [
       {
@@ -1129,9 +1169,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     related: [
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'multi-specialty-hospital-software': {
@@ -1169,6 +1210,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'Doctor-wise and department-wise queues',
         body:
           'A hospital-wide single queue makes no sense when twenty doctors across ten departments are consulting at once. Uyirly routes each token to the right doctor and department at registration and shows each doctor only their own queue — so a patient waiting for cardiology isn’t stuck behind orthopaedics, and reception isn’t manually deciding whose turn it is.',
+        preview: 'opd',
         bullets: [
           'Tokens routed to the correct doctor and department at registration',
           'Each doctor sees only their own live queue',
@@ -1195,6 +1237,21 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Flat pricing; 30-day free trial, no credit card',
         ],
       },
+      {
+        h2: 'Silos vs one connected system',
+        body:
+          'The whole point of [multi-specialty software](/hospital-management-software) is that departments cooperate instead of merely coexisting.',
+        table: {
+          headers: ['', 'Separate department tools', 'Uyirly'],
+          rows: [
+            ['Patient record', 'One per department', 'One shared across all specialties'],
+            ['Referral', 'History re-taken each time', 'Full history travels with the patient'],
+            ['Queues', 'One confusing line', 'Per doctor, per department'],
+            ['Tests & medicines', 'Re-registered each place', 'Flow to the same patient & bill'],
+            ['Billing', 'A bill per department', 'One combined bill at discharge'],
+          ],
+        },
+      },
     ],
     faqs: [
       {
@@ -1213,9 +1270,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     related: [
       { label: 'Hospital management software', href: '/hospital-management-software' },
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Operation theatre management software', href: '/operation-theatre-management-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   // ── Department software (Phase 5) ─────────────────────────────────────────
