@@ -1715,11 +1715,28 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'What Uyirly is',
         body:
           'Uyirly is an all-in-one cloud hospital management system built for India: OPD, IPD, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA, blood bank, OT and staff, all on one shared patient record and one bill. It’s designed so a patient registered once flows through consultation, admission, tests, medicines and billing without being re-entered, and so the discharge bill and insurance claim are ready the moment the patient is cleared.',
+        preview: 'dashboard',
         bullets: [
           'One patient and one bill across every department',
           'GST-ready billing, TPA cashless claims, ABDM/ABHA-ready records',
           'Cloud-based — nothing to install, works on any device',
         ],
+      },
+      {
+        h2: 'Uyirly at a glance — and what to confirm',
+        body:
+          'Here is where Uyirly stands on the things that actually decide a hospital-software choice. We only speak for our own product — please confirm MocDoc’s current features and pricing with them directly.',
+        table: {
+          headers: ['What to compare', 'Uyirly', 'MocDoc'],
+          rows: [
+            ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
+            ['Hosting', 'Cloud — nothing to install', 'Confirm with vendor'],
+            ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
+            ['Mobile app', 'Native app for staff & patients', 'Confirm with vendor'],
+          ],
+        },
       },
       {
         h2: 'What to weigh when you compare',
@@ -1729,6 +1746,17 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'Does one patient and one bill flow through every department?',
           'Is pricing flat, or does it climb with beds and users?',
           'Can you trial it on your own hospital before committing?',
+        ],
+      },
+      {
+        h2: 'How to compare in a week',
+        body:
+          'The fairest comparison is a short, real test — not a feature spreadsheet. See our [buyer’s guide](/best-hospital-management-software-in-india) for the full method.',
+        steps: [
+          { title: 'Run the same scenario in each', body: 'Register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and insurance claim ready.' },
+          { title: 'Check the pricing model', body: 'Ask for the total monthly cost at your current size and at double your size — flat vs per-bed/user changes the answer fast.' },
+          { title: 'Let your staff try it', body: 'A front-desk person and a nurse will tell you in minutes which is easier to use.' },
+          { title: 'Decide on fit', body: 'Pick the one that handled your workflow with the least friction. Start a [free Uyirly trial](/signup) to include it in the test.' },
         ],
       },
       {
@@ -1754,10 +1782,11 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     related: [
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Clinic management software', href: '/clinic-management-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
     disclaimer: TM('MocDoc'),
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'healthray-alternative': {
@@ -1795,11 +1824,27 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'How Uyirly runs the whole hospital',
         body:
           'Uyirly connects OPD, IPD, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA, blood bank, OT and staff on one shared patient record. Bed charges accrue daily, tests and medicines post as they happen, and the discharge bill and insurance claim build themselves in real time — so discharge is fast and defensible rather than a manual reconciliation at the end.',
+        preview: 'dashboard',
         bullets: [
           'One patient and one bill, no re-entry between departments',
           'Daily IPD auto-billing; discharge bill ready at checkout',
           'GST billing, TPA claims, ABDM/ABHA-ready records',
         ],
+      },
+      {
+        h2: 'Uyirly at a glance — and what to confirm',
+        body:
+          'Where Uyirly stands on the things that decide the choice. We speak only for our own product — please confirm Healthray’s current features and pricing with them directly.',
+        table: {
+          headers: ['What to compare', 'Uyirly', 'Healthray'],
+          rows: [
+            ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
+            ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['IPD billing', 'Daily auto-billing, ready at discharge', 'Confirm with vendor'],
+            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
+          ],
+        },
       },
       {
         h2: 'The comparison that tells you the truth',
@@ -1837,7 +1882,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Pricing', href: '/pricing' },
     ],
     disclaimer: TM('Healthray'),
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   'docpulse-alternative': {
@@ -1875,11 +1920,27 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'What Uyirly connects',
         body:
           'Appointments and a live OPD token queue, prescriptions from a drug list, pharmacy dispensing, lab and radiology, IPD admissions and daily billing, insurance/TPA claims — all on one shared patient record and one bill. A test ordered in a consultation reaches the lab and its charge lands on the same bill; nothing is re-keyed between the front desk, the doctor and the pharmacy.',
+        preview: 'dashboard',
         bullets: [
           'One patient record across clinic and hospital workflows',
           'Prescription, pharmacy and billing tied to the consultation',
           'GST billing, TPA claims, ABDM/ABHA-ready records',
         ],
+      },
+      {
+        h2: 'Uyirly at a glance — and what to confirm',
+        body:
+          'Where Uyirly stands on the things that decide the choice. We speak only for our own product — please confirm DocPulse’s current features and pricing with them directly.',
+        table: {
+          headers: ['What to compare', 'Uyirly', 'DocPulse'],
+          rows: [
+            ['Clinic to hospital', 'Same platform, no migration', 'Confirm with vendor'],
+            ['Pricing model', 'Flat monthly, no per-user fees', 'Confirm with vendor'],
+            ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
+          ],
+        },
       },
       {
         h2: 'What to check before you choose',
@@ -1917,7 +1978,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
     ],
     disclaimer: TM('DocPulse'),
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 }
 
