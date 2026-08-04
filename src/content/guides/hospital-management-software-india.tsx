@@ -94,6 +94,20 @@ export default function Guide() {
         <Link href="/guides/switching-from-spreadsheets-to-hms">switching from registers &amp; spreadsheets to hospital software</Link>{' '}
         covering a realistic, low-disruption rollout.
       </p>
+
+      <h2>Where Uyirly fits</h2>
+      <p>
+        We built <Link href="/hospital-management-software">Uyirly</Link> to pass this exact checklist: it is
+        modular (start with OPD and grow), flat-priced with no per-bed fees, cloud-based with data stored in
+        India, and every department shares one patient and one bill. It fits a{' '}
+        <Link href="/clinic-management-software">clinic</Link>, a{' '}
+        <Link href="/nursing-home-management-software">nursing home</Link> or a full{' '}
+        <Link href="/multi-specialty-hospital-software">multi-specialty hospital</Link> on the same platform.
+        The fairest way to judge it is the trial itself — you can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card and run it on your own
+        patients. If you want a broader comparison first, see our{' '}
+        <Link href="/best-hospital-management-software-in-india">best HMS in India</Link> guide.
+      </p>
     </>
   )
 }

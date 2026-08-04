@@ -15,6 +15,10 @@ export const faqs = [
     q: 'How long does it take to digitize a hospital\'s workflow?',
     a: 'A small to mid-size hospital can typically get core modules (registration, OPD, billing) running within days to a couple of weeks. Full rollout across all departments, with staff training, usually takes a few weeks to a couple of months depending on hospital size and how much historical data needs migrating.',
   },
+  {
+    q: 'Will digitizing disrupt the hospital while we switch?',
+    a: 'Not if you do it in phases. Start with registration, OPD and billing, keep the old register as a backup for a week or two, and add more modules once staff are comfortable. A cloud system needs nothing installed, so you can start the same day without downtime.',
+  },
 ]
 
 export default function Guide() {
@@ -25,6 +29,15 @@ export default function Guide() {
         practice. It happens one workflow at a time &mdash; registration first, then OPD, then billing, then
         IPD &mdash; each one only paying off once the previous one is solid. This guide walks through that
         sequence and what actually needs to connect at each step.
+      </p>
+
+      <h2>Why digitize now</h2>
+      <p>
+        A hospital run on paper spends its day reconciling registers that never agree. Charges given but
+        never billed leak money. A lab report is ready but sits on a desk while the ward waits. Discharges
+        drag because the bill is added up by hand. Digitizing removes that friction by putting every
+        department on <strong>one shared patient and one shared bill</strong> — faster discharges, no lost
+        charges, and a clear live view of the hospital for the people running it.
       </p>
 
       <h2>The full patient-journey workflow</h2>
@@ -95,6 +108,24 @@ export default function Guide() {
         tested, treated and billed &mdash; and every department along the way sees the same record instead of
         its own separate copy. That single thread, more than any individual feature, is what a hospital
         management system is actually for.
+      </p>
+
+      <h2>Common mistakes to avoid</h2>
+      <ul>
+        <li><strong>Digitizing everything at once</strong> — start with registration, OPD and billing, then add the rest in phases.</li>
+        <li><strong>Skipping the single UHID</strong> — if patients get duplicate records, every later module inherits the mess.</li>
+        <li><strong>Choosing per-bed pricing</strong> — it looks cheap now and grows as you do; prefer a flat plan.</li>
+        <li><strong>Picking tools that do not share data</strong> — if billing does not see the lab and pharmacy, you have not really digitized.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>
+        You do not need a big project or a server room. A cloud{' '}
+        <Link href="/hospital-management-software">hospital management system</Link> like Uyirly lets you sign
+        up, add your team and departments, and register your first patient the same day — then switch on{' '}
+        <Link href="/lab-management-software">lab</Link>,{' '}
+        <Link href="/pharmacy-management-software">pharmacy</Link> and the rest in phases as your staff get
+        comfortable. You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
       </p>
     </>
   )
