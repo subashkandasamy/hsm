@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Phone, ArrowRight, ShieldCheck } from 'lucide-react'
+import { Phone, ArrowRight, ShieldCheck } from 'lucide-react'
 import { requestPatientOtp, verifyPatientOtp } from '@/app/actions/patientPortal'
 
 const TEAL = '#0D9488'
@@ -40,7 +40,7 @@ export default function PatientAuth() {
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 28 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Building2 style={{ width: 20, height: 20, color: TEAL }} />
+            <span style={{ color: TEAL, fontSize: '24px', fontWeight: 800, lineHeight: 1 }}>U</span>
           </div>
           <span style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>Uyirly</span>
         </div>

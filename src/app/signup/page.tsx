@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Building2, LayoutDashboard, UserCheck, Users, ShieldCheck, MapPin, CreditCard } from 'lucide-react'
+import { LayoutDashboard, UserCheck, Users, ShieldCheck, MapPin, CreditCard } from 'lucide-react'
 import SignupForm from './_components/SignupForm'
 
 export const metadata: Metadata = {
@@ -56,7 +56,7 @@ export default async function SignupPage({ searchParams }: Props) {
           <div className="flex items-center gap-2.5 mb-6">
             <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
               style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-              <Building2 className="w-6 h-6" style={{ color: '#0D9488' }} />
+              <span style={{ color: '#0D9488', fontSize: '28px', fontWeight: 800, lineHeight: 1 }}>U</span>
             </div>
             <span className="text-lg font-bold" style={{ color: '#0F172A' }}>Uyirly</span>
           </div>

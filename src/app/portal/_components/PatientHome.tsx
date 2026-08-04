@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Building2, Hospital, LogOut, ChevronRight, Search, User } from 'lucide-react'
+import { Hospital, LogOut, ChevronRight, Search, User } from 'lucide-react'
 import { signOutPatient, type MyHospital } from '@/app/actions/patientPortal'
 
 const TEAL = '#0D9488'
@@ -27,7 +27,7 @@ export default function PatientHome({ hospitals, phone }: { hospitals: MyHospita
       <header style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Building2 style={{ width: 16, height: 16, color: TEAL }} />
+            <span style={{ color: TEAL, fontSize: '19px', fontWeight: 800, lineHeight: 1 }}>U</span>
           </div>
           <span style={{ fontSize: 16, fontWeight: 700, color: '#0F172A' }}>Uyirly</span>
         </div>

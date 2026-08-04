@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Menu, Building2 } from 'lucide-react'
+import { LogOut, User, Menu } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/lib/types'
 import ScanInput from '@/components/barcode/ScanInput'
@@ -67,7 +67,7 @@ export default function TopBar({ fullName, role, tenantName, onMenuClick }: TopB
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.2)' }}>
-            <Building2 className="w-3.5 h-3.5" style={{ color: '#0D9488' }} />
+            <span style={{ color: '#0D9488', fontSize: '16px', fontWeight: 800, lineHeight: 1 }}>U</span>
           </div>
           <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{tenantName}</span>
         </div>

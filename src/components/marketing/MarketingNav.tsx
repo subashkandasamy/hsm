@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { Building2 } from 'lucide-react'
 import MobileLoginMenu from '@/app/_components/MobileLoginMenu'
 
 const TEAL   = '#0D9488'
@@ -17,7 +16,7 @@ export default function MarketingNav({ ctaLabel = 'Start free trial' }: { ctaLab
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: TEAL }}>
-            <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
+            <span style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>U</span>
           </div>
           <span className="text-base font-bold" style={{ color: SLATE9 }}>Uyirly</span>
         </Link>

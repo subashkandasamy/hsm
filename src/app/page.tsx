@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
-  Building2, CheckCircle, ArrowRight, X, Star, Activity,
+  CheckCircle, ArrowRight, X, Star, Activity,
   Stethoscope, BedDouble, FlaskConical, Scan, Pill, Scissors,
   Droplets, Receipt, ShieldPlus, Package, Users, Mic,
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
@@ -1007,7 +1007,7 @@ function Footer() {
           <div className="md:col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: T }}>
-                <Building2 className="w-4 h-4" style={{ color: '#fff' }} />
+                <span style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>U</span>
               </div>
               <span className="text-base font-bold" style={{ color: S9 }}>Uyirly</span>
             </Link>
