@@ -18,6 +18,10 @@ export const faqs = [
     q: 'Are there hidden costs beyond the monthly subscription?',
     a: 'Watch for setup/onboarding fees, training costs, data migration charges, SMS/WhatsApp notification costs (often billed separately per message), and charges for additional modules added later. Ask for all of these upfront rather than discovering them after signing.',
   },
+  {
+    q: 'Is there free hospital management software?',
+    a: 'Some tools advertise "free", but the catch is usually a per-user or per-patient meter that starts once you have real patients. A more honest version of free is a proper free trial. Uyirly gives a 30-day free trial with no credit card, then flat monthly pricing — no per-bed or per-user fees.',
+  },
 ]
 
 export default function Guide() {
@@ -80,6 +84,38 @@ export default function Guide() {
         re-platforming, so there&apos;s little value in paying for modules that won&apos;t be used for a year or
         more. What else to evaluate beyond price is in our{' '}
         <Link href="/guides/hospital-management-software-india">buyer&apos;s checklist for choosing hospital software</Link>.
+      </p>
+
+      <h2>Flat vs per-bed pricing: why the model matters more than the number</h2>
+      <p>
+        The cheapest quote on day one is often the most expensive system two years in. The reason is the
+        pricing model. Per-bed and per-user pricing looks small when you start and climbs every time you add
+        a bed or a login. Flat pricing stays the same as you grow. A quick example for a hospital going from
+        30 to 60 beds:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Model</th><th>At 30 beds</th><th>At 60 beds</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Per-bed (say ₹400/bed)</td><td>₹12,000/mo</td><td>₹24,000/mo</td></tr>
+          <tr><td>Flat plan</td><td>Same</td><td>Same</td></tr>
+        </tbody>
+      </table>
+      <p>
+        With per-bed pricing your software bill doubles just because the hospital grew. That is why we always
+        say to ask exactly what raises the fee — beds, users, patients, locations or modules — before you
+        sign anything.
+      </p>
+
+      <h2>What Uyirly costs</h2>
+      <p>
+        <Link href="/hospital-management-software">Uyirly</Link> uses simple flat monthly pricing with{' '}
+        <strong>no per-bed and no per-user fees</strong>, starting at ₹2,999 a month, and every plan comes
+        with a 30-day free trial and no credit card. A small clinic and a large hospital each pay for the plan
+        they need, not for every bed or login. You can see the current plans on the{' '}
+        <Link href="/pricing">pricing page</Link>, or{' '}
+        <Link href="/signup">start a free trial</Link> and judge it on your own hospital first.
       </p>
     </>
   )

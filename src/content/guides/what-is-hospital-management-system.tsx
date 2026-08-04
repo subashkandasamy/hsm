@@ -19,6 +19,14 @@ export const faqs = [
     q: 'Do small clinics need a full hospital management system?',
     a: 'Not the whole thing at once. Most modern HMS platforms are modular — a small clinic can start with OPD, billing and pharmacy, and turn on IPD, lab, radiology or other modules only when the hospital actually needs them, without switching software later.',
   },
+  {
+    q: 'How much does a hospital management system cost in India?',
+    a: 'It depends on the pricing model more than the number. Per-bed and per-user pricing rises as you grow, while flat monthly pricing stays predictable. Cloud systems like Uyirly start from a few thousand rupees a month with a free trial, and there is no server to buy. See our hospital management software cost guide for a full breakdown.',
+  },
+  {
+    q: 'How long does it take to set up an HMS?',
+    a: 'A cloud-based HMS can be live the same day — you sign up, add your staff and departments, and register your first patient, with nothing to install. On-premise systems take longer because a server has to be bought and configured first.',
+  },
 ]
 
 export default function Guide() {
@@ -29,6 +37,16 @@ export default function Guide() {
         registration register, a separate pharmacy stock book, lab reports handed over on paper, and a
         billing clerk manually adding up charges from four different departments at discharge. A Hospital
         Management System (HMS) exists to replace that scattered paper trail with one connected system.
+      </p>
+
+      <h2>Why a hospital needs an HMS</h2>
+      <p>
+        When every department keeps its own register, the hospital spends its day reconciling them. The
+        pharmacy stock never matches the bill. A lab result is ready but never reaches the ward. A discharge
+        waits an hour while someone totals the charges by hand. Worst of all, money quietly leaks out through
+        charges that were given but never billed. An HMS fixes this by giving every department{' '}
+        <strong>one shared patient and one shared bill</strong>, so there is only ever one set of numbers to
+        trust — and the reconciliation work simply disappears.
       </p>
 
       <h2>What a hospital management system actually does</h2>
@@ -96,6 +114,39 @@ export default function Guide() {
         hospital and choosing software you&apos;ll have to replace in two years. Our{' '}
         <Link href="/guides/hospital-management-software-india">buyer&apos;s guide for small &amp; mid-size hospitals</Link>{' '}
         covers how to evaluate that.
+      </p>
+
+      <h2>The benefits of a hospital management system</h2>
+      <p>Put simply, a good HMS changes the day-to-day like this:</p>
+      <ul>
+        <li><strong>No double entry</strong> &mdash; a patient is registered once and used everywhere.</li>
+        <li><strong>No lost charges</strong> &mdash; every test, medicine and bed charge lands on the bill.</li>
+        <li><strong>Faster discharge</strong> &mdash; the bill is ready as care happens, not totalled by hand.</li>
+        <li><strong>Fewer errors</strong> &mdash; results and prescriptions are structured, not scribbled.</li>
+        <li><strong>Clear visibility</strong> &mdash; owners see live revenue, footfall, beds and stock.</li>
+        <li><strong>Easier compliance</strong> &mdash; GST billing, insurance/TPA claims and NABH-style records are built in.</li>
+      </ul>
+
+      <h2>Cloud-based vs on-premise</h2>
+      <p>
+        An HMS can run on your own server (on-premise) or online (cloud). A{' '}
+        <Link href="/cloud-based-hospital-management-system">cloud-based hospital management system</Link> has
+        nothing to install, no server to buy or maintain, automatic backups, and works on any device or
+        branch. For most hospitals today that is the simpler and safer choice — on-premise ties you to one
+        machine and someone to keep it running.
+      </p>
+
+      <h2>Getting started with an HMS</h2>
+      <p>
+        You do not have to buy everything up front or take weeks to go live. A cloud HMS like{' '}
+        <Link href="/hospital-management-software">Uyirly</Link> lets you sign up, add your team and
+        departments, and register your first patient the same day. It fits a{' '}
+        <Link href="/clinic-management-software">clinic</Link>, a{' '}
+        <Link href="/nursing-home-management-software">nursing home</Link> or a full{' '}
+        <Link href="/multi-specialty-hospital-software">multi-specialty hospital</Link> on the same platform,
+        so you never have to switch systems as you grow. You can{' '}
+        <Link href="/signup">start a 30-day free trial</Link> with no credit card and judge it on your own
+        patients.
       </p>
     </>
   )
