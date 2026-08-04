@@ -7,10 +7,35 @@ import type { Metadata } from 'next'
 // folder under src/app/<slug>/ is a thin wrapper around <SolutionShell slug=… />,
 // and the /solutions hub lists every entry grouped by `group`.
 
+// Rich body text supports simple inline markup: [label](/href) for internal
+// links (keyword anchors) and **bold** for emphasis. Everything else is plain.
+export interface SolutionSubsection {
+  h3: string
+  body: string
+  bullets?: string[]
+}
+
+export interface SolutionStep {
+  title: string
+  body: string
+}
+
+export interface SolutionTable {
+  caption?: string
+  headers: string[]
+  rows: string[][]
+}
+
 export interface SolutionSection {
   h2: string
   body: string
   bullets?: string[]
+  /** Deeper H3 blocks under this section. */
+  subsections?: SolutionSubsection[]
+  /** Numbered how-to steps. */
+  steps?: SolutionStep[]
+  /** A comparison / feature table. */
+  table?: SolutionTable
 }
 
 export interface SolutionMeta {
@@ -376,71 +401,154 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     sections: [
       {
-        h2: 'What a hospital management system is',
+        h2: 'What is hospital management software?',
         body:
-          'Hospital management software — an HMS, sometimes called a hospital information system or hospital ERP — is one system that runs a hospital’s day-to-day operations on a single shared patient record. Instead of separate registers for registration, the OPD queue, IPD beds, pharmacy, lab, radiology, billing, insurance and staff, everything lives in one place and talks to everything else. A patient registered once flows through consultation, admission, tests, medicines and billing without being re-entered anywhere.',
-      },
-      {
-        h2: 'One system beats a dozen registers',
-        body:
-          'A hospital run on separate registers and spreadsheets spends its day reconciling them — the pharmacy stock never matches the bill, the lab result never reaches the ward, the discharge waits while someone totals charges by hand. Uyirly replaces that with one system where every department reads and writes the same patient. The reconciliation work simply disappears, because there’s only one set of numbers.',
-      },
-      {
-        h2: 'Every department, actually connected',
-        body:
-          'The value isn’t any single module — it’s that they share one patient and one bill. A test ordered in OPD reaches the lab; the result reaches the doctor; the medicine dispensed by pharmacy and the bed charged in IPD both land on the same running bill, ready at discharge. That connectedness is what separates a real hospital management system from a bundle of tools that happen to share a login.',
+          'Hospital management software is one system that runs your whole hospital in a single place. It is also called a hospital management system, an HMS, or a hospital information system. Instead of keeping a separate register or spreadsheet for the front desk, the OPD queue, IPD beds, the pharmacy, the lab, billing and staff, you keep everything in one place — and every part talks to the others. A patient is registered once, and that same record then moves through consultation, admission, tests, medicines and the final bill. Nobody re-types the patient’s name at each step.',
         bullets: [
-          'OPD queue, IPD admission & bed management, discharge billing',
-          'Pharmacy, lab (LIS), radiology (RIS), blood bank and OT',
-          'Insurance/TPA claims, emergency triage, staff & payroll',
+          'Patient registration and a lifelong UHID for every patient',
+          'OPD appointments, token queue and doctor consultation notes',
+          'IPD admission, bed and ward management, and discharge',
+          'Pharmacy, laboratory (LIS) and radiology (RIS)',
+          'Billing, GST invoices and insurance / TPA claims',
+          'Blood bank, operation theatre, emergency, inventory and staff / HR',
         ],
       },
       {
-        h2: 'Billing that is ready at discharge',
+        h2: 'Why a hospital needs it (the problem it solves)',
         body:
-          'The slowest moment in most hospitals is discharge, because the final bill is assembled by hand. In Uyirly the bill builds itself as care happens — bed charges accrue daily, consultations, tests, medicines and procedures post automatically — so the discharge bill and the insurance claim are ready, itemised and defensible the moment the patient is cleared. Faster discharges, fewer disputes, and revenue that stops leaking through missed charges.',
-      },
-      {
-        h2: 'Built for Indian hospitals',
-        body:
-          'Uyirly is made for how hospitals run in India — GST-ready billing, insurance and TPA cashless claims, ABDM/ABHA-ready records, and workflows that map to NABH expectations. It’s cloud-based with flat monthly pricing and no per-bed or per-user metering, so a small nursing home and a multi-specialty hospital run the same software and only pay for the plan they need.',
+          'A hospital that runs on paper registers and spreadsheets spends half its day just checking one against another. The pharmacy stock does not match the bill. A lab result is ready but never reaches the ward. A discharge is stuck for an hour while someone adds up the charges by hand. Money quietly leaks out through charges that were given but never billed. **Hospital management software fixes this by giving every department one shared patient and one shared bill** — so there is only ever one set of numbers to trust.',
         bullets: [
-          'GST-ready invoices and India insurance/TPA claim workflows',
-          'ABDM/ABHA-ready records; NABH-friendly documentation',
-          'Flat pricing, no per-bed fees; 30-day free trial, no card',
+          'No double entry — register the patient once, use it everywhere',
+          'No lost charges — every test, medicine and bed charge is captured',
+          'No waiting at discharge — the bill is already ready',
+          'No guesswork — owners see live revenue, footfall and stock',
         ],
       },
       {
-        h2: 'From a nursing home to a multi-specialty hospital',
+        h2: 'What Uyirly’s hospital management software includes',
         body:
-          'Because it’s modular and cloud-based, the same platform fits a small nursing home running OPD and a handful of beds, and a multi-specialty hospital running theatres, a blood bank and a full insurance desk. You switch modules on as you need them instead of buying — or outgrowing — a fixed system. Start with what you run today and turn on the rest when you’re ready.',
+          '[Uyirly](/) is a complete, cloud-based hospital management system built for Indian hospitals, nursing homes and clinics. Here is what runs inside it, department by department. Every module below shares the same patient and the same bill, so nothing is an island.',
+        subsections: [
+          {
+            h3: 'OPD, appointments and the token queue',
+            body:
+              'Book appointments, run a live [OPD token queue](/guides/opd-queue-token-management-guide), and let doctors write consultation notes, diagnoses and prescriptions on screen. Patients move from the front desk to the doctor to the pharmacy without a paper slip going missing.',
+          },
+          {
+            h3: 'IPD, wards and bed management',
+            body:
+              'Admit a patient, allot a bed, move them between wards, and track everything until discharge. [IPD bed management](/guides/ipd-admission-bed-management-guide) shows which beds are free at a glance, and daily bed charges are added to the bill automatically.',
+          },
+          {
+            h3: 'Pharmacy',
+            body:
+              '[Pharmacy management](/pharmacy-management-software) handles stock, batches, expiry and billing. Dispense against a prescription, bill it to the patient’s running total, and get low-stock and near-expiry alerts before a medicine runs out or goes bad.',
+          },
+          {
+            h3: 'Laboratory and radiology',
+            body:
+              'Order lab tests and scans straight from the doctor’s screen. The [lab (LIS)](/lab-management-software) and [radiology (RIS)](/radiology-information-system-software) modules track each sample and scan, capture results, and send the report back to the doctor and the patient — with the charge already on the bill.',
+          },
+          {
+            h3: 'Billing, GST and insurance',
+            body:
+              'The [billing module](/guides/ipd-billing-software-explained) builds the bill as care happens, prints GST-ready invoices, and handles [insurance and TPA cashless claims](/guides/health-insurance-tpa-claims-guide) — pre-authorisation, claim and settlement — so the paperwork does not hold up a discharge.',
+          },
+          {
+            h3: 'Blood bank, OT, emergency, inventory and staff',
+            body:
+              'The same system also runs the [blood bank](/blood-bank-management-software), [operation theatre scheduling](/operation-theatre-management-software), emergency triage, general inventory and purchase orders, and staff attendance, rosters and payroll — so the whole hospital is on one login.',
+          },
+        ],
+      },
+      {
+        h2: 'How everything stays connected — one patient, one bill',
+        body:
+          'The real value is not any single module. It is that they all share the same patient and the same bill. A test ordered in OPD reaches the lab on its own. The result reaches the doctor. The medicine the pharmacy gives out and the bed the patient sleeps in both land on the same running bill, ready at discharge. That is the difference between a true hospital information system and a set of separate tools that only share a password. In Uyirly, the discharge bill and the insurance claim are itemised and ready the moment the patient is cleared — faster discharges, fewer disputes, and no revenue leaking through charges nobody remembered to add.',
+      },
+      {
+        h2: 'How to get your hospital live on Uyirly',
+        body:
+          'Uyirly is cloud-based, so there is nothing to install and nothing to buy upfront. Most hospitals are up and running the same day. Here is the full path from sign-up to seeing your first patient:',
+        steps: [
+          { title: 'Start your free trial', body: 'Sign up on [uyirly.com](/signup) with your hospital name and mobile number. Your hospital gets its own private, secure workspace right away — no credit card needed.' },
+          { title: 'Add your team', body: 'Invite your doctors, nurses and front-desk staff so they can log in. Each person gets the right access for their role.' },
+          { title: 'Set up your departments', body: 'Turn on the modules you use — OPD, IPD, pharmacy, lab, radiology and so on — and add your lab tests, medicines and billing rates. A built-in setup guide walks you through it.' },
+          { title: 'Register your first patient', body: 'Register a patient, book an appointment, and watch the visit, prescription and bill flow together in one place.' },
+          { title: 'Go live and grow', body: 'Add more departments whenever you are ready. The same platform grows from a small nursing home to a full multi-specialty hospital.' },
+        ],
+      },
+      {
+        h2: 'Uyirly vs a typical hospital management system',
+        body:
+          'Most hospital software in India is either old on-premise software that is slow to set up and priced per bed, or a bundle of tools that do not really share data. Here is how Uyirly compares.',
+        table: {
+          headers: ['What matters', 'Typical hospital software', 'Uyirly'],
+          rows: [
+            ['Setup', 'Weeks of installation on your own servers', 'Cloud-based, live the same day'],
+            ['Pricing', 'Per bed or per user — grows as you grow', 'Flat monthly price, no per-bed or per-user fees'],
+            ['Departments', 'Often separate tools with separate logins', 'OPD, IPD, pharmacy, lab, billing and more on one login'],
+            ['Billing', 'Assembled by hand at discharge', 'Builds itself as care happens; ready at discharge'],
+            ['Data location', 'Varies', 'Stored in India, DPDP Act aligned'],
+            ['Mobile app', 'Rare or extra cost', 'Native app for staff and patients, included'],
+            ['Free trial', 'Usually a paid pilot', '30-day free trial, no credit card'],
+          ],
+        },
+      },
+      {
+        h2: 'How much does hospital management software cost?',
+        body:
+          'Uyirly uses simple, flat monthly pricing with **no per-bed and no per-user fees**. Plans start at ₹2,999 a month, and every plan comes with a 30-day free trial and no credit card. A small clinic and a large hospital each pay for the plan they need, not for every bed or login. For a full breakdown of what hospital software costs in India — and what to watch out for — see our [hospital management software cost guide](/guides/hospital-management-software-cost-india), or view the current [pricing plans](/pricing).',
+      },
+      {
+        h2: 'Who Uyirly is for',
+        body:
+          'Because it is modular and cloud-based, the same platform fits many kinds of facility. Turn on the modules you need today and add the rest later. It works well for [clinics](/clinic-management-software), [nursing homes](/nursing-home-management-software), [multi-specialty hospitals](/multi-specialty-hospital-software), diagnostic [labs](/lab-management-software) and [dental clinics](/dental-clinic-software) — all on the same simple system.',
       },
     ],
     faqs: [
       {
         q: 'What is hospital management software?',
-        a: 'Hospital management software (an HMS, sometimes called a hospital information system) is one system that runs a hospital’s day-to-day operations — patient registration, the OPD queue, IPD admissions and beds, pharmacy, lab, radiology, billing, insurance and staff — on a single shared patient record and bill, instead of separate registers for each department. Uyirly is a cloud HMS built for Indian hospitals.',
+        a: 'Hospital management software (an HMS, also called a hospital information system) is one system that runs a hospital’s daily work — patient registration, the OPD queue, IPD admissions and beds, pharmacy, lab, radiology, billing, insurance and staff — on a single shared patient record and bill, instead of a separate register for each department. Uyirly is a cloud HMS built for Indian hospitals.',
       },
       {
         q: 'How much does hospital management software cost in India?',
-        a: 'Uyirly uses flat monthly pricing with no per-bed or per-user metering, starting from ₹2,999/month, plus a 30-day free trial with no credit card. The flat model means a small hospital and a large one each pay for the plan they need, not for every bed or login. See the pricing page for the current plans.',
+        a: 'Uyirly uses flat monthly pricing with no per-bed or per-user fees, starting from ₹2,999/month, plus a 30-day free trial with no credit card. A small hospital and a large one each pay for the plan they need. See the [pricing page](/pricing) for current plans.',
       },
       {
         q: 'Is it cloud-based, and does it work for small hospitals?',
-        a: 'Yes. Uyirly is fully cloud-based — nothing to install, accessible on any device — and the same platform scales from a single clinic or nursing home up to a multi-specialty hospital, so small facilities run the same software the big ones do.',
+        a: 'Yes. Uyirly is fully cloud-based — nothing to install, and you can use it on any device or on the mobile app. The same platform works for a single clinic or nursing home and for a large multi-specialty hospital, so small facilities run the same software the big ones do.',
       },
       {
         q: 'What modules does the hospital management system include?',
-        a: 'OPD and appointments, IPD admission and bed management, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA claims, blood bank, operation theatre scheduling, emergency, inventory, and staff/HR — all on one shared patient record. Modules can be switched on as you need them.',
+        a: 'OPD and appointments, IPD admission and bed management, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA claims, blood bank, operation theatre scheduling, emergency, inventory, and staff/HR — all on one shared patient record. You can switch modules on as you need them.',
+      },
+      {
+        q: 'How long does it take to set up?',
+        a: 'Most hospitals are up and running the same day. You sign up, add your staff, turn on the departments you use, and register your first patient. A built-in setup guide walks you through each step, and there is nothing to install because it is cloud-based.',
+      },
+      {
+        q: 'Is my patient data safe?',
+        a: 'Yes. Patient data is stored in India and the platform is aligned with the Digital Personal Data Protection (DPDP) Act. Each hospital’s data is kept separate, access is controlled by staff role, and all traffic is encrypted. See our security page for details.',
+      },
+      {
+        q: 'Does it support GST billing and insurance claims?',
+        a: 'Yes. Billing produces GST-ready invoices, and the insurance module handles cashless TPA claims end to end — pre-authorisation, claim and settlement — so paperwork does not hold up a patient’s discharge.',
+      },
+      {
+        q: 'Is it ABDM / ABHA and NABH ready?',
+        a: 'Yes. Records are ABDM/ABHA-ready, and the documentation and workflows are built to map to NABH expectations, which makes audits and accreditation easier to prepare for.',
       },
     ],
     related: [
       { label: 'What is a hospital management system?', href: '/guides/what-is-hospital-management-system' },
       { label: 'Hospital management software cost in India', href: '/guides/hospital-management-software-cost-india' },
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Cloud-based hospital management system', href: '/cloud-based-hospital-management-system' },
+      { label: 'Clinic management software', href: '/clinic-management-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   // ── Choosing & buying — buyer-modifier / intent variants ──────────────────

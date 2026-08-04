@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Fragment, type ReactNode } from 'react'
 import { Check, ChevronRight, ArrowRight } from 'lucide-react'
 import MarketingNav from '@/components/marketing/MarketingNav'
 import type { SolutionMeta } from '@/lib/solutions/registry'
@@ -11,6 +12,31 @@ const SLATE4 = '#94A3B8'
 const BORDER = '#E2E8F0'
 
 const SITE = 'https://www.uyirly.com'
+
+// Parse simple inline markup in body text: [label](/href) → internal link
+// (keyword anchor, good for SEO) and **bold** → emphasis. Plain text otherwise.
+function renderRich(text: string): ReactNode {
+  const tokenRe = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g
+  const out: ReactNode[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = tokenRe.exec(text)) !== null) {
+    if (m.index > last) out.push(<Fragment key={key++}>{text.slice(last, m.index)}</Fragment>)
+    if (m[1] && m[2]) {
+      out.push(
+        <Link key={key++} href={m[2]} className="font-medium underline underline-offset-2" style={{ color: TEAL }}>
+          {m[1]}
+        </Link>
+      )
+    } else if (m[3]) {
+      out.push(<strong key={key++} style={{ color: SLATE9 }}>{m[3]}</strong>)
+    }
+    last = tokenRe.lastIndex
+  }
+  if (last < text.length) out.push(<Fragment key={key++}>{text.slice(last)}</Fragment>)
+  return out
+}
 
 function jsonLd(meta: SolutionMeta) {
   const url = `${SITE}/${meta.slug}`
@@ -108,16 +134,79 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
           {meta.sections.map((s, i) => (
             <section key={i}>
               <h2 className="text-2xl font-bold mb-3 leading-snug" style={{ color: SLATE9 }}>{s.h2}</h2>
-              <p className="text-base leading-relaxed" style={{ color: SLATE6 }}>{s.body}</p>
+              <p className="text-base leading-relaxed" style={{ color: SLATE6 }}>{renderRich(s.body)}</p>
+
               {s.bullets && s.bullets.length > 0 && (
                 <ul className="mt-4 space-y-2">
                   {s.bullets.map((b, j) => (
                     <li key={j} className="flex items-start gap-2 text-sm" style={{ color: SLATE6 }}>
                       <Check className="w-4 h-4 mt-0.5 shrink-0" style={{ color: TEAL }} />
-                      <span>{b}</span>
+                      <span>{renderRich(b)}</span>
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {/* H3 subsections */}
+              {s.subsections && s.subsections.map((sub, j) => (
+                <div key={j} className="mt-6">
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: SLATE9 }}>{sub.h3}</h3>
+                  <p className="text-base leading-relaxed" style={{ color: SLATE6 }}>{renderRich(sub.body)}</p>
+                  {sub.bullets && sub.bullets.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {sub.bullets.map((b, k) => (
+                        <li key={k} className="flex items-start gap-2 text-sm" style={{ color: SLATE6 }}>
+                          <Check className="w-4 h-4 mt-0.5 shrink-0" style={{ color: TEAL }} />
+                          <span>{renderRich(b)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+
+              {/* Numbered how-to steps */}
+              {s.steps && s.steps.length > 0 && (
+                <ol className="mt-5 space-y-4">
+                  {s.steps.map((st, j) => (
+                    <li key={j} className="flex gap-3.5">
+                      <span className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold"
+                        style={{ background: 'rgba(13,148,136,0.1)', color: TEAL }}>{j + 1}</span>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: SLATE9 }}>{st.title}</p>
+                        <p className="text-sm leading-relaxed mt-0.5" style={{ color: SLATE6 }}>{renderRich(st.body)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+              {/* Comparison / feature table */}
+              {s.table && (
+                <div className="mt-5 overflow-x-auto rounded-xl" style={{ border: `1px solid ${BORDER}` }}>
+                  <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC' }}>
+                        {s.table.headers.map((h, j) => (
+                          <th key={j} className="text-left px-3 py-2.5 font-semibold whitespace-nowrap"
+                            style={{ color: SLATE9, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.table.rows.map((row, j) => (
+                        <tr key={j}>
+                          {row.map((cell, k) => (
+                            <td key={k} className="px-3 py-2.5 align-top"
+                              style={{ color: k === 0 ? SLATE9 : SLATE6, fontWeight: k === 0 ? 600 : 400, borderBottom: j < s.table!.rows.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                              {renderRich(cell)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           ))}
@@ -131,7 +220,7 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
               {meta.faqs.map((f, i) => (
                 <div key={i}>
                   <p className="text-sm font-semibold mb-1" style={{ color: SLATE9 }}>{f.q}</p>
-                  <p className="text-sm leading-relaxed" style={{ color: SLATE6 }}>{f.a}</p>
+                  <p className="text-sm leading-relaxed" style={{ color: SLATE6 }}>{renderRich(f.a)}</p>
                 </div>
               ))}
             </div>
