@@ -192,6 +192,56 @@ export const TOOLS: Record<string, ToolMeta> = {
     ],
     updated: '2026-08-05',
   },
+
+  'schedule-h-h1-x-drug-lookup': {
+    slug: 'schedule-h-h1-x-drug-lookup',
+    eyebrow: 'Free Tool',
+    tagline: 'Look up whether a drug is Schedule H, H1 or X — and the dispensing rules for each.',
+    metaTitle: 'Schedule H, H1 & X Drug Lookup',
+    description:
+      'Free lookup for Schedule H, H1 and X drugs in India — search a medicine to see its schedule and the dispensing and record-keeping rules. For pharmacists and hospitals.',
+    keywords: [
+      'schedule h drugs',
+      'schedule h1 drugs list',
+      'schedule x drugs',
+      'schedule h drugs list',
+      'h1 drugs',
+      'schedule h1 drug list',
+      'schedule x drugs list',
+    ],
+    h1: 'Schedule H, H1 & X drug lookup',
+    intro:
+      'Search a medicine to see whether it is a Schedule H, H1 or X drug in India, and the dispensing and record-keeping rules that apply. Built for pharmacists and hospital pharmacies. Read the full explanation in our [Schedule H, H1 & X guide](/guides/drug-schedule-h-h1-x-pharmacy-compliance). This is a curated reference — always verify against the current official schedules.',
+    howTo: [
+      { title: 'Search or filter', body: 'Type a drug name, or filter by schedule (H, H1, X or over-the-counter).' },
+      { title: 'Read the schedule and rule', body: 'Each result shows the schedule and exactly how it must be dispensed and recorded.' },
+      { title: 'Follow the record rule', body: 'Schedule H1 needs a separate register entry; Schedule X needs a special licence and stricter records.' },
+    ],
+    faqs: [
+      {
+        q: 'What are Schedule H, H1 and X drugs?',
+        a: 'They are categories in India’s Drugs and Cosmetics Rules. Schedule H drugs need a doctor’s prescription. Schedule H1 drugs (certain antibiotics, anti-TB drugs and habit-forming medicines) need a prescription plus a separate register entry. Schedule X drugs (narcotic/psychotropic) need a special licence and the strictest records.',
+      },
+      {
+        q: 'What is the difference between Schedule H and H1?',
+        a: 'Both need a prescription. Schedule H1 adds a record-keeping duty: the pharmacist must log the supply in a dedicated H1 register — patient name, prescriber, drug and quantity — and keep it for three years. H1 exists to curb misuse of specific antibiotics and habit-forming drugs.',
+      },
+      {
+        q: 'What is a Schedule H1 register?',
+        a: 'A separate bound register (or digital equivalent) where each Schedule H1 dispensing is recorded with the date, patient and prescriber details, drug and quantity, retained for three years. Uyirly’s pharmacy captures these fields automatically when an H1 drug is dispensed.',
+      },
+      {
+        q: 'Can Schedule X drugs be repeated on the same prescription?',
+        a: 'No. Schedule X prescriptions are not repeatable, must be in duplicate, and require the pharmacy to hold a special licence and maintain detailed records. Always follow the current official rules.',
+      },
+    ],
+    related: [
+      { label: 'Schedule H, H1 & X drugs explained', href: '/guides/drug-schedule-h-h1-x-pharmacy-compliance' },
+      { label: 'Pharmacy management software', href: '/pharmacy-management-software' },
+      { label: 'Hospital pharmacy management guide', href: '/guides/hospital-pharmacy-management-software-guide' },
+    ],
+    updated: '2026-08-05',
+  },
 }
 
 export function toolSlugs(): string[] {
