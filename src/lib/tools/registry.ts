@@ -91,6 +91,107 @@ export const TOOLS: Record<string, ToolMeta> = {
     ],
     updated: '2026-08-05',
   },
+
+  'nurse-patient-ratio-calculator': {
+    slug: 'nurse-patient-ratio-calculator',
+    eyebrow: 'Free Tool',
+    tagline: 'Work out how many nurses a ward needs per shift, using NABH-aligned nurse-to-patient ratios.',
+    metaTitle: 'Nurse-to-Patient Ratio Calculator (NABH)',
+    description:
+      'Free nurse-to-patient ratio calculator for Indian hospitals — enter ward type and patient count to get nurses needed per shift and for 24×7 cover, using NABH-aligned ratios.',
+    keywords: [
+      'nurse patient ratio',
+      'nurse to patient ratio',
+      'nurse patient ratio calculator',
+      'icu nurse patient ratio',
+      'nabh nurse ratio',
+      'nurse to patient ratio in india',
+      'nurse to patient ratio in general ward',
+    ],
+    h1: 'Nurse-to-patient ratio calculator',
+    intro:
+      'Work out how many nurses a ward needs. Pick the ward type and the number of patients, and this free calculator gives you nurses per shift and the total for round-the-clock cover, using NABH-aligned nurse-to-patient ratios. See our [nurse-to-patient ratio guide](/guides/nurse-patient-ratio-india-nabh) for the norms behind it.',
+    howTo: [
+      { title: 'Pick the ward type', body: 'Choose the ward — general, ICU, HDU, paediatric and so on. The recommended ratio for that ward is shown.' },
+      { title: 'Enter the number of patients', body: 'Type how many patients (or occupied beds) the ward holds.' },
+      { title: 'Read the result', body: 'You get nurses needed per shift, the total for three shifts, and a figure that includes weekly-off and leave relief for true 24×7 cover.' },
+      { title: 'Plan your roster', body: 'Use the numbers to build a duty roster that always meets the ratio.' },
+    ],
+    faqs: [
+      {
+        q: 'What is the nurse-to-patient ratio in a general ward in India?',
+        a: 'NABH-aligned practice for a general ward is about 1 nurse to 6 patients (1:6) per shift. Higher-acuity areas need more — ICU is around 1:1 and HDU/step-down about 1:3. This calculator uses these ratios; see our nurse-to-patient ratio guide for the full norms.',
+      },
+      {
+        q: 'What is the ICU nurse-to-patient ratio?',
+        a: 'Intensive care typically needs about 1 nurse per patient (1:1) per shift because of the level of monitoring and intervention required. Some units use 1:2 for stable patients. This tool defaults ICU to 1:1.',
+      },
+      {
+        q: 'How many nurses do I need for 24×7 cover?',
+        a: 'Take the nurses needed per shift and multiply by three shifts, then add relief for weekly-offs and leave — roughly a 1.4× factor. The calculator does this and shows the total headcount to keep the ward staffed round the clock.',
+      },
+      {
+        q: 'Are these ratios the official NABH standard?',
+        a: 'They are the commonly-cited, NABH-aligned ratios used for planning. Always confirm against the current NABH standard and your hospital’s own policy. Uyirly builds ward rosters that flag when a shift falls below your chosen ratio.',
+      },
+    ],
+    related: [
+      { label: 'Nurse-to-patient ratio in India (NABH)', href: '/guides/nurse-patient-ratio-india-nabh' },
+      { label: 'How to build a nurse duty roster', href: '/guides/nurse-duty-roster-hospital-guide' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+    ],
+    updated: '2026-08-05',
+  },
+
+  'gst-on-hospital-bill-calculator': {
+    slug: 'gst-on-hospital-bill-calculator',
+    eyebrow: 'Free Tool',
+    tagline: 'Check whether GST applies on a hospital bill — room rent and services — and calculate the tax.',
+    metaTitle: 'GST on Hospital Bill Calculator (India)',
+    description:
+      'Free GST calculator for hospital bills in India — non-ICU room rent above ₹5,000/day attracts 5% GST while core healthcare is exempt. Enter your charges to see the tax.',
+    keywords: [
+      'gst on hospital bill',
+      'gst on room rent hospital',
+      'is gst applicable on hospital services',
+      'hospital gst calculator',
+      'gst on hospital room rent',
+      'gst rate on hospital room',
+    ],
+    h1: 'GST on hospital bill calculator',
+    intro:
+      'Check whether GST applies to a hospital bill and calculate it. Core healthcare services are GST-exempt, but non-ICU room rent above ₹5,000 per day attracts 5% GST. Enter your charges below. For the full rules, read our [GST on hospital bills guide](/guides/hospital-gst-billing-rules-india). This is a guide, not tax advice.',
+    howTo: [
+      { title: 'Choose the room type', body: 'ICU/CCU room rent is exempt regardless of amount; other rooms are taxable only above ₹5,000 per day.' },
+      { title: 'Enter room rent and days', body: 'Type the rent per day and the number of days.' },
+      { title: 'Add other charges', body: 'Enter the value of other healthcare services — these are treated as exempt by default.' },
+      { title: 'Read the GST', body: 'The tool shows which part is taxable, the 5% GST on it, and the total bill.' },
+    ],
+    faqs: [
+      {
+        q: 'Is GST applicable on a hospital bill?',
+        a: 'Core healthcare services provided by a hospital are GST-exempt. The main exception is room rent: a non-ICU room charged above ₹5,000 per day attracts 5% GST (without input tax credit). ICU/CCU room rent is exempt regardless of amount.',
+      },
+      {
+        q: 'Is GST charged on hospital room rent?',
+        a: 'Only when a non-ICU room is billed above ₹5,000 per day — then 5% GST applies to the room rent. At ₹5,000 or below, and for ICU/CCU rooms, room rent is exempt. This calculator applies that rule.',
+      },
+      {
+        q: 'What GST rate applies to hospital room rent?',
+        a: '5%, without input tax credit, on non-ICU room rent above ₹5,000 per day. Core medical treatment, consultation and most services remain exempt.',
+      },
+      {
+        q: 'Are consultation fees and medicines taxed?',
+        a: 'Consultation and treatment provided as part of healthcare are exempt. Standalone sales (for example, an outpatient pharmacy retail sale) can be taxable. This is a guide — confirm specifics with your tax advisor.',
+      },
+    ],
+    related: [
+      { label: 'GST on hospital bills in India', href: '/guides/hospital-gst-billing-rules-india' },
+      { label: 'Hospital bill format generator', href: '/tools/hospital-bill-format-generator' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+    ],
+    updated: '2026-08-05',
+  },
 }
 
 export function toolSlugs(): string[] {
