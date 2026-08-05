@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Search, AlertTriangle } from 'lucide-react'
-import { DRUGS, RULES, type Schedule } from './drugs'
+import { CATALOGUE, RULES, type Schedule } from '@/lib/drugs/catalogue'
 
 const TEAL = '#0D9488'
 const SLATE9 = '#0F172A'
@@ -15,6 +15,7 @@ const FILTERS: { key: 'all' | Schedule; label: string }[] = [
   { key: 'H', label: 'H' },
   { key: 'H1', label: 'H1' },
   { key: 'X', label: 'X' },
+  { key: 'G', label: 'G' },
   { key: 'OTC', label: 'OTC' },
 ]
 
@@ -24,11 +25,14 @@ export default function DrugLookup() {
 
   const results = useMemo(() => {
     const term = q.trim().toLowerCase()
-    return DRUGS.filter((d) => {
+    return CATALOGUE.filter((d) => {
       if (filter !== 'all' && d.schedule !== filter) return false
       if (!term) return true
-      return d.name.toLowerCase().includes(term) || (d.aka?.toLowerCase().includes(term) ?? false)
-    }).sort((a, b) => a.name.localeCompare(b.name))
+      return (
+        d.generic.toLowerCase().includes(term) ||
+        d.brands.some((b) => b.toLowerCase().includes(term))
+      )
+    })
   }, [q, filter])
 
   return (
@@ -36,7 +40,7 @@ export default function DrugLookup() {
       {/* Search + filters */}
       <div className="relative mb-3">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: SLATE4 }} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a medicine (e.g. Cefixime, Alprazolam, Amoxicillin)…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by brand or generic (e.g. Augmentin, Dolo, Alprax, Cefixime)…"
           className="w-full pl-10 pr-3 py-3 rounded-xl text-sm" style={{ background: '#fff', border: `1px solid ${BORDER}`, color: SLATE9, outline: 'none' }} />
       </div>
       <div className="flex flex-wrap gap-1.5 mb-4">
@@ -60,13 +64,16 @@ export default function DrugLookup() {
             {results.map((d) => {
               const r = RULES[d.schedule]
               return (
-                <div key={d.name} className="flex items-start gap-3 px-4 py-3">
+                <div key={d.generic} className="flex items-start gap-3 px-4 py-3">
                   <span className="text-[11px] font-bold px-2 py-1 rounded-md flex-shrink-0" style={{ background: r.bg, color: r.color, minWidth: 78, textAlign: 'center' }}>
                     {r.label}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: SLATE9 }}>{d.name}{d.aka && <span className="font-normal" style={{ color: SLATE4 }}> · {d.aka}</span>}</p>
-                    <p className="text-xs leading-relaxed mt-0.5" style={{ color: SLATE6 }}>{r.rule}</p>
+                    <p className="text-sm font-semibold" style={{ color: SLATE9 }}>{d.generic}</p>
+                    {d.brands.length > 0 && (
+                      <p className="text-xs mt-0.5" style={{ color: SLATE4 }}>Brands: {d.brands.join(', ')}</p>
+                    )}
+                    <p className="text-xs leading-relaxed mt-1" style={{ color: SLATE6 }}>{r.rule}</p>
                   </div>
                 </div>
               )
@@ -74,13 +81,13 @@ export default function DrugLookup() {
           </div>
         )}
       </div>
-      <p className="text-xs mt-2" style={{ color: SLATE4 }}>{results.length} result{results.length !== 1 ? 's' : ''}</p>
+      <p className="text-xs mt-2" style={{ color: SLATE4 }}>{results.length} result{results.length !== 1 ? 's' : ''} · {CATALOGUE.length} drugs in reference</p>
 
       {/* Disclaimer */}
       <div className="mt-4 rounded-xl px-3.5 py-3 flex items-start gap-2 text-xs leading-relaxed"
         style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: SLATE6 }}>
         <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#B45309' }} />
-        <span>This is a curated reference of common drugs, not the full official list. The Schedule H1 list is updated periodically — always confirm a drug’s current schedule against the Drugs and Cosmetics Rules before dispensing.</span>
+        <span>Curated reference of commonly-dispensed drugs with representative Indian brand names — not the full official list, and brand names are examples only. The Schedule H1 list is updated periodically; always confirm a drug’s current schedule against the Drugs and Cosmetics Rules before dispensing.</span>
       </div>
     </div>
   )
