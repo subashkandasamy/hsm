@@ -3,6 +3,7 @@ import { GUIDES } from '@/lib/guides/registry'
 import { publishedSlugs } from '@/content/guides'
 import { SOLUTIONS, solutionSlugs } from '@/lib/solutions/registry'
 import { citySlugs } from '@/lib/locations/registry'
+import { toolSlugs } from '@/lib/tools/registry'
 
 const SITE_URL = 'https://www.uyirly.com'
 
@@ -52,6 +53,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 0.85,
     },
+    {
+      url: `${SITE_URL}/tools`,
+      lastModified: now,
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    ...toolSlugs().map((slug) => ({
+      url: `${SITE_URL}/tools/${slug}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    })),
     ...solutionEntries,
     // Location pages — "hospital management software in [city]"
     ...citySlugs().map((slug) => ({
