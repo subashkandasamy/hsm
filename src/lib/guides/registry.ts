@@ -42,7 +42,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Getting Started',
     readingMinutes: 9,
     related: ['hospital-digitization-workflow-guide', 'hospital-management-software-cost-india', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-management-software-cost-india',
@@ -54,7 +54,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Getting Started',
     readingMinutes: 8,
     related: ['what-is-hospital-management-system', 'hospital-management-software-india', 'switching-from-spreadsheets-to-hms'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-digitization-workflow-guide',
@@ -66,7 +66,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Getting Started',
     readingMinutes: 10,
     related: ['what-is-hospital-management-system', 'opd-queue-token-management-guide', 'ipd-admission-bed-management-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-management-software-india',
@@ -78,7 +78,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Getting Started',
     readingMinutes: 10,
     related: ['hospital-management-software-cost-india', 'switching-from-spreadsheets-to-hms', 'hospital-software-data-security-dpdp'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
 
   // ── Tier 2 — Module guides ───────────────────────────────────────────────
@@ -92,7 +92,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Nursing & Scheduling',
     readingMinutes: 11,
     related: ['nurse-patient-ratio-india-nabh', 'hospital-staff-attendance-hr-guide', 'ipd-admission-bed-management-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'ipd-billing-software-explained',
@@ -104,7 +104,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Billing & Finance',
     readingMinutes: 10,
     related: ['hospital-bill-format-ipd-opd-sample', 'health-insurance-tpa-claims-guide', 'hospital-gst-billing-rules-india'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-pharmacy-management-software-guide',
@@ -116,7 +116,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Pharmacy & Inventory',
     readingMinutes: 9,
     related: ['drug-schedule-h-h1-x-pharmacy-compliance', 'hospital-inventory-purchase-order-guide', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'opd-queue-token-management-guide',
@@ -128,7 +128,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'OPD',
     readingMinutes: 8,
     related: ['hospital-digitization-workflow-guide', 'patient-records-emr-uhid-guide', 'ipd-admission-bed-management-guide'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'ipd-admission-bed-management-guide',
@@ -140,7 +140,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'IPD',
     readingMinutes: 9,
     related: ['nurse-duty-roster-hospital-guide', 'ipd-billing-software-explained', 'nurse-patient-ratio-india-nabh'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'lab-lis-workflow-guide',
@@ -152,7 +152,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Laboratory',
     readingMinutes: 8,
     related: ['radiology-ris-reporting-guide', 'patient-records-emr-uhid-guide', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'radiology-ris-reporting-guide',
@@ -164,7 +164,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Radiology',
     readingMinutes: 7,
     related: ['lab-lis-workflow-guide', 'patient-records-emr-uhid-guide', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'ot-scheduling-management-guide',
@@ -176,7 +176,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Operation Theatre',
     readingMinutes: 8,
     related: ['ipd-admission-bed-management-guide', 'nurse-duty-roster-hospital-guide', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'blood-bank-management-guide',
@@ -188,7 +188,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Blood Bank',
     readingMinutes: 7,
     related: ['emergency-triage-management-guide', 'ot-scheduling-management-guide', 'ipd-billing-software-explained'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'emergency-triage-management-guide',
@@ -200,7 +200,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Emergency',
     readingMinutes: 7,
     related: ['ipd-admission-bed-management-guide', 'blood-bank-management-guide', 'patient-records-emr-uhid-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'patient-records-emr-uhid-guide',
@@ -212,7 +212,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Patient Records',
     readingMinutes: 8,
     related: ['abdm-abha-health-id-hospitals-guide', 'opd-queue-token-management-guide', 'hospital-software-data-security-dpdp'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-inventory-purchase-order-guide',
@@ -224,7 +224,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Pharmacy & Inventory',
     readingMinutes: 7,
     related: ['hospital-pharmacy-management-software-guide', 'drug-schedule-h-h1-x-pharmacy-compliance'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'health-insurance-tpa-claims-guide',
@@ -236,7 +236,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Billing & Finance',
     readingMinutes: 8,
     related: ['ipd-billing-software-explained', 'hospital-bill-format-ipd-opd-sample'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-staff-attendance-hr-guide',
@@ -248,7 +248,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'People & HR',
     readingMinutes: 7,
     related: ['nurse-duty-roster-hospital-guide', 'nurse-patient-ratio-india-nabh'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'dental-clinic-software-guide',
@@ -260,7 +260,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Specialty Care',
     readingMinutes: 6,
     related: ['opd-queue-token-management-guide', 'patient-records-emr-uhid-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
 
   // ── Tier 3 — Concept / India compliance ──────────────────────────────────
@@ -274,7 +274,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 9,
     related: ['nurse-duty-roster-hospital-guide', 'nabh-accreditation-software-checklist', 'hospital-staff-attendance-hr-guide'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'abdm-abha-health-id-hospitals-guide',
@@ -286,7 +286,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 8,
     related: ['patient-records-emr-uhid-guide', 'hospital-software-data-security-dpdp'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-gst-billing-rules-india',
@@ -298,7 +298,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 8,
     related: ['ipd-billing-software-explained', 'hospital-bill-format-ipd-opd-sample'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'nabh-accreditation-software-checklist',
@@ -310,7 +310,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 8,
     related: ['nurse-patient-ratio-india-nabh', 'patient-records-emr-uhid-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-bill-format-ipd-opd-sample',
@@ -322,7 +322,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 7,
     related: ['ipd-billing-software-explained', 'hospital-gst-billing-rules-india'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
   {
     slug: 'drug-schedule-h-h1-x-pharmacy-compliance',
@@ -334,7 +334,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'India Compliance & Standards',
     readingMinutes: 8,
     related: ['hospital-pharmacy-management-software-guide', 'hospital-inventory-purchase-order-guide'],
-    updated: '2026-07-29',
+    updated: '2026-08-04',
   },
 
   // ── Tier 4 — Decision / bottom-funnel ─────────────────────────────────────
@@ -348,7 +348,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Switching & Evaluating',
     readingMinutes: 8,
     related: ['hospital-data-migration-guide', 'hospital-management-software-india', 'hospital-free-trial-setup-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-data-migration-guide',
@@ -360,7 +360,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Switching & Evaluating',
     readingMinutes: 8,
     related: ['switching-from-spreadsheets-to-hms', 'hospital-software-data-security-dpdp'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-software-data-security-dpdp',
@@ -372,7 +372,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Switching & Evaluating',
     readingMinutes: 7,
     related: ['hospital-management-software-india', 'abdm-abha-health-id-hospitals-guide'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
   {
     slug: 'hospital-free-trial-setup-guide',
@@ -384,7 +384,7 @@ export const GUIDES: GuideMeta[] = [
     category: 'Switching & Evaluating',
     readingMinutes: 6,
     related: ['switching-from-spreadsheets-to-hms', 'hospital-management-software-cost-india'],
-    updated: '2026-07-15',
+    updated: '2026-08-04',
   },
 ]
 
