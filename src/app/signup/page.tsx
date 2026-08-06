@@ -46,7 +46,9 @@ interface Props {
 
 export default async function SignupPage({ searchParams }: Props) {
   const { plan } = await searchParams
-  const selectedPlan = plan === 'growth' ? 'growth' : 'starter'
+  // Growth is the default trial tier — new hospitals trial the full feature set,
+  // then choose a paid plan at the end. Only an explicit ?plan=starter opts down.
+  const selectedPlan = plan === 'starter' ? 'starter' : 'growth'
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4 py-10 sm:py-12">

@@ -31,7 +31,7 @@ const SignupSchema = z.object({
   adminEmail:     z.string().email('Valid email required'),
   adminPhone:     z.string().optional(),
   password:       z.string().min(8, 'Password must be at least 8 characters'),
-  plan:           z.enum(['starter', 'growth']).default('starter'),
+  plan:           z.enum(['starter', 'growth']).default('growth'),
   departments:    z.array(z.string()).optional(), // selected starting departments
   acceptedTerms:  z.boolean().refine((v) => v === true, {
     message: 'You must accept the Terms of Service and Privacy Policy to continue.',

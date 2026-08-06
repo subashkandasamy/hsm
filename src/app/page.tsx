@@ -102,7 +102,7 @@ function Hero() {
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14"
           style={{ animation: 'fadeInUp 0.6s ease 0.3s both' }}>
-          <Link href="/signup?plan=starter"
+          <Link href="/signup?plan=growth"
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold"
             style={{ background: T, color: '#fff', minHeight: '56px', boxShadow: '0 8px 28px rgba(13,148,136,0.35)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
             Start free — 30 days <ArrowRight className="w-5 h-5" />

@@ -39,7 +39,7 @@ interface Props {
   plan?: 'starter' | 'growth'
 }
 
-export default function SignupForm({ plan = 'starter' }: Props) {
+export default function SignupForm({ plan = 'growth' }: Props) {
   const [hospitalName, setHospitalName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugState, setSlugState] = useState<SlugState>('idle')
