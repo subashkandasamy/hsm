@@ -6,7 +6,7 @@ import SignupForm from './_components/SignupForm'
 export const metadata: Metadata = {
   title: 'Start Your Free Trial — Uyirly Hospital Management Software',
   description:
-    'Register your hospital on Uyirly in under 2 minutes and start a 30-day free trial. No credit card required. All-in-one hospital management software for India — OPD, IPD, pharmacy, lab, billing and more.',
+    'Register your hospital on Uyirly in under 2 minutes and start a 30-day free trial — no credit card. All-in-one hospital management software for India.',
   alternates: { canonical: '/signup' },
   openGraph: {
     url: '/signup',

@@ -1094,7 +1094,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Right-sized software for a nursing home — OPD, beds, pharmacy and billing without hospital bloat.',
     metaTitle: 'Nursing Home Management Software (India)',
     description:
-      'Uyirly is nursing home management software for India — OPD, beds and admissions, pharmacy, billing and patient records in one affordable cloud system that scales as you grow. Free trial.',
+      'Nursing home management software for India — OPD, beds and admissions, pharmacy, billing and patient records in one affordable cloud system. Free trial.',
     keywords: [
       'nursing home management software',
       'nursing home software',
@@ -1187,7 +1187,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'One patient across every specialty and department — the whole multi-specialty hospital on one system.',
     metaTitle: 'Multi-Specialty Hospital Management Software (India)',
     description:
-      'Uyirly is multi-specialty hospital management software for India — every department and specialty on one shared patient record and bill, with doctor-wise queues and all clinical modules. Free trial.',
+      'Multi-specialty hospital management software for India — every department on one shared patient record and bill, with doctor-wise queues and all modules.',
     keywords: [
       'multi specialty hospital software',
       'multi specialty hospital management software',
@@ -1289,7 +1289,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Stock, batch and expiry, dispensing against prescriptions, and billing — for the OPD counter and the IPD ward.',
     metaTitle: 'Pharmacy Management Software for Hospitals (India)',
     description:
-      'Uyirly is hospital pharmacy management software for India — drug stock with batch and expiry, dispensing against prescriptions, OPD and IPD billing, and Schedule H/H1/X records. Free trial.',
+      'Hospital pharmacy management software for India — drug stock with batch and expiry, dispensing against prescriptions, billing, and Schedule H/H1/X records.',
     keywords: [
       'pharmacy management software',
       'hospital pharmacy software',
@@ -1408,7 +1408,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Order to scan to report — modality worklist, structured reporting and templates on one patient record.',
     metaTitle: 'Radiology Information System (RIS) Software India',
     description:
-      'Uyirly is radiology information system (RIS) software for Indian hospitals — order to scan to verified report, modality worklist, reporting templates and billing on one patient record. Free trial.',
+      'Radiology information system (RIS) software for Indian hospitals — order to scan to verified report, modality worklist, reporting templates and billing.',
     keywords: [
       'radiology information system',
       'ris software',
@@ -1502,7 +1502,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Donors, stock by group and component, cross-match and full issue traceability — with expiry under control.',
     metaTitle: 'Blood Bank Management Software (India)',
     description:
-      'Uyirly is blood bank management software for India — donor records, stock by blood group and component, cross-matching, issue traceability and expiry control, on one hospital system. Free trial.',
+      'Blood bank management software for India — donor records, stock by group and component, cross-matching, issue traceability and expiry control. Free trial.',
     keywords: [
       'blood bank management software',
       'blood bank software',
@@ -1595,7 +1595,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Schedule theatres, teams and cases — with pre-op checklists, consumables and OT notes on the patient record.',
     metaTitle: 'Operation Theatre (OT) Management Software India',
     description:
-      'Uyirly is operation theatre (OT) management software for India — theatre and surgery scheduling, surgical team allocation, pre-op checklists, consumables and OT notes on one patient record. Free trial.',
+      'Operation theatre (OT) management software for India — surgery scheduling, surgical team allocation, pre-op checklists, consumables and OT notes.',
     keywords: [
       'operation theatre management software',
       'ot management software',
@@ -1692,7 +1692,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Comparing MocDoc? Here’s how Uyirly approaches the same job — and what to weigh before you choose.',
     metaTitle: 'MocDoc Alternative for Indian Hospitals — Uyirly',
     description:
-      'Considering a MocDoc alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial, and what to compare before you decide.',
+      'Considering a MocDoc alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial.',
     keywords: [
       'mocdoc alternative',
       'alternative to mocdoc',
@@ -1801,7 +1801,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Looking beyond Healthray? See how Uyirly runs the whole hospital on one system — and what to compare.',
     metaTitle: 'Healthray Alternative for Indian Hospitals — Uyirly',
     description:
-      'Exploring a Healthray alternative? See how Uyirly connects OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial, and the criteria to compare before you choose.',
+      'Exploring a Healthray alternative? See how Uyirly connects OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial.',
     keywords: [
       'healthray alternative',
       'alternative to healthray',

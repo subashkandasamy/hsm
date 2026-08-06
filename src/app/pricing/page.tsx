@@ -6,7 +6,7 @@ import MarketingNav from '@/components/marketing/MarketingNav'
 export const metadata: Metadata = {
   title: 'Pricing — Hospital Management Software from ₹2,999/mo | Uyirly',
   description:
-    'Transparent flat pricing for hospital management software in India. Starter ₹2,999/mo, Growth ₹7,999/mo, and custom Enterprise plans. No per-bed fees, no per-user metering. 30-day free trial, no credit card.',
+    'Transparent flat pricing for hospital management software in India — Starter ₹2,999/mo, Growth ₹7,999/mo. No per-bed or per-user fees. 30-day free trial.',
   alternates: { canonical: '/pricing' },
   openGraph: {
     url: '/pricing',

@@ -209,7 +209,7 @@ export const TOOLS: Record<string, ToolMeta> = {
     tagline: 'Search any Indian medicine by brand or generic — see its brands, MRP and drug schedule (H, H1, X).',
     metaTitle: 'Indian Medicine & Drug Schedule (H, H1, X) Lookup',
     description:
-      'Free search across thousands of Indian medicines — type a brand or generic to see its brands, indicative MRP, and drug schedule (H, H1, X) with the dispensing and record-keeping rules. For pharmacists and hospitals.',
+      'Free search of thousands of Indian medicines — type a brand or generic for its brands, indicative MRP, and drug schedule (H, H1, X) with dispensing rules.',
     keywords: [
       'schedule h drugs',
       'schedule h1 drugs list',
