@@ -25,6 +25,7 @@ export default function MarketingNav({ ctaLabel = 'Start free trial' }: { ctaLab
             { label: 'Solutions', href: '/solutions' },
             { label: 'Pricing',   href: '/pricing'   },
             { label: 'Guides',    href: '/guides'    },
+            { label: 'Tools',     href: '/tools'     },
           ].map(({ label, href }) => (
             <Link key={label} href={href} className="text-sm font-medium" style={{ color: SLATE6 }}>
               {label}

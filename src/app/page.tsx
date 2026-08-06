@@ -1059,6 +1059,7 @@ function Footer() {
                 { label: 'Patient login', href: 'https://my.uyirly.com'  },
                 { label: 'Solutions', href: '/solutions'                 },
                 { label: 'Guides',  href: '/guides'                   },
+                { label: 'Free tools', href: '/tools'                 },
                 { label: 'Terms',   href: '/terms'                    },
                 { label: 'Privacy', href: '/privacy'                  },
                 { label: 'Contact', href: 'mailto:contact@uyirly.com' },
