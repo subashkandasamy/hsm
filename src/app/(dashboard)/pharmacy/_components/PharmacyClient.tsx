@@ -19,13 +19,14 @@ import {
   updateBatch, updateDrugReorderLevel,
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
-import type { DrugWithStock, PrescriptionWithVisit, Drug, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
+import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
 import { listDispatchedHistory } from '@/app/actions/pharmacy'
 import { listPharmacySales } from '@/app/actions/pharmacySale'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import Select from '@/components/ui/Select'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
 import AddBatchModal from './AddBatchModal'
 import SaleCartBuilder from './SaleCartBuilder'
@@ -37,7 +38,6 @@ interface Props {
   initialPending: PrescriptionWithVisit[]
   initialStock: DrugWithStock[]
   initialAlerts: PharmacyAlerts
-  drugs: Drug[]
   initialReadySales: PharmacySale[]
   initialFulfilledSales: PharmacySale[]
   allPatients: Patient[]
@@ -47,7 +47,7 @@ interface Props {
 }
 
 export default function PharmacyClient({
-  initialPending, initialStock, initialAlerts, drugs,
+  initialPending, initialStock, initialAlerts,
   initialReadySales, initialFulfilledSales, allPatients, initialAwaitingDispatch,
   initialIpdRequests, initialOpdHistory,
 }: Props) {
@@ -248,7 +248,6 @@ export default function PharmacyClient({
         <DispenseQueue
           pending={pending}
           awaitingDispatch={awaitingDispatch}
-          drugs={drugs}
           skippedRxIds={skippedRxIds}
           dispensedIds={dispensedIds}
           extraByPatient={extraByPatient}
@@ -281,7 +280,6 @@ export default function PharmacyClient({
         <DispenseModal
           open
           prescription={dispenseRx}
-          drugs={drugs}
           onClose={() => setDispenseRx(null)}
           onSuccess={(dispenseId) => {
             const rxId = dispenseRx.id
@@ -299,7 +297,6 @@ export default function PharmacyClient({
       {showAddBatch && (
         <AddBatchModal
           open={showAddBatch}
-          drugs={drugs}
           canManage={canManage}
           onClose={() => setShowAddBatch(false)}
           onSuccess={() => { setShowAddBatch(false); refresh() }}
@@ -319,15 +316,57 @@ type PatientGroup = {
   prescriptions: PrescriptionWithVisit[]
 }
 
+// Typeahead for adding an extra drug — searches the catalogue server-side
+// (it's too large to render as a full <select>).
+function AddDrugSelect({ onSelect }: { onSelect: (id: string) => void }) {
+  const [q, setQ] = useState('')
+  const [label, setLabel] = useState('')
+  const [open, setOpen] = useState(false)
+  const results = useDrugSearch(q, 12)
+
+  if (label) {
+    return (
+      <div className="flex-1 flex items-center gap-2" style={{ minWidth: '180px' }}>
+        <div className="flex-1 px-3 py-2 rounded-xl text-sm truncate" style={{ border: '1px solid #0D9488', background: '#fff', color: '#0F172A', minHeight: '40px' }}>{label}</div>
+        <button type="button" onClick={() => { setLabel(''); setQ(''); onSelect('') }}
+          className="text-xs px-2 py-1 rounded-lg" style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>Change</button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative flex-1" style={{ minWidth: '180px' }}>
+      <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Search drug by brand or generic…" autoComplete="off"
+        className="w-full rounded-xl text-sm px-3 py-2" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A', minHeight: '40px', outline: 'none' }} />
+      {open && results.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 rounded-xl overflow-y-auto"
+          style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: 200, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+          {results.map((d) => {
+            const lbl = `${d.name}${d.strength ? ' ' + d.strength : ''}`
+            return (
+              <div key={d.id} onMouseDown={() => { onSelect(d.id); setLabel(lbl); setOpen(false) }}
+                className="px-3 py-2 text-sm cursor-pointer" style={{ borderBottom: '1px solid #F1F5F9', color: '#1E293B' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#F0FDFA')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '')}>
+                {lbl}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DispenseQueue({
-  pending, awaitingDispatch, drugs,
+  pending, awaitingDispatch,
   skippedRxIds, dispensedIds, extraByPatient, billInfoMap, dispatchedPatients,
   canDispense, dispatchedHistory,
   onDispense, onSkipRx, onUnSkipRx, onAddAndPack, onCheckPayment, onDispatch,
 }: {
   pending: PrescriptionWithVisit[]
   awaitingDispatch: AwaitingDispatchPatient[]
-  drugs: Drug[]
   skippedRxIds: Set<string>
   dispensedIds: Set<string>
   extraByPatient: Map<string, string[]>
@@ -663,17 +702,7 @@ function DispenseQueue({
                   <div className="px-4 py-3" style={{ background: 'rgba(13,148,136,0.03)', borderTop: '1px solid #F1F5F9' }}>
                     <p className="text-xs font-semibold mb-2" style={{ color: '#0D9488' }}>Add Extra Drug</p>
                     <div className="flex flex-wrap gap-2 items-center">
-                      <Select
-                        value={addDrugId}
-                        onChange={(e) => setAddDrugId(e.target.value)}
-                        className="flex-1"
-                        style={{ minWidth: '180px' }}
-                      >
-                        <option value="">Select drug…</option>
-                        {drugs.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}{d.strength ? ` ${d.strength}` : ''}</option>
-                        ))}
-                      </Select>
+                      <AddDrugSelect onSelect={setAddDrugId} />
                       <input
                         type="number" min={1} value={addDrugQty}
                         onChange={(e) => setAddDrugQty(Number(e.target.value) || 1)}

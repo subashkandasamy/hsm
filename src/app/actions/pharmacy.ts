@@ -154,6 +154,83 @@ export async function listDrugs(): Promise<Drug[]> {
   return [...global, ...tenant]
 }
 
+// Server-side drug typeahead. The global catalogue holds ~15k molecules and
+// ~250k brands, so we never ship the whole list to the client — components call
+// this as the user types. Matches molecule name/generic AND brand name (people
+// mostly search by brand), returns molecules with a bounded set of brands.
+export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+
+  const cleaned = query.replace(/[,()*%]/g, ' ').trim()
+  if (cleaned.length < 2) return []
+  const pat = `*${cleaned}*`
+
+  type BrandDetail = {
+    drug_master_id: string; brand_name: string; manufacturer: string | null
+    hsn_code: string | null; gst_rate: number | null; pack_size: number | null; pack_unit: string | null
+  }
+  const brandCols = 'drug_master_id, brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit'
+
+  const [{ data: nameHits }, { data: brandHits }] = await Promise.all([
+    supabase.from('drug_master').select('id').eq('is_active', true)
+      .or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit),
+    supabase.from('drug_brands').select(brandCols).ilike('brand_name', pat).limit(200),
+  ])
+
+  // Molecule ids: name/generic matches first, then brand matches — deduped, capped.
+  const ordered: string[] = []
+  for (const id of [
+    ...((nameHits ?? []).map(r => r.id as string)),
+    ...((brandHits ?? []).map(r => (r as BrandDetail).drug_master_id).filter(Boolean)),
+  ]) if (id && !ordered.includes(id)) ordered.push(id)
+  const ids = ordered.slice(0, limit)
+
+  const globals: Drug[] = []
+  if (ids.length) {
+    const [{ data: mols }, { data: sample }] = await Promise.all([
+      supabase.from('drug_master').select('id, name, generic_name, form, strength, unit').in('id', ids),
+      supabase.from('drug_brands').select(brandCols).in('drug_master_id', ids).limit(300),
+    ])
+    const byMol = new Map<string, BrandDetail[]>()
+    for (const b of [...((sample ?? []) as BrandDetail[]), ...((brandHits ?? []) as BrandDetail[])]) {
+      if (!b.drug_master_id) continue
+      const arr = byMol.get(b.drug_master_id) ?? []
+      if (!arr.some(x => x.brand_name === b.brand_name)) arr.push(b)
+      byMol.set(b.drug_master_id, arr)
+    }
+    const molMap = new Map((mols ?? []).map(m => [m.id as string, m]))
+    for (const id of ids) {
+      const m = molMap.get(id); if (!m) continue
+      const brands = byMol.get(id) ?? []
+      globals.push({
+        id, name: m.name as string,
+        generic_name: (m.generic_name as string | null) ?? null,
+        form: (m.form as string | null) ?? null,
+        strength: (m.strength as string | null) ?? null,
+        unit: (m.unit as string | null) ?? null,
+        is_active: true, is_global: true,
+        brand_aliases: brands.map(b => b.brand_name),
+        brand_data: brands,
+      })
+    }
+  }
+
+  const { data: tenantDrugs } = await supabase.from('drugs')
+    .select('id, name, generic_name, form, strength, unit, reorder_level, is_active')
+    .eq('is_active', true).or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit)
+  const tenant: Drug[] = (tenantDrugs ?? []).map(d => ({
+    id: d.id as string, name: d.name as string,
+    generic_name: (d.generic_name as string | null) ?? null,
+    form: (d.form as string | null) ?? null, strength: (d.strength as string | null) ?? null,
+    unit: (d.unit as string | null) ?? null, reorder_level: (d.reorder_level as number) ?? 0,
+    is_active: true, is_global: false,
+  }))
+
+  return [...tenant, ...globals].slice(0, limit)
+}
+
 // ---- Stock ----
 
 export async function getStock(): Promise<DrugWithStock[]> {

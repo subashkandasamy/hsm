@@ -59,7 +59,7 @@ import {
   listIpdLabOrders, createIpdLabOrder, cancelIpdLabOrder, listLabCatalogForIpd,
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
 } from '@/app/actions/ipdTreatment'
-import { listDrugs } from '@/app/actions/pharmacy'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import type {
@@ -147,21 +147,15 @@ function orderLabel(o: IpdMedicationOrder): string {
 // ─── Drug Name Combobox ───────────────────────────────────────────────────────
 
 interface DrugComboboxProps {
-  value: string; drugs: Drug[]
+  value: string
   onChange: (name: string, drug: Drug | null) => void
 }
-function DrugCombobox({ value, drugs, onChange }: DrugComboboxProps) {
+function DrugCombobox({ value, onChange }: DrugComboboxProps) {
   const [open, setOpen]   = useState(false)
   const [query, setQuery] = useState(value)
 
   const q = query.trim().toLowerCase()
-  const filtered = q.length > 0
-    ? drugs.filter((d) =>
-        d.name.toLowerCase().includes(q) ||
-        (d.generic_name ?? '').toLowerCase().includes(q) ||
-        (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
-      ).slice(0, 10)
-    : []
+  const filtered = useDrugSearch(query, 10)
 
   function select(drug: Drug, label: string) {
     setQuery(label); onChange(label, drug); setOpen(false)
@@ -1080,8 +1074,6 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [, startTransition]     = useTransition()
   const [error, setError]       = useState('')
 
-  const [pharmaDrugs, setPharmaDrugs] = useState<Drug[]>([])
-
   const [showForm, setShowForm]       = useState(false)
   const [form, setForm]               = useState<OrderForm>(BLANK)
   const [formError, setFormError]     = useState('')
@@ -1103,10 +1095,6 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       setOrders(o); setSchedule(s); setLoading(false)
     })
   }, [admissionId])
-
-  useEffect(() => {
-    if (showForm && pharmaDrugs.length === 0) listDrugs().then(setPharmaDrugs)
-  }, [showForm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function setF(k: keyof OrderForm, v: string) { setForm((f) => ({ ...f, [k]: v })) }
 
@@ -1244,7 +1232,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2">
                   <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Drug Name *</label>
-                  <DrugCombobox value={form.drug_name} drugs={pharmaDrugs}
+                  <DrugCombobox value={form.drug_name}
                     onChange={(name, drug) => {
                       setF('drug_name', name)
                       if (drug?.unit) setF('dose_unit', drug.unit)

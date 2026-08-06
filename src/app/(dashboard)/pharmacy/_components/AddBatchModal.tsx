@@ -1,17 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Globe, Building2, ChevronDown, Search, X } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { addBatch, createDrug } from '@/app/actions/pharmacy'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import type { Drug } from '@/lib/types'
 
 interface Props {
   open: boolean
-  drugs: Drug[]
   canManage: boolean
   onClose: () => void
   onSuccess: () => void
@@ -33,9 +33,10 @@ function drugLabel(d: Drug) {
   return `${d.name}${d.strength ? ' ' + d.strength : ''}${d.form ? ' (' + d.form + ')' : ''}`
 }
 
-export default function AddBatchModal({ open, drugs, canManage, onClose, onSuccess }: Props) {
+export default function AddBatchModal({ open, canManage, onClose, onSuccess }: Props) {
   const [mode, setMode] = useState<'existing' | 'new'>('existing')
   const [selectedDrugId, setSelectedDrugId] = useState('')
+  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null)
   const [drugSearch, setDrugSearch] = useState('')
   const [showDrugList, setShowDrugList] = useState(false)
   const [showGrn, setShowGrn] = useState(false)
@@ -50,18 +51,11 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const filteredDrugs = useMemo(() => {
-    const q = drugSearch.trim().toLowerCase()
-    if (!q) return drugs.slice(0, 20)
-    return drugs.filter(d =>
-      d.name.toLowerCase().includes(q) ||
-      (d.generic_name?.toLowerCase().includes(q)) ||
-      (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
-    ).slice(0, 15)
-  }, [drugs, drugSearch])
+  const filteredDrugs = useDrugSearch(drugSearch, 15)
 
   function selectDrug(d: Drug, label?: string) {
     setSelectedDrugId(d.id)
+    setSelectedDrug(d)
     setDrugSearch(label ?? drugLabel(d))
     setShowDrugList(false)
 
@@ -84,6 +78,7 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
 
   function clearDrug() {
     setSelectedDrugId('')
+    setSelectedDrug(null)
     setDrugSearch('')
     setShowDrugList(false)
   }
@@ -135,8 +130,7 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
       batchPayload.drug_id = drugResult.drug.id
     } else {
       if (!selectedDrugId) { setError('Please select a drug'); setLoading(false); return }
-      const selected = drugs.find(d => d.id === selectedDrugId)
-      if (selected?.is_global) {
+      if (selectedDrug?.is_global) {
         batchPayload.drug_master_id = selectedDrugId
       } else {
         batchPayload.drug_id = selectedDrugId
@@ -149,7 +143,6 @@ export default function AddBatchModal({ open, drugs, canManage, onClose, onSucce
     onSuccess()
   }
 
-  const selectedDrug = drugs.find(d => d.id === selectedDrugId)
   const isGlobalSelected = mode === 'existing' && !!selectedDrugId && selectedDrug?.is_global
 
   return (

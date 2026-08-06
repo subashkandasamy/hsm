@@ -3,7 +3,6 @@ import {
   listPendingPrescriptions,
   getStock,
   getAlerts,
-  listDrugs,
   listPackedAwaitingDispatch,
   listDispatchedHistory,
 } from '@/app/actions/pharmacy'
@@ -13,11 +12,10 @@ import { listIpdPharmacyRequests } from '@/app/actions/ipdTreatment'
 import PharmacyClient from './_components/PharmacyClient'
 
 export default async function PharmacyPage() {
-  const [pending, stock, alerts, drugs, readySales, fulfilledSales, patients, awaitingDispatch, ipdRequests, opdHistory] = await Promise.all([
+  const [pending, stock, alerts, readySales, fulfilledSales, patients, awaitingDispatch, ipdRequests, opdHistory] = await Promise.all([
     listPendingPrescriptions(),
     getStock(),
     getAlerts(),
-    listDrugs(),
     listPharmacySales({ status: 'billed' }),
     listPharmacySales({ status: 'fulfilled' }),
     listPatients(),
@@ -31,7 +29,6 @@ export default async function PharmacyPage() {
       initialPending={pending}
       initialStock={stock}
       initialAlerts={alerts}
-      drugs={drugs}
       initialReadySales={readySales}
       initialFulfilledSales={fulfilledSales}
       allPatients={patients}

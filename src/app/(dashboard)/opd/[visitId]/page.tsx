@@ -5,7 +5,7 @@ import { getVisit, getPatientVisits } from '@/app/actions/opd'
 import { getPatient } from '@/app/actions/patients'
 import { listLabCatalog, listLabOrders } from '@/app/actions/lab'
 import { listRadiologyCatalog, listRadiologyOrders } from '@/app/actions/radiology'
-import { listDrugs } from '@/app/actions/pharmacy'
+
 import { listAllergies } from '@/app/actions/allergies'
 import { getDentalChart, listTreatmentHistory, listDueRecalls } from '@/app/actions/dental'
 import { getWardBoard } from '@/app/actions/wards'
@@ -42,7 +42,7 @@ export default async function OpdVisitPage({ params }: Props) {
 
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
 
-  const [patient, pastVisits, labCatalog, radiologyCatalog, labOrders, radiologyOrders, drugs, allergies,
+  const [patient, pastVisits, labCatalog, radiologyCatalog, labOrders, radiologyOrders, allergies,
          wards, doctorsRes, tariffsRes, tenantRes, generalRes, tenantProfile] = await Promise.all([
     getPatient(visit.patient_id),
     getPatientVisits(visit.patient_id),
@@ -50,7 +50,6 @@ export default async function OpdVisitPage({ params }: Props) {
     listRadiologyCatalog(),
     listLabOrders({ visitId }),
     listRadiologyOrders({ visitId }),
-    listDrugs(),
     listAllergies(visit.patient_id),
     getWardBoard(),
     supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
@@ -99,7 +98,6 @@ export default async function OpdVisitPage({ params }: Props) {
       radiologyCatalog={radiologyCatalog}
       labOrders={labOrders}
       radiologyOrders={radiologyOrders}
-      drugs={drugs}
       allergies={allergies}
       clinicalTemplate={template}
       dentalTeeth={dentalTeeth}

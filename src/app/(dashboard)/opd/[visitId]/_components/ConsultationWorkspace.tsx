@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, Droplet, AlertTriangle, ChevronDown, ChevronRight,
@@ -21,7 +22,7 @@ import {
 } from '@/app/actions/opd'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
-import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, Drug, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall, TenantProfile } from '@/lib/types'
+import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall, TenantProfile } from '@/lib/types'
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
@@ -59,7 +60,6 @@ interface Props {
   radiologyCatalog: RadiologyCatalog[]
   labOrders?: LabOrder[]
   radiologyOrders?: RadiologyOrder[]
-  drugs: Drug[]
   allergies: PatientAllergy[]
   clinicalTemplate?: ClinicalTemplate
   dentalTeeth?: DentalTooth[] | null
@@ -86,7 +86,7 @@ function computeAge(dob: string | null) {
 }
 
 export default function ConsultationWorkspace({
-  visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], drugs, allergies,
+  visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
   tenantProfile = null, plan = 'starter', tenantStatus = 'trial',
@@ -154,7 +154,7 @@ export default function ConsultationWorkspace({
   }, [newRx.drug_name, isDoctor, isClosed, patient.id, prescriptions])
 
   // Drug autocomplete
-  const [drugSuggestions, setDrugSuggestions] = useState<Drug[]>([])
+  const drugSuggestions = useDrugSearch(newRx.drug_name, 10)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [activeSuggestion, setActiveSuggestion] = useState(-1)
 
@@ -730,20 +730,7 @@ export default function ConsultationWorkspace({
                           setNewRx((r) => ({ ...r, drug_name: q }))
                           setRxError(null)
                           setActiveSuggestion(-1)
-                          if (q.trim().length >= 1) {
-                            const lower = q.toLowerCase()
-                            const matches = drugs.filter(
-                              (d) =>
-                                d.name.toLowerCase().includes(lower) ||
-                                (d.generic_name ?? '').toLowerCase().includes(lower) ||
-                                (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(lower))
-                            ).slice(0, 10)
-                            setDrugSuggestions(matches)
-                            setShowSuggestions(matches.length > 0)
-                          } else {
-                            setDrugSuggestions([])
-                            setShowSuggestions(false)
-                          }
+                          setShowSuggestions(q.trim().length >= 2)
                         }}
                         onKeyDown={(e) => {
                           if (!showSuggestions) return
@@ -774,7 +761,7 @@ export default function ConsultationWorkspace({
                         hasError={!!rxError}
                         autoComplete="off"
                       />
-                      {showSuggestions && (
+                      {showSuggestions && drugSuggestions.length > 0 && (
                         <div
                           className="absolute left-0 top-full mt-1 w-full z-50 rounded-xl overflow-hidden"
                           style={{

@@ -7,13 +7,13 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
-import { dispense, getFefoPreview } from '@/app/actions/pharmacy'
+import { dispense, getFefoPreview, searchDrugs } from '@/app/actions/pharmacy'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import type { Drug, DrugBatch, PrescriptionWithVisit } from '@/lib/types'
 
 interface Props {
   open: boolean
   prescription: PrescriptionWithVisit
-  drugs: Drug[]
   onClose: () => void
   onSuccess: (dispenseId: string) => void
 }
@@ -73,14 +73,13 @@ function findAutoMatch(drugName: string, drugs: Drug[]): { drug: Drug; label: st
   return null
 }
 
-export default function DispenseModal({ open, prescription, drugs, onClose, onSuccess }: Props) {
+export default function DispenseModal({ open, prescription, onClose, onSuccess }: Props) {
   const freqPerDay  = parseFreqPerDay(prescription.frequency)
   const durationDay = parseDurationDays(prescription.duration)
   const autoQty     = freqPerDay * durationDay
 
-  const autoMatch = findAutoMatch(prescription.drug_name, drugs)
-  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(autoMatch?.drug ?? null)
-  const [drugSearch, setDrugSearch]     = useState(autoMatch?.label ?? prescription.drug_name)
+  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null)
+  const [drugSearch, setDrugSearch]     = useState(prescription.drug_name)
   const [showDrugDropdown, setShowDrugDropdown] = useState(false)
   const [qty, setQty]         = useState(String(autoQty))
   const [fefo, setFefo]       = useState<{ batch: DrugBatch; price: number } | null>(null)
@@ -88,14 +87,19 @@ export default function DispenseModal({ open, prescription, drugs, onClose, onSu
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
-  const filteredDrugs = drugs.filter((d) => {
-    const q = drugSearch.toLowerCase()
-    return (
-      d.name.toLowerCase().includes(q) ||
-      (d.generic_name?.toLowerCase().includes(q)) ||
-      (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
-    )
-  }).slice(0, 10)
+  const filteredDrugs = useDrugSearch(drugSearch, 10)
+
+  // One-time auto-match: search the catalogue for the prescribed drug name and
+  // pre-select the best brand/generic hit so the pharmacist usually just confirms.
+  useEffect(() => {
+    let active = true
+    searchDrugs(prescription.drug_name, 20).then(res => {
+      if (!active) return
+      const m = findAutoMatch(prescription.drug_name, res)
+      if (m) { setSelectedDrug(m.drug); setDrugSearch(m.label) }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [prescription.drug_name])
 
   const loadFefo = useCallback(async (drugId: string, q: number) => {
     if (!drugId || q < 1) { setFefo(null); return }

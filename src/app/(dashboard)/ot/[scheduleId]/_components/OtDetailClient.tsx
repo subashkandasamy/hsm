@@ -6,6 +6,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, Search, UserPlus, X, Scissors, BedDouble,
 } from 'lucide-react'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
+import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import MicButton from '@/components/ui/MicButton'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
@@ -54,11 +55,10 @@ function fmtTime(iso: string) {
 
 interface Props {
   schedule: OtSchedule
-  drugs: Drug[]
   wardBoard: WardWithBeds[]
 }
 
-export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: Props) {
+export default function OtDetailClient({ schedule: initial, wardBoard }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const canRecord   = !!profile && hasPermission(profile.role, 'ot:record')
@@ -121,14 +121,7 @@ export default function OtDetailClient({ schedule: initial, drugs, wardBoard }: 
     return () => clearTimeout(t)
   }, [staffQuery, schedule.surgeon_id, team])
 
-  const filteredDrugs = drugQuery.trim()
-    ? drugs.filter(d => {
-        const q = drugQuery.toLowerCase()
-        return d.name.toLowerCase().includes(q) ||
-          (d.generic_name ?? '').toLowerCase().includes(q) ||
-          (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
-      }).slice(0, 8)
-    : []
+  const filteredDrugs = useDrugSearch(drugQuery, 8)
 
   function selectDrug(drug: Drug) {
     const brandName = (drug.brand_aliases ?? [])[0]
