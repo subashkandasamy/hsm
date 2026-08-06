@@ -105,6 +105,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Public tool APIs (e.g. the drug-schedule lookup on the marketing site) query
+  // only the global drug catalogue — no auth, no tenant, no session cookie.
+  if (pathname.startsWith('/api/tools/')) {
+    return NextResponse.next()
+  }
+
   // ── If Supabase is not configured, gate all non-public traffic ─────────────
   if (!isValidUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)) {
     if (isPublicPath) return NextResponse.next()

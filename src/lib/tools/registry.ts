@@ -196,25 +196,25 @@ export const TOOLS: Record<string, ToolMeta> = {
   'schedule-h-h1-x-drug-lookup': {
     slug: 'schedule-h-h1-x-drug-lookup',
     eyebrow: 'Free Tool',
-    tagline: 'Look up whether a drug is Schedule H, H1 or X — and the dispensing rules for each.',
-    metaTitle: 'Schedule H, H1 & X Drug Lookup',
+    tagline: 'Search any Indian medicine by brand or generic — see its brands, MRP and drug schedule (H, H1, X).',
+    metaTitle: 'Indian Medicine & Drug Schedule (H, H1, X) Lookup',
     description:
-      'Free lookup for Schedule H, H1 and X drugs in India — search a medicine to see its schedule and the dispensing and record-keeping rules. For pharmacists and hospitals.',
+      'Free search across thousands of Indian medicines — type a brand or generic to see its brands, indicative MRP, and drug schedule (H, H1, X) with the dispensing and record-keeping rules. For pharmacists and hospitals.',
     keywords: [
       'schedule h drugs',
       'schedule h1 drugs list',
       'schedule x drugs',
       'schedule h drugs list',
       'h1 drugs',
-      'schedule h1 drug list',
-      'schedule x drugs list',
+      'medicine price list india',
+      'drug brand generic search',
     ],
-    h1: 'Schedule H, H1 & X drug lookup',
+    h1: 'Indian medicine & drug schedule lookup',
     intro:
-      'Search a medicine to see whether it is a Schedule H, H1 or X drug in India, and the dispensing and record-keeping rules that apply. Built for pharmacists and hospital pharmacies. Read the full explanation in our [Schedule H, H1 & X guide](/guides/drug-schedule-h-h1-x-pharmacy-compliance). This is a curated reference — always verify against the current official schedules.',
+      'Search thousands of Indian medicines by brand or generic name to see the available brands, an indicative MRP, and — where classified — whether it is a Schedule H, H1 or X drug with the dispensing and record-keeping rules that apply. Built for pharmacists and hospital pharmacies. Read the full explanation in our [Schedule H, H1 & X guide](/guides/drug-schedule-h-h1-x-pharmacy-compliance). Prices are indicative and schedules should always be verified against the current official lists.',
     howTo: [
-      { title: 'Search or filter', body: 'Type a drug name, or filter by schedule (H, H1, X or over-the-counter).' },
-      { title: 'Read the schedule and rule', body: 'Each result shows the schedule and exactly how it must be dispensed and recorded.' },
+      { title: 'Search by brand or generic', body: 'Start typing any medicine — a brand like “Augmentin” or a generic like “Amoxicillin”.' },
+      { title: 'See brands, price and schedule', body: 'Each result shows its brands with indicative MRP and, where classified, the drug schedule and dispensing rule.' },
       { title: 'Follow the record rule', body: 'Schedule H1 needs a separate register entry; Schedule X needs a special licence and stricter records.' },
     ],
     faqs: [
