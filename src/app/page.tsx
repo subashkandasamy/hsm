@@ -13,7 +13,7 @@ import BrandMark from '@/components/ui/BrandMark'
 export const metadata: Metadata = {
   title: 'Uyirly — Hospital Management Software for India',
   description:
-    'All-in-one hospital management software for Indian hospitals, nursing homes and clinics. Manage OPD, IPD, pharmacy, lab, radiology, OT, blood bank, billing and insurance from one cloud platform. DPDP Act aligned, data stored in India, native mobile app. Start a 30-day free trial — no credit card.',
+    'All-in-one hospital management software for India — run OPD, IPD, pharmacy, lab, billing and insurance on one cloud platform. DPDP-aligned. 30-day free trial.',
   alternates: { canonical: '/' },
   openGraph: {
     url: '/',
