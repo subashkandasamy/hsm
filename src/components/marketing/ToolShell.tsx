@@ -100,6 +100,31 @@ export default function ToolShell({ meta, children }: { meta: ToolMeta; children
           </ol>
         </section>
 
+        {/* Long-form article */}
+        {meta.body && meta.body.length > 0 && (
+          <article className="mt-14">
+            {meta.body.map((sec, si) => (
+              <section key={si} className={si > 0 ? 'mt-9' : ''}>
+                <h2 className="text-xl sm:text-2xl font-bold mb-3 leading-snug" style={{ color: SLATE9 }}>{sec.h2}</h2>
+                {sec.blocks.map((b, bi) => {
+                  if (b.type === 'h3') return <h3 key={bi} className="text-base font-semibold mt-5 mb-2" style={{ color: SLATE9 }}>{b.text}</h3>
+                  if (b.type === 'ul') return (
+                    <ul key={bi} className="my-3 space-y-1.5 pl-1">
+                      {b.items.map((it, ii) => (
+                        <li key={ii} className="flex gap-2.5 text-[15px] leading-relaxed" style={{ color: SLATE6 }}>
+                          <span className="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: TEAL }} />
+                          <span>{renderRich(it)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                  return <p key={bi} className="text-[15px] leading-relaxed mb-3" style={{ color: SLATE6 }}>{renderRich(b.text)}</p>
+                })}
+              </section>
+            ))}
+          </article>
+        )}
+
         {/* FAQ */}
         {meta.faqs.length > 0 && (
           <section className="mt-12 pt-8" style={{ borderTop: `1px solid ${BORDER}` }}>

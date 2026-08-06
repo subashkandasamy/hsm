@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { TOOL_ARTICLES } from './articles'
 
 // Free interactive tools (Phase 6). Each = a /tools/<slug> page that ranks for a
 // "generator / calculator / lookup" keyword, satisfies "do" intent better than an
@@ -9,6 +10,13 @@ import type { Metadata } from 'next'
 const SITE = 'https://www.uyirly.com'
 
 export interface ToolStep { title: string; body: string }
+
+// Long-form article body (~1,700 words) rendered under the tool for SEO depth.
+export type ToolBlock =
+  | { type: 'p'; text: string }
+  | { type: 'h3'; text: string }
+  | { type: 'ul'; items: string[] }
+export interface ToolSection { h2: string; blocks: ToolBlock[] }
 
 export interface ToolMeta {
   slug: string
@@ -29,6 +37,8 @@ export interface ToolMeta {
   faqs: { q: string; a: string }[]
   related: { label: string; href: string }[]
   updated: string // YYYY-MM-DD
+  /** ~1,700-word article rendered under the tool (from ./articles). */
+  body?: ToolSection[]
 }
 
 export const TOOLS: Record<string, ToolMeta> = {
@@ -249,7 +259,9 @@ export function toolSlugs(): string[] {
 }
 
 export function getTool(slug: string): ToolMeta | undefined {
-  return TOOLS[slug]
+  const meta = TOOLS[slug]
+  if (!meta) return undefined
+  return { ...meta, body: meta.body ?? TOOL_ARTICLES[slug] }
 }
 
 export function toolMetadata(slug: string): Metadata {
