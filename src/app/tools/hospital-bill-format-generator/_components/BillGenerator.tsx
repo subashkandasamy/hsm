@@ -104,9 +104,9 @@ export default function BillGenerator() {
           <div className="space-y-2 mb-3">
             {items.map((it, i) => (
               <div key={i} className="flex gap-2 items-center">
-                <input className="flex-1 px-2.5 py-2 rounded-lg text-sm" style={inputStyle} placeholder="Description" value={it.desc} onChange={(e) => setItem(i, 'desc', e.target.value)} />
-                <input className="w-14 px-2 py-2 rounded-lg text-sm text-center" style={inputStyle} placeholder="Qty" inputMode="decimal" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
-                <input className="w-24 px-2 py-2 rounded-lg text-sm text-right" style={inputStyle} placeholder="Rate" inputMode="decimal" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
+                <input className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-sm" style={inputStyle} placeholder="Description" value={it.desc} onChange={(e) => setItem(i, 'desc', e.target.value)} />
+                <input className="w-12 flex-shrink-0 px-1.5 py-2 rounded-lg text-sm text-center" style={inputStyle} placeholder="Qty" inputMode="decimal" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
+                <input className="w-20 flex-shrink-0 px-2 py-2 rounded-lg text-sm text-right" style={inputStyle} placeholder="Rate" inputMode="decimal" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
                 <button onClick={() => removeItem(i)} aria-label="Remove" className="w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0" style={{ color: '#DC2626', background: '#FEF2F2', border: 'none', cursor: 'pointer' }}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
