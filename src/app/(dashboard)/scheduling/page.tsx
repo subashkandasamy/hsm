@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getActorProfile } from '@/lib/server-utils'
 import { hasPermission } from '@/lib/rbac'
-import { listWards } from '@/app/actions/wards'
+import { listNursingUnits } from '@/app/actions/wards'
+import { nursingUnitLabel } from '@/lib/types'
 import {
   listShiftDefinitions, listCoverageRules, listWardIncharges,
   listPatterns, listLeaveRequests,
@@ -19,8 +20,8 @@ export default async function SchedulingPage() {
   if (!hasPermission(actor.role, 'scheduling:read')) redirect('/dashboard')
 
   const supabase = await createClient()
-  const [wards, shifts, coverageRules, incharges, patterns, leave, nursesRes, doctorsRes] = await Promise.all([
-    listWards(),
+  const [units, shifts, coverageRules, incharges, patterns, leave, nursesRes, doctorsRes] = await Promise.all([
+    listNursingUnits(),
     listShiftDefinitions(),
     listCoverageRules(),
     listWardIncharges(),
@@ -35,7 +36,7 @@ export default async function SchedulingPage() {
 
   return (
     <SchedulingClient
-      wards={(wards ?? []).map((w) => ({ id: w.id, name: w.name }))}
+      units={(units ?? []).filter((u) => u.is_active).map((u) => ({ id: u.id, label: nursingUnitLabel(u) }))}
       nurses={(nursesRes.data ?? []) as { id: string; full_name: string }[]}
       doctors={(doctorsRes.data ?? []) as { id: string; full_name: string }[]}
       initialShifts={shifts}

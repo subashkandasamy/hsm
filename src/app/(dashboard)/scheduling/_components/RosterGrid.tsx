@@ -5,12 +5,12 @@ import { ChevronLeft, ChevronRight, Copy, Wand2, Send, Plus, AlertCircle, Users 
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import {
-  getWardRoster, setRosterCell, clearRosterCell, publishRoster, generateRoster,
+  getUnitRoster, setRosterCell, clearRosterCell, publishRoster, generateRoster,
 } from '@/app/actions/scheduling'
 import type { WardRosterData, RosterPattern } from '@/lib/types'
 
 interface Props {
-  wards: { id: string; name: string }[]
+  units: { id: string; label: string }[]
   canManage: boolean
   patterns: RosterPattern[]
 }
@@ -29,8 +29,8 @@ function dow(date: string) {
   return new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' })
 }
 
-export default function RosterGrid({ wards, canManage, patterns }: Props) {
-  const [wardId, setWardId] = useState(wards[0]?.id ?? '')
+export default function RosterGrid({ units, canManage, patterns }: Props) {
+  const [unitId, setUnitId] = useState(units[0]?.id ?? '')
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
   const [data, setData] = useState<WardRosterData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -44,11 +44,11 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
   const load = useCallback(async () => {
-    if (!wardId) return
+    if (!unitId) return
     setLoading(true)
-    const d = await getWardRoster({ wardId, weekStart })
+    const d = await getUnitRoster({ unitId, weekStart })
     setData(d); setLoading(false)
-  }, [wardId, weekStart])
+  }, [unitId, weekStart])
 
   useEffect(() => { load(); setExtra([]) }, [load])
 
@@ -87,8 +87,8 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
   }
 
   function changeCell(profileId: string, date: string, shift: string) {
-    if (!shift) act(() => clearRosterCell({ wardId, profileId, date }))
-    else act(() => setRosterCell({ wardId, profileId, date, shift }))
+    if (!shift) act(() => clearRosterCell({ unitId, profileId, date }))
+    else act(() => setRosterCell({ unitId, profileId, date, shift }))
   }
 
   const shifts = data?.shifts ?? []
@@ -98,9 +98,9 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
       {/* Toolbar */}
       <GlassCard className="p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={wardId} onChange={(e) => setWardId(e.target.value)} className="w-48">
-            {wards.length === 0 && <option value="">No wards</option>}
-            {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          <Select value={unitId} onChange={(e) => setUnitId(e.target.value)} className="w-64">
+            {units.length === 0 && <option value="">No nursing units</option>}
+            {units.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
           </Select>
 
           <div className="flex items-center gap-1">
@@ -121,12 +121,12 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
 
           {canManage && (
             <div className="flex flex-wrap items-center gap-2 ml-auto">
-              <button onClick={() => act(() => generateRoster({ ward_id: wardId, start_date: weekStart, end_date: weekEnd, copy_forward: true }))}
+              <button onClick={() => act(() => generateRoster({ nursing_unit_id: unitId, start_date: weekStart, end_date: weekEnd, copy_forward: true }))}
                 disabled={isPending} className="flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg"
                 style={{ background: '#F1F5F9', color: '#334155' }} title="Copy the previous week into empty slots">
                 <Copy className="w-3.5 h-3.5" /> Copy last week
               </button>
-              <button onClick={() => act(() => generateRoster({ ward_id: wardId, start_date: weekStart, end_date: weekEnd, auto_fill: true }))}
+              <button onClick={() => act(() => generateRoster({ nursing_unit_id: unitId, start_date: weekStart, end_date: weekEnd, auto_fill: true }))}
                 disabled={isPending} className="flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg"
                 style={{ background: '#F1F5F9', color: '#334155' }} title="Fill gaps to meet coverage ratios">
                 <Wand2 className="w-3.5 h-3.5" /> Auto-fill
@@ -138,12 +138,12 @@ export default function RosterGrid({ wards, canManage, patterns }: Props) {
                     {patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </Select>
                   {patternId && (
-                    <button onClick={() => act(() => generateRoster({ ward_id: wardId, start_date: weekStart, end_date: weekEnd, pattern_id: patternId }))}
+                    <button onClick={() => act(() => generateRoster({ nursing_unit_id: unitId, start_date: weekStart, end_date: weekEnd, pattern_id: patternId }))}
                       disabled={isPending} className="text-xs px-2 py-2 rounded-lg" style={{ background: '#F1F5F9', color: '#334155' }}>Apply</button>
                   )}
                 </div>
               )}
-              <button onClick={() => act(() => publishRoster({ wardId, start: weekStart, end: weekEnd }))}
+              <button onClick={() => act(() => publishRoster({ unitId, start: weekStart, end: weekEnd }))}
                 disabled={isPending} className="flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg"
                 style={{ background: '#0D9488', color: '#fff' }} title="Publish drafts for this week">
                 <Send className="w-3.5 h-3.5" /> Publish

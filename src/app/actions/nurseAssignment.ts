@@ -218,19 +218,32 @@ export async function listNursesForPicker(params: {
     .from('admissions').select('ward_id').eq('id', admissionId).maybeSingle()
   const wardId = (adm?.ward_id as string | null) ?? null
 
+  // Roster, coverage rule and census are keyed on the room's NURSING UNIT (wing),
+  // not the individual room. Resolve room → unit → all rooms in that unit.
+  let unitId: string | null = null
+  let unitRoomIds: string[] = []
+  if (wardId) {
+    const { data: room } = await supabase.from('wards').select('nursing_unit_id').eq('id', wardId).maybeSingle()
+    unitId = (room?.nursing_unit_id as string | null) ?? null
+    if (unitId) {
+      const { data: rooms } = await supabase.from('wards').select('id').eq('nursing_unit_id', unitId)
+      unitRoomIds = (rooms ?? []).map((r) => r.id as string)
+    }
+  }
+
   const [nursesRes, spRes, rosterRes, leaveRes, loadRes, ruleRes, bedsRes] = await Promise.all([
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
     supabase.from('staff_profiles').select('profile_id, nursing_charge_per_shift'),
-    wardId
-      ? supabase.from('duty_roster').select('profile_id').eq('ward_id', wardId).eq('date', date).eq('shift', shift)
+    unitId
+      ? supabase.from('duty_roster').select('profile_id').eq('nursing_unit_id', unitId).eq('date', date).eq('shift', shift)
       : Promise.resolve({ data: [] as { profile_id: string }[] }),
     supabase.from('leave_requests').select('profile_id').eq('status', 'approved').lte('start_date', date).gte('end_date', date),
     supabase.from('admission_nurse_assignments').select('nurse_id').eq('assigned_date', date).eq('shift', shift),
-    wardId
-      ? supabase.from('ward_coverage_rules').select('patient_ratio, min_nurses').eq('ward_id', wardId).eq('shift_code', shift).maybeSingle()
+    unitId
+      ? supabase.from('ward_coverage_rules').select('patient_ratio, min_nurses').eq('nursing_unit_id', unitId).eq('shift_code', shift).maybeSingle()
       : Promise.resolve({ data: null }),
-    wardId
-      ? supabase.from('admissions').select('id', { count: 'exact', head: true }).eq('ward_id', wardId).eq('status', 'admitted')
+    unitRoomIds.length
+      ? supabase.from('admissions').select('id', { count: 'exact', head: true }).in('ward_id', unitRoomIds).eq('status', 'admitted')
       : Promise.resolve({ count: 0 }),
   ])
 
@@ -262,7 +275,7 @@ export async function listNursesForPicker(params: {
 
   const beds = (bedsRes as { count?: number }).count ?? 0
   const minN = ((ruleRes.data as { min_nurses?: number } | null)?.min_nurses) ?? 1
-  const coverage = wardId
+  const coverage = unitId
     ? { required: Math.max(minN, Math.ceil(beds / ratio)), assigned: rostered.size, occupied_beds: beds }
     : null
 

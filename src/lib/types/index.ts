@@ -164,7 +164,7 @@ export type BedStatus = 'available' | 'occupied' | 'maintenance'
 export interface WardRoomType { id: string; name: string; daily_rate: number; is_multi_bed: boolean; is_icu: boolean; is_active: boolean; created_at: string }
 export interface Ward {
   id: string; name: string; ward_type: string | null;
-  room_type_id: string | null; floor: string | null; block: string | null;
+  room_type_id: string | null; nursing_unit_id: string | null; floor: string | null; block: string | null;
   department_id: string | null; is_temp: boolean; daily_rate: number; created_at: string
 }
 export interface Bed { id: string; ward_id: string; bed_no: string; status: BedStatus; created_at: string }
@@ -978,13 +978,26 @@ export type RosterStatus = 'draft' | 'published'
 export type RosterSource = 'manual' | 'copy_forward' | 'pattern' | 'auto_fill'
 
 export interface DutyRoster {
-  id: string; profile_id: string; date: string; shift: Shift | null; ward_id: string | null
+  id: string; profile_id: string; date: string; shift: Shift | null; nursing_unit_id: string | null
   status?: RosterStatus; source?: RosterSource; created_by?: string | null
   profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
-  ward?: Pick<Ward, 'id' | 'name'>
 }
 
 // ---- Staff Scheduling & Nurse Rostering ----
+
+// A nursing unit = a wing (Block · Floor · Wing) with one central nursing
+// station. Nurses are rostered to the unit, not to individual rooms/classes.
+export interface NursingUnit {
+  id: string; tenant_id?: string
+  block: string; floor: string; wing: string
+  station_name: string | null; target_ratio: number; is_active: boolean
+  created_at?: string
+}
+
+// "Block A · 1st Floor · B Wing"
+export function nursingUnitLabel(u: Pick<NursingUnit, 'block' | 'floor' | 'wing'>): string {
+  return [u.block, u.floor, u.wing].filter(Boolean).join(' · ')
+}
 
 export interface ShiftDefinition {
   id: string; tenant_id?: string; code: string; label: string
@@ -993,14 +1006,14 @@ export interface ShiftDefinition {
 }
 
 export interface WardCoverageRule {
-  id: string; ward_id: string; shift_code: string
+  id: string; nursing_unit_id: string; shift_code: string
   patient_ratio: number; min_nurses: number
-  ward?: Pick<Ward, 'id' | 'name'>
+  unit?: Pick<NursingUnit, 'id' | 'block' | 'floor' | 'wing'>
 }
 
 export interface WardIncharge {
-  id: string; ward_id: string; profile_id: string
-  ward?: Pick<Ward, 'id' | 'name'>
+  id: string; nursing_unit_id: string; profile_id: string
+  unit?: Pick<NursingUnit, 'id' | 'block' | 'floor' | 'wing'>
   profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
 }
 
@@ -1022,14 +1035,14 @@ export interface RosterPattern {
 }
 
 export interface RosterPatternMember {
-  id: string; pattern_id: string; profile_id: string; ward_id: string | null
+  id: string; pattern_id: string; profile_id: string; nursing_unit_id: string | null
   anchor_date: string; offset_days: number
   profile?: Pick<Profile, 'id' | 'full_name' | 'role'>
 }
 
 // Coverage computation result surfaced to the roster grid / picker
 export interface ShiftCoverage {
-  ward_id: string; date: string; shift_code: string
+  nursing_unit_id: string; date: string; shift_code: string
   required: number; assigned: number; occupied_beds: number
 }
 

@@ -10,16 +10,16 @@ import type { RosterPattern, ShiftDefinition } from '@/lib/types'
 interface Props {
   initialPatterns: RosterPattern[]
   initialShifts: ShiftDefinition[]
-  wards: { id: string; name: string }[]
+  units: { id: string; label: string }[]
   nurses: { id: string; full_name: string }[]
 }
 
 const inputCls = 'text-sm px-3 py-2 rounded-xl'
 const inputStyle: React.CSSProperties = { border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A' }
 
-interface MemberDraft { profile_id: string; ward_id: string; anchor_date: string; offset_days: number }
+interface MemberDraft { profile_id: string; nursing_unit_id: string; anchor_date: string; offset_days: number }
 
-export default function PatternsPanel({ initialPatterns, initialShifts, wards, nurses }: Props) {
+export default function PatternsPanel({ initialPatterns, initialShifts, units, nurses }: Props) {
   const [patterns, setPatterns] = useState(initialPatterns)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -31,7 +31,7 @@ export default function PatternsPanel({ initialPatterns, initialShifts, wards, n
 
   // members editor
   const [openMembers, setOpenMembers] = useState('')  // pattern id
-  const [mDraft, setMDraft] = useState<MemberDraft>({ profile_id: '', ward_id: '', anchor_date: '', offset_days: 0 })
+  const [mDraft, setMDraft] = useState<MemberDraft>({ profile_id: '', nursing_unit_id: '', anchor_date: '', offset_days: 0 })
   const [members, setMembers] = useState<MemberDraft[]>([])
 
   const activeShifts = initialShifts.filter((s) => s.is_active)
@@ -55,12 +55,12 @@ export default function PatternsPanel({ initialPatterns, initialShifts, wards, n
   function openMembersFor(p: RosterPattern) {
     setOpenMembers(p.id)
     setMembers((p.members ?? []).map((m) => ({
-      profile_id: m.profile_id, ward_id: m.ward_id ?? '', anchor_date: m.anchor_date, offset_days: m.offset_days,
+      profile_id: m.profile_id, nursing_unit_id: m.nursing_unit_id ?? '', anchor_date: m.anchor_date, offset_days: m.offset_days,
     })))
   }
   function saveMembers() {
     run(() => setPatternMembers(openMembers, members.map((m) => ({
-      profile_id: m.profile_id, ward_id: m.ward_id || null, anchor_date: m.anchor_date, offset_days: m.offset_days,
+      profile_id: m.profile_id, nursing_unit_id: m.nursing_unit_id || null, anchor_date: m.anchor_date, offset_days: m.offset_days,
     }))), async () => { await reload(); setOpenMembers('') })
   }
 
@@ -112,7 +112,7 @@ export default function PatternsPanel({ initialPatterns, initialShifts, wards, n
                       {members.map((m, i) => (
                         <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded" style={{ background: '#fff' }}>
                           <span style={{ color: '#0F172A' }}>{nurseName(m.profile_id)}</span>
-                          <span style={{ color: '#94A3B8' }}>· anchor {m.anchor_date} · +{m.offset_days}d{m.ward_id ? ` · ${wards.find((w) => w.id === m.ward_id)?.name}` : ''}</span>
+                          <span style={{ color: '#94A3B8' }}>· anchor {m.anchor_date} · +{m.offset_days}d{m.nursing_unit_id ? ` · ${units.find((u) => u.id === m.nursing_unit_id)?.label}` : ''}</span>
                           <button onClick={() => setMembers((xs) => xs.filter((_, j) => j !== i))} className="ml-auto p-0.5" style={{ color: '#EF4444' }}><X className="w-3 h-3" /></button>
                         </div>
                       ))}
@@ -123,12 +123,12 @@ export default function PatternsPanel({ initialPatterns, initialShifts, wards, n
                         <option value="">Nurse…</option>
                         {nurses.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
                       </Select>
-                      <Select value={mDraft.ward_id} onChange={(e) => setMDraft((f) => ({ ...f, ward_id: e.target.value }))} className="w-40">
-                        <option value="">Any ward</option>
-                        {wards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                      <Select value={mDraft.nursing_unit_id} onChange={(e) => setMDraft((f) => ({ ...f, nursing_unit_id: e.target.value }))} className="w-56">
+                        <option value="">Any unit</option>
+                        {units.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
                       </Select>
                       <input type="date" value={mDraft.anchor_date} onChange={(e) => setMDraft((f) => ({ ...f, anchor_date: e.target.value }))} className={inputCls} style={inputStyle} title="Cycle day-0 for this nurse" />
-                      <button onClick={() => { if (mDraft.profile_id && mDraft.anchor_date) { setMembers((xs) => [...xs, mDraft]); setMDraft({ profile_id: '', ward_id: '', anchor_date: '', offset_days: 0 }) } }}
+                      <button onClick={() => { if (mDraft.profile_id && mDraft.anchor_date) { setMembers((xs) => [...xs, mDraft]); setMDraft({ profile_id: '', nursing_unit_id: '', anchor_date: '', offset_days: 0 }) } }}
                         className="flex items-center gap-1 text-xs px-2.5 py-2 rounded-lg" style={{ background: '#F1F5F9', color: '#334155' }}>
                         <Plus className="w-3.5 h-3.5" /> Add
                       </button>

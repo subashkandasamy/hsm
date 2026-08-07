@@ -173,6 +173,7 @@ export const WardCreateSchema = z.object({
   name: z.string().min(1, 'Ward name is required').max(100),
   ward_type: z.string().nullable().optional(),
   room_type_id: z.string().uuid().nullable().optional(),
+  nursing_unit_id: z.string().uuid().nullable().optional(),
   floor: z.string().nullable().optional(),
   block: z.string().nullable().optional(),
   department_id: z.string().uuid().nullable().optional(),
@@ -884,15 +885,25 @@ export const ShiftDefinitionSchema = z.object({
   is_active: z.boolean().optional().default(true),
 })
 
+export const NursingUnitSchema = z.object({
+  id: z.string().uuid().optional(),
+  block: z.string().min(1, 'Block required').max(60),
+  floor: z.string().min(1, 'Floor required').max(60),
+  wing: z.string().min(1, 'Wing required').max(60),
+  station_name: z.string().max(120).nullable().optional(),
+  target_ratio: z.number().positive('Ratio must be > 0').optional().default(6),
+  is_active: z.boolean().optional().default(true),
+})
+
 export const WardCoverageRuleSchema = z.object({
-  ward_id: z.string().uuid('Select a ward'),
+  nursing_unit_id: z.string().uuid('Select a nursing unit'),
   shift_code: z.string().min(1, 'Select a shift'),
   patient_ratio: z.number().positive('Ratio must be > 0'),
   min_nurses: z.number().int().nonnegative().optional().default(1),
 })
 
 export const WardInchargeSchema = z.object({
-  ward_id: z.string().uuid('Select a ward'),
+  nursing_unit_id: z.string().uuid('Select a nursing unit'),
   profile_id: z.string().uuid('Select a nurse'),
 })
 
@@ -918,13 +929,13 @@ export const RosterPatternSchema = z.object({
 export const RosterPatternMemberSchema = z.object({
   pattern_id: z.string().uuid(),
   profile_id: z.string().uuid(),
-  ward_id: z.string().uuid().nullable().optional(),
+  nursing_unit_id: z.string().uuid().nullable().optional(),
   anchor_date: z.string().min(1, 'Anchor date required'),
   offset_days: z.number().int().optional().default(0),
 })
 
 export const GenerateRosterSchema = z.object({
-  ward_id: z.string().uuid('Select a ward'),
+  nursing_unit_id: z.string().uuid('Select a nursing unit'),
   start_date: z.string().min(1, 'Start date required'),
   end_date: z.string().min(1, 'End date required'),
   pattern_id: z.string().uuid().nullable().optional(),

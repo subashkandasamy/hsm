@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, RefreshCw, Scissors, Pencil, Check, X,
   IndianRupee, Trash2, MapPin, BedDouble, DoorOpen,
-  ChevronDown, ChevronRight, Search,
+  ChevronDown, ChevronRight, Search, Building2,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -21,12 +21,14 @@ import {
   deleteWardRoomType,
   createWardRoomType,
   deleteWard,
+  listNursingUnits,
 } from '@/app/actions/wards'
 import { createRoom as createOtRoom, updateRoom as updateOtRoom, deleteRoom as deleteOtRoom } from '@/app/actions/ot'
-import type { WardWithBeds, BedWithOccupant, Ward, OtRoom, WardRoomType } from '@/lib/types'
+import type { WardWithBeds, BedWithOccupant, Ward, OtRoom, WardRoomType, NursingUnit } from '@/lib/types'
 import CreateWardModal from './CreateWardModal'
 import EditWardModal from './EditWardModal'
 import AddBedsModal from './AddBedsModal'
+import NursingUnitsModal from './NursingUnitsModal'
 
 interface Doctor { id: string; full_name: string }
 interface Dept   { id: string; name: string }
@@ -38,6 +40,7 @@ interface Props {
   doctors:         Doctor[]
   initialOtRooms:  OtRoom[]
   initialRoomTypes: WardRoomType[]
+  initialNursingUnits: NursingUnit[]
 }
 
 // ---- Private room tile (single bed) ----
@@ -909,7 +912,7 @@ function AddRoomTypeModal({ open, onClose, onAdd }: {
 
 // ---- Main client ----
 
-export default function WardsClient({ initialBoard, wards, departments, doctors, initialOtRooms, initialRoomTypes }: Props) {
+export default function WardsClient({ initialBoard, wards, departments, doctors, initialOtRooms, initialRoomTypes, initialNursingUnits }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const isAdmin   = profile?.role === 'admin'
@@ -918,6 +921,9 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
   const [board, setBoard]             = useState<WardWithBeds[]>(initialBoard)
   const [loading, setLoading]         = useState(false)
   const [roomTypes, setRoomTypes]     = useState<WardRoomType[]>(initialRoomTypes)
+  const [nursingUnits, setNursingUnits] = useState<NursingUnit[]>(initialNursingUnits)
+  const [showUnits, setShowUnits]     = useState(false)
+  const reloadUnits = async () => setNursingUnits(await listNursingUnits())
   const [activeTab, setActiveTab]           = useState<'wards' | 'ot'>('wards')
   const [searchQuery, setSearchQuery]       = useState('')
   const [showAddType, setShowAddType]       = useState(false)
@@ -1060,6 +1066,13 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
                   style={{ padding: '0.5rem', borderRadius: '0.75rem', background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
+                {isAdmin && (
+                  <button onClick={() => setShowUnits(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.8)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}>
+                    <Building2 className="w-4 h-4" /> Nursing Units
+                  </button>
+                )}
                 {isAdmin && (
                   <button onClick={() => setShowAddType(true)}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
@@ -1429,6 +1442,7 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
           onClose={() => setShowCreateWard(null)}
           departments={departments}
           roomTypes={roomTypes}
+          nursingUnits={nursingUnits}
           onSuccess={(ward) => {
             setBoard(b => [...b, { ...ward, beds: [], room_type_data: roomTypes.find(rt => rt.id === ward.room_type_id) ?? null }])
             setShowCreateWard(null)
@@ -1442,8 +1456,18 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
           open={true}
           ward={editingWard}
           roomTypes={roomTypes}
+          nursingUnits={nursingUnits}
           onClose={() => setEditingWard(null)}
           onSuccess={(details) => handleWardUpdate(editingWard.id, details)}
+        />
+      )}
+
+      {showUnits && (
+        <NursingUnitsModal
+          open={true}
+          units={nursingUnits}
+          onClose={() => setShowUnits(false)}
+          onChange={reloadUnits}
         />
       )}
 

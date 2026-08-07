@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { requirePermission, hasPermission } from '@/lib/rbac'
 import { logAudit } from '@/lib/audit'
@@ -16,7 +17,7 @@ import type {
 
 type Result = { success: true } | { success: false; error: string }
 
-const DEFAULT_RATIO = 6      // fallback nurse:patient ratio when no ward rule exists
+const DEFAULT_RATIO = 6      // fallback nurse:patient ratio when no unit rule exists
 const DEFAULT_MIN_NURSES = 1
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -34,18 +35,29 @@ function shiftDate(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-/** Admin (scheduling:manage) can manage any ward; a ward in-charge can manage only theirs. */
-async function assertCanManageWard(wardId: string): Promise<{ id: string; tenant_id: string; role: string } | null> {
+/** Occupied beds in a nursing unit = admitted patients across ALL rooms in that unit. */
+async function unitOccupiedBeds(supabase: SupabaseClient, unitId: string): Promise<number> {
+  const { data: rooms } = await supabase.from('wards').select('id').eq('nursing_unit_id', unitId)
+  const roomIds = (rooms ?? []).map((r) => r.id as string)
+  if (!roomIds.length) return 0
+  const { count } = await supabase.from('admissions')
+    .select('id', { count: 'exact', head: true })
+    .in('ward_id', roomIds).eq('status', 'admitted')
+  return count ?? 0
+}
+
+/** Admin (scheduling:manage) can manage any unit; a unit in-charge can manage only theirs. */
+async function assertCanManageUnit(unitId: string): Promise<{ id: string; tenant_id: string; role: string } | null> {
   const actor = await getActorProfile()
   if (hasPermission(actor.role, 'scheduling:manage')) return actor
   const supabase = await createClient()
   const { data } = await supabase
     .from('ward_incharges').select('id')
-    .eq('ward_id', wardId).eq('profile_id', actor.id).maybeSingle()
+    .eq('nursing_unit_id', unitId).eq('profile_id', actor.id).maybeSingle()
   return data ? actor : null   // null = not allowed (caller returns a friendly error)
 }
 
-const WARD_FORBIDDEN = 'You can only manage wards you are in charge of'
+const UNIT_FORBIDDEN = 'You can only manage nursing units you are in charge of'
 
 // ── shift definitions ─────────────────────────────────────────────────────────
 
@@ -105,8 +117,8 @@ export async function listCoverageRules(): Promise<WardCoverageRule[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('ward_coverage_rules')
-    .select('*, ward:wards(id, name)')
-    .order('ward_id')
+    .select('*, unit:nursing_units(id, block, floor, wing)')
+    .order('nursing_unit_id')
   return (data ?? []) as unknown as WardCoverageRule[]
 }
 
@@ -121,11 +133,11 @@ export async function upsertCoverageRule(input: Record<string, unknown>): Promis
   const { error } = await supabase.from('ward_coverage_rules').upsert({
     id: crypto.randomUUID(),
     tenant_id: actor.tenant_id,
-    ward_id: d.ward_id, shift_code: d.shift_code,
+    nursing_unit_id: d.nursing_unit_id, shift_code: d.shift_code,
     patient_ratio: d.patient_ratio, min_nurses: d.min_nurses,
-  }, { onConflict: 'tenant_id,ward_id,shift_code', ignoreDuplicates: false })
+  }, { onConflict: 'tenant_id,nursing_unit_id,shift_code', ignoreDuplicates: false })
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'upsert', 'ward_coverage_rule', `${d.ward_id}:${d.shift_code}`, d)
+  await logAudit(actor.id, 'upsert', 'ward_coverage_rule', `${d.nursing_unit_id}:${d.shift_code}`, d)
   return { success: true }
 }
 
@@ -140,14 +152,14 @@ export async function deleteCoverageRule(id: string): Promise<Result> {
   return { success: true }
 }
 
-// ── ward in-charges ──────────────────────────────────────────────────────────────
+// ── unit in-charges ──────────────────────────────────────────────────────────────
 
 export async function listWardIncharges(): Promise<WardIncharge[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('ward_incharges')
-    .select('*, ward:wards(id, name), profile:profiles(id, full_name, role)')
-    .order('ward_id')
+    .select('*, unit:nursing_units(id, block, floor, wing), profile:profiles(id, full_name, role)')
+    .order('nursing_unit_id')
   return (data ?? []) as unknown as WardIncharge[]
 }
 
@@ -161,14 +173,14 @@ export async function addWardIncharge(input: Record<string, unknown>): Promise<R
   const { error } = await supabase.from('ward_incharges').insert({
     id: crypto.randomUUID(),
     tenant_id: actor.tenant_id,
-    ward_id: parsed.data.ward_id,
+    nursing_unit_id: parsed.data.nursing_unit_id,
     profile_id: parsed.data.profile_id,
   })
   if (error) {
-    if (error.code === '23505') return { success: false, error: 'Already an in-charge of this ward' }
+    if (error.code === '23505') return { success: false, error: 'Already an in-charge of this unit' }
     return { success: false, error: error.message }
   }
-  await logAudit(actor.id, 'add', 'ward_incharge', parsed.data.ward_id, parsed.data)
+  await logAudit(actor.id, 'add', 'ward_incharge', parsed.data.nursing_unit_id, parsed.data)
   return { success: true }
 }
 
@@ -277,20 +289,18 @@ async function leaveBlockedSlots(start: string, end: string): Promise<Set<string
 // ── coverage computation ──────────────────────────────────────────────────────
 
 /**
- * Required vs assigned nurses per active shift for a ward on a date.
- * required = max(min_nurses, ceil(occupied_beds / ratio)); occupied beds use
- * the current admitted census as the planning estimate.
+ * Required vs assigned nurses per active shift for a nursing unit on a date.
+ * required = max(min_nurses, ceil(occupied_beds / ratio)); occupied beds are the
+ * current admitted census across all rooms in the unit.
  */
-export async function computeWardCoverage(wardId: string, date: string): Promise<ShiftCoverage[]> {
+export async function computeUnitCoverage(unitId: string, date: string): Promise<ShiftCoverage[]> {
   const supabase = await createClient()
-  const [{ count: occupied }, shifts, rulesRes, rosterRes] = await Promise.all([
-    supabase.from('admissions').select('id', { count: 'exact', head: true })
-      .eq('ward_id', wardId).eq('status', 'admitted'),
+  const [beds, shifts, rulesRes, rosterRes] = await Promise.all([
+    unitOccupiedBeds(supabase, unitId),
     listShiftDefinitions(true),
-    supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('ward_id', wardId),
-    supabase.from('duty_roster').select('shift').eq('ward_id', wardId).eq('date', date),
+    supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('nursing_unit_id', unitId),
+    supabase.from('duty_roster').select('shift').eq('nursing_unit_id', unitId).eq('date', date),
   ])
-  const beds = occupied ?? 0
   const ruleMap = new Map((rulesRes.data ?? []).map(r => [r.shift_code as string, r]))
   const assignedByShift = new Map<string, number>()
   for (const r of rosterRes.data ?? []) {
@@ -303,7 +313,7 @@ export async function computeWardCoverage(wardId: string, date: string): Promise
     const minN = (rule?.min_nurses as number) ?? DEFAULT_MIN_NURSES
     const required = Math.max(minN, Math.ceil(beds / ratio))
     return {
-      ward_id: wardId, date, shift_code: s.code,
+      nursing_unit_id: unitId, date, shift_code: s.code,
       required, assigned: assignedByShift.get(s.code) ?? 0, occupied_beds: beds,
     }
   })
@@ -311,38 +321,35 @@ export async function computeWardCoverage(wardId: string, date: string): Promise
 
 // ── roster grid ───────────────────────────────────────────────────────────────
 
-export async function getWardRoster(params: { wardId: string; weekStart: string }): Promise<WardRosterData> {
+export async function getUnitRoster(params: { unitId: string; weekStart: string }): Promise<WardRosterData> {
   const actor = await getActorProfile()
   const supabase = await createClient()
-  const { wardId, weekStart } = params
+  const { unitId, weekStart } = params
   const weekEnd = shiftDate(weekStart, 6)
   const dates = eachDate(weekStart, weekEnd)
 
-  const [rosterRes, nursesRes, shifts, bedsRes, rulesRes, inchargeRes] = await Promise.all([
+  const [rosterRes, nursesRes, shifts, beds, rulesRes, inchargeRes] = await Promise.all([
     supabase.from('duty_roster')
       .select('*, profile:profiles(id, full_name, role)')
-      .eq('ward_id', wardId).gte('date', weekStart).lte('date', weekEnd).order('date'),
+      .eq('nursing_unit_id', unitId).gte('date', weekStart).lte('date', weekEnd).order('date'),
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
     listShiftDefinitions(true),
-    supabase.from('admissions').select('id', { count: 'exact', head: true }).eq('ward_id', wardId).eq('status', 'admitted'),
-    supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('ward_id', wardId),
-    supabase.from('ward_incharges').select('id').eq('ward_id', wardId).eq('profile_id', actor.id).maybeSingle(),
+    unitOccupiedBeds(supabase, unitId),
+    supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('nursing_unit_id', unitId),
+    supabase.from('ward_incharges').select('id').eq('nursing_unit_id', unitId).eq('profile_id', actor.id).maybeSingle(),
   ])
 
   const rosterRows = (rosterRes.data ?? []) as unknown as DutyRoster[]
-  const beds = bedsRes.count ?? 0
   const ruleMap = new Map((rulesRes.data ?? []).map((r) => [r.shift_code as string, r]))
 
-  // Assigned nurses per date+shift, from the week roster already fetched above
-  // (no extra per-day queries).
+  // Assigned nurses per date+shift, from the week roster already fetched above.
   const assignedByKey = new Map<string, number>()
   for (const r of rosterRows) {
     const rr = r as unknown as { shift: string | null; date: string }
     if (rr.shift) assignedByKey.set(`${rr.date}|${rr.shift}`, (assignedByKey.get(`${rr.date}|${rr.shift}`) ?? 0) + 1)
   }
 
-  // Coverage is now computed for EVERY day of the week (previously only weekStart,
-  // which hid understaffing on the other six days).
+  // Coverage for EVERY day of the week.
   const coverage: ShiftCoverage[] = []
   for (const date of dates) {
     for (const sh of shifts) {
@@ -350,7 +357,7 @@ export async function getWardRoster(params: { wardId: string; weekStart: string 
       const ratio = (rule?.patient_ratio as number) ?? DEFAULT_RATIO
       const minN = (rule?.min_nurses as number) ?? DEFAULT_MIN_NURSES
       coverage.push({
-        ward_id: wardId, date, shift_code: sh.code,
+        nursing_unit_id: unitId, date, shift_code: sh.code,
         required: Math.max(minN, Math.ceil(beds / ratio)),
         assigned: assignedByKey.get(`${date}|${sh.code}`) ?? 0,
         occupied_beds: beds,
@@ -366,13 +373,13 @@ export async function getWardRoster(params: { wardId: string; weekStart: string 
   }
 }
 
-/** Assign (or move) a nurse to a ward+shift on a date. One shift per nurse per day. */
+/** Assign (or move) a nurse to a unit+shift on a date. One shift per nurse per day. */
 export async function setRosterCell(params: {
-  wardId: string; profileId: string; date: string; shift: string
+  unitId: string; profileId: string; date: string; shift: string
 }): Promise<Result> {
   await requireWriteAccess()
-  const actor = await assertCanManageWard(params.wardId)
-  if (!actor) return { success: false, error: WARD_FORBIDDEN }
+  const actor = await assertCanManageUnit(params.unitId)
+  if (!actor) return { success: false, error: UNIT_FORBIDDEN }
   const supabase = await createClient()
 
   // Block if the nurse is on approved leave that day
@@ -386,43 +393,43 @@ export async function setRosterCell(params: {
     profile_id: params.profileId,
     date: params.date,
     shift: params.shift,
-    ward_id: params.wardId,
+    nursing_unit_id: params.unitId,
     status: 'published',
     source: 'manual',
     created_by: actor.id,
   }, { onConflict: 'profile_id,date', ignoreDuplicates: false })
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'roster_set', 'duty_roster', params.profileId, { date: params.date, shift: params.shift, ward: params.wardId })
+  await logAudit(actor.id, 'roster_set', 'duty_roster', params.profileId, { date: params.date, shift: params.shift, unit: params.unitId })
   return { success: true }
 }
 
-export async function clearRosterCell(params: { wardId: string; profileId: string; date: string }): Promise<Result> {
+export async function clearRosterCell(params: { unitId: string; profileId: string; date: string }): Promise<Result> {
   await requireWriteAccess()
-  const actor = await assertCanManageWard(params.wardId)
-  if (!actor) return { success: false, error: WARD_FORBIDDEN }
+  const actor = await assertCanManageUnit(params.unitId)
+  if (!actor) return { success: false, error: UNIT_FORBIDDEN }
   const supabase = await createClient()
   const { error } = await supabase.from('duty_roster').delete()
-    .eq('profile_id', params.profileId).eq('date', params.date).eq('ward_id', params.wardId)
+    .eq('profile_id', params.profileId).eq('date', params.date).eq('nursing_unit_id', params.unitId)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'roster_clear', 'duty_roster', params.profileId, { date: params.date })
   return { success: true }
 }
 
-export async function publishRoster(params: { wardId: string; start: string; end: string }): Promise<Result> {
+export async function publishRoster(params: { unitId: string; start: string; end: string }): Promise<Result> {
   await requireWriteAccess()
-  const actor = await assertCanManageWard(params.wardId)
-  if (!actor) return { success: false, error: WARD_FORBIDDEN }
+  const actor = await assertCanManageUnit(params.unitId)
+  if (!actor) return { success: false, error: UNIT_FORBIDDEN }
   const supabase = await createClient()
   const { error } = await supabase.from('duty_roster')
     .update({ status: 'published' })
-    .eq('ward_id', params.wardId).gte('date', params.start).lte('date', params.end).eq('status', 'draft')
+    .eq('nursing_unit_id', params.unitId).gte('date', params.start).lte('date', params.end).eq('status', 'draft')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'roster_publish', 'duty_roster', params.wardId, params)
+  await logAudit(actor.id, 'roster_publish', 'duty_roster', params.unitId, params)
   return { success: true }
 }
 
 /**
- * Fill EMPTY nurse/day slots for a ward across a range using:
+ * Fill EMPTY nurse/day slots for a nursing unit across a range using:
  *  - a cyclic pattern (pattern_id), and/or
  *  - copy-forward from the previous week, and/or
  *  - coverage auto-fill (ratio-driven) from the available nurse pool.
@@ -433,8 +440,8 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
   const parsed = GenerateRosterSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const d = parsed.data
-  const actor = await assertCanManageWard(d.ward_id)
-  if (!actor) return { success: false, error: WARD_FORBIDDEN }
+  const actor = await assertCanManageUnit(d.nursing_unit_id)
+  if (!actor) return { success: false, error: UNIT_FORBIDDEN }
   const supabase = await createClient()
 
   const dates = eachDate(d.start_date, d.end_date)
@@ -445,7 +452,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
   const activeCodes = new Set(activeShifts.map(s => s.code))
   if (activeCodes.size === 0) return { success: false, error: 'No active shifts configured' }
 
-  // occupied slots = existing roster rows for these nurses in the range (any ward — one shift/day)
+  // occupied slots = existing roster rows for these nurses in the range (any unit — one shift/day)
   const { data: existingRows } = await supabase
     .from('duty_roster').select('profile_id, date')
     .gte('date', d.start_date).lte('date', d.end_date)
@@ -469,7 +476,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
       const dayPlan = pat.day_plan as string[]
       const cycle = pat.cycle_days as number
       for (const m of members) {
-        if (m.ward_id && m.ward_id !== d.ward_id) continue
+        if (m.nursing_unit_id && m.nursing_unit_id !== d.nursing_unit_id) continue
         const anchor = new Date((m.anchor_date as string) + 'T00:00:00').getTime()
         const offset = (m.offset_days as number) ?? 0
         for (const date of dates) {
@@ -487,7 +494,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
     const priorStart = shiftDate(d.start_date, -7)
     const priorEnd = shiftDate(d.end_date, -7)
     const { data: prior } = await supabase.from('duty_roster')
-      .select('profile_id, date, shift').eq('ward_id', d.ward_id)
+      .select('profile_id, date, shift').eq('nursing_unit_id', d.nursing_unit_id)
       .gte('date', priorStart).lte('date', priorEnd)
     for (const r of prior ?? []) {
       const target = shiftDate(r.date as string, 7)
@@ -498,12 +505,11 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
 
   // 3. coverage auto-fill (ratio-driven) from available nurses, fairness by load
   if (d.auto_fill) {
-    const [{ count: occBeds }, rulesRes, nursesRes] = await Promise.all([
-      supabase.from('admissions').select('id', { count: 'exact', head: true }).eq('ward_id', d.ward_id).eq('status', 'admitted'),
-      supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('ward_id', d.ward_id),
+    const [beds, rulesRes, nursesRes] = await Promise.all([
+      unitOccupiedBeds(supabase, d.nursing_unit_id),
+      supabase.from('ward_coverage_rules').select('shift_code, patient_ratio, min_nurses').eq('nursing_unit_id', d.nursing_unit_id),
       supabase.from('profiles').select('id').eq('role', 'nurse').eq('is_active', true),
     ])
-    const beds = occBeds ?? 0
     const ruleMap = new Map((rulesRes.data ?? []).map(r => [r.shift_code as string, r]))
     const nurseIds = (nursesRes.data ?? []).map(n => n.id as string)
     const load = new Map<string, number>()   // fairness: shifts assigned so far in this run
@@ -515,15 +521,13 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
         const ratio = (rule?.patient_ratio as number) ?? DEFAULT_RATIO
         const minN = (rule?.min_nurses as number) ?? DEFAULT_MIN_NURSES
         const required = Math.max(minN, Math.ceil(beds / ratio))
-        // count already-covering nurses (existing rows + staged) for this ward/date/shift
+        // count already-covering nurses (existing rows + staged) for this unit/date/shift
         let have = 0
         for (const s of staged.values()) if (s.date === date && s.shift === sh.code) have++
-        // NOTE: existing rows for this ward/date/shift also count toward coverage
-        // (existingRows only carries profile_id/date; refine with a targeted count)
         if (have < required) {
           const { count: existingCover } = await supabase.from('duty_roster')
             .select('id', { count: 'exact', head: true })
-            .eq('ward_id', d.ward_id).eq('date', date).eq('shift', sh.code)
+            .eq('nursing_unit_id', d.nursing_unit_id).eq('date', date).eq('shift', sh.code)
           have += existingCover ?? 0
         }
         if (have >= required) continue
@@ -547,7 +551,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
     profile_id: s.profileId,
     date: s.date,
     shift: s.shift,
-    ward_id: d.ward_id,
+    nursing_unit_id: d.nursing_unit_id,
     status: 'draft',
     source: s.source,
     created_by: actor.id,
@@ -556,7 +560,7 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
 
   const { error } = await supabase.from('duty_roster').upsert(rows, { onConflict: 'profile_id,date', ignoreDuplicates: true })
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'roster_generate', 'duty_roster', d.ward_id, { created: rows.length, from: d.start_date, to: d.end_date })
+  await logAudit(actor.id, 'roster_generate', 'duty_roster', d.nursing_unit_id, { created: rows.length, from: d.start_date, to: d.end_date })
   return { success: true, created: rows.length }
 }
 
@@ -600,7 +604,7 @@ export async function deletePattern(id: string): Promise<Result> {
 }
 
 export async function setPatternMembers(patternId: string, members: Array<{
-  profile_id: string; ward_id?: string | null; anchor_date: string; offset_days?: number
+  profile_id: string; nursing_unit_id?: string | null; anchor_date: string; offset_days?: number
 }>): Promise<Result> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -614,7 +618,7 @@ export async function setPatternMembers(patternId: string, members: Array<{
       tenant_id: actor.tenant_id,
       pattern_id: patternId,
       profile_id: m.profile_id,
-      ward_id: m.ward_id ?? null,
+      nursing_unit_id: m.nursing_unit_id ?? null,
       anchor_date: m.anchor_date,
       offset_days: m.offset_days ?? 0,
     })))

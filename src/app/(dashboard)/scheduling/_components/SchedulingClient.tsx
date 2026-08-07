@@ -11,7 +11,7 @@ import PatternsPanel from './PatternsPanel'
 import DoctorHoursPanel from './DoctorHoursPanel'
 
 interface Props {
-  wards: { id: string; name: string }[]
+  units: { id: string; label: string }[]
   nurses: { id: string; full_name: string }[]
   doctors: { id: string; full_name: string }[]
   initialShifts: ShiftDefinition[]
@@ -54,7 +54,7 @@ export default function SchedulingClient(props: Props) {
       </div>
 
       {tab === 'roster' && (
-        <RosterGrid wards={props.wards} canManage={props.canManage} patterns={props.initialPatterns} />
+        <RosterGrid units={props.units} canManage={props.canManage} patterns={props.initialPatterns} />
       )}
       {tab === 'leave' && (
         <LeavePanel
@@ -63,7 +63,7 @@ export default function SchedulingClient(props: Props) {
       )}
       {tab === 'config' && props.canManage && (
         <ConfigPanel
-          wards={props.wards} nurses={props.nurses}
+          units={props.units} nurses={props.nurses}
           initialShifts={props.initialShifts}
           initialCoverage={props.initialCoverage}
           initialIncharges={props.initialIncharges} />
@@ -72,7 +72,7 @@ export default function SchedulingClient(props: Props) {
         <PatternsPanel
           initialPatterns={props.initialPatterns}
           initialShifts={props.initialShifts}
-          wards={props.wards} nurses={props.nurses} />
+          units={props.units} nurses={props.nurses} />
       )}
       {tab === 'doctors' && props.canManage && (
         <DoctorHoursPanel doctors={props.doctors} />

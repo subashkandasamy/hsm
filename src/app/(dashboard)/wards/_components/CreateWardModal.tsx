@@ -6,7 +6,7 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { createWard } from '@/app/actions/wards'
-import type { Ward, WardRoomType } from '@/lib/types'
+import { nursingUnitLabel, type Ward, type WardRoomType, type NursingUnit } from '@/lib/types'
 
 interface Props {
   open: boolean
@@ -14,15 +14,15 @@ interface Props {
   onSuccess: (ward: Ward) => void
   departments: { id: string; name: string }[]
   roomTypes: WardRoomType[]
+  nursingUnits: NursingUnit[]
   preselectedRoomTypeId?: string | null
 }
 
-export default function CreateWardModal({ open, onClose, onSuccess, departments, roomTypes, preselectedRoomTypeId }: Props) {
+export default function CreateWardModal({ open, onClose, onSuccess, departments, roomTypes, nursingUnits, preselectedRoomTypeId }: Props) {
   const defaultTypeId = preselectedRoomTypeId ?? ''
   const [name, setName] = useState('')
   const [roomTypeId, setRoomTypeId] = useState(defaultTypeId)
-  const [floor, setFloor] = useState('')
-  const [block, setBlock] = useState('')
+  const [unitId, setUnitId] = useState('')
   const [deptId, setDeptId] = useState('')
   const [isTemp, setIsTemp] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -33,18 +33,21 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null)
+    const unit = nursingUnits.find(u => u.id === unitId) ?? null
     const result = await createWard({
       name: name.trim(),
       room_type_id: roomTypeId || null,
-      floor: floor.trim() || null,
-      block: block.trim() || null,
+      nursing_unit_id: unitId || null,
+      // room location is inherited from its nursing unit (wing)
+      floor: unit?.floor ?? null,
+      block: unit ? `${unit.block}${unit.wing ? ' · ' + unit.wing : ''}` : null,
       department_id: deptId || null,
       is_temp: isTemp,
     })
     setLoading(false)
     if (!result.success) { setError(result.error); return }
     onSuccess(result.ward)
-    setName(''); setRoomTypeId(defaultTypeId); setFloor(''); setBlock('')
+    setName(''); setRoomTypeId(defaultTypeId); setUnitId('')
     setDeptId(''); setIsTemp(false)
   }
 
@@ -74,15 +77,18 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
           )}
         </FormField>
 
-        {/* Location */}
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Floor" hint="e.g. Ground, 1st Floor">
-            <Input value={floor} onChange={e => setFloor(e.target.value)} placeholder="e.g. 1st Floor" />
-          </FormField>
-          <FormField label="Block / Wing" hint="e.g. Block A">
-            <Input value={block} onChange={e => setBlock(e.target.value)} placeholder="e.g. Block A" />
-          </FormField>
-        </div>
+        {/* Nursing unit (wing) — sets the room's location and who staffs it */}
+        <FormField label="Nursing Unit (wing)" hint="Which wing/nursing station covers this room — used for nurse rostering">
+          <Select value={unitId} onChange={e => setUnitId(e.target.value)}>
+            <option value="">— None —</option>
+            {nursingUnits.filter(u => u.is_active).map(u => (
+              <option key={u.id} value={u.id}>{nursingUnitLabel(u)}{u.station_name ? ` (${u.station_name})` : ''}</option>
+            ))}
+          </Select>
+          {nursingUnits.length === 0 && (
+            <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>No nursing units yet — add them from the “Nursing Units” button.</p>
+          )}
+        </FormField>
 
         <FormField label="Department">
           <Select value={deptId} onChange={e => setDeptId(e.target.value)}>

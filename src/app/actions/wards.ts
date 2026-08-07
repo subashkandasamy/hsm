@@ -4,10 +4,83 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { WardCreateSchema } from '@/lib/schemas'
-import type { Ward, Bed, BedStatus, WardWithBeds, WardRoomType } from '@/lib/types'
+import { WardCreateSchema, NursingUnitSchema } from '@/lib/schemas'
+import type { Ward, Bed, BedStatus, WardWithBeds, WardRoomType, NursingUnit } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+// ---- Nursing units (wings — the rosterable unit) ----
+
+export async function listNursingUnits(): Promise<NursingUnit[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('nursing_units').select('*')
+    .order('block').order('floor').order('wing')
+  return (data ?? []) as NursingUnit[]
+}
+
+export async function createNursingUnit(
+  input: Record<string, unknown>
+): Promise<{ success: true; unit: NursingUnit } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  const parsed = NursingUnitSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const d = parsed.data
+  const supabase = await createClient()
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('nursing_units').insert({
+    id, tenant_id: actor.tenant_id,
+    block: d.block.trim(), floor: d.floor.trim(), wing: d.wing.trim(),
+    station_name: d.station_name?.trim() || null,
+    target_ratio: d.target_ratio, is_active: d.is_active,
+  })
+  if (error) {
+    if (error.code === '23505') return { success: false, error: 'A unit with this Block · Floor · Wing already exists' }
+    return { success: false, error: error.message }
+  }
+  await logAudit(actor.id, 'create', 'nursing_unit', id, { block: d.block, floor: d.floor, wing: d.wing })
+  const { data } = await supabase.from('nursing_units').select('*').eq('id', id).single()
+  return { success: true, unit: data as NursingUnit }
+}
+
+export async function updateNursingUnit(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  const parsed = NursingUnitSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const d = parsed.data
+  const supabase = await createClient()
+  const { error } = await supabase.from('nursing_units').update({
+    block: d.block.trim(), floor: d.floor.trim(), wing: d.wing.trim(),
+    station_name: d.station_name?.trim() || null,
+    target_ratio: d.target_ratio, is_active: d.is_active,
+  }).eq('id', id)
+  if (error) {
+    if (error.code === '23505') return { success: false, error: 'A unit with this Block · Floor · Wing already exists' }
+    return { success: false, error: error.message }
+  }
+  await logAudit(actor.id, 'update', 'nursing_unit', id, input as Record<string, unknown>)
+  return { success: true }
+}
+
+export async function deleteNursingUnit(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  const supabase = await createClient()
+  // Detach rooms first so the FK (ON DELETE SET NULL) is explicit, then delete.
+  await supabase.from('wards').update({ nursing_unit_id: null }).eq('nursing_unit_id', id)
+  const { error } = await supabase.from('nursing_units').delete().eq('id', id)
+  if (error) {
+    if (error.code === '23503') return { success: false, error: 'This unit is still used by rosters — clear its roster first.' }
+    return { success: false, error: error.message }
+  }
+  await logAudit(actor.id, 'delete', 'nursing_unit', id, {})
+  return { success: true }
+}
 
 // ---- Room type catalog ----
 
@@ -193,6 +266,7 @@ export async function createWard(
     name: parsed.data.name,
     ward_type: parsed.data.ward_type ?? null,
     room_type_id: parsed.data.room_type_id ?? null,
+    nursing_unit_id: parsed.data.nursing_unit_id ?? null,
     floor: parsed.data.floor ?? null,
     block: parsed.data.block ?? null,
     department_id: parsed.data.department_id ?? null,
@@ -239,7 +313,7 @@ export async function updateWard(
 
 export async function updateWardDetails(
   id: string,
-  input: { name: string; room_type_id: string | null; floor: string | null; block: string | null }
+  input: { name: string; room_type_id: string | null; nursing_unit_id?: string | null; floor: string | null; block: string | null }
 ): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -258,6 +332,7 @@ export async function updateWardDetails(
   const { error } = await supabase.from('wards').update({
     name: input.name,
     room_type_id: input.room_type_id,
+    ...(input.nursing_unit_id !== undefined ? { nursing_unit_id: input.nursing_unit_id } : {}),
     floor: input.floor,
     block: input.block,
     ...(dailyRateUpdate !== undefined ? { daily_rate: dailyRateUpdate } : {}),
