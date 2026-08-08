@@ -552,6 +552,7 @@ export interface PartnerPayoutRow {
   referral_code: string
   status: string
   commission_pct: number | null
+  commission_duration_months: number | null
   payout_type: 'credit' | 'cash'
   referred_count: number
   accrued_amount: number   // unpaid (owed)
@@ -563,7 +564,7 @@ export async function listPartnerPayouts(): Promise<PartnerPayoutRow[]> {
   const service = createServiceClient()
 
   const [{ data: partners }, { data: comms }, { data: refs }] = await Promise.all([
-    service.from('partners').select('id, name, type, referral_code, status, commission_pct').order('created_at', { ascending: false }),
+    service.from('partners').select('id, name, type, referral_code, status, commission_pct, commission_duration_months').order('created_at', { ascending: false }),
     service.from('partner_commissions').select('partner_id, commission_amount, status, payout_type'),
     service.from('referrals').select('partner_id'),
   ])
@@ -589,6 +590,7 @@ export async function listPartnerPayouts(): Promise<PartnerPayoutRow[]> {
     referral_code: p.referral_code as string,
     status: (p.status as string) ?? 'active',
     commission_pct: (p.commission_pct as number | null) ?? null,
+    commission_duration_months: (p.commission_duration_months as number | null) ?? null,
     payout_type: payoutType.get(p.id as string) ?? ((p.type as string) === 'tenant' ? 'credit' : 'cash'),
     referred_count: refCount.get(p.id as string) ?? 0,
     accrued_amount: Math.round((accrued.get(p.id as string) ?? 0) * 100) / 100,

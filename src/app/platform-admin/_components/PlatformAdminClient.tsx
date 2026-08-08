@@ -12,8 +12,9 @@ import {
   setTenantAccessOverride, changeTenantPlan, extendTrial, createTenant,
   purgeTenantData, adminCancelSubscription, adminRetryPayment,
   listSubscriptions, listPlatformAudit,
-  listPartnerPayouts, markPartnerCommissionsPaid,
+  listPartnerPayouts, markPartnerCommissionsPaid, updatePartnerTerms,
 } from '@/app/actions/platform'
+import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 import type { TenantWithStats } from '@/lib/types'
 import type { AdminSubscriptionRow, AuditRow, PartnerPayoutRow } from '@/app/actions/platform'
 
@@ -78,6 +79,16 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
   const [createForm, setCreateForm]     = useState({
     name: '', slug: '', adminEmail: '', plan: 'starter' as 'starter' | 'growth', trialDays: 30,
   })
+  const [editPartner, setEditPartner]   = useState<PartnerPayoutRow | null>(null)
+  const [editForm, setEditForm]         = useState({ pct: '', months: '', status: 'active' as 'active' | 'suspended' })
+  const openEditPartner = (p: PartnerPayoutRow) => {
+    setEditPartner(p)
+    setEditForm({
+      pct: p.commission_pct != null ? String(p.commission_pct) : '',
+      months: p.commission_duration_months != null ? String(p.commission_duration_months) : '',
+      status: p.status === 'suspended' ? 'suspended' : 'active',
+    })
+  }
 
   const todayISO = useMemo(() => new Date().toISOString().split('T')[0], [])
 
@@ -102,6 +113,17 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
       const res = await markPartnerCommissionsPaid(partnerId)
       if (res.success) reloadPartners(); else toast(res.error)
     })
+  const savePartnerTerms = () => {
+    if (!editPartner) return
+    startTransition(async () => {
+      const res = await updatePartnerTerms(editPartner.id, {
+        commission_pct: editForm.pct.trim() === '' ? null : Number(editForm.pct),
+        commission_duration_months: editForm.months.trim() === '' ? null : Number(editForm.months),
+        status: editForm.status,
+      })
+      if (res.success) { setEditPartner(null); reloadPartners() } else toast(res.error)
+    })
+  }
 
   const handleFilterChange = (v: string) => { setStatusFilter(v); reloadTenants(v) }
 
@@ -430,14 +452,14 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
             <table className="w-full text-sm" style={{ minWidth: 760 }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
-                  {['Partner', 'Code', 'Referred', 'Owed', 'Paid', 'Type', ''].map((h) => (
+                  {['Partner', 'Code', 'Referred', 'Rate', 'Duration', 'Owed', 'Paid', 'Type', ''].map((h) => (
                     <th key={h} className="text-left px-3 py-2 text-xs font-semibold" style={{ color: '#64748B' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {partners.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-xs" style={{ color: '#64748B' }}>No partners yet.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-xs" style={{ color: '#64748B' }}>No partners yet.</td></tr>
                 ) : partners.map((p) => (
                   <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                     <td className="px-3 py-2.5" style={{ color: '#E2E8F0' }}>
@@ -447,10 +469,20 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs" style={{ color: '#94A3B8' }}>{p.referral_code}</td>
                     <td className="px-3 py-2.5" style={{ color: '#CBD5E1' }}>{p.referred_count}</td>
+                    <td className="px-3 py-2.5" style={{ color: '#CBD5E1' }}>
+                      {p.commission_pct != null ? `${p.commission_pct}%` : <span style={{ color: '#64748B' }}>{DEFAULT_COMMISSION_PCT}% <span className="text-[10px]">(default)</span></span>}
+                    </td>
+                    <td className="px-3 py-2.5" style={{ color: '#CBD5E1' }}>
+                      {p.commission_duration_months != null ? `${p.commission_duration_months} mo` : <span style={{ color: '#64748B' }}>Lifetime</span>}
+                    </td>
                     <td className="px-3 py-2.5 font-semibold" style={{ color: p.accrued_amount > 0 ? '#FCD34D' : '#64748B' }}>₹{p.accrued_amount.toLocaleString('en-IN')}</td>
                     <td className="px-3 py-2.5" style={{ color: '#34D399' }}>₹{p.paid_amount.toLocaleString('en-IN')}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#94A3B8' }}>{p.payout_type}</td>
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                      <button onClick={() => openEditPartner(p)} disabled={isPending}
+                        className="text-xs px-2.5 py-1 rounded-lg mr-1.5" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>
+                        Edit
+                      </button>
                       {p.accrued_amount > 0 && (
                         <button onClick={() => handleMarkPaid(p.id)} disabled={isPending}
                           className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'rgba(16,185,129,0.15)', color: '#34D399' }}>
@@ -563,6 +595,42 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
           </select>
           <ModalActions onCancel={() => setPlanChangeId(null)}
             onConfirm={handlePlanChange} confirmLabel="Change plan" confirmStyle="primary"
+            disabled={isPending} pending={isPending} />
+        </Modal>
+      )}
+
+      {/* Edit partner commission terms */}
+      {editPartner && (
+        <Modal onClose={() => setEditPartner(null)}>
+          <h3 className="font-semibold mb-1" style={{ color: '#F8FAFC' }}>Commission terms — {editPartner.name}</h3>
+          <p className="text-sm mb-4" style={{ color: '#94A3B8' }}>
+            Recurring % of the referred tenants&apos; net subscription fee. Leave a field blank to use the default.
+          </p>
+
+          <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>Commission rate (%)</label>
+          <input type="number" min={0} max={100} step="0.5" value={editForm.pct}
+            onChange={e => setEditForm(f => ({ ...f, pct: e.target.value }))}
+            placeholder={`${DEFAULT_COMMISSION_PCT} (default)`}
+            className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none mb-4"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }} />
+
+          <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>Duration (months)</label>
+          <input type="number" min={1} max={120} value={editForm.months}
+            onChange={e => setEditForm(f => ({ ...f, months: e.target.value }))}
+            placeholder="Blank = lifetime (as long as they pay)"
+            className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none mb-4"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }} />
+
+          <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>Status</label>
+          <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value as 'active' | 'suspended' }))}
+            className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none mb-4"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }}>
+            <option value="active">Active — earning</option>
+            <option value="suspended">Suspended — no new commission</option>
+          </select>
+
+          <ModalActions onCancel={() => setEditPartner(null)}
+            onConfirm={savePartnerTerms} confirmLabel="Save terms" confirmStyle="primary"
             disabled={isPending} pending={isPending} />
         </Modal>
       )}
