@@ -1470,3 +1470,22 @@ export interface AdvanceDepositRequest {
   patient?: Pick<Patient, 'full_name' | 'uhid'>
   admission?: { admitted_at: string; ward?: { name: string }; bed?: { bed_no: string } }
 }
+
+// ---- Referral / partner program ----
+export interface Partner {
+  id: string; tenant_id: string | null; name: string; type: 'tenant' | 'external'
+  email: string | null; phone: string | null; referral_code: string
+  commission_pct: number | null; commission_duration_months: number | null
+  payout_method: string | null; status: 'active' | 'suspended'; created_at: string
+}
+export interface ReferredHospital { name: string; status: string; signup_at: string }
+export interface ReferralOverview {
+  referral_code: string
+  referral_link: string
+  commission_pct: number
+  duration_label: string
+  referred_count: number
+  active_count: number
+  total_earned: number
+  referrals: ReferredHospital[]
+}

@@ -32,6 +32,7 @@ const SignupSchema = z.object({
   adminPhone:     z.string().optional(),
   password:       z.string().min(8, 'Password must be at least 8 characters'),
   plan:           z.enum(['starter', 'growth']).default('growth'),
+  ref:            z.string().max(64).optional(),  // partner referral code (?ref=)
   departments:    z.array(z.string()).optional(), // selected starting departments
   acceptedTerms:  z.boolean().refine((v) => v === true, {
     message: 'You must accept the Terms of Service and Privacy Policy to continue.',
@@ -207,6 +208,21 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     meta: { hospital_name: hospitalName, slug, plan },
     tenant_id: tenantId,
   })
+
+  // 7b. Referral attribution — link this new tenant to the referring partner.
+  //     Guards: code must exist, partner active, and not a self-referral. The
+  //     unique(referred_tenant_id) constraint enforces "one referrer per tenant".
+  const refCode = (parsed.data.ref ?? '').trim()
+  if (refCode) {
+    try {
+      const { data: partner } = await service.from('partners')
+        .select('id, tenant_id, status').eq('referral_code', refCode).maybeSingle()
+      if (partner && partner.status === 'active' && partner.tenant_id !== tenantId) {
+        await service.from('referrals').insert({ partner_id: partner.id, referred_tenant_id: tenantId })
+        await service.from('tenants').update({ referred_by_partner_id: partner.id }).eq('id', tenantId)
+      }
+    } catch { /* non-fatal — never block signup on referral attribution */ }
+  }
 
   // 8. Generate a magic link so the new admin lands on their subdomain already signed in.
   //    The link points to /auth/callback on the new subdomain, which exchanges the token

@@ -37,9 +37,10 @@ type FieldErrors = Partial<Record<FieldKey, string>>
 
 interface Props {
   plan?: 'starter' | 'growth'
+  refCode?: string | null
 }
 
-export default function SignupForm({ plan = 'growth' }: Props) {
+export default function SignupForm({ plan = 'growth', refCode = null }: Props) {
   const [hospitalName, setHospitalName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugState, setSlugState] = useState<SlugState>('idle')
@@ -127,7 +128,7 @@ export default function SignupForm({ plan = 'growth' }: Props) {
     setFieldErrors({})
     startTransition(async () => {
       const depts = selectedDepts.length > 0 ? selectedDepts : undefined
-      const res = await signupHospital({ hospitalName, slug, adminName, adminPhone: `+91${adminPhone}`, adminEmail: email, password, plan, departments: depts, acceptedTerms: agreed })
+      const res = await signupHospital({ hospitalName, slug, adminName, adminPhone: `+91${adminPhone}`, adminEmail: email, password, plan, ref: refCode ?? undefined, departments: depts, acceptedTerms: agreed })
       if (!res.success) {
         setError(res.error)
         return

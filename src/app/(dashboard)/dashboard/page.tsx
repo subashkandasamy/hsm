@@ -12,6 +12,7 @@ import ReceptionistDashboard from './_components/ReceptionistDashboard'
 import PharmacistDashboard from './_components/PharmacistDashboard'
 import GenericDashboard from './_components/GenericDashboard'
 import SetupProgressCard from './_components/SetupProgressCard'
+import ReferralTeaser from './_components/ReferralTeaser'
 import { getSetupProgress } from '@/app/actions/setup'
 
 export default async function DashboardPage({
@@ -38,6 +39,7 @@ export default async function DashboardPage({
     return (
       <>
         {setup && <SetupProgressCard progress={setup} />}
+        <ReferralTeaser />
         <AdminDashboard kpis={kpis} />
       </>
     )

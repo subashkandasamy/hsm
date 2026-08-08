@@ -41,11 +41,11 @@ const TRUST = [
 ]
 
 interface Props {
-  searchParams: Promise<{ plan?: string }>
+  searchParams: Promise<{ plan?: string; ref?: string }>
 }
 
 export default async function SignupPage({ searchParams }: Props) {
-  const { plan } = await searchParams
+  const { plan, ref } = await searchParams
   // Growth is the default trial tier — new hospitals trial the full feature set,
   // then choose a paid plan at the end. Only an explicit ?plan=starter opts down.
   const selectedPlan = plan === 'starter' ? 'starter' : 'growth'
@@ -115,7 +115,7 @@ export default async function SignupPage({ searchParams }: Props) {
                 </span>
               )}
             </div>
-            <SignupForm plan={selectedPlan} />
+            <SignupForm plan={selectedPlan} refCode={ref ?? null} />
           </div>
 
           <p className="text-center mt-6 text-xs" style={{ color: '#94A3B8' }}>
