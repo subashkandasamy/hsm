@@ -12,9 +12,10 @@ import {
   setTenantAccessOverride, changeTenantPlan, extendTrial, createTenant,
   purgeTenantData, adminCancelSubscription, adminRetryPayment,
   listSubscriptions, listPlatformAudit,
+  listPartnerPayouts, markPartnerCommissionsPaid,
 } from '@/app/actions/platform'
 import type { TenantWithStats } from '@/lib/types'
-import type { AdminSubscriptionRow, AuditRow } from '@/app/actions/platform'
+import type { AdminSubscriptionRow, AuditRow, PartnerPayoutRow } from '@/app/actions/platform'
 
 // Slice ISO string — identical on server and client, no locale variance
 const fmtDate = (iso: string) => iso.slice(0, 10)           // 2026-07-01
@@ -41,20 +42,22 @@ const STATUS_STYLES: Record<string, { label: string; bg: string; color: string }
   purged:    { label: 'Purged',    bg: 'rgba(71,85,105,0.2)',   color: '#64748B' },
 }
 
-const TABS = ['tenants', 'subscriptions', 'audit'] as const
+const TABS = ['tenants', 'subscriptions', 'partners', 'audit'] as const
 type Tab = typeof TABS[number]
 
 interface Props {
   initialTenants:       TenantWithStats[]
   initialSubscriptions: AdminSubscriptionRow[]
   initialAuditLog:      AuditRow[]
+  initialPartners:      PartnerPayoutRow[]
 }
 
-export default function PlatformAdminClient({ initialTenants, initialSubscriptions, initialAuditLog }: Props) {
+export default function PlatformAdminClient({ initialTenants, initialSubscriptions, initialAuditLog, initialPartners }: Props) {
   const [tab, setTab]         = useState<Tab>('tenants')
   const [tenants, setTenants] = useState(initialTenants)
   const [subs, setSubs]       = useState(initialSubscriptions)
   const [audit, setAudit]     = useState(initialAuditLog)
+  const [partners, setPartners] = useState(initialPartners)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [error, setError]     = useState('')
   const [isPending, startTransition] = useTransition()
@@ -91,6 +94,14 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
 
   const reloadAudit = () =>
     startTransition(async () => { const d = await listPlatformAudit(50); setAudit(d) })
+
+  const reloadPartners = () =>
+    startTransition(async () => { setPartners(await listPartnerPayouts()) })
+  const handleMarkPaid = (partnerId: string) =>
+    startTransition(async () => {
+      const res = await markPartnerCommissionsPaid(partnerId)
+      if (res.success) reloadPartners(); else toast(res.error)
+    })
 
   const handleFilterChange = (v: string) => { setStatusFilter(v); reloadTenants(v) }
 
@@ -205,6 +216,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
         {[
           { id: 'tenants',       label: 'Tenants'       },
           { id: 'subscriptions', label: 'Subscriptions' },
+          { id: 'partners',      label: 'Partners'      },
           { id: 'audit',         label: 'Audit Log'     },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
@@ -402,6 +414,54 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── PARTNERS TAB ──────────────────────────────────────────────────────── */}
+      {tab === 'partners' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-semibold" style={{ color: '#94A3B8' }}>Referral partners &amp; commissions</p>
+            <button onClick={reloadPartners} disabled={isPending}
+              className="text-xs px-3 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>Refresh</button>
+          </div>
+          <div className="rounded-xl overflow-hidden overflow-x-auto" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+            <table className="w-full text-sm" style={{ minWidth: 760 }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  {['Partner', 'Code', 'Referred', 'Owed', 'Paid', 'Type', ''].map((h) => (
+                    <th key={h} className="text-left px-3 py-2 text-xs font-semibold" style={{ color: '#64748B' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {partners.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center py-8 text-xs" style={{ color: '#64748B' }}>No partners yet.</td></tr>
+                ) : partners.map((p) => (
+                  <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <td className="px-3 py-2.5" style={{ color: '#E2E8F0' }}>
+                      {p.name}
+                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded" style={{ background: p.type === 'tenant' ? 'rgba(13,148,136,0.2)' : 'rgba(139,92,246,0.2)', color: p.type === 'tenant' ? '#5EEAD4' : '#C4B5FD' }}>{p.type}</span>
+                      {p.status !== 'active' && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#F87171' }}>{p.status}</span>}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs" style={{ color: '#94A3B8' }}>{p.referral_code}</td>
+                    <td className="px-3 py-2.5" style={{ color: '#CBD5E1' }}>{p.referred_count}</td>
+                    <td className="px-3 py-2.5 font-semibold" style={{ color: p.accrued_amount > 0 ? '#FCD34D' : '#64748B' }}>₹{p.accrued_amount.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2.5" style={{ color: '#34D399' }}>₹{p.paid_amount.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#94A3B8' }}>{p.payout_type}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      {p.accrued_amount > 0 && (
+                        <button onClick={() => handleMarkPaid(p.id)} disabled={isPending}
+                          className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'rgba(16,185,129,0.15)', color: '#34D399' }}>
+                          Mark {p.payout_type === 'credit' ? 'credited' : 'paid'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

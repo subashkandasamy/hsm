@@ -70,6 +70,14 @@ export async function getMyReferralOverview(): Promise<ReferralOverview> {
     }
   }
 
+  // Total earned = accrued + paid commissions (reversed excluded), from live charges.
+  let totalEarned = 0
+  if (partner) {
+    const { data: comms } = await svc.from('partner_commissions')
+      .select('commission_amount, status').eq('partner_id', partner.id).in('status', ['accrued', 'paid'])
+    totalEarned = (comms ?? []).reduce((s, c) => s + Number(c.commission_amount ?? 0), 0)
+  }
+
   const code = (partner?.referral_code as string) ?? ''
   return {
     referral_code: code,
@@ -78,7 +86,7 @@ export async function getMyReferralOverview(): Promise<ReferralOverview> {
     duration_label: durationLabel,
     referred_count: referredCount,
     active_count: activeCount,
-    total_earned: 0,   // Phase 2: accrued from live subscription payments
+    total_earned: Math.round(totalEarned * 100) / 100,
     referrals: refs,
   }
 }

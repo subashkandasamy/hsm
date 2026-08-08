@@ -542,3 +542,83 @@ export async function listPlatformAudit(limit = 100): Promise<AuditRow[]> {
     created_at:       r.created_at as string,
   }))
 }
+
+// ── Referral partners & commissions (payout view) ─────────────────────────────
+
+export interface PartnerPayoutRow {
+  id: string
+  name: string
+  type: 'tenant' | 'external'
+  referral_code: string
+  status: string
+  commission_pct: number | null
+  payout_type: 'credit' | 'cash'
+  referred_count: number
+  accrued_amount: number   // unpaid (owed)
+  paid_amount: number      // already paid/credited
+}
+
+export async function listPartnerPayouts(): Promise<PartnerPayoutRow[]> {
+  await requirePlatformAdmin()
+  const service = createServiceClient()
+
+  const [{ data: partners }, { data: comms }, { data: refs }] = await Promise.all([
+    service.from('partners').select('id, name, type, referral_code, status, commission_pct').order('created_at', { ascending: false }),
+    service.from('partner_commissions').select('partner_id, commission_amount, status, payout_type'),
+    service.from('referrals').select('partner_id'),
+  ])
+
+  const refCount = new Map<string, number>()
+  for (const r of refs ?? []) refCount.set(r.partner_id as string, (refCount.get(r.partner_id as string) ?? 0) + 1)
+
+  const accrued = new Map<string, number>()
+  const paid = new Map<string, number>()
+  const payoutType = new Map<string, 'credit' | 'cash'>()
+  for (const c of comms ?? []) {
+    const pid = c.partner_id as string
+    const amt = Number(c.commission_amount ?? 0)
+    if (c.status === 'accrued') accrued.set(pid, (accrued.get(pid) ?? 0) + amt)
+    else if (c.status === 'paid') paid.set(pid, (paid.get(pid) ?? 0) + amt)
+    payoutType.set(pid, (c.payout_type as 'credit' | 'cash') ?? 'cash')
+  }
+
+  return (partners ?? []).map((p) => ({
+    id: p.id as string,
+    name: p.name as string,
+    type: (p.type as 'tenant' | 'external') ?? 'tenant',
+    referral_code: p.referral_code as string,
+    status: (p.status as string) ?? 'active',
+    commission_pct: (p.commission_pct as number | null) ?? null,
+    payout_type: payoutType.get(p.id as string) ?? ((p.type as string) === 'tenant' ? 'credit' : 'cash'),
+    referred_count: refCount.get(p.id as string) ?? 0,
+    accrued_amount: Math.round((accrued.get(p.id as string) ?? 0) * 100) / 100,
+    paid_amount: Math.round((paid.get(p.id as string) ?? 0) * 100) / 100,
+  }))
+}
+
+// Mark all of a partner's currently-accrued commissions as paid/credited.
+export async function markPartnerCommissionsPaid(
+  partnerId: string
+): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { data, error } = await service.from('partner_commissions')
+    .update({ status: 'paid', paid_at: new Date().toISOString() })
+    .eq('partner_id', partnerId).eq('status', 'accrued').select('id')
+  if (error) return { success: false, error: error.message }
+  await logAdminAction(service, actor.id, 'partner_payout', null, { partner_id: partnerId, count: (data ?? []).length })
+  return { success: true, count: (data ?? []).length }
+}
+
+// Set a partner's commission % / duration override or status.
+export async function updatePartnerTerms(
+  partnerId: string,
+  input: { commission_pct?: number | null; commission_duration_months?: number | null; status?: 'active' | 'suspended' }
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { error } = await service.from('partners').update(input).eq('id', partnerId)
+  if (error) return { success: false, error: error.message }
+  await logAdminAction(service, actor.id, 'partner_update_terms', null, { partner_id: partnerId, ...input })
+  return { success: true }
+}

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { ShieldCheck, Database } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit } from '@/app/actions/platform'
+import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit, listPartnerPayouts } from '@/app/actions/platform'
 import PlatformAdminClient from './_components/PlatformAdminClient'
 
 export const metadata = {
@@ -26,11 +26,12 @@ export default async function PlatformAdminPage() {
 
   if (!pa) redirect('/dashboard')
 
-  const [tenants, stats, subscriptions, auditLog] = await Promise.all([
+  const [tenants, stats, subscriptions, auditLog, partners] = await Promise.all([
     listTenants(),
     getAdminStats(),
     listSubscriptions(),
     listPlatformAudit(50),
+    listPartnerPayouts(),
   ])
 
   return (
@@ -75,6 +76,7 @@ export default async function PlatformAdminPage() {
           initialTenants={tenants}
           initialSubscriptions={subscriptions}
           initialAuditLog={auditLog}
+          initialPartners={partners}
         />
       </div>
     </div>

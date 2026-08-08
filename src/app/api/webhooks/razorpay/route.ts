@@ -2,8 +2,63 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createHmac } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/service'
+import { PLANS } from '@/lib/razorpay-plans'
+import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET ?? ''
+
+type Svc = ReturnType<typeof createServiceClient>
+
+// Accrue referral commission when a referred tenant is charged. Commission is a
+// % of the NET plan price; idempotent on the Razorpay payment id; respects the
+// partner's optional duration cap. Never throws — billing must not be affected.
+async function accrueReferralCommission(
+  service: Svc,
+  opts: { tenantId: string; plan: string; paymentId: string | null },
+) {
+  const { tenantId, plan, paymentId } = opts
+  if (!tenantId || !paymentId) return
+  try {
+    const { data: tenant } = await service.from('tenants')
+      .select('referred_by_partner_id').eq('id', tenantId).maybeSingle()
+    const partnerId = tenant?.referred_by_partner_id as string | null
+    if (!partnerId) return
+
+    const { data: partner } = await service.from('partners')
+      .select('id, tenant_id, type, commission_pct, commission_duration_months, status')
+      .eq('id', partnerId).maybeSingle()
+    if (!partner || partner.status !== 'active') return
+
+    // Duration cap: stop after N accrued charges if the partner has a cap.
+    const cap = partner.commission_duration_months as number | null
+    if (cap) {
+      const { count } = await service.from('partner_commissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('partner_id', partnerId).eq('referred_tenant_id', tenantId)
+        .in('status', ['accrued', 'paid'])
+      if ((count ?? 0) >= cap) return
+    }
+
+    const base = PLANS[plan as keyof typeof PLANS]?.price ?? 0
+    if (base <= 0) return
+    const pct = (partner.commission_pct as number | null) ?? DEFAULT_COMMISSION_PCT
+    const amount = Math.round(base * (pct / 100) * 100) / 100
+
+    await service.from('partner_commissions').insert({
+      partner_id: partnerId,
+      referred_tenant_id: tenantId,
+      source_payment_id: paymentId,
+      period: new Date().toISOString().slice(0, 7),
+      base_amount: base,
+      commission_pct: pct,
+      commission_amount: amount,
+      payout_type: partner.type === 'tenant' ? 'credit' : 'cash',
+    })
+    // Unique(source_payment_id) makes duplicate webhook deliveries a no-op (23505).
+  } catch (e) {
+    console.error('[razorpay webhook] commission accrual failed:', e)
+  }
+}
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -58,7 +113,7 @@ export async function POST(request: NextRequest) {
         if (!subId) break
 
         const { data: row } = await service
-          .from('subscriptions').select('tenant_id').eq('stripe_subscription_id', subId).maybeSingle()
+          .from('subscriptions').select('tenant_id, plan').eq('stripe_subscription_id', subId).maybeSingle()
         if (!row?.tenant_id) break
 
         const periodEnd = subEntity?.current_end
@@ -68,6 +123,24 @@ export async function POST(request: NextRequest) {
         await service.from('subscriptions').update({ status: 'active', current_period_end: periodEnd })
           .eq('stripe_subscription_id', subId)
         await service.from('tenants').update({ status: 'active' }).eq('id', row.tenant_id)
+
+        // Referral commission — one accrual per successful charge (first + renewals).
+        await accrueReferralCommission(service, {
+          tenantId: row.tenant_id as string,
+          plan: (row.plan as string) ?? subEntity?.notes?.plan ?? 'starter',
+          paymentId: (payEntity?.id as string) ?? null,
+        })
+        break
+      }
+
+      // A charge was refunded — reverse any commission accrued on it.
+      case 'refund.created':
+      case 'refund.processed': {
+        const refundedPaymentId = payload.payload?.refund?.entity?.payment_id as string | undefined
+        if (!refundedPaymentId) break
+        await service.from('partner_commissions')
+          .update({ status: 'reversed' })
+          .eq('source_payment_id', refundedPaymentId).eq('status', 'accrued')
         break
       }
 
