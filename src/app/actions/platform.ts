@@ -624,3 +624,40 @@ export async function updatePartnerTerms(
   await logAdminAction(service, actor.id, 'partner_update_terms', null, { partner_id: partnerId, ...input })
   return { success: true }
 }
+
+// Create an external (non-tenant) partner — a consultant/reseller who refers
+// hospitals and earns cash commission. Generates a unique referral code.
+export async function createExternalPartner(input: {
+  name: string
+  email?: string
+  phone?: string
+  commission_pct?: number | null
+  commission_duration_months?: number | null
+  payout_method?: string | null
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const name = input.name.trim()
+  if (!name) return { success: false, error: 'Name is required' }
+
+  const base = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'partner'
+  let ok = false
+  for (let i = 0; i < 6 && !ok; i++) {
+    const code = `${base}${Math.random().toString(36).slice(2, 6)}`
+    const { error } = await service.from('partners').insert({
+      name,
+      type: 'external',
+      email: input.email?.trim() || null,
+      phone: input.phone?.trim() || null,
+      referral_code: code,
+      commission_pct: input.commission_pct ?? null,
+      commission_duration_months: input.commission_duration_months ?? null,
+      payout_method: input.payout_method?.trim() || null,
+    })
+    if (!error) { ok = true; break }
+    if (error.code !== '23505') return { success: false, error: error.message }
+  }
+  if (!ok) return { success: false, error: 'Could not generate a unique referral code — try again' }
+  await logAdminAction(service, actor.id, 'create_partner', null, { name, type: 'external' })
+  return { success: true }
+}

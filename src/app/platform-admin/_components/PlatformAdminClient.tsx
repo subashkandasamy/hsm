@@ -12,7 +12,7 @@ import {
   setTenantAccessOverride, changeTenantPlan, extendTrial, createTenant,
   purgeTenantData, adminCancelSubscription, adminRetryPayment,
   listSubscriptions, listPlatformAudit,
-  listPartnerPayouts, markPartnerCommissionsPaid, updatePartnerTerms,
+  listPartnerPayouts, markPartnerCommissionsPaid, updatePartnerTerms, createExternalPartner,
 } from '@/app/actions/platform'
 import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 import type { TenantWithStats } from '@/lib/types'
@@ -81,6 +81,8 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
   })
   const [editPartner, setEditPartner]   = useState<PartnerPayoutRow | null>(null)
   const [editForm, setEditForm]         = useState({ pct: '', months: '', status: 'active' as 'active' | 'suspended' })
+  const [addPartnerOpen, setAddPartnerOpen] = useState(false)
+  const [addPartnerForm, setAddPartnerForm] = useState({ name: '', email: '', phone: '', pct: '', months: '', payout: '' })
   const openEditPartner = (p: PartnerPayoutRow) => {
     setEditPartner(p)
     setEditForm({
@@ -113,6 +115,24 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
       const res = await markPartnerCommissionsPaid(partnerId)
       if (res.success) reloadPartners(); else toast(res.error)
     })
+  const saveNewPartner = () => {
+    if (!addPartnerForm.name.trim()) { toast('Partner name is required'); return }
+    startTransition(async () => {
+      const res = await createExternalPartner({
+        name: addPartnerForm.name,
+        email: addPartnerForm.email || undefined,
+        phone: addPartnerForm.phone || undefined,
+        commission_pct: addPartnerForm.pct.trim() === '' ? null : Number(addPartnerForm.pct),
+        commission_duration_months: addPartnerForm.months.trim() === '' ? null : Number(addPartnerForm.months),
+        payout_method: addPartnerForm.payout || undefined,
+      })
+      if (res.success) {
+        setAddPartnerOpen(false)
+        setAddPartnerForm({ name: '', email: '', phone: '', pct: '', months: '', payout: '' })
+        reloadPartners()
+      } else toast(res.error)
+    })
+  }
   const savePartnerTerms = () => {
     if (!editPartner) return
     startTransition(async () => {
@@ -445,8 +465,12 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold" style={{ color: '#94A3B8' }}>Referral partners &amp; commissions</p>
-            <button onClick={reloadPartners} disabled={isPending}
-              className="text-xs px-3 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>Refresh</button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setAddPartnerOpen(true)} disabled={isPending}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold" style={{ background: 'rgba(13,148,136,0.2)', color: '#5EEAD4', border: '1px solid rgba(13,148,136,0.3)' }}>+ Add partner</button>
+              <button onClick={reloadPartners} disabled={isPending}
+                className="text-xs px-3 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>Refresh</button>
+            </div>
           </div>
           <div className="rounded-xl overflow-hidden overflow-x-auto" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
             <table className="w-full text-sm" style={{ minWidth: 760 }}>
@@ -595,6 +619,49 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
           </select>
           <ModalActions onCancel={() => setPlanChangeId(null)}
             onConfirm={handlePlanChange} confirmLabel="Change plan" confirmStyle="primary"
+            disabled={isPending} pending={isPending} />
+        </Modal>
+      )}
+
+      {/* Add external partner */}
+      {addPartnerOpen && (
+        <Modal onClose={() => setAddPartnerOpen(false)}>
+          <h3 className="font-semibold mb-1" style={{ color: '#F8FAFC' }}>Add external partner</h3>
+          <p className="text-sm mb-4" style={{ color: '#94A3B8' }}>
+            A consultant/reseller (not a hospital) who refers hospitals and earns cash commission. A referral code + link is generated.
+          </p>
+          {[
+            { k: 'name', label: 'Partner name *', ph: 'e.g. Coimbatore Med Consultants', type: 'text' },
+            { k: 'email', label: 'Email', ph: 'partner@example.com', type: 'email' },
+            { k: 'phone', label: 'Phone', ph: '+91…', type: 'text' },
+            { k: 'payout', label: 'Payout details', ph: 'UPI: name@bank · A/c … · PAN …', type: 'text' },
+          ].map((f) => (
+            <div key={f.k} className="mb-3">
+              <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>{f.label}</label>
+              <input type={f.type} value={(addPartnerForm as Record<string, string>)[f.k]}
+                onChange={e => setAddPartnerForm(s => ({ ...s, [f.k]: e.target.value }))} placeholder={f.ph}
+                className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }} />
+            </div>
+          ))}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>Commission (%)</label>
+              <input type="number" min={0} max={100} step="0.5" value={addPartnerForm.pct}
+                onChange={e => setAddPartnerForm(s => ({ ...s, pct: e.target.value }))} placeholder={`${DEFAULT_COMMISSION_PCT} (default)`}
+                className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5 font-medium" style={{ color: '#94A3B8' }}>Duration (months)</label>
+              <input type="number" min={1} max={120} value={addPartnerForm.months}
+                onChange={e => setAddPartnerForm(s => ({ ...s, months: e.target.value }))} placeholder="Blank = lifetime"
+                className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F8FAFC' }} />
+            </div>
+          </div>
+          <ModalActions onCancel={() => setAddPartnerOpen(false)}
+            onConfirm={saveNewPartner} confirmLabel="Create partner" confirmStyle="primary"
             disabled={isPending} pending={isPending} />
         </Modal>
       )}

@@ -91,6 +91,8 @@ export async function proxy(request: NextRequest) {
     '/native-entry', '/find-hospital',
     // Public marketing / legal pages
     '/terms', '/privacy', '/security', '/guides', '/solutions', '/tools',
+    // External-partner portal (self-authenticated via partner session cookie)
+    '/partner',
     // Commercial solution landing pages (SEO)
     ...MARKETING_SOLUTION_PATHS,
   ]

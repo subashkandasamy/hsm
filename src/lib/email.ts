@@ -80,3 +80,30 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
     console.error('[email] Failed to send welcome email:', err)
   }
 }
+
+export async function sendPartnerLoginEmail(to: string, loginLink: string): Promise<void> {
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY not set — partner login link (dev):', loginLink)
+    return
+  }
+  try {
+    await resend.emails.send({
+      from: FROM, to, replyTo: REPLY_TO,
+      subject: 'Your Uyirly partner sign-in link',
+      html: `
+<div style="background:#f8fafc;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid ${S2};border-radius:16px;overflow:hidden;">
+    <div style="padding:28px 32px;border-bottom:1px solid ${S2};"><span style="font-size:18px;font-weight:700;color:${S9};">Uyirly Partners</span></div>
+    <div style="padding:32px;">
+      <h1 style="margin:0 0 12px;font-size:20px;color:${S9};">Sign in to your partner dashboard</h1>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:${S6};">Click the button below to sign in and view your referrals and earnings. This link expires in 30 minutes.</p>
+      <a href="${loginLink}" style="display:inline-block;background:${T};color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 24px;border-radius:12px;">Sign in</a>
+      <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:${S4};">If you didn't request this, you can ignore this email.</p>
+    </div>
+  </div>
+</div>`.trim(),
+    })
+  } catch (err) {
+    console.error('[email] Failed to send partner login email:', err)
+  }
+}
