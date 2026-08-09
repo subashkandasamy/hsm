@@ -105,6 +105,8 @@ export default function AddLabTestModal({ open, onClose }: Props) {
       return new Set(data.map(t => t.category))
     })
     setLoading(false)
+    // Empty catalog → start on "Add from Master" so it's obvious how to add tests.
+    if (data.length === 0) setTab('master')
   }
 
   async function loadMaster() {

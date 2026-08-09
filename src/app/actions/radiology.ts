@@ -318,6 +318,7 @@ export async function activateRadiologyFromMaster(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:manage')
+  if (!(price > 0)) return { success: false, error: 'Enter a price greater than 0' }
   const supabase = await createClient()
 
   const { data: existing } = await supabase

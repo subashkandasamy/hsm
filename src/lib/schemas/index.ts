@@ -282,7 +282,7 @@ export const LabTestCatalogSchema = z.object({
   ref_low: z.number().nullable().optional(),
   ref_high: z.number().nullable().optional(),
   reference_range: z.string().nullable().optional(),
-  price: z.number().min(0),
+  price: z.number().positive('Enter a price greater than 0'),
 })
 
 export const LabOrderSchema = z.object({
@@ -304,7 +304,7 @@ export const RadiologyCatalogSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   modality: z.string().nullable().optional(),
   body_part: z.string().optional().default('General'),
-  price: z.number().min(0),
+  price: z.number().positive('Enter a price greater than 0'),
 })
 
 export const RadiologyOrderSchema = z.object({

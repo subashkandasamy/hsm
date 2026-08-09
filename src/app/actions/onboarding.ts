@@ -2,7 +2,6 @@
 
 import { createServiceClient } from '@/lib/supabase/service'
 import { isValidSlug, RESERVED_SLUGS } from '@/lib/tenant'
-import { seedLabCatalog, seedRadiologyCatalog } from '@/lib/catalogSeed'
 import { sendWelcomeEmail } from '@/lib/email'
 import { z } from 'zod'
 
@@ -192,11 +191,8 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
     tpaNames.map((name) => ({ id: crypto.randomUUID(), tenant_id: tenantId, name }))
   )
 
-  // 6. Seed default lab & radiology catalogs (inactive, ₹1 each — admin enables & prices)
-  await Promise.all([
-    seedLabCatalog(tenantId),
-    seedRadiologyCatalog(tenantId),
-  ])
+  // 6. Lab & radiology catalogs are NOT pre-seeded. Tenants add tests/scans on
+  //    demand from the global master (with a real price) via "Add from Master".
 
   // 7. Audit log
   await service.from('audit_logs').insert({

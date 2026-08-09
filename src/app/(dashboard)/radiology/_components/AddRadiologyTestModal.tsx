@@ -135,6 +135,8 @@ export default function AddRadiologyTestModal({ open, onClose, onSuccess }: Prop
     // Expand all groups on first load
     setCatExpanded(prev => prev.size > 0 ? prev : new Set(data.map(t => `${t.modality ?? 'other'}|${t.body_part}`)))
     setLoading(false)
+    // Empty catalog → start on "Add from Master" so it's obvious how to add scans.
+    if (data.length === 0) setTab('master')
   }
 
   async function loadMaster() {
