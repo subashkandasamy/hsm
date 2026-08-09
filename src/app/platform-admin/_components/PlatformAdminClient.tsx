@@ -13,6 +13,7 @@ import {
   purgeTenantData, adminCancelSubscription, adminRetryPayment,
   listSubscriptions, listPlatformAudit,
   listPartnerPayouts, markPartnerCommissionsPaid, updatePartnerTerms, createExternalPartner,
+  approvePartner, rejectPartner,
 } from '@/app/actions/platform'
 import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 import type { TenantWithStats } from '@/lib/types'
@@ -115,6 +116,14 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
       const res = await markPartnerCommissionsPaid(partnerId)
       if (res.success) reloadPartners(); else toast(res.error)
     })
+  const handleApprovePartner = (id: string) => startTransition(async () => {
+    const res = await approvePartner(id)
+    if (res.success) reloadPartners(); else toast(res.error)
+  })
+  const handleRejectPartner = (id: string) => startTransition(async () => {
+    const res = await rejectPartner(id)
+    if (res.success) reloadPartners(); else toast(res.error)
+  })
   const saveNewPartner = () => {
     if (!addPartnerForm.name.trim()) { toast('Partner name is required'); return }
     startTransition(async () => {
@@ -503,15 +512,30 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                     <td className="px-3 py-2.5" style={{ color: '#34D399' }}>₹{p.paid_amount.toLocaleString('en-IN')}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#94A3B8' }}>{p.payout_type}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      <button onClick={() => openEditPartner(p)} disabled={isPending}
-                        className="text-xs px-2.5 py-1 rounded-lg mr-1.5" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>
-                        Edit
-                      </button>
-                      {p.accrued_amount > 0 && (
-                        <button onClick={() => handleMarkPaid(p.id)} disabled={isPending}
-                          className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'rgba(16,185,129,0.15)', color: '#34D399' }}>
-                          Mark {p.payout_type === 'credit' ? 'credited' : 'paid'}
-                        </button>
+                      {p.status === 'pending' ? (
+                        <>
+                          <button onClick={() => handleApprovePartner(p.id)} disabled={isPending}
+                            className="text-xs px-2.5 py-1 rounded-lg mr-1.5 font-semibold" style={{ background: 'rgba(16,185,129,0.15)', color: '#34D399' }}>
+                            Approve
+                          </button>
+                          <button onClick={() => handleRejectPartner(p.id)} disabled={isPending}
+                            className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'rgba(239,68,68,0.15)', color: '#F87171' }}>
+                            Reject
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => openEditPartner(p)} disabled={isPending}
+                            className="text-xs px-2.5 py-1 rounded-lg mr-1.5" style={{ background: 'rgba(255,255,255,0.08)', color: '#CBD5E1' }}>
+                            Edit
+                          </button>
+                          {p.accrued_amount > 0 && (
+                            <button onClick={() => handleMarkPaid(p.id)} disabled={isPending}
+                              className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'rgba(16,185,129,0.15)', color: '#34D399' }}>
+                              Mark {p.payout_type === 'credit' ? 'credited' : 'paid'}
+                            </button>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>

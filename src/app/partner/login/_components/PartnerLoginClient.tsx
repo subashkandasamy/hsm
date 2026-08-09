@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Gift, Mail, CheckCircle2 } from 'lucide-react'
 import { requestPartnerLogin } from '@/app/actions/partnerAuth'
 
@@ -59,6 +60,9 @@ export default function PartnerLoginClient({ hadError }: { hadError?: boolean })
               className="w-full py-2.5 rounded-xl text-sm font-semibold" style={{ background: loading ? '#94A3B8' : TEAL, color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer' }}>
               {loading ? 'Sending…' : 'Send sign-in link'}
             </button>
+            <p className="text-xs text-center mt-3" style={{ color: '#94A3B8' }}>
+              New here? <Link href="/partner/register" className="font-medium underline" style={{ color: TEAL }}>Become a partner</Link>
+            </p>
           </form>
         )}
       </div>

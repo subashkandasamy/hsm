@@ -661,3 +661,37 @@ export async function createExternalPartner(input: {
   await logAdminAction(service, actor.id, 'create_partner', null, { name, type: 'external' })
   return { success: true }
 }
+
+// Approve a pending (self-registered) partner → activate + email their link.
+export async function approvePartner(
+  partnerId: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { data: p } = await service.from('partners')
+    .select('name, email, referral_code, commission_pct').eq('id', partnerId).maybeSingle()
+  if (!p) return { success: false, error: 'Partner not found' }
+
+  const { error } = await service.from('partners').update({ status: 'active' }).eq('id', partnerId)
+  if (error) return { success: false, error: error.message }
+
+  if (p.email) {
+    const { referralLink } = await import('@/lib/referral')
+    const { sendPartnerWelcomeEmail } = await import('@/lib/email')
+    const pct = (p.commission_pct as number | null) ?? (await import('@/lib/referral')).DEFAULT_COMMISSION_PCT
+    await sendPartnerWelcomeEmail(p.email as string, p.name as string, referralLink(p.referral_code as string), pct)
+  }
+  await logAdminAction(service, actor.id, 'approve_partner', null, { partner_id: partnerId })
+  return { success: true }
+}
+
+export async function rejectPartner(
+  partnerId: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { error } = await service.from('partners').update({ status: 'rejected' }).eq('id', partnerId)
+  if (error) return { success: false, error: error.message }
+  await logAdminAction(service, actor.id, 'reject_partner', null, { partner_id: partnerId })
+  return { success: true }
+}

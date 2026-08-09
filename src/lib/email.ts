@@ -107,3 +107,34 @@ export async function sendPartnerLoginEmail(to: string, loginLink: string): Prom
     console.error('[email] Failed to send partner login email:', err)
   }
 }
+
+export async function sendPartnerWelcomeEmail(to: string, name: string, referralLink: string, pct: number): Promise<void> {
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY not set — partner referral link (dev):', referralLink)
+    return
+  }
+  try {
+    await resend.emails.send({
+      from: FROM, to, replyTo: REPLY_TO,
+      subject: 'You’re approved — your Uyirly referral link',
+      html: `
+<div style="background:#f8fafc;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid ${S2};border-radius:16px;overflow:hidden;">
+    <div style="padding:28px 32px;border-bottom:1px solid ${S2};"><span style="font-size:18px;font-weight:700;color:${S9};">Uyirly Partners</span></div>
+    <div style="padding:32px;">
+      <h1 style="margin:0 0 12px;font-size:20px;color:${S9};">Welcome aboard, ${name}!</h1>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:${S6};">Your partner account is approved. Share your referral link with hospitals and clinics — you earn <strong>${pct}%</strong> of their subscription every month, for as long as they stay.</p>
+      <div style="background:#f0fdfa;border:1px solid #ccfbf1;border-radius:12px;padding:16px 20px;margin:0 0 24px;">
+        <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:${S4};">Your referral link</p>
+        <a href="${referralLink}" style="font-size:15px;font-weight:600;color:${T};text-decoration:none;word-break:break-all;">${referralLink}</a>
+      </div>
+      <a href="https://www.uyirly.com/partner/login" style="display:inline-block;background:${T};color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 24px;border-radius:12px;">Open your partner dashboard</a>
+      <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:${S4};">Sign in any time at uyirly.com/partner/login with this email to track your referrals and earnings.</p>
+    </div>
+  </div>
+</div>`.trim(),
+    })
+  } catch (err) {
+    console.error('[email] Failed to send partner welcome email:', err)
+  }
+}

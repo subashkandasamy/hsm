@@ -11,6 +11,39 @@ import type { ReferralOverview, ReferredHospital } from '@/lib/types'
 const SITE = 'https://www.uyirly.com'
 const ALIVE = new Set(['trial', 'active', 'past_due'])
 
+// Public self-registration — anyone can apply to become a referral partner.
+// Creates a 'pending' partner row; an admin approves it (which emails the link).
+export async function registerPartner(input: {
+  name: string; email: string; phone?: string; note?: string
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const name = (input.name ?? '').trim()
+  const email = (input.email ?? '').trim().toLowerCase()
+  if (name.length < 2) return { success: false, error: 'Please enter your name' }
+  if (!email.includes('@')) return { success: false, error: 'Please enter a valid email' }
+
+  const svc = createServiceClient()
+  const { data: existing } = await svc.from('partners').select('id, status').ilike('email', email).maybeSingle()
+  if (existing) {
+    return existing.status === 'pending'
+      ? { success: false, error: 'This email has already applied — we’re reviewing it.' }
+      : { success: false, error: 'This email is already registered as a partner. Try signing in.' }
+  }
+
+  const base = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'partner'
+  for (let i = 0; i < 6; i++) {
+    const code = `${base}${Math.random().toString(36).slice(2, 6)}`
+    const { error } = await svc.from('partners').insert({
+      name, type: 'external', status: 'pending',
+      email, phone: (input.phone ?? '').trim() || null,
+      referral_code: code,
+      payout_method: (input.note ?? '').trim() || null,
+    })
+    if (!error) return { success: true }
+    if (error.code !== '23505') return { success: false, error: error.message }
+  }
+  return { success: false, error: 'Could not create your application — please try again.' }
+}
+
 // Step 1: email a one-time sign-in link. Always returns success so we never
 // reveal whether an email belongs to a partner.
 export async function requestPartnerLogin(email: string): Promise<{ success: true }> {

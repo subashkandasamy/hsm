@@ -1060,6 +1060,7 @@ function Footer() {
                 { label: 'Solutions', href: '/solutions'                 },
                 { label: 'Guides',  href: '/guides'                   },
                 { label: 'Free tools', href: '/tools'                 },
+                { label: 'Become a partner', href: '/partner/register' },
                 { label: 'Terms',   href: '/terms'                    },
                 { label: 'Privacy', href: '/privacy'                  },
                 { label: 'Contact', href: 'mailto:contact@uyirly.com' },
