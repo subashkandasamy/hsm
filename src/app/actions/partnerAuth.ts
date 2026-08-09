@@ -64,7 +64,22 @@ export async function requestPartnerLogin(email: string): Promise<{ success: tru
   return { success: true }
 }
 
-export interface PartnerPortalData { name: string; overview: ReferralOverview }
+export interface PartnerPayoutDetails {
+  bank_account_name: string | null
+  bank_account_number: string | null
+  bank_ifsc: string | null
+  upi_id: string | null
+  pan_number: string | null
+}
+export interface PartnerPortalData {
+  name: string
+  email: string | null
+  phone: string | null
+  overview: ReferralOverview
+  owed: number
+  paid: number
+  payout: PartnerPayoutDetails
+}
 
 export async function getPartnerPortalData(): Promise<PartnerPortalData | null> {
   const session = await getPartnerSession()
@@ -97,7 +112,12 @@ export async function getPartnerPortalData(): Promise<PartnerPortalData | null> 
 
   const { data: comms } = await svc.from('partner_commissions')
     .select('commission_amount, status').eq('partner_id', partner.id).in('status', ['accrued', 'paid'])
-  const totalEarned = (comms ?? []).reduce((s, c) => s + Number(c.commission_amount ?? 0), 0)
+  let owed = 0, paid = 0
+  for (const c of comms ?? []) {
+    const amt = Number(c.commission_amount ?? 0)
+    if (c.status === 'accrued') owed += amt; else if (c.status === 'paid') paid += amt
+  }
+  const totalEarned = owed + paid
 
   const code = partner.referral_code as string
   const overview: ReferralOverview = {
@@ -110,7 +130,39 @@ export async function getPartnerPortalData(): Promise<PartnerPortalData | null> 
     total_earned: Math.round(totalEarned * 100) / 100,
     referrals: refs,
   }
-  return { name: partner.name as string, overview }
+  return {
+    name: partner.name as string,
+    email: (partner.email as string | null) ?? null,
+    phone: (partner.phone as string | null) ?? null,
+    overview,
+    owed: Math.round(owed * 100) / 100,
+    paid: Math.round(paid * 100) / 100,
+    payout: {
+      bank_account_name: (partner.bank_account_name as string | null) ?? null,
+      bank_account_number: (partner.bank_account_number as string | null) ?? null,
+      bank_ifsc: (partner.bank_ifsc as string | null) ?? null,
+      upi_id: (partner.upi_id as string | null) ?? null,
+      pan_number: (partner.pan_number as string | null) ?? null,
+    },
+  }
+}
+
+// Partner updates their own bank/payout details (from the partner portal).
+export async function updatePartnerBankDetails(input: {
+  bank_account_name?: string; bank_account_number?: string; bank_ifsc?: string; upi_id?: string; pan_number?: string
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await getPartnerSession()
+  if (!session) return { success: false, error: 'Please sign in again' }
+  const svc = createServiceClient()
+  const { error } = await svc.from('partners').update({
+    bank_account_name: input.bank_account_name?.trim() || null,
+    bank_account_number: input.bank_account_number?.trim() || null,
+    bank_ifsc: input.bank_ifsc?.trim().toUpperCase() || null,
+    upi_id: input.upi_id?.trim() || null,
+    pan_number: input.pan_number?.trim().toUpperCase() || null,
+  }).eq('id', session.partnerId)
+  if (error) return { success: false, error: error.message }
+  return { success: true }
 }
 
 export async function signOutPartner(): Promise<void> {

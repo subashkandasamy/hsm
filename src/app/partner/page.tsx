@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Gift } from 'lucide-react'
 import { getPartnerPortalData, signOutPartner } from '@/app/actions/partnerAuth'
 import ReferralsClient from '@/app/(dashboard)/referrals/_components/ReferralsClient'
+import PartnerBankDetails from './_components/PartnerBankDetails'
 
 export const metadata = { title: 'Partner Dashboard — Uyirly', robots: { index: false, follow: false } }
 
@@ -30,6 +31,7 @@ export default async function PartnerPortalPage() {
       </header>
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
         <ReferralsClient overview={data.overview} />
+        <PartnerBankDetails owed={data.owed} paid={data.paid} payout={data.payout} />
       </main>
     </div>
   )
