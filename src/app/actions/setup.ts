@@ -49,6 +49,15 @@ export async function getSetupProgress(): Promise<SetupProgress> {
     return count ?? 0
   }
 
+  // Lab & radiology catalogs are pre-seeded (inactive placeholders) at signup, so
+  // a plain row count is always > 0. The step is only "done" once the admin has
+  // enabled at least one test/scan (is_active = true).
+  const countActiveIf = async (enabled: boolean, table: string): Promise<number> => {
+    if (!enabled) return 0
+    const { count } = await supabase.from(table).select('id', { count: 'exact', head: true }).eq('is_active', true)
+    return count ?? 0
+  }
+
   // Profile completeness (name + address).
   const { data: profile } = await supabase
     .from('tenant_profiles')
@@ -61,8 +70,8 @@ export async function getSetupProgress(): Promise<SetupProgress> {
   const [doctorsRes, hours, labTests, radTests, pharmacyStock, wards, tariffs, patients] = await Promise.all([
     doctorsQ,
     countIf(true, 'doctor_availability'),
-    countIf(hasModule('lab'), 'lab_tests_catalog'),
-    countIf(hasModule('radiology'), 'radiology_catalog'),
+    countActiveIf(hasModule('lab'), 'lab_tests_catalog'),
+    countActiveIf(hasModule('radiology'), 'radiology_catalog'),
     // Pharmacy is "set up" once stock exists — a batch can reference the global
     // drug_master catalog, so a hospital may have stock with no tenant `drugs` row.
     countIf(hasModule('pharmacy'), 'drug_batches'),
