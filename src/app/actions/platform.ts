@@ -168,7 +168,9 @@ export async function impersonateTenant(
 
   // Generate a one-time magic link — clicking it logs in as the tenant admin
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
-  const redirectTo = `https://${tenant.slug}.${rootDomain}/dashboard`
+  // Must land on /auth/callback so the token is exchanged for a session cookie
+  // (redirecting straight to /dashboard leaves no session → bounced to /login).
+  const redirectTo = `https://${tenant.slug}.${rootDomain}/auth/callback`
 
   const { data: linkData, error: linkErr } = await service.auth.admin.generateLink({
     type:       'magiclink',
