@@ -10,7 +10,7 @@ const TEAL = '#0D9488'
 const inputStyle = { background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' } as const
 
 export default function PartnerRegisterClient() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', note: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '', note: '' })
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -18,8 +18,10 @@ export default function PartnerRegisterClient() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (form.password.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (form.password !== form.confirm) { setError('Passwords do not match'); return }
     setLoading(true); setError(null)
-    const res = await registerPartner(form)
+    const res = await registerPartner({ name: form.name, email: form.email, phone: form.phone, password: form.password, note: form.note })
     setLoading(false)
     if (!res.success) { setError(res.error); return }
     setDone(true)
@@ -64,6 +66,16 @@ export default function PartnerRegisterClient() {
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>Phone</label>
                 <input value={form.phone} onChange={set('phone')} className="w-full px-3 py-2.5 rounded-xl text-sm" style={inputStyle} placeholder="+91…" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>Password *</label>
+                <input type="password" value={form.password} onChange={set('password')} required className="w-full px-3 py-2.5 rounded-xl text-sm" style={inputStyle} placeholder="At least 8 characters" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>Confirm password *</label>
+                <input type="password" value={form.confirm} onChange={set('confirm')} required className="w-full px-3 py-2.5 rounded-xl text-sm" style={inputStyle} placeholder="Re-enter password" />
               </div>
             </div>
             <div>

@@ -2,23 +2,26 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Gift, Mail, CheckCircle2 } from 'lucide-react'
-import { requestPartnerLogin } from '@/app/actions/partnerAuth'
+import { useRouter } from 'next/navigation'
+import { Gift, Mail, Lock } from 'lucide-react'
+import { loginPartner } from '@/app/actions/partnerAuth'
 
 const TEAL = '#0D9488'
+const inputStyle = { background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' } as const
 
 export default function PartnerLoginClient({ hadError }: { hadError?: boolean }) {
+  const router = useRouter()
   const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(hadError ? 'That link was invalid or expired — sign in below.' : null)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.includes('@')) return
-    setLoading(true)
-    await requestPartnerLogin(email)
-    setLoading(false)
-    setSent(true)
+    setLoading(true); setError(null)
+    const res = await loginPartner(email, password)
+    if (!res.success) { setError(res.error); setLoading(false); return }
+    router.push('/partner')
   }
 
   return (
@@ -30,41 +33,35 @@ export default function PartnerLoginClient({ hadError }: { hadError?: boolean })
           </div>
           <div>
             <p className="text-base font-bold" style={{ color: '#0F172A' }}>Uyirly Partners</p>
-            <p className="text-xs" style={{ color: '#94A3B8' }}>Referral partner sign-in</p>
+            <p className="text-xs" style={{ color: '#94A3B8' }}>Sign in to your dashboard</p>
           </div>
         </div>
 
-        {sent ? (
-          <div className="text-center py-6">
-            <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#16A34A' }} />
-            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Check your email</p>
-            <p className="text-sm mt-1" style={{ color: '#64748B' }}>
-              If <strong>{email}</strong> is a registered partner, we&apos;ve sent a sign-in link. It expires in 30 minutes.
-            </p>
+        <form onSubmit={submit}>
+          {error && (
+            <div className="text-sm rounded-xl px-3 py-2 mb-3" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>
+          )}
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Email</label>
+          <div className="relative mb-3">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required
+              className="w-full pl-10 pr-3 py-2.5 rounded-xl text-sm" style={inputStyle} />
           </div>
-        ) : (
-          <form onSubmit={submit}>
-            <p className="text-sm mb-4" style={{ color: '#64748B' }}>Enter your email to get a one-time sign-in link.</p>
-            {hadError && (
-              <div className="text-sm rounded-xl px-3 py-2 mb-3" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                That sign-in link was invalid or expired — request a new one.
-              </div>
-            )}
-            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Email</label>
-            <div className="relative mb-4">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl text-sm" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }} />
-            </div>
-            <button type="submit" disabled={loading}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold" style={{ background: loading ? '#94A3B8' : TEAL, color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer' }}>
-              {loading ? 'Sending…' : 'Send sign-in link'}
-            </button>
-            <p className="text-xs text-center mt-3" style={{ color: '#94A3B8' }}>
-              New here? <Link href="/partner/register" className="font-medium underline" style={{ color: TEAL }}>Become a partner</Link>
-            </p>
-          </form>
-        )}
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Password</label>
+          <div className="relative mb-4">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required
+              className="w-full pl-10 pr-3 py-2.5 rounded-xl text-sm" style={inputStyle} />
+          </div>
+          <button type="submit" disabled={loading}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold" style={{ background: loading ? '#94A3B8' : TEAL, color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer' }}>
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+          <div className="flex items-center justify-between mt-3 text-xs">
+            <Link href="/partner/forgot" className="font-medium underline" style={{ color: '#64748B' }}>Forgot password?</Link>
+            <Link href="/partner/register" className="font-medium underline" style={{ color: TEAL }}>Become a partner</Link>
+          </div>
+        </form>
       </div>
     </main>
   )

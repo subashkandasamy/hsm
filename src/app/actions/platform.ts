@@ -640,24 +640,40 @@ export async function createExternalPartner(input: {
   const name = input.name.trim()
   if (!name) return { success: false, error: 'Name is required' }
 
+  const email = input.email?.trim() || null
   const base = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'partner'
-  let ok = false
-  for (let i = 0; i < 6 && !ok; i++) {
+  let partnerId: string | null = null
+  for (let i = 0; i < 6 && !partnerId; i++) {
     const code = `${base}${Math.random().toString(36).slice(2, 6)}`
-    const { error } = await service.from('partners').insert({
+    const { data, error } = await service.from('partners').insert({
       name,
       type: 'external',
-      email: input.email?.trim() || null,
+      email,
       phone: input.phone?.trim() || null,
       referral_code: code,
       commission_pct: input.commission_pct ?? null,
       commission_duration_months: input.commission_duration_months ?? null,
       payout_method: input.payout_method?.trim() || null,
-    })
-    if (!error) { ok = true; break }
-    if (error.code !== '23505') return { success: false, error: error.message }
+    }).select('id').single()
+    if (!error && data) { partnerId = data.id as string; break }
+    if (error && error.code !== '23505') return { success: false, error: error.message }
   }
-  if (!ok) return { success: false, error: 'Could not generate a unique referral code — try again' }
+  if (!partnerId) return { success: false, error: 'Could not generate a unique referral code — try again' }
+
+  // Admin-created partners have no password yet — email them a set-password link
+  // so they can sign in to their dashboard.
+  if (email) {
+    try {
+      const crypto = await import('crypto')
+      const { hashLoginToken } = await import('@/lib/partnerAuth')
+      const { sendPartnerPasswordEmail } = await import('@/lib/email')
+      const raw = crypto.randomBytes(32).toString('base64url')
+      const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      await service.from('partner_login_tokens').insert({ partner_id: partnerId, token_hash: hashLoginToken(raw), expires_at: expires })
+      await sendPartnerPasswordEmail(email, name, `https://www.uyirly.com/partner/reset?token=${raw}`)
+    } catch (e) { console.error('[createExternalPartner] set-password email failed:', e) }
+  }
+
   await logAdminAction(service, actor.id, 'create_partner', null, { name, type: 'external' })
   return { success: true }
 }

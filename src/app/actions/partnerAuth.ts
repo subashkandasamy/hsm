@@ -3,8 +3,8 @@
 import crypto from 'crypto'
 import { redirect } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/service'
-import { hashLoginToken, getPartnerSession, clearPartnerSession } from '@/lib/partnerAuth'
-import { sendPartnerLoginEmail } from '@/lib/email'
+import { hashLoginToken, hashPassword, verifyPassword, getPartnerSession, setPartnerSession, clearPartnerSession } from '@/lib/partnerAuth'
+import { sendPartnerPasswordEmail } from '@/lib/email'
 import { DEFAULT_COMMISSION_PCT, referralLink } from '@/lib/referral'
 import type { ReferralOverview, ReferredHospital } from '@/lib/types'
 
@@ -12,14 +12,16 @@ const SITE = 'https://www.uyirly.com'
 const ALIVE = new Set(['trial', 'active', 'past_due'])
 
 // Public self-registration — anyone can apply to become a referral partner.
-// Creates a 'pending' partner row; an admin approves it (which emails the link).
+// They choose a password now; an admin approves before they can sign in.
 export async function registerPartner(input: {
-  name: string; email: string; phone?: string; note?: string
+  name: string; email: string; password: string; phone?: string; note?: string
 }): Promise<{ success: true } | { success: false; error: string }> {
   const name = (input.name ?? '').trim()
   const email = (input.email ?? '').trim().toLowerCase()
+  const password = input.password ?? ''
   if (name.length < 2) return { success: false, error: 'Please enter your name' }
   if (!email.includes('@')) return { success: false, error: 'Please enter a valid email' }
+  if (password.length < 8) return { success: false, error: 'Password must be at least 8 characters' }
 
   const svc = createServiceClient()
   const { data: existing } = await svc.from('partners').select('id, status').ilike('email', email).maybeSingle()
@@ -36,6 +38,7 @@ export async function registerPartner(input: {
       name, type: 'external', status: 'pending',
       email, phone: (input.phone ?? '').trim() || null,
       referral_code: code,
+      password_hash: hashPassword(password),
       payout_method: (input.note ?? '').trim() || null,
     })
     if (!error) return { success: true }
@@ -44,23 +47,64 @@ export async function registerPartner(input: {
   return { success: false, error: 'Could not create your application — please try again.' }
 }
 
-// Step 1: email a one-time sign-in link. Always returns success so we never
-// reveal whether an email belongs to a partner.
-export async function requestPartnerLogin(email: string): Promise<{ success: true }> {
+// Sign in with email + password. Starts the partner session on success.
+export async function loginPartner(
+  email: string, password: string
+): Promise<{ success: true } | { success: false; error: string }> {
   const e = (email ?? '').trim().toLowerCase()
-  if (e && e.includes('@')) {
+  if (!e.includes('@') || !password) return { success: false, error: 'Enter your email and password' }
+  const svc = createServiceClient()
+  const { data: partner } = await svc.from('partners')
+    .select('id, status, password_hash').ilike('email', e).maybeSingle()
+
+  // Uniform failure message (don't reveal which part was wrong).
+  const bad = { success: false, error: 'Incorrect email or password' } as const
+  if (!partner) return bad
+  if (partner.status === 'pending') return { success: false, error: 'Your partner application is awaiting approval.' }
+  if (partner.status !== 'active') return { success: false, error: 'This partner account is not active.' }
+  if (!partner.password_hash) return { success: false, error: 'No password set — use “Forgot password” to create one.' }
+  if (!verifyPassword(password, partner.password_hash as string)) return bad
+
+  await setPartnerSession(partner.id as string)
+  return { success: true }
+}
+
+// Email a set/reset-password link. Always returns success (no email disclosure).
+export async function requestPartnerPasswordReset(email: string): Promise<{ success: true }> {
+  const e = (email ?? '').trim().toLowerCase()
+  if (e.includes('@')) {
     const svc = createServiceClient()
     const { data: partner } = await svc.from('partners')
-      .select('id, email, status').ilike('email', e).maybeSingle()
-    if (partner && partner.status === 'active' && partner.email) {
+      .select('id, name, email, status').ilike('email', e).maybeSingle()
+    if (partner && partner.status !== 'rejected' && partner.email) {
       const raw = crypto.randomBytes(32).toString('base64url')
-      const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+      const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
       await svc.from('partner_login_tokens').insert({
         partner_id: partner.id, token_hash: hashLoginToken(raw), expires_at: expires,
       })
-      await sendPartnerLoginEmail(partner.email as string, `${SITE}/partner/verify?token=${raw}`)
+      await sendPartnerPasswordEmail(partner.email as string, partner.name as string, `${SITE}/partner/reset?token=${raw}`)
     }
   }
+  return { success: true }
+}
+
+// Set a new password from a valid reset/set token, then sign the partner in.
+export async function setPartnerPassword(
+  token: string, password: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  if ((password ?? '').length < 8) return { success: false, error: 'Password must be at least 8 characters' }
+  const svc = createServiceClient()
+  const { data: row } = await svc.from('partner_login_tokens')
+    .select('id, partner_id, expires_at, consumed_at').eq('token_hash', hashLoginToken(token)).maybeSingle()
+  if (!row || row.consumed_at || new Date(row.expires_at as string) < new Date())
+    return { success: false, error: 'This link is invalid or has expired — request a new one.' }
+
+  await svc.from('partners').update({ password_hash: hashPassword(password) }).eq('id', row.partner_id)
+  await svc.from('partner_login_tokens').update({ consumed_at: new Date().toISOString() }).eq('id', row.id)
+
+  // Log them in only if their account is active (pending stays out until approved).
+  const { data: partner } = await svc.from('partners').select('status').eq('id', row.partner_id).maybeSingle()
+  if (partner?.status === 'active') await setPartnerSession(row.partner_id as string)
   return { success: true }
 }
 
