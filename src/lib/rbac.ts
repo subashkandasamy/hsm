@@ -165,6 +165,7 @@ export const NAV_CONFIG: NavGroup[] = [
   {
     label: 'Settings',
     items: [
+      { label: 'Getting Started',  href: '/getting-started',      icon: 'Rocket',          requiredPermission: 'settings:modules' },
       { label: 'Departments',      href: '/settings/departments', icon: 'Building2',       requiredPermission: 'departments:manage' },
       { label: 'Tariffs & Fees',   href: '/settings/tariffs',     icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
       { label: 'IPD Billing',      href: '/settings/ipd-billing', icon: 'BedDouble',       requiredPermission: 'ipd:config' },

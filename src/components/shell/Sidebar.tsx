@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
-  ToggleLeft, CreditCard, BadgeDollarSign, Lock, CalendarClock, Gift,
+  ToggleLeft, CreditCard, BadgeDollarSign, Lock, CalendarClock, Gift, Rocket,
   PanelLeftClose, PanelLeftOpen,
   type LucideProps,
 } from 'lucide-react'
@@ -22,7 +22,7 @@ const ICON_MAP: Record<string, IconComp> = {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
-  Bell, Warehouse, ToggleLeft, CreditCard, Building2, BadgeDollarSign, CalendarClock, Gift,
+  Bell, Warehouse, ToggleLeft, CreditCard, Building2, BadgeDollarSign, CalendarClock, Gift, Rocket,
 }
 
 function NavIcon({ name }: { name: string }) {
