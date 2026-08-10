@@ -302,7 +302,12 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(url)
       }
 
-      if (user && pathname === '/login' && !request.nextUrl.searchParams.get('wrongtenant')) {
+      // Don't bounce a signed-in user back to /dashboard when the login page was
+      // reached to clear a stale session (wrong tenant, deactivated account, or
+      // an expired temp password) — those pages sign the user out on mount.
+      const loginStateParams = ['wrongtenant', 'deactivated', 'tempexpired']
+      const loginHasState = loginStateParams.some(p => request.nextUrl.searchParams.get(p))
+      if (user && pathname === '/login' && !loginHasState) {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
         url.search = ''
@@ -345,7 +350,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname === '/login') {
+  const localLoginHasState = ['wrongtenant', 'deactivated', 'tempexpired']
+    .some(p => request.nextUrl.searchParams.get(p))
+  if (user && pathname === '/login' && !localLoginHasState) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

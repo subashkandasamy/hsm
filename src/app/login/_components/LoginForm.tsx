@@ -13,8 +13,10 @@ interface Props { hospitalName?: string | null }
 
 export default function LoginForm({ hospitalName }: Props) {
   const params = useSearchParams()
-  const isExpired = params.get('expired') === '1'
-  const isReset   = params.get('reset') === '1'
+  const isExpired     = params.get('expired') === '1'
+  const isReset       = params.get('reset') === '1'
+  const isDeactivated = params.get('deactivated') === '1'
+  const isTempExpired = params.get('tempexpired') === '1'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,10 +28,12 @@ export default function LoginForm({ hospitalName }: Props) {
   )
   const [loading, setLoading] = useState(false)
 
-  // If redirected here for a tenant mismatch, clear the stale session so the
-  // user isn't left signed in as an account that doesn't belong to this hospital.
+  // If redirected here because the current session must be discarded — a tenant
+  // mismatch, a deactivated account, or an expired temporary password — clear it
+  // so the user isn't left holding a session the dashboard will keep rejecting.
   useEffect(() => {
-    if (params.get('wrongtenant') === '1') {
+    const p = params
+    if (p.get('wrongtenant') === '1' || p.get('deactivated') === '1' || p.get('tempexpired') === '1') {
       createClient().auth.signOut().catch(() => {})
     }
   }, [params])
@@ -100,6 +104,22 @@ export default function LoginForm({ hospitalName }: Props) {
             style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             Your session expired. Please sign in again.
+          </div>
+        )}
+
+        {isDeactivated && (
+          <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
+            style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            This account has been deactivated. Please contact your hospital administrator.
+          </div>
+        )}
+
+        {isTempExpired && (
+          <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
+            style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            Your temporary password has expired. Ask your administrator to re-send your login credentials.
           </div>
         )}
 

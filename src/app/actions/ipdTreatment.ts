@@ -564,6 +564,26 @@ export async function dispenseIpdRequest(
     const patientId = (req.admission as unknown as { patient_id: string } | null)?.patient_id
     if (patientId) {
       const today = new Date().toISOString().split('T')[0]
+
+      // Inherit HSN + GST rate from a batch of this drug (drug-level attributes,
+      // captured at goods-receipt) so the pharmacy line bills GST correctly.
+      let gstRate: number | null = null
+      let hsnSac: string | null = null
+      const drugMasterId = (req as Record<string, unknown>).drug_master_id as string | null | undefined
+      const drugId = (req as Record<string, unknown>).drug_id as string | null | undefined
+      const drugCol = drugMasterId ? 'drug_master_id' : drugId ? 'drug_id' : null
+      const drugRef = drugMasterId ?? drugId
+      if (drugCol && drugRef) {
+        const { data: b } = await supabase
+          .from('drug_batches')
+          .select('hsn_code, gst_rate')
+          .eq(drugCol, drugRef)
+          .order('expiry', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (b) { gstRate = b.gst_rate as number; hsnSac = b.hsn_code as string }
+      }
+
       const billId = await autoIpdBill(supabase, actor.id, {
         tenantId: actor.tenant_id,
         admissionId: req.admission_id as string,
@@ -576,6 +596,8 @@ export async function dispenseIpdRequest(
           description: req.item_name as string,
           qty: req.quantity as number,
           unit_price: pricePerUnit,
+          gst_rate: gstRate,
+          hsn_sac: hsnSac,
         }],
       })
       if (billId) {

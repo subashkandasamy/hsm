@@ -19,6 +19,10 @@ export interface TenantProfile {
   gst_no: string | null
   blood_bank_license?: string | null
   emergency_contact: string | null
+  // GST tax-invoice config
+  gst_enabled?: boolean
+  gst_state_code?: string | null
+  pharmacy_default_gst_rate?: number
   updated_at: string
 }
 
@@ -68,6 +72,8 @@ export interface Profile {
   phone_verified: boolean
   department_id: string | null
   is_active: boolean
+  must_change_password?: boolean
+  temp_password_expires_at?: string | null
   created_at: string
 }
 
@@ -627,6 +633,8 @@ export interface Tariff { id: string; key: string; label: string | null; amount:
 export interface BillItem {
   id: string; bill_id: string; source: BillItemSource; ref_id: string | null
   description: string; qty: number; unit_price: number; amount: number
+  gst_rate?: number; hsn_sac?: string | null; tax_inclusive?: boolean
+  taxable_value?: number; tax_amount?: number
 }
 
 export interface Payment {
@@ -638,6 +646,7 @@ export interface Payment {
 export interface Bill {
   id: string; patient_id: string; visit_id: string | null; admission_id: string | null; appointment_id: string | null
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
+  cgst?: number; sgst?: number; igst?: number; round_off?: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
   bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | 'appointment_refund' | 'ot' | null
@@ -649,11 +658,99 @@ export interface Bill {
 
 export interface ChargePreviewLine {
   source: BillItemSource; ref_id: string; description: string; qty: number; unit_price: number; amount: number
+  gst_rate?: number | null; hsn_sac?: string | null
+}
+
+// ---- Cashier day-book / shift-close ----
+export interface CashMovement {
+  id: string
+  time: string
+  kind: 'payment' | 'advance' | 'refund'
+  reference: string
+  patientName: string
+  method: string
+  cashierId: string | null
+  cashierName: string
+  amount: number   // signed — refunds are negative (money out)
+}
+
+export interface CashSummary {
+  cash: number; card: number; upi: number; bank: number; insurance: number
+  refunds: number  // total paid out (positive)
+  net: number
+  count: number
+}
+
+export interface CashPerCashier {
+  cashierId: string; name: string
+  cash: number; card: number; upi: number; bank: number; total: number
+}
+
+export interface DayBook {
+  date: string
+  movements: CashMovement[]
+  summary: CashSummary
+  perCashier: CashPerCashier[]
+}
+
+export interface ShiftSummary {
+  fromTime: string
+  toTime: string
+  expectedCash: number
+  cardTotal: number; upiTotal: number; bankTotal: number
+  paymentCount: number
+  lastCloseAt: string | null
+}
+
+export interface CashShiftClose {
+  id: string
+  cashier_id: string
+  from_time: string
+  to_time: string
+  expected_cash: number
+  counted_cash: number
+  variance: number
+  card_total: number
+  upi_total: number
+  bank_total: number
+  payment_count: number
+  notes: string | null
+  created_at: string
+  cashier?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+// ---- Cost estimates / quotations ----
+export type CostEstimateCategory =
+  | 'room' | 'surgery' | 'consultation' | 'lab' | 'radiology' | 'pharmacy' | 'consumables' | 'other'
+
+export interface CostEstimateItem {
+  id: string; estimate_id: string; category: CostEstimateCategory
+  description: string; qty: number; unit_price: number; amount: number
+}
+
+export interface CostEstimate {
+  id: string
+  estimate_no: string
+  patient_id: string | null
+  patient_name: string | null
+  patient_phone: string | null
+  admission_id: string | null
+  room_type: string | null
+  estimated_days: number | null
+  validity_date: string | null
+  notes: string | null
+  subtotal: number
+  total: number
+  status: 'draft' | 'final'
+  created_by: string | null
+  created_at: string
+  items?: CostEstimateItem[]
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'> | null
 }
 
 export interface CombinedBillSection {
   label: string
-  rows: Array<{ date: string; billNo: string; description: string; qty: number; unitPrice: number; amount: number }>
+  rows: Array<{ date: string; billNo: string; description: string; qty: number; unitPrice: number; amount: number; hsn_sac?: string | null; gstRate?: number; taxInclusive?: boolean }>
   subtotal: number
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Eye, EyeOff, Copy, CheckCheck } from 'lucide-react'
+import { Copy, CheckCheck } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
@@ -37,11 +37,9 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
     role: '' as Role | '',
     designation: '',
     joining_date: '',
-    temp_password: '',
     consultation_fee: '',
     nursing_charge_per_shift: '',
   })
-  const [showPw, setShowPw] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -49,13 +47,6 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
 
   function set(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
-  }
-
-  function generatePassword() {
-    const chars = 'ABCDEFGHJKMNPQRSTWXYZabcdefghjkmnpqrstwxyz23456789!@#'
-    let pw = ''
-    for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)]
-    set('temp_password', pw)
   }
 
   async function copyPassword(pw: string) {
@@ -75,7 +66,6 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
       role: form.role,
       designation: form.designation.trim() || undefined,
       joining_date: form.joining_date || undefined,
-      temp_password: form.temp_password,
       ...(form.role === 'doctor' && form.consultation_fee
         ? { consultation_fee: parseFloat(form.consultation_fee) }
         : {}),
@@ -91,7 +81,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
   function handleClose() {
     if (createdPassword) onSuccess()
     setCreatedPassword(null)
-    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', temp_password: '', consultation_fee: '', nursing_charge_per_shift: '' })
+    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', consultation_fee: '', nursing_charge_per_shift: '' })
     setError('')
     onClose()
   }
@@ -112,7 +102,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
         <div className="space-y-4">
           <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
             <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>Account created successfully</p>
-            <p className="text-sm" style={{ color: '#64748B' }}>Share the temporary password with the new staff member. They should change it on first login.</p>
+            <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed to the staff member. It expires in 72 hours, and they'll set their own password on first sign-in. You can also share it directly below.</p>
           </div>
           <div className="p-4 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
             <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>Temporary Password</p>
@@ -231,30 +221,10 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
           </FormField>
         )}
 
-        <FormField label="Temporary Password" required hint="Auto-generated or enter custom. Staff must change on first login.">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={showPw ? 'text' : 'password'}
-                value={form.temp_password}
-                onChange={(e) => set('temp_password', e.target.value)}
-                placeholder="Min. 8 characters"
-                required
-                style={{ paddingRight: '2.75rem' }}
-              />
-              <button type="button" onClick={() => setShowPw((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
-                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <button type="button" onClick={generatePassword}
-              className="px-3 py-2.5 rounded-xl text-sm font-medium flex-shrink-0"
-              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)', cursor: 'pointer' }}>
-              Generate
-            </button>
-          </div>
-        </FormField>
+        <div className="p-3 rounded-xl text-sm flex items-start gap-2" style={{ background: 'rgba(13,148,136,0.05)', color: '#0F766E', border: '1px solid rgba(13,148,136,0.15)' }}>
+          <span>✉</span>
+          <span>A temporary password will be generated and emailed to the staff member along with their login link. They'll set their own password on first sign-in.</span>
+        </div>
       </form>
     </Modal>
   )

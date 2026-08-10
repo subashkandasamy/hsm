@@ -70,6 +70,13 @@ export default function TenantProfileForm({ initialProfile }: { initialProfile: 
   const [uploadMsg, setUploadMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // GST tax-invoice config (boolean + number, so kept out of the text-field map)
+  const [gstEnabled, setGstEnabled]   = useState<boolean>(initialProfile?.gst_enabled ?? false)
+  const [gstStateCode, setGstStateCode] = useState<string>(initialProfile?.gst_state_code ?? '')
+  const [pharmacyRate, setPharmacyRate] = useState<string>(
+    initialProfile?.pharmacy_default_gst_rate != null ? String(initialProfile.pharmacy_default_gst_rate) : '12'
+  )
+
   function set(key: string, val: string) {
     setValues((prev) => ({ ...prev, [key]: val }))
     setSaveMsg(null)
@@ -78,9 +85,15 @@ export default function TenantProfileForm({ initialProfile }: { initialProfile: 
   async function handleSave() {
     setSaving(true)
     setSaveMsg(null)
-    const input = Object.fromEntries(
+    const textInput = Object.fromEntries(
       Object.entries(values).map(([k, v]) => [k, v.trim() || null])
-    ) as Parameters<typeof upsertTenantProfile>[0]
+    )
+    const input = {
+      ...textInput,
+      gst_enabled: gstEnabled,
+      gst_state_code: gstStateCode.trim() || null,
+      pharmacy_default_gst_rate: pharmacyRate.trim() ? Number(pharmacyRate) : 12,
+    } as Parameters<typeof upsertTenantProfile>[0]
     const res = await upsertTenantProfile(input)
     setSaving(false)
     setSaveMsg(res.success ? { ok: true, text: 'Profile saved.' } : { ok: false, text: res.error })
@@ -173,6 +186,46 @@ export default function TenantProfileForm({ initialProfile }: { initialProfile: 
           </div>
         </GlassCard>
       ))}
+
+      {/* GST / Tax invoice */}
+      <GlassCard className="p-6">
+        <p className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>GST / Tax Invoice</p>
+        <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+          Turn this on if your hospital is GST-registered. Bills then print as a GST <strong>Tax Invoice</strong> with
+          per-item GST, CGST/SGST split and a tax summary. Healthcare services stay exempt; pharmacy is taxed on the
+          MRP (GST-inclusive). Your GSTIN is set under <strong>Legal / Registration</strong> above.
+        </p>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: gstEnabled ? '16px' : 0 }}>
+          <input type="checkbox" checked={gstEnabled} onChange={(e) => { setGstEnabled(e.target.checked); setSaveMsg(null) }}
+            style={{ width: '18px', height: '18px', accentColor: '#0D9488', cursor: 'pointer' }} />
+          <span className="text-sm font-medium" style={{ color: '#0F172A' }}>Issue GST tax invoices</span>
+        </label>
+
+        {gstEnabled && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>State Code</label>
+              <input type="text" value={gstStateCode} placeholder="e.g. 33 (Tamil Nadu)"
+                onChange={(e) => { setGstStateCode(e.target.value); setSaveMsg(null) }}
+                className="w-full px-3 py-2.5 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Default Pharmacy GST %</label>
+              <input type="number" min="0" max="28" step="1" value={pharmacyRate} placeholder="12"
+                onChange={(e) => { setPharmacyRate(e.target.value); setSaveMsg(null) }}
+                className="w-full px-3 py-2.5 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+              <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Fallback rate for medicines (each drug can override later).</p>
+            </div>
+          </div>
+        )}
+      </GlassCard>
 
       {/* Save bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', paddingBottom: '32px' }}>

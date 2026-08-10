@@ -5,6 +5,8 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { isBillCashlessCovered } from '@/lib/cashlessCover'
+import { computeLineGst } from '@/lib/gst'
+import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 
@@ -539,7 +541,7 @@ export async function generatePharmacyBill(params: {
   // prior-session dispenses may be unbilled and must be included in the same bill)
   const { data: rows, error: rowErr } = await supabase
     .from('dispenses')
-    .select('id, qty, price_snapshot, master:drug_master(name, drug_brands(brand_name)), drug:drugs(name), prescription:prescriptions(visit_id)')
+    .select('id, qty, price_snapshot, master:drug_master(name, drug_brands(brand_name)), drug:drugs(name), batch:drug_batches(hsn_code, gst_rate), prescription:prescriptions(visit_id)')
     .eq('patient_id', patientId)
     .eq('billing_status', 'unbilled')
 
@@ -576,11 +578,18 @@ export async function generatePharmacyBill(params: {
   })
   if (billErr) return { success: false, error: billErr.message }
 
+  const gstCfg = await getTenantGstConfig(supabase, actor.tenant_id)
+
   const { error: itemErr } = await supabase.from('bill_items').insert(
     rows.map((r) => {
       const master = r.master as unknown as { name: string; drug_brands?: { brand_name: string }[] } | null
       const brandName = master?.drug_brands?.[0]?.brand_name ?? null
       const genericName = master?.name ?? (r.drug as unknown as { name: string } | null)?.name ?? 'Medication'
+      const amount = (r.qty as number) * (r.price_snapshot as number)
+      // HSN + GST from the dispense's batch (captured at goods-receipt).
+      const batch = r.batch as unknown as { hsn_code: string | null; gst_rate: number | null } | null
+      const { rate, inclusive, hsn } = resolveLineGst('pharmacy', gstCfg, { gst_rate: batch?.gst_rate ?? null, hsn_sac: batch?.hsn_code ?? null })
+      const { taxableValue, taxAmount } = computeLineGst(amount, rate, inclusive)
       return {
         id: crypto.randomUUID(),
         tenant_id: actor.tenant_id,
@@ -590,7 +599,12 @@ export async function generatePharmacyBill(params: {
         description: brandName ?? genericName,
         qty: r.qty as number,
         unit_price: r.price_snapshot as number,
-        amount: (r.qty as number) * (r.price_snapshot as number),
+        amount,
+        gst_rate: rate,
+        tax_inclusive: inclusive,
+        hsn_sac: hsn,
+        taxable_value: taxableValue,
+        tax_amount: taxAmount,
       }
     })
   )
@@ -598,6 +612,9 @@ export async function generatePharmacyBill(params: {
     await supabase.from('bills').delete().eq('id', billId)
     return { success: false, error: itemErr.message }
   }
+
+  // Set GST aggregates + total from the stamped items.
+  await recomputeBillGstTotals(supabase, billId)
 
   await supabase
     .from('dispenses')

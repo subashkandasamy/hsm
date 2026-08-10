@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
 import type { CombinedBillData, TenantProfile } from '@/lib/types'
 
 function fmt(n: number) {
@@ -42,6 +43,19 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
     profile?.cin_no && `CIN No: ${profile.cin_no}`,
     profile?.gst_no && `GST: ${profile.gst_no}`,
   ].filter(Boolean)
+
+  // GST tax-invoice mode — compute the tax summary across every section row.
+  const gstRegistered = !!profile?.gst_enabled
+  const gstSummary = gstRegistered
+    ? summarizeBillGst(
+        data.sections.flatMap((s) => s.rows).map((r) => ({
+          amount: r.amount, gst_rate: r.gstRate ?? 0, tax_inclusive: !!r.taxInclusive,
+        })),
+      )
+    : null
+  const hasGst = !!gstSummary && gstSummary.taxTotal > 0
+  const bannerLabel = gstRegistered ? (hasGst ? 'Tax Invoice' : 'Bill of Supply') : 'Summary Bill'
+  const gstCols = gstRegistered ? 7 : 5
 
   return (
     <>
@@ -144,7 +158,7 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
           {/* ── "SUMMARY BILL" banner ── */}
           <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '7px 0', textAlign: 'center' }}>
             <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>
-              Summary Bill
+              {bannerLabel}
             </span>
           </div>
 
@@ -167,36 +181,40 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: '540px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: gstRegistered ? '660px' : '540px' }}>
               {data.sections.map((section, si) => (
                 <tbody key={section.label} style={{ breakInside: 'avoid' }}>
                   {/* Section label — no amount here */}
                   <tr style={{ background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC', borderTop: '1px solid #E2E8F0' }}>
-                    <td colSpan={5} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>
+                    <td colSpan={gstCols} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>
                       {section.label}
                     </td>
                   </tr>
-                  {/* Column headers — widths set here instead of colgroup */}
+                  {/* Column headers */}
                   <tr style={{ borderBottom: '1px solid #EAECF0' }}>
-                    {(['Date', 'Description', 'Qty', 'Unit Price', 'Amount'] as const).map((h, i) => (
-                      <th key={h} style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: i >= 2 ? 'right' : 'left', whiteSpace: 'nowrap', width: ['100px', 'auto', '50px', '110px', '110px'][i] }}>
-                        {h}
-                      </th>
-                    ))}
+                    <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'left', whiteSpace: 'nowrap', width: '100px' }}>Date</th>
+                    <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'left' }}>Description</th>
+                    {gstRegistered && <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'left', width: '80px' }}>HSN/SAC</th>}
+                    <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '50px' }}>Qty</th>
+                    <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '110px' }}>Unit Price</th>
+                    {gstRegistered && <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '55px' }}>GST%</th>}
+                    <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '110px' }}>Amount</th>
                   </tr>
                   {/* Data rows */}
                   {section.rows.map((row, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #F3F4F6' }}>
                       <td style={{ padding: '7px 12px', color: '#94A3B8', whiteSpace: 'nowrap', fontSize: '12.5px' }}>{fmtDate(row.date)}</td>
                       <td style={{ padding: '7px 12px', color: '#475569', fontSize: '13px' }}>{row.description}</td>
+                      {gstRegistered && <td style={{ padding: '7px 12px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>{row.hsn_sac || '—'}</td>}
                       <td style={{ padding: '7px 12px', color: '#94A3B8', textAlign: 'right', fontSize: '13px' }}>{row.qty}</td>
                       <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.unitPrice)}</td>
+                      {gstRegistered && <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', fontSize: '13px' }}>{(row.gstRate ?? 0) > 0 ? `${row.gstRate}%` : 'Exempt'}</td>}
                       <td style={{ padding: '7px 12px', color: '#1E293B', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.amount)}</td>
                     </tr>
                   ))}
                   {/* Section subtotal — bottom of section */}
                   <tr style={{ borderTop: '1px dashed #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
-                    <td colSpan={4} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>
+                    <td colSpan={gstCols - 1} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>
                       {section.label} Total
                     </td>
                     <td style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 700, color: '#334155', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -209,11 +227,41 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
             </div>
           )}
 
+          {/* ── GST rate-wise tax summary ── */}
+          {gstSummary && gstSummary.rateSummary.length > 0 && (
+            <div style={{ borderTop: '1px solid #E2E8F0', padding: '12px 24px', overflowX: 'auto' }}>
+              <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#94A3B8', margin: '0 0 6px' }}>Tax Summary</p>
+              <table style={{ borderCollapse: 'collapse', fontSize: '12px', minWidth: '360px' }}>
+                <thead>
+                  <tr style={{ color: '#94A3B8' }}>
+                    {['GST Rate', 'Taxable Value', 'CGST', 'SGST', 'Total Tax'].map((h, i) => (
+                      <th key={h} style={{ padding: '4px 14px 4px 0', textAlign: i === 0 ? 'left' : 'right', fontWeight: 600 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gstSummary.rateSummary.map((r) => (
+                    <tr key={r.rate} style={{ color: '#475569' }}>
+                      <td style={{ padding: '3px 14px 3px 0' }}>{r.rate}%</td>
+                      <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.taxableValue)}</td>
+                      <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.cgst)}</td>
+                      <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.sgst)}</td>
+                      <td style={{ padding: '3px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmt(r.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* ── Totals ── */}
           <div className="bill-totals-wrap" style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
             <div className="bill-totals-panel" style={{ minWidth: '320px', padding: '16px 24px' }}>
               {([
-                { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: false, show: true },
+                { label: 'Taxable Value',           value: gstSummary?.subtotal ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
+                { label: 'CGST',                    value: gstSummary?.cgst ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
+                { label: 'SGST',                    value: gstSummary?.sgst ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
+                { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: true, show: true },
                 { label: 'Advance Collected',       value: data.advanceCollected, size: '13px', weight: 500, color: '#0D9488', border: false, show: data.advanceCollected > 0 },
                 { label: 'Advance Refunded',        value: -data.advanceRefunded, size: '13px', weight: 500, color: '#F59E0B', border: false, show: data.advanceRefunded > 0 },
                 { label: 'Total Payments Received', value: data.totalPaid,        size: '13px', weight: 500, color: '#10B981', border: false, show: true },
@@ -234,6 +282,12 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ── Amount in words ── */}
+          <div style={{ borderTop: '1px solid #E2E8F0', padding: '10px 24px' }}>
+            <span style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Amount in words: </span>
+            <span style={{ fontSize: '12.5px', color: '#334155', fontWeight: 600 }}>{rupeesInWords(data.grandTotal)}</span>
           </div>
 
           {/* ── Footer ── */}

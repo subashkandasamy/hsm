@@ -1,10 +1,12 @@
 'use server'
 
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { sendStaffCredentialsEmail } from '@/lib/email'
 import {
   CreateStaffSchema, UpdateStaffSchema,
   MarkAttendanceSchema,
@@ -12,6 +14,31 @@ import {
 import type { StaffMember, StaffAttendance } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
+
+// Temp password lifetime before it must be re-issued by an admin.
+const TEMP_PASSWORD_TTL_HOURS = 72
+// A "forever" ban keeps a deactivated staff member from authenticating at all
+// (Supabase has no permanent-ban flag, so we use a very long duration).
+const FOREVER_BAN = '876000h' // ~100 years
+
+/** Generates a readable 12-char temp password (no ambiguous characters). */
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTWXYZabcdefghjkmnpqrstwxyz23456789!@#'
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  let pw = ''
+  for (let i = 0; i < 12; i++) pw += chars[bytes[i] % chars.length]
+  return pw
+}
+
+/** Builds the tenant's login URL from the request's subdomain headers. */
+async function tenantLoginUrl(): Promise<string> {
+  const hdrs = await headers()
+  const slug = hdrs.get('x-tenant-slug')
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
+  return slug
+    ? `https://${slug}.${rootDomain}/login`
+    : `${process.env.NEXT_PUBLIC_APP_URL ?? `https://${rootDomain}`}/login`
+}
 
 // ---- Staff directory ----
 
@@ -52,9 +79,13 @@ export async function createStaff(
   // Use service-role client so we can call auth.admin APIs
   const service = createServiceClient()
 
+  // Auto-generate the temp password unless the admin supplied one explicitly.
+  const tempPassword = parsed.data.temp_password ?? generateTempPassword()
+  const expiresAt = new Date(Date.now() + TEMP_PASSWORD_TTL_HOURS * 3600_000)
+
   const { data: authData, error: authErr } = await service.auth.admin.createUser({
     email: parsed.data.email,
-    password: parsed.data.temp_password,
+    password: tempPassword,
     email_confirm: true,
     user_metadata: { full_name: parsed.data.full_name },
   })
@@ -71,6 +102,8 @@ export async function createStaff(
     phone: parsed.data.phone ?? null,
     department_id: parsed.data.department_id ?? null,
     is_active: true,
+    must_change_password: true,
+    temp_password_expires_at: expiresAt.toISOString(),
   })
   if (profileErr) {
     await service.auth.admin.deleteUser(profileId)
@@ -88,10 +121,23 @@ export async function createStaff(
     }, { onConflict: 'profile_id' })
   }
 
+  // Email the credentials to the staff member (best-effort — never blocks).
+  const hospitalName = (await headers()).get('x-tenant-name') ?? 'your hospital'
+  await sendStaffCredentialsEmail({
+    to: parsed.data.email,
+    fullName: parsed.data.full_name,
+    hospitalName,
+    loginUrl: await tenantLoginUrl(),
+    email: parsed.data.email,
+    tempPassword,
+    expiresHours: TEMP_PASSWORD_TTL_HOURS,
+  })
+
   await logAudit(actor.id, 'create', 'staff', profileId, {
     email: parsed.data.email, role: parsed.data.role,
   })
-  return { success: true, profileId, tempPassword: parsed.data.temp_password }
+  // tempPassword is also returned so the admin can share it out-of-band.
+  return { success: true, profileId, tempPassword }
 }
 
 export async function updateStaff(profileId: string, input: Record<string, unknown>): Promise<SimpleResult> {
@@ -157,11 +203,90 @@ export async function deactivateStaff(profileId: string): Promise<SimpleResult> 
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  if (profileId === actor.id) return { success: false, error: "You can't deactivate your own account." }
+
   const supabase = await createClient()
   const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', profileId)
   if (error) return { success: false, error: error.message }
+
+  // Also ban the auth user so they can't authenticate or refresh their session.
+  // The dashboard layout blocks any live session on the next request; the ban
+  // prevents fresh sign-ins and stops token refresh from renewing access.
+  const service = createServiceClient()
+  await service.auth.admin.updateUserById(profileId, { ban_duration: FOREVER_BAN })
+
   await logAudit(actor.id, 'deactivate', 'staff', profileId)
   return { success: true }
+}
+
+export async function reactivateStaff(profileId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'hr:manage')
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('profiles').update({ is_active: true }).eq('id', profileId)
+  if (error) return { success: false, error: error.message }
+
+  const service = createServiceClient()
+  await service.auth.admin.updateUserById(profileId, { ban_duration: 'none' })
+
+  await logAudit(actor.id, 'reactivate', 'staff', profileId)
+  return { success: true }
+}
+
+/**
+ * Re-issues a fresh temporary password to a staff member and re-emails it.
+ * Used when the original temp password expired before first sign-in, or the
+ * staff member never received / lost the credentials.
+ */
+export async function resendStaffCredentials(
+  profileId: string
+): Promise<{ success: true; tempPassword: string } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'hr:manage')
+
+  const service = createServiceClient()
+  const { data: userData } = await service.auth.admin.getUserById(profileId)
+  const email = userData?.user?.email
+  if (!email) return { success: false, error: 'Could not find this staff member’s login email.' }
+
+  const tempPassword = generateTempPassword()
+  const expiresAt = new Date(Date.now() + TEMP_PASSWORD_TTL_HOURS * 3600_000)
+
+  const { error: authErr } = await service.auth.admin.updateUserById(profileId, {
+    password: tempPassword,
+    ban_duration: 'none',
+  })
+  if (authErr) return { success: false, error: authErr.message }
+
+  const supabase = await createClient()
+  const { data: prof, error: profErr } = await supabase
+    .from('profiles')
+    .update({
+      is_active: true,
+      must_change_password: true,
+      temp_password_expires_at: expiresAt.toISOString(),
+    })
+    .eq('id', profileId)
+    .select('full_name')
+    .single()
+  if (profErr) return { success: false, error: profErr.message }
+
+  const hospitalName = (await headers()).get('x-tenant-name') ?? 'your hospital'
+  await sendStaffCredentialsEmail({
+    to: email,
+    fullName: prof?.full_name ?? '',
+    hospitalName,
+    loginUrl: await tenantLoginUrl(),
+    email,
+    tempPassword,
+    expiresHours: TEMP_PASSWORD_TTL_HOURS,
+  })
+
+  await logAudit(actor.id, 'resend_credentials', 'staff', profileId)
+  return { success: true, tempPassword }
 }
 
 // ---- Attendance ----

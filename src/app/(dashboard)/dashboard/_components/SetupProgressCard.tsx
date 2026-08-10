@@ -8,16 +8,40 @@ import { dismissSetupGuide, type SetupProgress } from '@/app/actions/setup'
 const TEAL = '#0D9488'
 
 export default function SetupProgressCard({ progress }: { progress: SetupProgress }) {
-  const [hidden, setHidden] = useState(false)
+  const [dismissed, setDismissed] = useState(progress.dismissed)
 
-  if (hidden || progress.dismissed || progress.allDone) return null
+  // Once every step is done there's nothing left to nudge about.
+  if (progress.allDone) return null
 
   const pct = Math.round((progress.doneCount / progress.totalCount) * 100)
   const todo = progress.steps.filter((s) => !s.done).slice(0, 3)
 
   async function dismiss() {
-    setHidden(true)
+    setDismissed(true)
     await dismissSetupGuide()
+  }
+
+  // After the full card is dismissed, keep a small persistent link on the
+  // dashboard so the admin can always get back to finish setup.
+  if (dismissed) {
+    return (
+      <Link href="/getting-started"
+        className="glass-card flex items-center gap-3 px-4 py-3 mb-5 transition-all"
+        style={{ borderColor: 'rgba(13,148,136,0.25)', textDecoration: 'none' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.2)' }}>
+          <Rocket className="w-4 h-4" style={{ color: TEAL }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>Finish setting up your hospital</p>
+          <p className="text-xs" style={{ color: '#64748B' }}>{progress.doneCount} of {progress.totalCount} steps done</p>
+        </div>
+        <div className="hidden sm:block w-24 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: '#E2E8F0' }}>
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: TEAL }} />
+        </div>
+        <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: TEAL }} />
+      </Link>
+    )
   }
 
   return (

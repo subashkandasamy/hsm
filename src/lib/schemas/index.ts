@@ -517,6 +517,29 @@ export const RecordPaymentSchema = z.object({
   reference: z.string().nullable().optional(),
 })
 
+// ---- Cost estimates / quotations ----
+export const CostEstimateItemInputSchema = z.object({
+  category:    z.enum(['room','surgery','consultation','lab','radiology','pharmacy','consumables','other']),
+  description: z.string().min(1, 'Description required'),
+  qty:         z.number().positive('Qty must be positive'),
+  unit_price:  z.number().nonnegative('Price cannot be negative'),
+})
+
+export const CostEstimateSchema = z.object({
+  patient_id:     z.string().uuid().nullable().optional(),
+  patient_name:   z.string().max(200).nullable().optional(),
+  patient_phone:  z.string().max(20).nullable().optional(),
+  admission_id:   z.string().uuid().nullable().optional(),
+  room_type:      z.string().max(120).nullable().optional(),
+  estimated_days: z.number().int().positive().nullable().optional(),
+  validity_date:  z.string().nullable().optional(),
+  notes:          z.string().max(2000).nullable().optional(),
+  items:          z.array(CostEstimateItemInputSchema).min(1, 'Add at least one line item'),
+}).refine((v) => !!v.patient_id || !!(v.patient_name && v.patient_name.trim()), {
+  message: 'Select a patient or enter a name',
+  path: ['patient_name'],
+})
+
 // ---- Phase 5: Insurance ----
 
 export const InsurancePolicySchema = z.object({
@@ -842,7 +865,8 @@ export const StockAdjustSchema = z.object({
 export const CreateStaffSchema = z.object({
   full_name: z.string().min(1, 'Full name required').max(200),
   email: z.string().email('Valid email required'),
-  temp_password: z.string().min(8, 'Password must be ≥ 8 characters'),
+  // Optional: when omitted the server auto-generates a temp password and emails it.
+  temp_password: z.string().min(8, 'Password must be ≥ 8 characters').optional(),
   role: z.enum(['admin','doctor','nurse','receptionist','lab_tech','pharmacist','accountant']),
   department_id: z.string().uuid().nullable().optional(),
   phone: z.string().nullable().optional(),

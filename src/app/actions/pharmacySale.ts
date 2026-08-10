@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { computeLineGst } from '@/lib/gst'
+import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import type { PharmacySale } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -191,24 +193,61 @@ export async function finalizeSale(
   })
   if (billErr) return { success: false, error: billErr.message }
 
+  // Resolve HSN + GST per drug from batches (drug-level attributes captured at
+  // goods-receipt), so walk-in pharmacy sales bill GST correctly.
+  const gstCfg = await getTenantGstConfig(supabase, actor.tenant_id)
+  const gstByDrug = new Map<string, { hsn: string | null; gst: number | null }>()
+  if (gstCfg.enabled) {
+    const masterIds = [...new Set(items.map((i) => i.drug_master_id).filter(Boolean))] as string[]
+    const drugIds = [...new Set(items.map((i) => i.drug_id).filter(Boolean))] as string[]
+    if (masterIds.length) {
+      const { data } = await supabase.from('drug_batches').select('drug_master_id, hsn_code, gst_rate').in('drug_master_id', masterIds)
+      for (const b of data ?? []) {
+        const k = b.drug_master_id as string
+        if (k && !gstByDrug.has(k)) gstByDrug.set(k, { hsn: b.hsn_code as string | null, gst: b.gst_rate as number | null })
+      }
+    }
+    if (drugIds.length) {
+      const { data } = await supabase.from('drug_batches').select('drug_id, hsn_code, gst_rate').in('drug_id', drugIds)
+      for (const b of data ?? []) {
+        const k = b.drug_id as string
+        if (k && !gstByDrug.has(k)) gstByDrug.set(k, { hsn: b.hsn_code as string | null, gst: b.gst_rate as number | null })
+      }
+    }
+  }
+
   // Create one bill_item per pharmacy_sale_item
   const { error: itemErr } = await supabase.from('bill_items').insert(
-    items.map((item) => ({
-      id: crypto.randomUUID(),
-      tenant_id: actor.tenant_id,
-      bill_id: billId,
-      source: 'pharmacy_sale_item',
-      ref_id: item.id,
-      description: item.drug?.name ?? 'Medication',
-      qty: item.qty,
-      unit_price: item.unit_price,
-      amount: item.amount,
-    }))
+    items.map((item) => {
+      const key = (item.drug_master_id ?? item.drug_id) as string | null
+      const drugGst = key ? gstByDrug.get(key) : undefined
+      const { rate, inclusive, hsn } = resolveLineGst('pharmacy_sale_item', gstCfg, { gst_rate: drugGst?.gst ?? null, hsn_sac: drugGst?.hsn ?? null })
+      const { taxableValue, taxAmount } = computeLineGst(item.amount, rate, inclusive)
+      return {
+        id: crypto.randomUUID(),
+        tenant_id: actor.tenant_id,
+        bill_id: billId,
+        source: 'pharmacy_sale_item',
+        ref_id: item.id,
+        description: item.drug?.name ?? 'Medication',
+        qty: item.qty,
+        unit_price: item.unit_price,
+        amount: item.amount,
+        gst_rate: rate,
+        tax_inclusive: inclusive,
+        hsn_sac: hsn,
+        taxable_value: taxableValue,
+        tax_amount: taxAmount,
+      }
+    })
   )
   if (itemErr) {
     await supabase.from('bills').delete().eq('id', billId)
     return { success: false, error: itemErr.message }
   }
+
+  // Set GST aggregates + total from the stamped items.
+  await recomputeBillGstTotals(supabase, billId)
 
   // Lock the sale
   const { error: saleErr } = await supabase

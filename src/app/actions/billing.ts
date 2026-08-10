@@ -10,6 +10,8 @@ import {
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { generateDailyChargesForAdmissions, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
+import { gstForSource, getTenantGstConfig, recomputeBillGstTotals } from '@/lib/billing/gst'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -147,7 +149,7 @@ export async function getUnbilledCharges(params: {
   {
     let q = supabase
       .from('dispenses')
-      .select('id, qty, price_snapshot, drug:drugs(name)')
+      .select('id, qty, price_snapshot, drug:drugs(name), batch:drug_batches(hsn_code, gst_rate)')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
     if (admissionId) q = q.eq('admission_id', admissionId)
@@ -156,6 +158,8 @@ export async function getUnbilledCharges(params: {
     for (const d of data ?? []) {
       const qty = d.qty as number
       const price = d.price_snapshot as number
+      // HSN + GST come from the batch (captured at goods-receipt).
+      const batch = d.batch as unknown as { hsn_code: string | null; gst_rate: number | null } | null
       lines.push({
         source: 'pharmacy',
         ref_id: d.id,
@@ -163,6 +167,8 @@ export async function getUnbilledCharges(params: {
         qty,
         unit_price: price,
         amount: qty * price,
+        gst_rate: batch?.gst_rate ?? null,
+        hsn_sac: batch?.hsn_code ?? null,
       })
     }
   }
@@ -300,38 +306,59 @@ export async function generateBill(
 
   const billId = crypto.randomUUID()
 
+  // Hospital GST config drives per-line tax treatment.
+  const gstCfg = await getTenantGstConfig(supabase, actor.tenant_id)
+
   // Build bill_items list
   type BillItemInsert = {
     id: string; tenant_id: string; bill_id: string; source: BillItemSource; ref_id: string | null
     description: string; qty: number; unit_price: number; amount: number
+    gst_rate: number; tax_inclusive: boolean; hsn_sac: string | null
+    taxable_value: number; tax_amount: number
+  }
+
+  const buildItem = (
+    base: { source: BillItemSource; ref_id: string | null; description: string; qty: number; unit_price: number; amount: number; gst_rate?: number | null; hsn_sac?: string | null },
+  ): BillItemInsert => {
+    const { rate: defRate, inclusive } = gstForSource(base.source, gstCfg)
+    // Prefer the charge's own GST/HSN (e.g. a pharmacy line inherits its batch's
+    // rate + HSN); fall back to the per-source default.
+    const rate = gstCfg.enabled && base.gst_rate != null ? base.gst_rate : defRate
+    const { taxableValue, taxAmount } = computeLineGst(base.amount, rate, inclusive)
+    return {
+      id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
+      bill_id: billId,
+      source: base.source,
+      ref_id: base.ref_id,
+      description: base.description,
+      qty: base.qty,
+      unit_price: base.unit_price,
+      amount: base.amount,
+      gst_rate: rate,
+      tax_inclusive: inclusive,
+      hsn_sac: gstCfg.enabled ? (base.hsn_sac ?? null) : null,
+      taxable_value: taxableValue,
+      tax_amount: taxAmount,
+    }
   }
 
   const itemsToInsert: BillItemInsert[] = [
-    ...selectedCharges.map((c) => ({
-      id: crypto.randomUUID(),
-      tenant_id: actor.tenant_id,
-      bill_id: billId,
-      source: c.source,
-      ref_id: c.ref_id,
-      description: c.description,
-      qty: c.qty,
-      unit_price: c.unit_price,
-      amount: c.amount,
+    ...selectedCharges.map((c) => buildItem({
+      source: c.source, ref_id: c.ref_id, description: c.description,
+      qty: c.qty, unit_price: c.unit_price, amount: c.amount,
+      gst_rate: c.gst_rate, hsn_sac: c.hsn_sac,
     })),
-    ...(manual_items ?? []).map((m) => ({
-      id: crypto.randomUUID(),
-      tenant_id: actor.tenant_id,
-      bill_id: billId,
-      source: 'manual' as BillItemSource,
-      ref_id: null,
-      description: m.description,
-      qty: m.qty,
-      unit_price: m.unit_price,
-      amount: m.qty * m.unit_price,
+    ...(manual_items ?? []).map((m) => buildItem({
+      source: 'manual' as BillItemSource, ref_id: null, description: m.description,
+      qty: m.qty, unit_price: m.unit_price, amount: m.qty * m.unit_price,
     })),
   ]
 
-  const subtotal = itemsToInsert.reduce((s, i) => s + i.amount, 0)
+  // Bill-level GST aggregation. `subtotal` is the net (pre-tax) taxable value;
+  // grand total = subtotal + GST, rounded to the nearest rupee.
+  const gst = summarizeBillGst(itemsToInsert)
+  const { roundOff, total } = computeRoundOff(gst.subtotal + gst.taxTotal)
 
   // Insert the bill first
   const { error: billErr } = await supabase.from('bills').insert({
@@ -341,10 +368,14 @@ export async function generateBill(
     visit_id: visit_id ?? null,
     admission_id: admission_id ?? null,
     bill_no,
-    subtotal,
+    subtotal: gst.subtotal,
     discount: 0,
-    tax: 0,
-    total: subtotal,
+    tax: gst.taxTotal,
+    cgst: gst.cgst,
+    sgst: gst.sgst,
+    igst: 0,
+    round_off: roundOff,
+    total,
     paid: 0,
     status: 'draft',
     created_by: actor.id,
@@ -433,7 +464,7 @@ export async function generateBill(
     }
 
     const unusedAdvance = Math.max(0, totalAdvance - totalRefunded - advanceApplied)
-    const applyAmount   = Math.min(unusedAdvance, subtotal)
+    const applyAmount   = Math.min(unusedAdvance, total)
     if (applyAmount > 0) {
       await supabase.from('payments').insert({
         id: crypto.randomUUID(),
@@ -443,13 +474,13 @@ export async function generateBill(
         method: 'advance',
         received_by: actor.id,
       })
-      const newStatus = applyAmount >= subtotal ? 'paid' : 'partial'
+      const newStatus = applyAmount >= total ? 'paid' : 'partial'
       await supabase.from('bills').update({ paid: applyAmount, status: newStatus }).eq('id', billId)
     }
   }
 
   await logAudit(actor.id, 'generate', 'bill', billId, {
-    bill_no, patient_id, items: itemsToInsert.length, subtotal,
+    bill_no, patient_id, items: itemsToInsert.length, total,
   })
   return { success: true, billId }
 }
@@ -473,11 +504,10 @@ export async function applyDiscount(
   if ((bill.status as string) === 'paid' || (bill.status as string) === 'cancelled')
     return { success: false, error: 'Cannot modify a paid or cancelled bill' }
 
-  const total = Math.max(0, (bill.subtotal as number) - parsed.data.discount + (bill.tax as number))
-  const { error } = await supabase.from('bills').update({
-    discount: parsed.data.discount, total,
-  }).eq('id', parsed.data.bill_id)
+  const { error } = await supabase.from('bills')
+    .update({ discount: parsed.data.discount }).eq('id', parsed.data.bill_id)
   if (error) return { success: false, error: error.message }
+  await recomputeBillGstTotals(supabase, parsed.data.bill_id)
 
   await logAudit(actor.id, 'discount', 'bill', parsed.data.bill_id, { discount: parsed.data.discount })
   return { success: true }
@@ -507,6 +537,49 @@ export async function setTax(
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'tax', 'bill', parsed.data.bill_id, { tax: parsed.data.tax })
+  return { success: true }
+}
+
+/**
+ * Overrides the GST rate and/or HSN/SAC code on a single bill line, then
+ * recomputes the line's tax and the whole bill's totals. Blocked on
+ * paid/cancelled bills.
+ */
+export async function updateBillItemGst(
+  input: { item_id: string; gst_rate: number; hsn_sac?: string | null },
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:manage')
+
+  const rate = Number(input.gst_rate)
+  if (!Number.isFinite(rate) || rate < 0 || rate > 28) {
+    return { success: false, error: 'GST rate must be between 0 and 28%.' }
+  }
+
+  const supabase = await createClient()
+  const { data: item } = await supabase
+    .from('bill_items')
+    .select('id, bill_id, amount, tax_inclusive, bill:bills(status)')
+    .eq('id', input.item_id)
+    .single()
+  if (!item) return { success: false, error: 'Line item not found' }
+  const status = (item.bill as unknown as { status: string } | null)?.status
+  if (status === 'paid' || status === 'cancelled') {
+    return { success: false, error: 'Cannot modify a paid or cancelled bill' }
+  }
+
+  const { taxableValue, taxAmount } = computeLineGst(item.amount as number, rate, !!item.tax_inclusive)
+  const { error } = await supabase.from('bill_items').update({
+    gst_rate: rate,
+    hsn_sac: input.hsn_sac?.trim() || null,
+    taxable_value: taxableValue,
+    tax_amount: taxAmount,
+  }).eq('id', input.item_id)
+  if (error) return { success: false, error: error.message }
+
+  await recomputeBillGstTotals(supabase, item.bill_id as string)
+  await logAudit(actor.id, 'gst_edit', 'bill', item.bill_id as string, { item_id: input.item_id, gst_rate: rate })
   return { success: true }
 }
 
@@ -756,7 +829,7 @@ const COMBINED_BILL_SECTIONS: Array<{ label: string; sources: string[] }> = [
   { label: 'Other Charges',     sources: ['manual'] },
 ]
 
-type CombinedBillRawItem = { source: string; description: string; qty: number; unit_price: number; amount: number }
+type CombinedBillRawItem = { source: string; description: string; qty: number; unit_price: number; amount: number; gst_rate?: number; hsn_sac?: string | null; tax_inclusive?: boolean }
 type CombinedBillRaw = { bill_no: string; billing_date: string | null; created_at: string; total: number; paid: number; bill_source?: string | null; items: CombinedBillRawItem[] }
 
 function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').CombinedBillSection[] {
@@ -767,7 +840,11 @@ function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').Combined
       const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
       for (const item of bill.items) {
         if (sectionDef.sources.includes(item.source)) {
-          rows.push({ date, billNo: bill.bill_no, description: item.description, qty: item.qty, unitPrice: item.unit_price, amount: item.amount })
+          rows.push({
+            date, billNo: bill.bill_no, description: item.description,
+            qty: item.qty, unitPrice: item.unit_price, amount: item.amount,
+            hsn_sac: item.hsn_sac ?? null, gstRate: item.gst_rate ?? 0, taxInclusive: !!item.tax_inclusive,
+          })
         }
       }
     }
@@ -802,7 +879,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     if (!fbPatient) return null
     const { data: admBillsFb } = await supabase
       .from('bills')
-      .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+      .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
       .eq('admission_id', admissionId).neq('status', 'cancelled')
       .order('billing_date', { ascending: true }).order('created_at', { ascending: true })
     const allBillsFb = ((admBillsFb ?? []) as unknown as CombinedBillRaw[]).filter((b) => (b as { bill_source?: string | null }).bill_source !== 'consolidated')
@@ -851,7 +928,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
   }
 
-  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)'
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
 
   // 4. Fetch all non-cancelled IPD bills for this admission
   const { data: admBills } = await supabase
@@ -952,7 +1029,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     total: number; paid: number; bill_source: string | null; patient_id?: string
     items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
   }
-  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, patient_id, items:bill_items(source, description, qty, unit_price, amount)'
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, patient_id, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
 
   // No visit row found — visitId is an appointmentId for a booking where OPD visit hasn't started yet.
   // Fall back to appointment-stage bills directly.
@@ -1105,7 +1182,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
 
   const { data: bills } = await supabase
     .from('bills')
-    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount)')
+    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
     .eq('patient_id', patientId)
     .neq('status', 'cancelled')
     .order('billing_date', { ascending: true })

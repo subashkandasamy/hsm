@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Plus, RefreshCw, Users, CalendarCheck,
-  Edit2, UserX, Phone, Mail, Briefcase, Search, Lock,
+  Edit2, UserX, UserCheck, KeyRound, Phone, Mail, Briefcase, Search, Lock, Copy, CheckCheck,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
@@ -14,7 +14,7 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, getAttendance } from '@/app/actions/hr'
+import { listStaff, updateStaff, updateStaffEmail, getStaffEmail, deactivateStaff, reactivateStaff, resendStaffCredentials, getAttendance } from '@/app/actions/hr'
 import { setDoctorConsultationFee } from '@/app/actions/tariffs'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -57,6 +57,10 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
   const [showAddStaff, setShowAddStaff] = useState(false)
   const [editMember, setEditMember]     = useState<StaffMember | null>(null)
   const [deactivateId, setDeactivateId] = useState<string | null>(null)
+  const [resendId, setResendId]         = useState<string | null>(null)
+  const [resendResult, setResendResult] = useState<{ name: string; password: string } | null>(null)
+  const [copied, setCopied]             = useState(false)
+  const [busyId, setBusyId]             = useState<string | null>(null)
   const [roleFilter, setRoleFilter]     = useState<Role | ''>('')
   const [feeEditId, setFeeEditId]       = useState<string | null>(null)
   const [feeInput, setFeeInput]         = useState('')
@@ -68,6 +72,19 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
     const data = await listStaff()
     setStaff(data)
     setLoading(false)
+  }
+
+  async function handleReactivate(id: string) {
+    setBusyId(id)
+    await reactivateStaff(id)
+    setBusyId(null)
+    refresh()
+  }
+
+  async function copyPassword(pw: string) {
+    await navigator.clipboard.writeText(pw)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   async function saveFee(profileId: string) {
@@ -224,11 +241,24 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                           style={{ background: 'rgba(100,116,139,0.08)', color: '#64748B', border: 'none', cursor: 'pointer' }}>
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        {s.is_active && (
-                          <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                        {s.is_active ? (
+                          <>
+                            <button onClick={() => setResendId(s.id)} title="Re-send login credentials"
+                              className="w-9 h-9 flex items-center justify-center rounded-lg"
+                              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}>
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                              className="w-9 h-9 flex items-center justify-center rounded-lg"
+                              style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                              <UserX className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => handleReactivate(s.id)} disabled={busyId === s.id} title="Reactivate"
                             className="w-9 h-9 flex items-center justify-center rounded-lg"
-                            style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
-                            <UserX className="w-4 h-4" />
+                            style={{ background: 'rgba(16,185,129,0.08)', color: '#059669', border: 'none', cursor: busyId === s.id ? 'wait' : 'pointer' }}>
+                            <UserCheck className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -373,11 +403,24 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                           style={{ background: 'rgba(100,116,139,0.08)', color: '#64748B', border: 'none', cursor: 'pointer' }}>
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        {s.is_active && (
-                          <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                        {s.is_active ? (
+                          <>
+                            <button onClick={() => setResendId(s.id)} title="Re-send login credentials"
+                              className="w-8 h-8 flex items-center justify-center rounded-lg"
+                              style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}>
+                              <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
+                              className="w-8 h-8 flex items-center justify-center rounded-lg"
+                              style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
+                              <UserX className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => handleReactivate(s.id)} disabled={busyId === s.id} title="Reactivate"
                             className="w-8 h-8 flex items-center justify-center rounded-lg"
-                            style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
-                            <UserX className="w-3.5 h-3.5" />
+                            style={{ background: 'rgba(16,185,129,0.08)', color: '#059669', border: 'none', cursor: busyId === s.id ? 'wait' : 'pointer' }}>
+                            <UserCheck className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -431,10 +474,63 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
           refresh()
         }}
         title="Deactivate staff member?"
-        description="This will revoke their access. This action can be reversed by an admin."
+        description="This immediately blocks their login and signs out any active session. An admin can reactivate them later."
         confirmLabel="Deactivate"
         confirmVariant="danger"
       />
+
+      {/* Re-send credentials confirm */}
+      <ConfirmDialog
+        open={!!resendId}
+        onClose={() => setResendId(null)}
+        onConfirm={async () => {
+          if (!resendId) return
+          const member = staff.find((s) => s.id === resendId)
+          const res = await resendStaffCredentials(resendId)
+          setResendId(null)
+          if (res.success) {
+            setResendResult({ name: member?.full_name ?? '', password: res.tempPassword })
+            refresh()
+          }
+        }}
+        title="Re-send login credentials?"
+        description="A new temporary password will be generated and emailed to this staff member, replacing any previous one. They'll set their own password on first sign-in."
+        confirmLabel="Re-send"
+        confirmVariant="primary"
+      />
+
+      {/* New temp password result */}
+      {resendResult && (
+        <Modal open onClose={() => setResendResult(null)} title="New Password Sent"
+          footer={
+            <div className="flex justify-end">
+              <button onClick={() => setResendResult(null)}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                Done
+              </button>
+            </div>
+          }>
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>Credentials re-sent{resendResult.name ? ` to ${resendResult.name}` : ''}</p>
+              <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed. It expires in 72 hours. You can also share it directly below.</p>
+            </div>
+            <div className="p-4 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>Temporary Password</p>
+              <div className="flex items-center gap-2">
+                <p className="font-mono text-base font-bold flex-1" style={{ color: '#0F172A' }}>{resendResult.password}</p>
+                <button onClick={() => copyPassword(resendResult.password)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ background: copied ? 'rgba(16,185,129,0.1)' : 'rgba(13,148,136,0.08)', color: copied ? '#065F46' : '#0D9488', border: 'none', cursor: 'pointer' }}>
+                  {copied ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

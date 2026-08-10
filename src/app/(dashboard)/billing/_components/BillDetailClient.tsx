@@ -10,11 +10,12 @@ import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import Modal from '@/components/ui/Modal'
 import {
-  finalizeBill, cancelBill, recordPayment, applyDiscount, setTax, getBill,
+  finalizeBill, cancelBill, recordPayment, applyDiscount, updateBillItemGst, getBill,
 } from '@/app/actions/billing'
 import { sendBillNotification } from '@/app/actions/notifications'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
+import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
 import type { Bill, BillItemSource, TenantProfile } from '@/lib/types'
 
 function fmt(n: number) {
@@ -103,9 +104,27 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
 
   const [showDiscount, setShowDiscount] = useState(false)
   const [discountVal, setDiscountVal]   = useState(String(bill.discount))
-  const [taxVal, setTaxVal]             = useState(String(bill.tax))
   const [adjError, setAdjError]         = useState<string | null>(null)
   const [adjLoading, setAdjLoading]     = useState(false)
+
+  // Per-line GST override
+  const [gstEdit, setGstEdit]           = useState<{ id: string; description: string; gst_rate: string; hsn_sac: string } | null>(null)
+  const [gstEditLoading, setGstEditLoading] = useState(false)
+  const [gstEditError, setGstEditError] = useState<string | null>(null)
+
+  async function handleGstSave() {
+    if (!gstEdit) return
+    setGstEditLoading(true); setGstEditError(null)
+    const res = await updateBillItemGst({
+      item_id: gstEdit.id,
+      gst_rate: parseFloat(gstEdit.gst_rate) || 0,
+      hsn_sac: gstEdit.hsn_sac.trim() || null,
+    })
+    setGstEditLoading(false)
+    if (!res.success) { setGstEditError(res.error); return }
+    setGstEdit(null)
+    await refresh()
+  }
 
   const [notifStatus, setNotifStatus]   = useState<string | null>(null)
   const [notifSending, setNotifSending] = useState(false)
@@ -165,14 +184,9 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
     setAdjLoading(true)
     setAdjError(null)
     const disc = parseFloat(discountVal) || 0
-    const tax  = parseFloat(taxVal) || 0
 
     if (disc !== bill.discount) {
       const r = await applyDiscount({ bill_id: bill.id, discount: disc })
-      if (!r.success) { setAdjError(r.error); setAdjLoading(false); return }
-    }
-    if (tax !== bill.tax) {
-      const r = await setTax({ bill_id: bill.id, tax })
       if (!r.success) { setAdjError(r.error); setAdjLoading(false); return }
     }
     setAdjLoading(false)
@@ -265,11 +279,11 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
 
           {canManage && isMutable && (
             <button
-              onClick={() => { setDiscountVal(String(bill.discount)); setTaxVal(String(bill.tax)); setShowDiscount(true) }}
+              onClick={() => { setDiscountVal(String(bill.discount)); setShowDiscount(true) }}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
               style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '40px' }}
             >
-              Discount / Tax
+              Discount
             </button>
           )}
 
@@ -349,6 +363,19 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
           ? (SOURCE_LABELS[sources[0] as BillItemSource] ?? 'Cash') + ' Bill'
           : 'Cash Bill'
 
+        // GST tax-invoice mode: hospital is GST-registered → show HSN/GST columns,
+        // CGST/SGST split and a rate-wise tax summary. All-exempt bills read as a
+        // "Bill of Supply"; a plain bill (not registered) keeps the old label.
+        const gstRegistered = !!p?.gst_enabled
+        const hasGst = (bill.tax ?? 0) > 0
+        const docLabel = gstRegistered ? (hasGst ? 'TAX INVOICE' : 'BILL OF SUPPLY') : billTypeLabel
+        const gstCols = gstRegistered ? 6 : 4
+        const gstSummary = gstRegistered
+          ? summarizeBillGst((bill.items ?? []).map((i) => ({
+              amount: i?.amount ?? 0, gst_rate: i?.gst_rate ?? 0, tax_inclusive: !!i?.tax_inclusive,
+            })))
+          : null
+
         return (
           <div id="bill-print-area" style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
 
@@ -379,7 +406,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
 
             {/* Bill type banner */}
             <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '7px 0', textAlign: 'center' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>{billTypeLabel}</span>
+              <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>{docLabel}</span>
             </div>
 
             {/* Patient info grid */}
@@ -413,30 +440,43 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               <div style={{ padding: '40px 0', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>No line items</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: '440px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: gstRegistered ? '560px' : '440px' }}>
                 {Object.entries(grouped).map(([source, items], si) => {
                   const srcLabel = SOURCE_LABELS[source as BillItemSource | 'advance_refund'] ?? source
                   const srcTotal = (items ?? []).reduce((s, i) => s + (i?.amount ?? 0), 0)
                   return (
                     <tbody key={source} style={{ breakInside: 'avoid' }}>
                       <tr style={{ background: si % 2 === 0 ? '#F8FAFC' : '#FAFBFC', borderTop: '1px solid #E2E8F0' }}>
-                        <td colSpan={4} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>{srcLabel}</td>
+                        <td colSpan={gstCols} style={{ padding: '9px 12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#475569' }}>{srcLabel}</td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #EAECF0' }}>
-                        {(['Description', 'Qty', 'Unit Price', 'Amount'] as const).map((h, i) => (
-                          <th key={h} style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: i >= 1 ? 'right' : 'left', width: ['auto', '55px', '110px', '110px'][i] }}>{h}</th>
-                        ))}
+                        <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'left' }}>Description</th>
+                        {gstRegistered && <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'left', width: '80px' }}>HSN/SAC</th>}
+                        <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '50px' }}>Qty</th>
+                        <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '105px' }}>Unit Price</th>
+                        {gstRegistered && <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '55px' }}>GST%</th>}
+                        <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '110px' }}>Amount</th>
                       </tr>
                       {(items ?? []).map((item) => (
                         <tr key={item!.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                           <td style={{ padding: '7px 12px', color: '#475569' }}>{item!.description}</td>
+                          {gstRegistered && <td style={{ padding: '7px 12px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>{item!.hsn_sac || '—'}</td>}
                           <td style={{ padding: '7px 12px', color: '#94A3B8', textAlign: 'right' }}>{item!.qty}</td>
                           <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(item!.unit_price)}</td>
+                          {gstRegistered && (
+                            <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right' }}>
+                              <span>{(item!.gst_rate ?? 0) > 0 ? `${item!.gst_rate}%` : 'Exempt'}</span>
+                              {canManage && isMutable && (
+                                <button className="no-print" onClick={() => setGstEdit({ id: item!.id, description: item!.description, gst_rate: String(item!.gst_rate ?? 0), hsn_sac: item!.hsn_sac ?? '' })}
+                                  title="Edit GST rate / HSN" style={{ marginLeft: '6px', background: 'none', border: 'none', color: '#0D9488', cursor: 'pointer', fontSize: '12px' }}>✎</button>
+                              )}
+                            </td>
+                          )}
                           <td style={{ padding: '7px 12px', color: '#1E293B', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(item!.amount)}</td>
                         </tr>
                       ))}
                       <tr style={{ borderTop: '1px dashed #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
-                        <td colSpan={3} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>{srcLabel} Total</td>
+                        <td colSpan={gstCols - 1} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>{srcLabel} Total</td>
                         <td style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 700, color: '#334155', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(srcTotal)}</td>
                       </tr>
                     </tbody>
@@ -446,12 +486,39 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               </div>
             )}
 
+            {/* GST rate-wise tax summary */}
+            {gstSummary && gstSummary.rateSummary.length > 0 && (
+              <div style={{ borderTop: '1px solid #E2E8F0', padding: '12px 24px', overflowX: 'auto' }}>
+                <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#94A3B8', margin: '0 0 6px' }}>Tax Summary</p>
+                <table style={{ borderCollapse: 'collapse', fontSize: '12px', minWidth: '360px' }}>
+                  <thead>
+                    <tr style={{ color: '#94A3B8' }}>
+                      {['GST Rate', 'Taxable Value', 'CGST', 'SGST', 'Total Tax'].map((h, i) => (
+                        <th key={h} style={{ padding: '4px 14px 4px 0', textAlign: i === 0 ? 'left' : 'right', fontWeight: 600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gstSummary.rateSummary.map((r) => (
+                      <tr key={r.rate} style={{ color: '#475569' }}>
+                        <td style={{ padding: '3px 14px 3px 0' }}>{r.rate}%</td>
+                        <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.taxableValue)}</td>
+                        <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.cgst)}</td>
+                        <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(r.sgst)}</td>
+                        <td style={{ padding: '3px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmt(r.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {/* Totals */}
             <div className="bill-totals-wrap" style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
               <div className="bill-totals-panel" style={{ minWidth: '300px', padding: '16px 24px' }}>
-                {bill.subtotal !== bill.total && (
+                {(gstRegistered || bill.subtotal !== bill.total) && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span style={{ fontSize: '13px', color: '#64748B' }}>Subtotal</span>
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>{gstRegistered ? 'Taxable Value' : 'Subtotal'}</span>
                     <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.subtotal)}</span>
                   </div>
                 )}
@@ -461,10 +528,37 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
                     <span style={{ fontSize: '13px', color: '#10B981', fontFamily: 'monospace' }}>- {fmt(bill.discount)}</span>
                   </div>
                 )}
-                {bill.tax > 0 && (
+                {gstRegistered ? (
+                  <>
+                    {(bill.cgst ?? 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: '13px', color: '#64748B' }}>CGST</span>
+                        <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.cgst ?? 0)}</span>
+                      </div>
+                    )}
+                    {(bill.sgst ?? 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: '13px', color: '#64748B' }}>SGST</span>
+                        <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.sgst ?? 0)}</span>
+                      </div>
+                    )}
+                    {(bill.igst ?? 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: '13px', color: '#64748B' }}>IGST</span>
+                        <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.igst ?? 0)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : bill.tax > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                     <span style={{ fontSize: '13px', color: '#64748B' }}>Tax</span>
                     <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.tax)}</span>
+                  </div>
+                )}
+                {(bill.round_off ?? 0) !== 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>Round Off</span>
+                    <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{(bill.round_off ?? 0) > 0 ? '+ ' : '- '}{fmt(Math.abs(bill.round_off ?? 0))}</span>
                   </div>
                 )}
                 {[
@@ -479,6 +573,14 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
                 ))}
               </div>
             </div>
+
+            {/* Amount in words */}
+            {bill.bill_source !== 'advance_refund' && bill.bill_source !== 'appointment_refund' && (
+              <div style={{ borderTop: '1px solid #E2E8F0', padding: '10px 24px' }}>
+                <span style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Amount in words: </span>
+                <span style={{ fontSize: '12.5px', color: '#334155', fontWeight: 600 }}>{rupeesInWords(bill.total)}</span>
+              </div>
+            )}
 
             {/* Refund acknowledgement — for advance_refund and appointment_refund bills */}
             {(bill.bill_source === 'advance_refund' || bill.bill_source === 'appointment_refund') && (() => {
@@ -663,7 +765,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
       <Modal
         open={showDiscount}
         onClose={() => { setShowDiscount(false); setAdjError(null) }}
-        title="Adjust Discount & Tax"
+        title="Adjust Discount"
         maxWidth="26rem"
         footer={
           <div className="flex gap-2 justify-end">
@@ -712,33 +814,74 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Tax (₹)</label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={taxVal}
-              onChange={(e) => setTaxVal(e.target.value)}
-              className="w-full px-3 py-3 rounded-xl text-sm"
-              style={{
-                background: 'rgba(255,255,255,0.8)',
-                border: '1px solid #E2E8F0',
-                color: '#0F172A',
-                minHeight: '44px',
-                outline: 'none',
-              }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
-            />
-          </div>
+          <p className="text-xs" style={{ color: '#94A3B8' }}>
+            GST is calculated automatically per line item. Use the ✎ on a line to override its rate/HSN.
+          </p>
           <div className="text-sm" style={{ color: '#64748B' }}>
             New total: <Money
-              amount={Math.max(0, bill.subtotal - (parseFloat(discountVal) || 0) + (parseFloat(taxVal) || 0))}
+              amount={Math.max(0, bill.subtotal - (parseFloat(discountVal) || 0) + (bill.tax ?? 0))}
               className="font-semibold"
             />
           </div>
         </div>
+      </Modal>
+
+      {/* Per-line GST / HSN Modal */}
+      <Modal
+        open={!!gstEdit}
+        onClose={() => { setGstEdit(null); setGstEditError(null) }}
+        title="Edit GST / HSN"
+        maxWidth="26rem"
+        footer={
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setGstEdit(null)}
+              className="px-4 py-2.5 rounded-xl text-sm"
+              style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '44px' }}>
+              Cancel
+            </button>
+            <button onClick={handleGstSave} disabled={gstEditLoading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+              style={{ background: gstEditLoading ? '#94A3B8' : '#0D9488', minHeight: '44px' }}>
+              {gstEditLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save
+            </button>
+          </div>
+        }
+      >
+        {gstEdit && (
+          <div className="space-y-4">
+            {gstEditError && (
+              <div className="px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#EF4444' }}>{gstEditError}</div>
+            )}
+            <p className="text-sm" style={{ color: '#475569' }}>{gstEdit.description}</p>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>GST Rate</label>
+              <Select value={gstEdit.gst_rate} onChange={(e) => setGstEdit({ ...gstEdit, gst_rate: e.target.value })}>
+                <option value="0">Exempt (0%)</option>
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18">18%</option>
+                <option value="28">28%</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>HSN / SAC Code</label>
+              <input
+                type="text"
+                value={gstEdit.hsn_sac}
+                onChange={(e) => setGstEdit({ ...gstEdit, hsn_sac: e.target.value })}
+                placeholder="e.g. 30049099"
+                className="w-full px-3 py-3 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
+              />
+            </div>
+            <p className="text-xs" style={{ color: '#94A3B8' }}>
+              Pharmacy lines are treated as GST-inclusive (tax is within the price); other lines add GST on top.
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   )

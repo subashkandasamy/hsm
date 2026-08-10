@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BillItemSource } from '@/lib/types'
+import { computeLineGst } from '@/lib/gst'
+import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals, type GstConfig } from '@/lib/billing/gst'
 
 export interface IpdBillLineItem {
   source: BillItemSource
@@ -7,6 +9,35 @@ export interface IpdBillLineItem {
   description: string
   qty: number
   unit_price: number
+  /** Optional per-line GST override (e.g. a pharmacy line inheriting its batch). */
+  gst_rate?: number | null
+  hsn_sac?: string | null
+}
+
+/** Builds a GST-stamped bill_items row from a line item. */
+function stampItem(
+  i: IpdBillLineItem,
+  ctx: { tenantId: string; billId: string; cfg: GstConfig },
+) {
+  const amount = i.qty * i.unit_price
+  const { rate, inclusive, hsn } = resolveLineGst(i.source, ctx.cfg, { gst_rate: i.gst_rate, hsn_sac: i.hsn_sac })
+  const { taxableValue, taxAmount } = computeLineGst(amount, rate, inclusive)
+  return {
+    id: crypto.randomUUID(),
+    tenant_id: ctx.tenantId,
+    bill_id: ctx.billId,
+    source: i.source,
+    ref_id: i.ref_id ?? null,
+    description: i.description,
+    qty: i.qty,
+    unit_price: i.unit_price,
+    amount,
+    gst_rate: rate,
+    tax_inclusive: inclusive,
+    hsn_sac: hsn,
+    taxable_value: taxableValue,
+    tax_amount: taxAmount,
+  }
 }
 
 export type IpdBillSource = 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'ot' | 'consultation' | 'manual' | 'blood' | 'icu'
@@ -31,6 +62,8 @@ export async function autoIpdBill(
 ): Promise<string | null> {
   const { tenantId, admissionId, patientId, billingDate, billSource, lineItems } = params
   if (!lineItems.length) return null
+
+  const cfg = await getTenantGstConfig(supabase, tenantId)
 
   // ── 1. Find existing non-cancelled bill ──────────────────────────────────────
   const { data: existing } = await supabase
@@ -65,26 +98,12 @@ export async function autoIpdBill(
     const newItems = lineItems.filter((i) => !i.ref_id || !alreadyBilledRefs.has(i.ref_id))
     if (!newItems.length) return billId
 
-    const itemsToInsert = newItems.map((i) => ({
-      id: crypto.randomUUID(),
-      tenant_id: tenantId,
-      bill_id: billId,
-      source: i.source,
-      ref_id: i.ref_id ?? null,
-      description: i.description,
-      qty: i.qty,
-      unit_price: i.unit_price,
-      amount: i.qty * i.unit_price,
-    }))
+    const itemsToInsert = newItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
     const { error: insertErr } = await supabase.from('bill_items').insert(itemsToInsert)
     if (insertErr) return null
 
-    const addedTotal = itemsToInsert.reduce((s, i) => s + i.amount, 0)
-    currentSubtotal += addedTotal
-    await supabase
-      .from('bills')
-      .update({ subtotal: currentSubtotal, total: currentSubtotal })
-      .eq('id', billId)
+    // Re-derive GST aggregates + total from ALL items on the bill.
+    currentSubtotal = await recomputeBillGstTotals(supabase, billId)
 
   } else {
     // ── 2. Create new bill ───────────────────────────────────────────────────
@@ -94,7 +113,6 @@ export async function autoIpdBill(
     if (!billNoData) return null
 
     billId = crypto.randomUUID()
-    currentSubtotal = lineItems.reduce((s, i) => s + i.qty * i.unit_price, 0)
 
     const { error: billErr } = await supabase.from('bills').insert({
       id: billId,
@@ -104,10 +122,10 @@ export async function autoIpdBill(
       bill_no: billNoData as string,
       billing_date: billingDate,
       bill_source: billSource,
-      subtotal: currentSubtotal,
+      subtotal: 0,
       discount: 0,
       tax: 0,
-      total: currentSubtotal,
+      total: 0,
       paid: 0,
       status: 'unpaid',
       created_by: actorId,
@@ -115,22 +133,15 @@ export async function autoIpdBill(
     if (billErr) return null
 
     const { error: itemErr } = await supabase.from('bill_items').insert(
-      lineItems.map((i) => ({
-        id: crypto.randomUUID(),
-        tenant_id: tenantId,
-        bill_id: billId,
-        source: i.source,
-        ref_id: i.ref_id ?? null,
-        description: i.description,
-        qty: i.qty,
-        unit_price: i.unit_price,
-        amount: i.qty * i.unit_price,
-      }))
+      lineItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
     )
     if (itemErr) {
       await supabase.from('bills').delete().eq('id', billId)
       return null
     }
+
+    // Set GST aggregates + total now that items exist.
+    currentSubtotal = await recomputeBillGstTotals(supabase, billId)
   }
 
   // ── 3. Auto-apply available advance credit (inline — same logic as generateBill) ──

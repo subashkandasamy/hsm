@@ -51,6 +51,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/login?wrongtenant=1')
   }
 
+  // ── Account-state gates ───────────────────────────────────────────────────
+  // Deactivated (e.g. resigned) staff are bounced to /login, which signs their
+  // stale session out. Staff still holding a temporary password must set their
+  // own before reaching any dashboard route; an expired temp password can only
+  // be revived by an admin re-issuing credentials.
+  if (!profile.is_active) {
+    redirect('/login?deactivated=1')
+  }
+  if (profile.must_change_password) {
+    const exp = profile.temp_password_expires_at
+    if (exp && new Date(exp as string) < new Date()) {
+      redirect('/login?tempexpired=1')
+    }
+    redirect('/change-password')
+  }
+
   const service = createServiceClient()
   const { data: tenant } = await service
     .from('tenants')

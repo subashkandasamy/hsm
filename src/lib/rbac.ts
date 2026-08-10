@@ -150,6 +150,8 @@ export const NAV_CONFIG: NavGroup[] = [
     label: 'Billing & Insurance',
     items: [
       { label: 'Billing',    href: '/billing',    icon: 'Receipt',    requiredPermission: 'billing:read' },
+      { label: 'Estimates',  href: '/billing/estimates', icon: 'FileText', requiredPermission: 'billing:read' },
+      { label: 'Cash Book',  href: '/billing/cash-book', icon: 'BookOpen',  requiredPermission: 'billing:read' },
       { label: 'Insurance',  href: '/insurance',  icon: 'ShieldPlus', requiredPermission: 'insurance:read', moduleKey: 'insurance' },
     ],
   },
