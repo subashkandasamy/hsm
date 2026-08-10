@@ -55,8 +55,9 @@ export default function AdminDashboard({ kpis }: { kpis: AdminKPIs | null }) {
       {/* KPI grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KpiTile
-          label="Today's Revenue"
+          label="Today's Collection"
           value={kpis ? fmtAmt(kpis.todayRevenue) : '—'}
+          sub={kpis ? `Payments ${fmtAmt(kpis.revenuePayments ?? 0)} · Advances ${fmtAmt(kpis.revenueAdvances ?? 0)}` : undefined}
           icon={<IndianRupee className="w-4 h-4" />}
           href="/billing"
         />

@@ -646,6 +646,7 @@ export interface Payment {
 export interface Bill {
   id: string; patient_id: string; visit_id: string | null; admission_id: string | null; appointment_id: string | null
   bill_no: string; subtotal: number; discount: number; tax: number; total: number; paid: number
+  discount_pct?: number; discount_reason?: string | null
   cgst?: number; sgst?: number; igst?: number; round_off?: number
   status: BillStatus; created_by: string | null; created_at: string
   billing_date?: string | null
@@ -717,6 +718,34 @@ export interface CashShiftClose {
   notes: string | null
   created_at: string
   cashier?: Pick<Profile, 'id' | 'full_name'> | null
+}
+
+// ---- Credit notes (refunds) ----
+export interface CreditNote {
+  id: string
+  bill_id: string
+  credit_no: string
+  amount: number
+  method: string
+  reason: string | null
+  created_at: string
+  refunded_by_name?: string | null
+}
+
+// ---- Discount controls ----
+export interface DiscountLimitRow { role: string; max_percent: number }
+
+export interface DiscountRequestRow {
+  id: string
+  bill_id: string
+  bill_no: string
+  patient_name: string
+  requested_by_name: string
+  requested_pct: number
+  requested_amount: number
+  reason: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
 }
 
 // ---- Cost estimates / quotations ----
@@ -1235,7 +1264,8 @@ export interface Notification {
 // ---- Phase 7: Dashboard KPIs ----
 
 export interface AdminKPIs {
-  todayRevenue: number; bedOccupancy: number; totalBeds: number; occupiedBeds: number
+  todayRevenue: number; revenuePayments?: number; revenueAdvances?: number
+  bedOccupancy: number; totalBeds: number; occupiedBeds: number
   todayFootfall: number; pendingBillsCount: number; pendingBillsTotal: number
   lowStockCount: number
 }

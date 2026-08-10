@@ -102,6 +102,29 @@ async function fetchMovements(
     })
   }
 
+  // 4. Bill refunds (credit notes) — money out (negative)
+  let cq = supabase
+    .from('credit_notes')
+    .select('id, amount, method, created_at, refunded_by, refunder:profiles!credit_notes_refunded_by_fkey(full_name), bill:bills(bill_no, patient:patients(full_name))')
+    .gte('created_at', from).lt('created_at', to)
+  if (cashierId) cq = cq.eq('refunded_by', cashierId)
+  const { data: cns } = await cq
+  for (const c of cns ?? []) {
+    const bill = c.bill as unknown as { bill_no: string; patient: { full_name: string } | null } | null
+    const refunder = c.refunder as unknown as { full_name: string } | null
+    movements.push({
+      id: c.id as string,
+      time: c.created_at as string,
+      kind: 'refund',
+      reference: bill?.bill_no ?? 'Credit note',
+      patientName: bill?.patient?.full_name ?? '—',
+      method: c.method as string,
+      cashierId: (c.refunded_by as string | null) ?? null,
+      cashierName: refunder?.full_name ?? 'Unknown',
+      amount: -(c.amount as number),
+    })
+  }
+
   movements.sort((x, y) => x.time.localeCompare(y.time))
   return movements
 }

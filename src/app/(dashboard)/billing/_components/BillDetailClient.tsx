@@ -10,14 +10,16 @@ import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import Modal from '@/components/ui/Modal'
 import {
-  finalizeBill, cancelBill, recordPayment, applyDiscount, updateBillItemGst, getBill,
+  finalizeBill, cancelBill, recordPayment, updateBillItemGst, getBill,
 } from '@/app/actions/billing'
+import { applyOrRequestDiscount, approveDiscountRequest, rejectDiscountRequest } from '@/app/actions/discounts'
+import { issueCreditNote } from '@/app/actions/refunds'
 import { sendBillNotification } from '@/app/actions/notifications'
 import { useAuth } from '@/context/AuthContext'
 import { useMessagingEnabled } from '@/context/MessagingContext'
 import { hasPermission } from '@/lib/rbac'
 import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
-import type { Bill, BillItemSource, TenantProfile } from '@/lib/types'
+import type { Bill, BillItemSource, TenantProfile, DiscountRequestRow, CreditNote } from '@/lib/types'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -85,9 +87,14 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer', insurance: 'Insurance',
 }
 
-interface Props { bill: Bill; tenantProfile: TenantProfile | null }
+interface Props {
+  bill: Bill; tenantProfile: TenantProfile | null
+  pendingDiscount?: DiscountRequestRow | null
+  creditNotes?: CreditNote[]
+  refundable?: number
+}
 
-export default function BillDetailClient({ bill: initialBill, tenantProfile }: Props) {
+export default function BillDetailClient({ bill: initialBill, tenantProfile, pendingDiscount, creditNotes = [], refundable = 0 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canWrite  = !!role && hasPermission(role, 'billing:write')
@@ -104,9 +111,32 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
   const [paying, setPaying]       = useState(false)
 
   const [showDiscount, setShowDiscount] = useState(false)
-  const [discountVal, setDiscountVal]   = useState(String(bill.discount))
+  const [discMode, setDiscMode]         = useState<'percent' | 'amount'>('amount')
+  const [discountVal, setDiscountVal]   = useState('')
+  const [discReason, setDiscReason]     = useState('Camp')
   const [adjError, setAdjError]         = useState<string | null>(null)
   const [adjLoading, setAdjLoading]     = useState(false)
+  const [adjNotice, setAdjNotice]       = useState<string | null>(null)
+  const [decideBusy, setDecideBusy]     = useState(false)
+
+  // Refund / credit note
+  const [showRefund, setShowRefund]     = useState(false)
+  const [refundAmt, setRefundAmt]       = useState('')
+  const [refundMethod, setRefundMethod] = useState('cash')
+  const [refundReason, setRefundReason] = useState('')
+  const [refundErr, setRefundErr]       = useState<string | null>(null)
+  const [refundBusy, setRefundBusy]     = useState(false)
+  const creditedTotal = creditNotes.reduce((s, c) => s + c.amount, 0)
+
+  async function handleRefund() {
+    setRefundBusy(true); setRefundErr(null)
+    const res = await issueCreditNote({ bill_id: bill.id, amount: parseFloat(refundAmt) || 0, method: refundMethod, reason: refundReason })
+    setRefundBusy(false)
+    if (!res.success) { setRefundErr(res.error); return }
+    setShowRefund(false); setRefundAmt(''); setRefundReason('')
+    router.refresh()
+    await refresh()
+  }
 
   // Per-line GST override
   const [gstEdit, setGstEdit]           = useState<{ id: string; description: string; gst_rate: string; hsn_sac: string } | null>(null)
@@ -182,17 +212,30 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
     await refresh()
   }
 
-  async function handleAdjustments() {
-    setAdjLoading(true)
-    setAdjError(null)
-    const disc = parseFloat(discountVal) || 0
-
-    if (disc !== bill.discount) {
-      const r = await applyDiscount({ bill_id: bill.id, discount: disc })
-      if (!r.success) { setAdjError(r.error); setAdjLoading(false); return }
-    }
+  async function handleDiscount() {
+    setAdjLoading(true); setAdjError(null); setAdjNotice(null)
+    const res = await applyOrRequestDiscount({
+      bill_id: bill.id, mode: discMode, value: parseFloat(discountVal) || 0, reason: discReason,
+    })
     setAdjLoading(false)
-    setShowDiscount(false)
+    if (!res.success) { setAdjError(res.error); return }
+    if (res.status === 'pending') {
+      setShowDiscount(false)
+      setAdjNotice('This discount is above your limit — sent to an administrator for approval.')
+      await refresh()
+    } else {
+      setShowDiscount(false)
+      await refresh()
+    }
+  }
+
+  async function decidePending(approve: boolean) {
+    if (!pendingDiscount) return
+    setDecideBusy(true)
+    const r = approve ? await approveDiscountRequest(pendingDiscount.id) : await rejectDiscountRequest(pendingDiscount.id)
+    setDecideBusy(false)
+    if (!r.success) { alert(r.error); return }
+    router.refresh()
     await refresh()
   }
 
@@ -279,13 +322,23 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
             </span>
           )}
 
-          {canManage && isMutable && (
+          {canWrite && isMutable && !pendingDiscount && (
             <button
-              onClick={() => { setDiscountVal(String(bill.discount)); setShowDiscount(true) }}
+              onClick={() => { setDiscMode('amount'); setDiscountVal(''); setDiscReason('Camp'); setAdjError(null); setShowDiscount(true) }}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
               style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '40px' }}
             >
               Discount
+            </button>
+          )}
+
+          {canManage && refundable > 0 && bill.status !== 'cancelled' && (
+            <button
+              onClick={() => { setRefundAmt(''); setRefundMethod('cash'); setRefundReason(''); setRefundErr(null); setShowRefund(true) }}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+              style={{ border: '1px solid #FECACA', color: '#B45309', minHeight: '40px' }}
+            >
+              Refund
             </button>
           )}
 
@@ -325,6 +378,40 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
           )}
         </div>
       </div>
+
+      {adjNotice && (
+        <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+          {adjNotice}
+        </div>
+      )}
+
+      {/* Discount pending approval */}
+      {pendingDiscount && (
+        <div className="no-print mb-4 px-4 py-3 rounded-xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
+                Discount pending approval — {pendingDiscount.requested_pct}% ({fmt(pendingDiscount.requested_amount)})
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>
+                {pendingDiscount.reason} · requested by {pendingDiscount.requested_by_name}
+              </p>
+            </div>
+            {canManage && (
+              <div className="flex gap-2">
+                <button onClick={() => decidePending(true)} disabled={decideBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: '#0D9488', border: 'none', cursor: decideBusy ? 'wait' : 'pointer' }}>
+                  Approve
+                </button>
+                <button onClick={() => decidePending(false)} disabled={decideBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'transparent', color: '#DC2626', border: '1px solid #FECACA', cursor: decideBusy ? 'wait' : 'pointer' }}>
+                  Reject
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Professional print invoice ── */}
       <style>{`
@@ -526,7 +613,9 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
                 )}
                 {bill.discount > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span style={{ fontSize: '13px', color: '#64748B' }}>Discount</span>
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>
+                      Discount{(bill.discount_pct ?? 0) > 0 ? ` (${bill.discount_pct}%)` : ''}{bill.discount_reason ? ` · ${bill.discount_reason}` : ''}
+                    </span>
                     <span style={{ fontSize: '13px', color: '#10B981', fontFamily: 'monospace' }}>- {fmt(bill.discount)}</span>
                   </div>
                 )}
@@ -566,6 +655,10 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
                 {[
                   { label: 'Grand Total',  value: bill.total,  size: '14px', weight: 700, color: '#0F172A', sep: true },
                   { label: 'Paid',         value: bill.paid,   size: '13px', weight: 500, color: '#10B981', sep: false },
+                  ...(creditedTotal > 0 ? [
+                    { label: 'Refunded (credit notes)', value: -creditedTotal, size: '13px', weight: 500, color: '#B45309', sep: false },
+                    { label: 'Net Collected', value: bill.paid - creditedTotal, size: '13px', weight: 600, color: '#0F172A', sep: false },
+                  ] : []),
                   { label: 'Balance Due',  value: balance,     size: '16px', weight: 800, color: balance > 0 ? '#DC2626' : '#10B981', sep: true },
                 ].map(({ label, value, size, weight, color, sep }) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: sep ? '10px 0 5px' : '4px 0', borderTop: sep ? '1.5px solid #E2E8F0' : undefined, marginTop: sep ? '6px' : undefined }}>
@@ -644,6 +737,28 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
           </div>
         )
       })()}
+
+      {/* Credit notes (refunds) — screen only */}
+      {creditNotes.length > 0 && (
+        <div className="no-print mt-4" style={{ border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
+          <div style={{ padding: '10px 16px', background: '#FFFBEB', borderBottom: '1px solid #FDE68A' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#92400E' }}>Refunds / Credit Notes</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <tbody>
+              {creditNotes.map((c) => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                  <td style={{ padding: '9px 16px', color: '#0D9488', fontFamily: 'monospace', fontSize: '12px' }}>{c.credit_no}</td>
+                  <td style={{ padding: '9px 16px', color: '#475569' }}>{c.reason}</td>
+                  <td style={{ padding: '9px 16px', color: '#94A3B8', fontSize: '12px' }}>{PAYMENT_METHOD_LABELS[c.method] ?? c.method}</td>
+                  <td style={{ padding: '9px 16px', color: '#94A3B8', whiteSpace: 'nowrap' }}><DateText date={c.created_at} /></td>
+                  <td style={{ padding: '9px 16px', color: '#B45309', fontWeight: 700, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>- {fmt(c.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Payment log — screen only, not printed */}
       {(bill.payments ?? []).length > 0 && (
@@ -763,11 +878,11 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
         </div>
       </Modal>
 
-      {/* Discount / Tax Modal */}
+      {/* Discount Modal */}
       <Modal
         open={showDiscount}
         onClose={() => { setShowDiscount(false); setAdjError(null) }}
-        title="Adjust Discount"
+        title="Apply Discount"
         maxWidth="26rem"
         footer={
           <div className="flex gap-2 justify-end">
@@ -779,7 +894,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               Cancel
             </button>
             <button
-              onClick={handleAdjustments}
+              onClick={handleDiscount}
               disabled={adjLoading}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
               style={{ background: adjLoading ? '#94A3B8' : '#0D9488', minHeight: '44px' }}
@@ -796,35 +911,87 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
               {adjError}
             </div>
           )}
+          <div className="flex gap-2">
+            {(['amount', 'percent'] as const).map((m) => (
+              <button key={m} onClick={() => setDiscMode(m)}
+                className="flex-1 px-3 py-2 rounded-xl text-sm font-medium"
+                style={discMode === m
+                  ? { background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }
+                  : { background: 'transparent', color: '#64748B', border: '1px solid #E2E8F0' }}>
+                {m === 'amount' ? 'Amount (₹)' : 'Percent (%)'}
+              </button>
+            ))}
+          </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Discount (₹)</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
+              {discMode === 'amount' ? 'Discount amount (₹)' : 'Discount percent (%)'}
+            </label>
             <input
-              type="number"
-              min={0}
-              step={1}
-              value={discountVal}
-              onChange={(e) => setDiscountVal(e.target.value)}
+              type="number" min={0} step={discMode === 'percent' ? 0.5 : 1} value={discountVal}
+              onChange={(e) => setDiscountVal(e.target.value)} autoFocus
               className="w-full px-3 py-3 rounded-xl text-sm"
-              style={{
-                background: 'rgba(255,255,255,0.8)',
-                border: '1px solid #E2E8F0',
-                color: '#0F172A',
-                minHeight: '44px',
-                outline: 'none',
-              }}
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
               onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
               onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
             />
           </div>
-          <p className="text-xs" style={{ color: '#94A3B8' }}>
-            GST is calculated automatically per line item. Use the ✎ on a line to override its rate/HSN.
-          </p>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reason</label>
+            <Select value={discReason} onChange={(e) => setDiscReason(e.target.value)}>
+              {['Camp', 'Staff', 'Senior citizen', 'Charity', 'Management', 'Other'].map((r) => <option key={r} value={r}>{r}</option>)}
+            </Select>
+          </div>
           <div className="text-sm" style={{ color: '#64748B' }}>
             New total: <Money
-              amount={Math.max(0, bill.subtotal - (parseFloat(discountVal) || 0) + (bill.tax ?? 0))}
+              amount={Math.max(0, bill.subtotal - (discMode === 'amount' ? (parseFloat(discountVal) || 0) : bill.subtotal * (parseFloat(discountVal) || 0) / 100) + (bill.tax ?? 0))}
               className="font-semibold"
             />
           </div>
+          <p className="text-xs" style={{ color: '#94A3B8' }}>
+            If the discount is above your limit, it will be sent to an administrator for approval.
+          </p>
+        </div>
+      </Modal>
+
+      {/* Refund / Credit Note Modal */}
+      <Modal
+        open={showRefund}
+        onClose={() => { setShowRefund(false); setRefundErr(null) }}
+        title="Refund / Credit Note"
+        maxWidth="26rem"
+        footer={
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowRefund(false)} className="px-4 py-2.5 rounded-xl text-sm" style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '44px' }}>Cancel</button>
+            <button onClick={handleRefund} disabled={refundBusy}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+              style={{ background: refundBusy ? '#94A3B8' : '#B45309', minHeight: '44px' }}>
+              {refundBusy && <Loader2 className="w-4 h-4 animate-spin" />} Issue Refund
+            </button>
+          </div>
+        }>
+        <div className="space-y-4">
+          {refundErr && <div className="px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#EF4444' }}>{refundErr}</div>}
+          <p className="text-sm" style={{ color: '#64748B' }}>Refundable: <span style={{ fontWeight: 700, color: '#0F172A' }}>{fmt(refundable)}</span></p>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Refund amount (₹)</label>
+            <input type="number" min={0.01} max={refundable} step={0.01} value={refundAmt} autoFocus
+              onChange={(e) => setRefundAmt(e.target.value)}
+              className="w-full px-3 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }} onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Refund method</label>
+            <Select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
+              <option value="cash">Cash</option><option value="card">Card</option><option value="upi">UPI</option><option value="bank_transfer">Bank Transfer</option>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reason</label>
+            <input type="text" value={refundReason} onChange={(e) => setRefundReason(e.target.value)} placeholder="e.g. Cancelled test, overpayment"
+              className="w-full px-3 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '44px', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }} onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+          </div>
+          <p className="text-xs" style={{ color: '#94A3B8' }}>Records a credit note against this bill. The original bill stays unchanged; cash refunds appear in the Cash Book.</p>
         </div>
       </Modal>
 

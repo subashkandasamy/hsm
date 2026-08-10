@@ -12,6 +12,7 @@ import { generateDailyChargesForAdmissions, type DailyBillAdmission } from '@/li
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
 import { gstForSource, getTenantGstConfig, recomputeBillGstTotals } from '@/lib/billing/gst'
+import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -745,34 +746,42 @@ export async function getBill(id: string): Promise<Bill | null> {
 export async function getBillingStats(): Promise<{
   todayBilled: number
   todayCollected: number
+  collectedPayments: number
+  collectedAdvances: number
+  collectedRefunds: number
   todayOutstanding: number
   pastOutstanding: number
 }> {
+  const actor = await getActorProfile()
   const supabase = await createClient()
-  // IST-aware local date
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  // IST-aware local day
+  const today = istToday()
+  const { from, to } = istDayBoundsISO(today)
 
-  const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }] = await Promise.all([
-    // Today's non-cancelled service bills — use OR to correctly include NULL bill_source rows
-    supabase.from('bills').select('total, paid')
-      .gte('created_at', `${today}T00:00:00`)
+  const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }, collection] = await Promise.all([
+    // Today's non-cancelled service bills — for "Billed Today" (value of new bills raised)
+    supabase.from('bills').select('total')
+      .gte('created_at', from).lt('created_at', to)
       .not('status', 'eq', 'cancelled')
       .or('bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund)'),
-    // Today's unpaid/partial bills
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
-      .gte('created_at', `${today}T00:00:00`),
-    // Past unpaid/partial bills
+      .gte('created_at', from),
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
-      .lt('created_at', `${today}T00:00:00`),
+      .lt('created_at', from),
+    // "Collected Today" = actual money received today (payments + advances − refunds)
+    getCollectionSummary(supabase, actor.tenant_id, from, to),
   ])
 
   return {
-    todayBilled:      (todayBills  ?? []).reduce((s, b) => s + (b.total as number), 0),
-    todayCollected:   (todayBills  ?? []).reduce((s, b) => s + (b.paid  as number), 0),
-    todayOutstanding: (todayUnpaid ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
-    pastOutstanding:  (pastUnpaid  ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    todayBilled:       (todayBills  ?? []).reduce((s, b) => s + (b.total as number), 0),
+    todayCollected:    collection.total,
+    collectedPayments: collection.billPayments,
+    collectedAdvances: collection.advances,
+    collectedRefunds:  collection.refunds,
+    todayOutstanding:  (todayUnpaid ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    pastOutstanding:   (pastUnpaid  ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
   }
 }
 

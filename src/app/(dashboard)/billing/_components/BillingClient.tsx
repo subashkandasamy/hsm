@@ -117,6 +117,9 @@ const PAYMENT_METHODS = [
 interface BillingStats {
   todayBilled: number
   todayCollected: number
+  collectedPayments?: number
+  collectedAdvances?: number
+  collectedRefunds?: number
   todayOutstanding: number
   pastOutstanding: number
 }
@@ -515,9 +518,13 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         const totalOutstanding = (stats.todayOutstanding ?? 0) + (stats.pastOutstanding ?? 0)
         const fmt = (v: number) => `₹${(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
         return (
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
-            <StatCard label="Today Billed"    value={stats.todayBilled    ?? 0} icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />} color="#0D9488" />
-            <StatCard label="Today Collected" value={stats.todayCollected ?? 0} icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}  color="#10B981" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-5">
+            <StatCard label="Billed Today" value={stats.todayBilled ?? 0}
+              sub="Value of new bills raised today"
+              icon={<Receipt className="w-4 h-4 sm:w-5 sm:h-5" />} color="#0D9488" />
+            <StatCard label="Collected Today" value={stats.todayCollected ?? 0}
+              sub={`Payments ${fmt(stats.collectedPayments ?? 0)} · Advances ${fmt(stats.collectedAdvances ?? 0)}${(stats.collectedRefunds ?? 0) > 0 ? ` · Refunds -${fmt(stats.collectedRefunds ?? 0)}` : ''}`}
+              icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />} color="#10B981" />
             <StatCard
               label="Outstanding"
               value={totalOutstanding}

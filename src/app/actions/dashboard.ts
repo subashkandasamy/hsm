@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getReadClient } from '@/lib/supabase/read-replica'
+import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
@@ -28,52 +29,47 @@ export async function getAdminDashboard(): Promise<AdminKPIs> {
   const tid = actor.tenant_id
   const rd  = getReadClient()
   const day = today()
+  const primary = await createClient()
+  const { from, to } = istDayBoundsISO(istToday())
 
-  const [revenueRes, bedRes, footfallRes, lowStockRes, pendingBillsRes] = await Promise.all([
-    // today's revenue from materialized view (refreshed every 5 min)
-    rd.from('mv_daily_revenue_by_tenant')
-      .select('total_amount')
-      .eq('tenant_id', tid)
-      .eq('day', day)
-      .maybeSingle(),
-
-    // bed occupancy from materialized view
+  const [bedRes, footfallRes, lowStockRes, collection, { data: pendingRows }] = await Promise.all([
+    // Operational tiles from materialized views (≤5 min stale is fine here)
     rd.from('mv_bed_occupancy_by_tenant')
       .select('total_beds, occupied_beds')
       .eq('tenant_id', tid)
       .maybeSingle(),
-
-    // today's footfall from materialized view
     rd.from('mv_daily_footfall_by_tenant')
       .select('total_footfall')
       .eq('tenant_id', tid)
       .eq('day', day)
       .maybeSingle(),
-
-    // low-stock count from materialized view
     rd.from('mv_lowstock_alerts_by_tenant')
       .select('low_stock_count')
       .eq('tenant_id', tid)
       .maybeSingle(),
 
-    // pending bills: kept live (financial data must be accurate)
-    rd.from('mv_pending_bills_by_tenant')
-      .select('pending_count, pending_total')
-      .eq('tenant_id', tid)
-      .maybeSingle(),
+    // Financial tiles are computed LIVE for accuracy (never stale).
+    // Today's revenue = actual money collected today (same basis as the Cash Book).
+    getCollectionSummary(primary, tid, from, to),
+    // Pending bills = live unpaid/partial bills.
+    primary.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
   ])
 
-  const todayRevenue       = Number(revenueRes.data?.total_amount ?? 0)
+  const todayRevenue       = collection.total
+  const revenuePayments    = collection.billPayments
+  const revenueAdvances    = collection.advances
   const totalBeds          = Number(bedRes.data?.total_beds   ?? 0)
   const occupiedBeds       = Number(bedRes.data?.occupied_beds ?? 0)
   const bedOccupancy       = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
   const todayFootfall      = Number(footfallRes.data?.total_footfall ?? 0)
   const lowStockCount      = Number(lowStockRes.data?.low_stock_count ?? 0)
-  const pendingBillsCount  = Number(pendingBillsRes.data?.pending_count ?? 0)
-  const pendingBillsTotal  = Number(pendingBillsRes.data?.pending_total ?? 0)
+  const pending            = (pendingRows ?? []) as Array<{ total: number; paid: number }>
+  const pendingBillsCount  = pending.length
+  const pendingBillsTotal  = pending.reduce((s, b) => s + Math.max(0, Number(b.total) - Number(b.paid)), 0)
 
   return {
-    todayRevenue, bedOccupancy, totalBeds, occupiedBeds,
+    todayRevenue, revenuePayments, revenueAdvances,
+    bedOccupancy, totalBeds, occupiedBeds,
     todayFootfall, pendingBillsCount, pendingBillsTotal, lowStockCount,
   }
 }
