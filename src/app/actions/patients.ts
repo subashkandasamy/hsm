@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
@@ -26,6 +27,13 @@ export async function createPatient(
   }
 
   const data = parsed.data
+
+  // Aadhaar is mandatory unless the front desk explicitly registers without it
+  // (emergency / patient didn't carry it).
+  if (!data.aadhaar_no && !data.no_aadhaar) {
+    return { success: false, error: 'Aadhaar is required — or tick "Register without Aadhaar" for emergencies.' }
+  }
+
   const supabase = await createClient()
 
   // Duplicate phone guard
@@ -63,6 +71,18 @@ export async function createPatient(
   })
 
   if (insertErr) return { success: false, error: insertErr.message }
+
+  // Auto-link to the master patient (family member) if this Aadhaar is known.
+  if (data.aadhaar_no) {
+    const svc = createServiceClient()
+    const { data: member } = await svc
+      .from('patient_members').select('id, account_id').eq('aadhaar', data.aadhaar_no).maybeSingle()
+    if (member) {
+      await svc.from('patients')
+        .update({ patient_member_id: member.id as string, patient_account_id: member.account_id as string })
+        .eq('id', id)
+    }
+  }
 
   await logAudit(actor.id, 'create', 'patient', id, {
     uhid,

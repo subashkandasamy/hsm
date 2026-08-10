@@ -3,38 +3,55 @@
 import { useState } from 'react'
 import BrandMark from '@/components/ui/BrandMark'
 import { useRouter } from 'next/navigation'
-import { Phone, ArrowRight, ShieldCheck } from 'lucide-react'
-import { requestPatientOtp, verifyPatientOtp } from '@/app/actions/patientPortal'
+import { ShieldCheck } from 'lucide-react'
+import { loginPatient, registerPatient, requestPatientPasswordReset } from '@/app/actions/patientPortal'
 
 const TEAL = '#0D9488'
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #E2E8F0',
+  fontSize: 15, outline: 'none', color: '#0F172A',
+}
+
+type Mode = 'login' | 'register' | 'forgot'
 
 export default function PatientAuth() {
   const router = useRouter()
-  const [step, setStep] = useState<'phone' | 'otp'>('phone')
-  const [phone, setPhone] = useState('')
-  const [otp, setOtp] = useState('')
-  const [devCode, setDevCode] = useState<string | null>(null)
+  const [mode, setMode] = useState<Mode>('login')
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', aadhaar: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sentReset, setSentReset] = useState(false)
 
-  async function sendCode() {
-    if (phone.replace(/\D/g, '').length < 10) { setError('Enter a valid 10-digit mobile number'); return }
+  function set(k: keyof typeof form, v: string) { setForm((f) => ({ ...f, [k]: v })); setError(null) }
+
+  async function submit() {
     setBusy(true); setError(null)
-    const res = await requestPatientOtp(phone)
-    setBusy(false)
-    if (!res.success) { setError(res.error); return }
-    setDevCode(res.devCode ?? null)
-    setStep('otp')
+    if (mode === 'login') {
+      const res = await loginPatient({ email: form.email, password: form.password })
+      setBusy(false)
+      if (!res.success) { setError(res.error); return }
+      router.refresh()
+    } else if (mode === 'register') {
+      const res = await registerPatient({
+        full_name: form.full_name, email: form.email, phone: form.phone,
+        password: form.password, aadhaar: form.aadhaar || null,
+      })
+      setBusy(false)
+      if (!res.success) { setError(res.error); return }
+      router.refresh()
+    } else {
+      await requestPatientPasswordReset(form.email)
+      setBusy(false)
+      setSentReset(true)
+    }
   }
 
-  async function verify() {
-    if (otp.length < 6) { setError('Enter the 6-digit code'); return }
-    setBusy(true); setError(null)
-    const res = await verifyPatientOtp(phone, otp)
-    setBusy(false)
-    if (!res.success) { setError(res.error); return }
-    router.refresh()
-  }
+  const title = mode === 'login' ? 'Your health, in one place' : mode === 'register' ? 'Create your account' : 'Reset your password'
+  const subtitle = mode === 'login'
+    ? 'Sign in to see your records, reports and bills across every Uyirly hospital.'
+    : mode === 'register'
+      ? 'Register once to access your records and book appointments at any Uyirly hospital.'
+      : 'Enter your email and we’ll send you a reset link.'
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(160deg,#ecfdf5,#f0fdfa 45%,#fff)', padding: '1.5rem' }}>
@@ -45,51 +62,57 @@ export default function PatientAuth() {
         </div>
 
         <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #E2E8F0', boxShadow: '0 8px 30px rgba(2,6,23,0.06)', padding: '28px 24px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>
-            {step === 'phone' ? 'Your health, in one place' : 'Enter the code'}
-          </h1>
-          <p style={{ fontSize: 14, color: '#64748B', marginBottom: 20 }}>
-            {step === 'phone'
-              ? 'Log in with your mobile number to see your records, reports and bills across every Uyirly hospital.'
-              : `We sent a 6-digit code to +${phone.replace(/\D/g, '')}.`}
-          </p>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>{title}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', marginBottom: 20 }}>{subtitle}</p>
 
-          {step === 'phone' ? (
-            <>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Mobile number</label>
-              <div style={{ position: 'relative', marginBottom: 16 }}>
-                <Phone style={{ width: 16, height: 16, color: '#94A3B8', position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="numeric" placeholder="98765 43210"
-                  onKeyDown={(e) => e.key === 'Enter' && sendCode()}
-                  style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: 12, border: '1px solid #E2E8F0', fontSize: 15, outline: 'none', color: '#0F172A' }} />
-              </div>
-              <button onClick={sendCode} disabled={busy}
-                style={{ width: '100%', padding: '12px', borderRadius: 12, background: busy ? '#94A3B8' : TEAL, color: '#fff', border: 'none', fontSize: 15, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {busy ? 'Sending…' : <>Send code <ArrowRight style={{ width: 16, height: 16 }} /></>}
-              </button>
-            </>
+          {mode === 'forgot' && sentReset ? (
+            <p style={{ fontSize: 14, color: '#065F46', background: '#D1FAE5', border: '1px solid #A7F3D0', borderRadius: 12, padding: '12px 14px' }}>
+              If an account exists for that email, a reset link is on its way. Check your inbox.
+            </p>
           ) : (
-            <>
-              <input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="••••••" autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && verify()}
-                style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #E2E8F0', fontSize: 22, letterSpacing: 8, textAlign: 'center', outline: 'none', color: '#0F172A', marginBottom: 12 }} />
-              {devCode && (
-                <p style={{ fontSize: 12, color: '#B45309', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: '6px 10px', marginBottom: 12, textAlign: 'center' }}>
-                  Dev mode (WhatsApp not live): your code is <strong>{devCode}</strong>
-                </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {mode === 'register' && (
+                <input value={form.full_name} onChange={(e) => set('full_name', e.target.value)} placeholder="Full name" style={inputStyle} />
               )}
-              <button onClick={verify} disabled={busy}
+              {(mode === 'login' || mode === 'register' || mode === 'forgot') && (
+                <input value={form.email} onChange={(e) => set('email', e.target.value)} type="email" placeholder="Email address" style={inputStyle}
+                  onKeyDown={(e) => e.key === 'Enter' && mode !== 'register' && submit()} />
+              )}
+              {mode === 'register' && (
+                <>
+                  <input value={form.phone} onChange={(e) => set('phone', e.target.value)} inputMode="numeric" placeholder="Mobile number" style={inputStyle} />
+                  <input value={form.aadhaar} onChange={(e) => set('aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))} inputMode="numeric" placeholder="Aadhaar (12 digits)" style={inputStyle} />
+                </>
+              )}
+              {(mode === 'login' || mode === 'register') && (
+                <input value={form.password} onChange={(e) => set('password', e.target.value)} type="password" placeholder={mode === 'register' ? 'Create a password (min 8)' : 'Password'} style={inputStyle}
+                  onKeyDown={(e) => e.key === 'Enter' && submit()} />
+              )}
+
+              <button onClick={submit} disabled={busy}
                 style={{ width: '100%', padding: '12px', borderRadius: 12, background: busy ? '#94A3B8' : TEAL, color: '#fff', border: 'none', fontSize: 15, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
-                {busy ? 'Verifying…' : 'Verify & continue'}
+                {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : 'Send reset link'}
               </button>
-              <button onClick={() => { setStep('phone'); setOtp(''); setError(null) }}
-                style={{ width: '100%', padding: '10px', marginTop: 8, background: 'none', border: 'none', color: '#64748B', fontSize: 13, cursor: 'pointer' }}>
-                Change number
-              </button>
-            </>
+            </div>
           )}
 
           {error && <p style={{ fontSize: 13, color: '#DC2626', marginTop: 12, textAlign: 'center' }}>{error}</p>}
+
+          {/* Mode switches */}
+          <div style={{ marginTop: 16, textAlign: 'center', fontSize: 13, color: '#64748B' }}>
+            {mode === 'login' && (
+              <>
+                <button onClick={() => { setMode('forgot'); setError(null); setSentReset(false) }} style={linkBtn}>Forgot password?</button>
+                <div style={{ marginTop: 8 }}>New patient? <button onClick={() => { setMode('register'); setError(null) }} style={linkBtn}>Create an account</button></div>
+              </>
+            )}
+            {mode === 'register' && (
+              <div>Already registered? <button onClick={() => { setMode('login'); setError(null) }} style={linkBtn}>Sign in</button></div>
+            )}
+            {mode === 'forgot' && (
+              <button onClick={() => { setMode('login'); setError(null); setSentReset(false) }} style={linkBtn}>Back to sign in</button>
+            )}
+          </div>
         </div>
 
         <p style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', fontSize: 12, color: '#94A3B8', marginTop: 16 }}>
@@ -99,3 +122,5 @@ export default function PatientAuth() {
     </div>
   )
 }
+
+const linkBtn: React.CSSProperties = { background: 'none', border: 'none', color: TEAL, fontWeight: 600, cursor: 'pointer', fontSize: 13, padding: 0 }

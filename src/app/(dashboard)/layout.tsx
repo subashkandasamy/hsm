@@ -6,6 +6,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { AuthProvider } from '@/context/AuthContext'
 import { TenantProvider } from '@/context/TenantContext'
 import { ReadOnlyProvider } from '@/context/ReadOnlyContext'
+import { MessagingProvider } from '@/context/MessagingContext'
+import { isMessagingEnabled } from '@/lib/messaging'
 import AppShell from '@/components/shell/AppShell'
 import ReadOnlyBanner from '@/components/ui/ReadOnlyBanner'
 import PushRegistration from '@/components/native/PushRegistration'
@@ -78,10 +80,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     ? tenant.enabled_modules as string[]
     : ['ipd','emergency','bloodbank','ot','lab','radiology','pharmacy','insurance','inventory','hr']
 
+  const messagingEnabled = await isMessagingEnabled()
+
   return (
     <AuthProvider initialProfile={profile as Profile}>
       <TenantProvider plan={tenantPlan} status={tenantStatus}>
         <ReadOnlyProvider isReadOnly={isReadOnly}>
+        <MessagingProvider enabled={messagingEnabled}>
           <ReadOnlyBanner />
           <AppShell
             role={profile.role}
@@ -93,6 +98,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           >
             {children}
           </AppShell>
+        </MessagingProvider>
         </ReadOnlyProvider>
       </TenantProvider>
       <PushRegistration />

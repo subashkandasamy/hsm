@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit, listPartnerPayouts } from '@/app/actions/platform'
 import PlatformAdminClient from './_components/PlatformAdminClient'
+import MessagingToggle from './_components/MessagingToggle'
 
 export const metadata = {
   title: 'Platform Admin — Uyirly',
@@ -25,6 +26,10 @@ export default async function PlatformAdminPage() {
     .single()
 
   if (!pa) redirect('/dashboard')
+
+  const { data: msgSetting } = await service
+    .from('platform_settings').select('value').eq('key', 'messaging_enabled').maybeSingle()
+  const messagingEnabled = msgSetting?.value === 'true'
 
   const [tenants, stats, subscriptions, auditLog, partners] = await Promise.all([
     listTenants(),
@@ -71,6 +76,8 @@ export default async function PlatformAdminPage() {
             </div>
           ))}
         </div>
+
+        <MessagingToggle initial={messagingEnabled} />
 
         <PlatformAdminClient
           initialTenants={tenants}

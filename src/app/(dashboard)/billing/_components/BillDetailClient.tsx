@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/billing'
 import { sendBillNotification } from '@/app/actions/notifications'
 import { useAuth } from '@/context/AuthContext'
+import { useMessagingEnabled } from '@/context/MessagingContext'
 import { hasPermission } from '@/lib/rbac'
 import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
 import type { Bill, BillItemSource, TenantProfile } from '@/lib/types'
@@ -128,7 +129,8 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile }: P
 
   const [notifStatus, setNotifStatus]   = useState<string | null>(null)
   const [notifSending, setNotifSending] = useState(false)
-  const canNotify = !!role && hasPermission(role, 'notifications:send')
+  const messagingEnabled = useMessagingEnabled()
+  const canNotify = !!role && hasPermission(role, 'notifications:send') && messagingEnabled
 
   async function handleSendNotif(channel: 'whatsapp' | 'sms') {
     setNotifSending(true); setNotifStatus(null)

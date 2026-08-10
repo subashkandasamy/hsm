@@ -8,6 +8,7 @@ import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import GlassCard from '@/components/ui/GlassCard'
 import { createPatient } from '@/app/actions/patients'
+import { useMessagingEnabled } from '@/context/MessagingContext'
 import type { Patient } from '@/lib/types'
 import { AlertTriangle, UserCheck } from 'lucide-react'
 
@@ -20,6 +21,7 @@ interface Props {
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
 export default function RegisterModal({ open, onClose, onSuccess }: Props) {
+  const messagingEnabled = useMessagingEnabled()
   const [form, setForm] = useState({
     full_name: '', dob: '', gender: '', phone: '', email: '',
     address: '', blood_group: '', allergies: '',
@@ -27,6 +29,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     notify_whatsapp_consent: false,
     notify_sms_consent: false,
     aadhaar_no: '',
+    no_aadhaar: false,
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -61,7 +64,10 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     e.preventDefault()
 
     const phoneErr = validatePhone(form.phone)
-    const aadhaarErr = validateAadhaar(form.aadhaar_no)
+    // Aadhaar mandatory unless the "no Aadhaar (emergency)" box is ticked.
+    const aadhaarErr = form.no_aadhaar
+      ? null
+      : (!form.aadhaar_no ? 'Aadhaar is required (or tick "Register without Aadhaar")' : validateAadhaar(form.aadhaar_no))
     if (phoneErr || aadhaarErr) {
       setErrors((prev) => ({
         ...prev,
@@ -87,7 +93,8 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       emergency_contact_phone: form.emergency_contact_phone || null,
       notify_whatsapp_consent: form.notify_whatsapp_consent,
       notify_sms_consent: form.notify_sms_consent,
-      aadhaar_no: form.aadhaar_no || null,
+      aadhaar_no: form.no_aadhaar ? null : (form.aadhaar_no || null),
+      no_aadhaar: form.no_aadhaar,
     }
 
     const result = await createPatient(input)
@@ -109,7 +116,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       address: '', blood_group: '', allergies: '',
       emergency_contact_name: '', emergency_contact_phone: '',
       notify_whatsapp_consent: false, notify_sms_consent: false,
-      aadhaar_no: '',
+      aadhaar_no: '', no_aadhaar: false,
     })
     setDuplicate(null)
   }
@@ -208,12 +215,13 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <FormField label="Email" htmlFor="email">
+          <FormField label="Email" htmlFor="email"
+            hint="Optional — add it so the patient can access their records in the patient portal">
             <Input id="email" type="email" value={form.email}
               onChange={(e) => set('email', e.target.value)} placeholder="patient@email.com" />
           </FormField>
           <FormField label="Aadhaar Number" htmlFor="aadhaar_no" error={errors.aadhaar_no}
-            hint="12-digit number — optional">
+            hint="12-digit — links the patient to their portal / family record">
             <Input
               id="aadhaar_no"
               value={form.aadhaar_no}
@@ -224,9 +232,19 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
               placeholder="XXXXXXXXXXXX"
               maxLength={12}
               hasError={!!errors.aadhaar_no}
+              disabled={form.no_aadhaar}
             />
           </FormField>
         </div>
+
+        <label className="flex items-center gap-2.5 cursor-pointer -mt-1" style={{ minHeight: '36px' }}>
+          <input type="checkbox" checked={form.no_aadhaar}
+            onChange={(e) => { setForm((f) => ({ ...f, no_aadhaar: e.target.checked, aadhaar_no: e.target.checked ? '' : f.aadhaar_no })); setErrors((er) => { const n = { ...er }; delete n.aadhaar_no; return n }) }}
+            className="w-4 h-4 rounded" style={{ accentColor: '#0D9488' }} />
+          <span className="text-sm" style={{ color: '#475569' }}>
+            Register without Aadhaar <span style={{ color: '#94A3B8' }}>(emergency / not carried — can be added later)</span>
+          </span>
+        </label>
 
         <FormField label="Address" htmlFor="address">
           <Textarea id="address" value={form.address}
@@ -259,7 +277,8 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
           </div>
         </GlassCard>
 
-        {/* Notification consent */}
+        {/* Notification consent — only when messaging (WhatsApp/SMS) is enabled */}
+        {messagingEnabled && (
         <div className="p-4 rounded-xl space-y-3" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
           <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>Notification Consent</p>
           <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
@@ -279,6 +298,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
             </span>
           </label>
         </div>
+        )}
 
         {apiError && (
           <div className="rounded-xl px-4 py-3 text-sm"

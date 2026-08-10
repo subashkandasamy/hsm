@@ -713,3 +713,23 @@ export async function rejectPartner(
   await logAdminAction(service, actor.id, 'reject_partner', null, { partner_id: partnerId })
   return { success: true }
 }
+
+// ── Global platform settings (messaging switch) ──────────────────────────────
+export async function getMessagingEnabled(): Promise<boolean> {
+  await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { data } = await service.from('platform_settings').select('value').eq('key', 'messaging_enabled').maybeSingle()
+  return data?.value === 'true'
+}
+
+export async function setMessagingEnabled(
+  enabled: boolean
+): Promise<{ success: true } | { success: false; error: string }> {
+  const actor = await requirePlatformAdmin()
+  const service = createServiceClient()
+  const { error } = await service.from('platform_settings')
+    .upsert({ key: 'messaging_enabled', value: enabled ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) return { success: false, error: error.message }
+  await logAdminAction(service, actor.id, 'set_messaging_enabled', null, { enabled })
+  return { success: true }
+}

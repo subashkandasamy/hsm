@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { isMessagingEnabled } from '@/lib/messaging'
 import type { NotificationChannel, NotificationRefType } from '@/lib/types'
 
 // ── Provider interface ────────────────────────────────────────────────────────
@@ -112,6 +113,10 @@ interface NotifyResult {
 }
 
 export async function notify(input: NotifyInput): Promise<NotifyResult> {
+  // Global kill-switch: WhatsApp/SMS is off until the provider is live.
+  if (!(await isMessagingEnabled())) {
+    return { success: false, error: 'Messaging (WhatsApp/SMS) is currently disabled.' }
+  }
   const supabase = await createClient()
 
   // 1. Fetch patient + consent

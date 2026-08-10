@@ -43,6 +43,8 @@ export const PatientCreateSchema = z.object({
     .transform((v) => v.replace(/\s/g, ''))
     .pipe(z.string().regex(/^\d{12}$/, 'Aadhaar must be exactly 12 digits'))
     .nullable().optional(),
+  // Emergency / patient didn't carry Aadhaar — allowed only at the hospital.
+  no_aadhaar: z.boolean().optional(),
 })
 export const PatientUpdateSchema = PatientCreateSchema.partial()
 

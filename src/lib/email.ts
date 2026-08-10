@@ -181,6 +181,33 @@ export async function sendPasswordResetEmail(to: string, hospitalName: string, r
   }
 }
 
+export async function sendPatientPasswordEmail(to: string, name: string, link: string): Promise<void> {
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY not set — patient reset link (dev):', link)
+    return
+  }
+  try {
+    await resend.emails.send({
+      from: FROM, to, replyTo: REPLY_TO,
+      subject: 'Reset your Uyirly patient portal password',
+      html: `
+<div style="background:#f8fafc;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid ${S2};border-radius:16px;overflow:hidden;">
+    <div style="padding:28px 32px;border-bottom:1px solid ${S2};"><span style="font-size:18px;font-weight:700;color:${S9};">Uyirly</span></div>
+    <div style="padding:32px;">
+      <h1 style="margin:0 0 12px;font-size:20px;color:${S9};">Reset your password${name ? ', ' + name : ''}</h1>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:${S6};">Click below to set a new password for your patient portal. This link expires in 1 hour.</p>
+      <a href="${link}" style="display:inline-block;background:${T};color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 24px;border-radius:12px;">Reset password</a>
+      <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:${S4};">If you didn't request this, you can safely ignore this email.</p>
+    </div>
+  </div>
+</div>`.trim(),
+    })
+  } catch (err) {
+    console.error('[email] Failed to send patient reset email:', err)
+  }
+}
+
 export async function sendPartnerPasswordEmail(to: string, name: string, link: string): Promise<void> {
   if (!resend) {
     console.warn('[email] RESEND_API_KEY not set — partner set/reset password link (dev):', link)

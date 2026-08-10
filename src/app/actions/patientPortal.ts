@@ -1,116 +1,161 @@
 'use server'
 
-import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/service'
+import { sendPatientPasswordEmail } from '@/lib/email'
 import {
   normalizePhone, setPatientSession, clearPatientSession, getPatientSession,
+  hashPassword, verifyPassword, makeResetToken, verifyResetToken,
 } from '@/lib/patientAuth'
 
-function hashCode(code: string): string {
-  return crypto.createHash('sha256').update(code).digest('hex')
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function maskPhone(p: string | null): string {
+  const d = (p ?? '').replace(/\D/g, '')
+  return d.length >= 4 ? '••••••' + d.slice(-4) : '••••'
+}
+function maskEmail(e: string | null): string {
+  const [u, dom] = (e ?? '').split('@')
+  if (!dom) return '•••'
+  return (u?.[0] ?? '•') + '•••@' + dom
 }
 
-// Deliver the OTP over WhatsApp. Until an approved WhatsApp Authentication
-// template + live number are wired, this returns false and the caller falls
-// back to a dev code so the flow is fully testable now.
-async function sendOtpViaWhatsApp(phone: string, code: string): Promise<boolean> {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
-  const token = process.env.WHATSAPP_ACCESS_TOKEN
-  const template = process.env.WHATSAPP_OTP_TEMPLATE // e.g. 'patient_login_otp' (auth category)
-  if (!phoneNumberId || !token || !template) return false
-  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0'
-  const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en_US'
-  try {
-    const res = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'template',
-        template: {
-          name: template,
-          language: { code: lang },
-          components: [
-            { type: 'body', parameters: [{ type: 'text', text: code }] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
-          ],
-        },
-      }),
-    })
-    return res.ok
-  } catch { return false }
+// Master Patient Index (family model): link each MEMBER's hospital records by
+// Aadhaar (the reliable per-person key — a shared phone can't tell members
+// apart). Only claims still-unlinked records. Self-healing — safe on every login.
+async function linkPatientRecords(
+  svc: ReturnType<typeof createServiceClient>,
+  accountId: string,
+): Promise<void> {
+  const { data: members } = await svc
+    .from('patient_members').select('id, aadhaar').eq('account_id', accountId)
+  for (const m of (members ?? []) as Array<Record<string, unknown>>) {
+    const aadhaar = m.aadhaar as string | null
+    if (!aadhaar) continue
+    const { data: rows } = await svc
+      .from('patients').select('id').is('patient_member_id', null).eq('aadhaar_no', aadhaar)
+    const ids = ((rows ?? []) as Array<Record<string, unknown>>).map((r) => r.id as string)
+    if (ids.length) {
+      await svc.from('patients')
+        .update({ patient_member_id: m.id as string, patient_account_id: accountId })
+        .in('id', ids)
+    }
+  }
 }
 
-// ── Step 1: request an OTP for a phone ────────────────────────────────────────
-export async function requestPatientOtp(
-  phoneRaw: string,
-): Promise<{ success: true; devCode?: string } | { success: false; error: string }> {
-  const phone = normalizePhone(phoneRaw)
+// Returns masked login contact if this Aadhaar already belongs to another
+// account's member (so the user can recognise their own other account).
+async function aadhaarOwnedElsewhere(
+  svc: ReturnType<typeof createServiceClient>,
+  aadhaar: string,
+  exceptAccountId?: string,
+): Promise<{ phone: string; email: string } | null> {
+  const { data: m } = await svc
+    .from('patient_members').select('account_id').eq('aadhaar', aadhaar).maybeSingle()
+  if (!m) return null
+  if (exceptAccountId && m.account_id === exceptAccountId) return null
+  const { data: acct } = await svc
+    .from('patient_accounts').select('phone, email').eq('id', m.account_id as string).maybeSingle()
+  return { phone: maskPhone(acct?.phone as string | null), email: maskEmail(acct?.email as string | null) }
+}
+
+function portalResetUrl(token: string): string {
+  const root = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? `https://my.${root}`
+  return `${base}/portal/reset?token=${encodeURIComponent(token)}`
+}
+
+// ── Register a new patient portal account (self-service) ──────────────────────
+export async function registerPatient(input: {
+  full_name: string; email: string; phone: string; password: string; aadhaar?: string | null
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const full_name = (input.full_name ?? '').trim()
+  const email = (input.email ?? '').trim().toLowerCase()
+  const phone = normalizePhone(input.phone ?? '')
+  const password = input.password ?? ''
+  const aadhaar = (input.aadhaar ?? '').replace(/\D/g, '') || null
+
+  if (!full_name) return { success: false, error: 'Enter your full name' }
+  if (!EMAIL_RE.test(email)) return { success: false, error: 'Enter a valid email address' }
   if (!phone) return { success: false, error: 'Enter a valid mobile number' }
+  if (password.length < 8) return { success: false, error: 'Password must be at least 8 characters' }
+  if (!aadhaar || aadhaar.length !== 12) return { success: false, error: 'Enter your 12-digit Aadhaar number' }
 
   const svc = createServiceClient()
-  // Rate limit: max 5 codes per phone per 15 minutes.
-  const since = new Date(Date.now() - 15 * 60000).toISOString()
-  const { count } = await svc
-    .from('patient_otp_codes')
-    .select('id', { count: 'exact', head: true })
-    .eq('phone', phone).gte('created_at', since)
-  if ((count ?? 0) >= 5) return { success: false, error: 'Too many requests. Please try again in a few minutes.' }
+  // The login is identified by email or phone.
+  const { data: byEmail } = await svc.from('patient_accounts').select('id').ilike('email', email).maybeSingle()
+  if (byEmail) return { success: false, error: 'An account with this email already exists — please sign in.' }
+  const { data: byPhone } = await svc.from('patient_accounts').select('id').eq('phone', phone).maybeSingle()
+  if (byPhone) return { success: false, error: 'An account with this mobile number already exists — please sign in or reset your password.' }
+  // Aadhaar identifies the PERSON — must not already exist under another account.
+  const conflict = await aadhaarOwnedElsewhere(svc, aadhaar)
+  if (conflict) return { success: false, error: `This Aadhaar is already registered with mobile ${conflict.phone} and email ${conflict.email}. Please sign in with that account.` }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000))
-  const expiresAt = new Date(Date.now() + 5 * 60000).toISOString()
-  const { error } = await svc.from('patient_otp_codes').insert({ phone, code_hash: hashCode(code), expires_at: expiresAt })
-  if (error) return { success: false, error: error.message }
+  const { data: created, error } = await svc
+    .from('patient_accounts')
+    .insert({ full_name, email, phone, aadhaar, password_hash: hashPassword(password), last_login_at: new Date().toISOString() })
+    .select('id').single()
+  if (error || !created) return { success: false, error: error?.message ?? 'Could not create account' }
 
-  const sent = await sendOtpViaWhatsApp(phone, code)
-  if (sent) return { success: true }
-  // WhatsApp not live yet → expose the code outside production so we can test.
-  if (process.env.NODE_ENV !== 'production') return { success: true, devCode: code }
+  // The registrant is the first (self) member of the family.
+  await svc.from('patient_members').insert({
+    account_id: created.id as string, full_name, aadhaar, is_self: true, relationship: 'self',
+  })
+  // Link any existing hospital records (by member Aadhaar) to this account.
+  await linkPatientRecords(svc, created.id as string)
+  await setPatientSession(created.id as string, phone)
   return { success: true }
 }
 
-// ── Step 2: verify the OTP, create/find the account, start a session ──────────
-export async function verifyPatientOtp(
-  phoneRaw: string, code: string,
-): Promise<{ success: true } | { success: false; error: string }> {
-  const phone = normalizePhone(phoneRaw)
-  if (!phone) return { success: false, error: 'Invalid mobile number' }
+// ── Login with email + password ───────────────────────────────────────────────
+export async function loginPatient(input: {
+  email: string; password: string
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const email = (input.email ?? '').trim().toLowerCase()
+  const password = input.password ?? ''
+  if (!EMAIL_RE.test(email) || !password) return { success: false, error: 'Enter your email and password' }
 
   const svc = createServiceClient()
-  const { data: otp } = await svc
-    .from('patient_otp_codes')
-    .select('id, code_hash, attempts')
-    .eq('phone', phone).is('consumed_at', null)
-    .gte('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false }).limit(1).maybeSingle()
-
-  if (!otp) return { success: false, error: 'Code expired — please request a new one' }
-  if ((otp.attempts as number) >= 5) return { success: false, error: 'Too many attempts — request a new code' }
-  if (hashCode(code) !== otp.code_hash) {
-    await svc.from('patient_otp_codes').update({ attempts: (otp.attempts as number) + 1 }).eq('id', otp.id as string)
-    return { success: false, error: 'Incorrect code' }
+  const { data: acct } = await svc
+    .from('patient_accounts')
+    .select('id, phone, password_hash')
+    .ilike('email', email)
+    .maybeSingle()
+  if (!acct || !verifyPassword(password, acct.password_hash as string | null)) {
+    return { success: false, error: 'Incorrect email or password' }
   }
-  await svc.from('patient_otp_codes').update({ consumed_at: new Date().toISOString() }).eq('id', otp.id as string)
+  await svc.from('patient_accounts').update({ last_login_at: new Date().toISOString() }).eq('id', acct.id as string)
+  await linkPatientRecords(svc, acct.id as string)
+  await setPatientSession(acct.id as string, (acct.phone as string) ?? '')
+  return { success: true }
+}
 
-  // Find or create the universal patient account for this phone.
-  const { data: existing } = await svc.from('patient_accounts').select('id').eq('phone', phone).maybeSingle()
-  let accountId: string
-  if (existing) {
-    accountId = existing.id as string
-    await svc.from('patient_accounts').update({ last_login_at: new Date().toISOString() }).eq('id', accountId)
-  } else {
-    const last10 = phone.slice(-10)
-    const { data: match } = await svc.from('patients').select('full_name').ilike('phone', `%${last10}%`).limit(1).maybeSingle()
-    const { data: created, error: cErr } = await svc
-      .from('patient_accounts')
-      .insert({ phone, full_name: (match?.full_name as string) ?? null })
-      .select('id').single()
-    if (cErr || !created) return { success: false, error: cErr?.message ?? 'Could not create account' }
-    accountId = created.id as string
+// ── Forgot / reset password (delivered via Resend) ────────────────────────────
+export async function requestPatientPasswordReset(emailRaw: string): Promise<{ success: true }> {
+  const email = (emailRaw ?? '').trim().toLowerCase()
+  if (EMAIL_RE.test(email)) {
+    const svc = createServiceClient()
+    const { data: acct } = await svc.from('patient_accounts').select('id, full_name').ilike('email', email).maybeSingle()
+    if (acct) {
+      const link = portalResetUrl(makeResetToken(acct.id as string))
+      await sendPatientPasswordEmail(email, (acct.full_name as string) ?? '', link)
+    }
   }
+  // Always succeed — never reveal whether an account exists.
+  return { success: true }
+}
 
-  await setPatientSession(accountId, phone)
+export async function setPatientPassword(
+  token: string, newPassword: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  if ((newPassword ?? '').length < 8) return { success: false, error: 'Password must be at least 8 characters' }
+  const accountId = verifyResetToken(token)
+  if (!accountId) return { success: false, error: 'This reset link is invalid or has expired.' }
+
+  const svc = createServiceClient()
+  const { data: acct } = await svc.from('patient_accounts').select('id, phone').eq('id', accountId).maybeSingle()
+  if (!acct) return { success: false, error: 'Account not found' }
+  await svc.from('patient_accounts').update({ password_hash: hashPassword(newPassword) }).eq('id', accountId)
+  await setPatientSession(accountId, (acct.phone as string) ?? '')
   return { success: true }
 }
 
@@ -118,35 +163,109 @@ export async function signOutPatient(): Promise<void> {
   await clearPatientSession()
 }
 
-// ── "My hospitals" — every hospital where this phone has a patient record ────
+// ── Family members ────────────────────────────────────────────────────────────
+export interface PatientMemberView {
+  id: string; full_name: string; relationship: string | null; is_self: boolean
+  aadhaar_masked: string | null; dob: string | null; gender: string | null
+}
+
+function maskAadhaar(a: string | null): string | null {
+  if (!a) return null
+  return 'XXXX-XXXX-' + a.slice(-4)
+}
+
+export async function listMembers(): Promise<PatientMemberView[]> {
+  const session = await getPatientSession()
+  if (!session) return []
+  const svc = createServiceClient()
+  const { data } = await svc
+    .from('patient_members')
+    .select('id, full_name, relationship, is_self, aadhaar, dob, gender')
+    .eq('account_id', session.accountId)
+    .order('is_self', { ascending: false })
+    .order('created_at', { ascending: true })
+  return ((data ?? []) as Array<Record<string, unknown>>).map((m) => ({
+    id: m.id as string,
+    full_name: m.full_name as string,
+    relationship: (m.relationship as string | null) ?? null,
+    is_self: !!m.is_self,
+    aadhaar_masked: maskAadhaar(m.aadhaar as string | null),
+    dob: (m.dob as string | null) ?? null,
+    gender: (m.gender as string | null) ?? null,
+  }))
+}
+
+export async function addFamilyMember(input: {
+  full_name: string; aadhaar: string; relationship?: string | null; dob?: string | null; gender?: string | null
+}): Promise<{ success: true; memberId: string } | { success: false; error: string }> {
+  const session = await getPatientSession()
+  if (!session) return { success: false, error: 'Please log in again' }
+  const full_name = (input.full_name ?? '').trim()
+  const aadhaar = (input.aadhaar ?? '').replace(/\D/g, '')
+  if (!full_name) return { success: false, error: "Enter the family member's name" }
+  if (aadhaar.length !== 12) return { success: false, error: 'Enter a valid 12-digit Aadhaar number' }
+
+  const svc = createServiceClient()
+  const conflict = await aadhaarOwnedElsewhere(svc, aadhaar, session.accountId)
+  if (conflict) return { success: false, error: `This Aadhaar is already registered with mobile ${conflict.phone} and email ${conflict.email}. It can't be added here.` }
+  // Already in this family?
+  const { data: mine } = await svc.from('patient_members').select('id').eq('account_id', session.accountId).eq('aadhaar', aadhaar).maybeSingle()
+  if (mine) return { success: false, error: 'This family member is already added.' }
+
+  const { data: created, error } = await svc.from('patient_members').insert({
+    account_id: session.accountId, full_name, aadhaar,
+    relationship: input.relationship?.trim() || 'other',
+    dob: input.dob || null, gender: input.gender || null, is_self: false,
+  }).select('id').single()
+  if (error || !created) return { success: false, error: error?.message ?? 'Could not add member' }
+
+  await linkPatientRecords(svc, session.accountId)
+  return { success: true, memberId: created.id as string }
+}
+
+export async function removeFamilyMember(memberId: string): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await getPatientSession()
+  if (!session) return { success: false, error: 'Please log in again' }
+  const svc = createServiceClient()
+  const { data: m } = await svc.from('patient_members').select('account_id, is_self').eq('id', memberId).maybeSingle()
+  if (!m || m.account_id !== session.accountId) return { success: false, error: 'Member not found' }
+  if (m.is_self) return { success: false, error: 'You cannot remove the primary account holder.' }
+  // Unlink their hospital records but keep the clinical rows intact.
+  await svc.from('patients').update({ patient_member_id: null }).eq('patient_member_id', memberId)
+  await svc.from('patient_members').delete().eq('id', memberId)
+  return { success: true }
+}
+
+// ── "My hospitals" — every hospital record across the family, tagged by member ──
 export interface MyHospital {
   tenant_id: string
   hospital: string
   patient_id: string
   patient_name: string
   uhid: string
+  member_id: string | null
 }
 
 export async function getMyHospitals(): Promise<MyHospital[]> {
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
-  const last10 = session.phone.slice(-10)
+
+  // Self-heal: claim any matching records, then read all the family's records.
+  await linkPatientRecords(svc, session.accountId)
   const { data } = await svc
     .from('patients')
-    .select('id, full_name, uhid, phone, tenant_id, tenant:tenants(name)')
-    .ilike('phone', `%${last10}%`)
+    .select('id, full_name, uhid, tenant_id, patient_member_id, tenant:tenants(name)')
+    .eq('patient_account_id', session.accountId)
 
-  return ((data ?? []) as Array<Record<string, unknown>>)
-    // Exact normalised match (ilike is a loose prefilter).
-    .filter((p) => normalizePhone(p.phone as string) === session.phone)
-    .map((p) => ({
-      tenant_id: p.tenant_id as string,
-      hospital: (p.tenant as { name?: string } | null)?.name ?? 'Hospital',
-      patient_id: p.id as string,
-      patient_name: p.full_name as string,
-      uhid: p.uhid as string,
-    }))
+  return ((data ?? []) as Array<Record<string, unknown>>).map((p) => ({
+    tenant_id: p.tenant_id as string,
+    hospital: (p.tenant as { name?: string } | null)?.name ?? 'Hospital',
+    patient_id: p.id as string,
+    patient_name: p.full_name as string,
+    uhid: p.uhid as string,
+    member_id: (p.patient_member_id as string | null) ?? null,
+  }))
 }
 
 export async function getPatientMe(): Promise<{ accountId: string; phone: string } | null> {
@@ -168,12 +287,16 @@ export interface PatientRecords {
 }
 
 // Confirm this patient_id belongs to the logged-in phone (prevents enumeration).
-async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientId: string, phone: string): Promise<{ name: string; uhid: string; tenant: string; tenantId: string } | null> {
+async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientId: string, session: { accountId: string; phone: string }): Promise<{ name: string; uhid: string; tenant: string; tenantId: string } | null> {
   const { data } = await svc
     .from('patients')
-    .select('phone, full_name, uhid, tenant_id, tenant:tenants(name)')
+    .select('phone, patient_account_id, full_name, uhid, tenant_id, tenant:tenants(name)')
     .eq('id', patientId).maybeSingle()
-  if (!data || normalizePhone(data.phone as string) !== phone) return null
+  if (!data) return null
+  // Owned if linked to this master account (MPI) or the phone matches.
+  const linked = (data.patient_account_id as string | null) === session.accountId
+  const phoneMatch = normalizePhone(data.phone as string) === session.phone
+  if (!linked && !phoneMatch) return null
   return {
     name: data.full_name as string, uhid: data.uhid as string,
     tenant: (data.tenant as { name?: string } | null)?.name ?? 'Hospital',
@@ -185,7 +308,7 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
   const session = await getPatientSession()
   if (!session) return null
   const svc = createServiceClient()
-  const owner = await ownsPatient(svc, patientId, session.phone)
+  const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return null
 
   const [visitsRes, labRes, radRes] = await Promise.all([
@@ -261,7 +384,7 @@ export async function getPatientAppointments(patientId: string): Promise<Patient
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
-  if (!(await ownsPatient(svc, patientId, session.phone))) return []
+  if (!(await ownsPatient(svc, patientId, session))) return []
   const { data } = await svc
     .from('appointments')
     .select('id, scheduled_at, status, reason, doctor:profiles(full_name)')
@@ -279,7 +402,7 @@ export async function getPatientRequests(patientId: string): Promise<PatientRequ
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
-  if (!(await ownsPatient(svc, patientId, session.phone))) return []
+  if (!(await ownsPatient(svc, patientId, session))) return []
   const { data } = await svc
     .from('follow_ups')
     .select('id, source, suggested_date, reason, status, suggested_doctor:profiles!suggested_doctor_id(full_name)')
@@ -295,7 +418,7 @@ export async function getHospitalDoctors(patientId: string): Promise<HospitalDoc
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
-  const owner = await ownsPatient(svc, patientId, session.phone)
+  const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return []
   const { data } = await svc
     .from('profiles').select('id, full_name')
@@ -311,7 +434,7 @@ export async function requestPatientAppointment(
   const session = await getPatientSession()
   if (!session) return { success: false, error: 'Please log in again' }
   const svc = createServiceClient()
-  const owner = await ownsPatient(svc, patientId, session.phone)
+  const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return { success: false, error: 'Record not found' }
   if (!input.date) return { success: false, error: 'Please pick a preferred date' }
 
@@ -337,7 +460,7 @@ export async function getDoctorAvailability(patientId: string, doctorId: string,
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
-  const owner = await ownsPatient(svc, patientId, session.phone)
+  const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return []
 
   const { data } = await svc
@@ -383,7 +506,7 @@ export async function bookPatientAppointment(
   const session = await getPatientSession()
   if (!session) return { success: false, error: 'Please log in again' }
   const svc = createServiceClient()
-  const owner = await ownsPatient(svc, patientId, session.phone)
+  const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return { success: false, error: 'Record not found' }
   const today = new Date().toISOString().split('T')[0]
   if (!dateStr || dateStr < today) return { success: false, error: 'Pick a future date' }
@@ -417,7 +540,7 @@ export async function getQueueStatus(patientId: string, appointmentId: string): 
   const session = await getPatientSession()
   if (!session) return null
   const svc = createServiceClient()
-  if (!(await ownsPatient(svc, patientId, session.phone))) return null
+  if (!(await ownsPatient(svc, patientId, session))) return null
 
   const { data: appt } = await svc.from('appointments')
     .select('doctor_id, scheduled_at, token_no, status, doctor:profiles(full_name)')
@@ -453,7 +576,7 @@ export interface DirectoryHospital { tenantId: string; name: string; city: strin
 // Hospitals that have opted into the patient app directory. `patientId` is set
 // when the logged-in phone already has a record there (so we can link straight
 // to it instead of re-registering).
-export async function listDirectoryHospitals(search?: string): Promise<DirectoryHospital[]> {
+export async function listDirectoryHospitals(memberId: string, search?: string): Promise<DirectoryHospital[]> {
   const session = await getPatientSession()
   if (!session) return []
   const svc = createServiceClient()
@@ -465,11 +588,12 @@ export async function listDirectoryHospitals(search?: string): Promise<Directory
   if (s) q = q.or(`name.ilike.%${s}%,city.ilike.%${s}%`)
   const { data } = await q
 
-  const last10 = session.phone.slice(-10)
-  const { data: mine } = await svc.from('patients').select('id, tenant_id, phone').ilike('phone', `%${last10}%`)
+  // Existing records for THIS member (so we link straight to them).
+  const { data: mine } = await svc.from('patients')
+    .select('id, tenant_id').eq('patient_member_id', memberId)
   const myByTenant = new Map<string, string>()
   for (const p of (mine ?? []) as Array<Record<string, unknown>>) {
-    if (normalizePhone(p.phone as string) === session.phone) myByTenant.set(p.tenant_id as string, p.id as string)
+    myByTenant.set(p.tenant_id as string, p.id as string)
   }
   return ((data ?? []) as Array<Record<string, unknown>>).map((t) => ({
     tenantId: t.id as string, name: t.name as string, city: t.city as string | null,
@@ -477,25 +601,28 @@ export async function listDirectoryHospitals(search?: string): Promise<Directory
   }))
 }
 
-// Register the logged-in phone as a patient at a listed hospital. Flagged
-// self_registered (unverified) until the hospital's front desk confirms.
+// Register a family member as a patient at a listed hospital (from their master
+// profile). Flagged self_registered (unverified) until the front desk confirms.
 export async function selfRegisterPatient(
-  tenantId: string, input: { full_name: string; gender?: string | null; dob?: string | null },
+  tenantId: string, memberId: string,
 ): Promise<{ success: true; patientId: string } | { success: false; error: string }> {
   const session = await getPatientSession()
   if (!session) return { success: false, error: 'Please log in again' }
-  if (!input.full_name?.trim()) return { success: false, error: "Enter the patient's name" }
 
   const svc = createServiceClient()
+  const { data: member } = await svc
+    .from('patient_members').select('id, account_id, full_name, aadhaar, dob, gender')
+    .eq('id', memberId).maybeSingle()
+  if (!member || member.account_id !== session.accountId) return { success: false, error: 'Family member not found' }
+
   const { data: t } = await svc.from('tenants').select('id, directory_listed, status').eq('id', tenantId).maybeSingle()
   if (!t || !(t.directory_listed as boolean) || !['trial', 'active'].includes(t.status as string))
     return { success: false, error: 'This hospital is not open for online registration' }
 
-  // Already registered here with this phone → reuse it.
-  const last10 = session.phone.slice(-10)
-  const { data: existing } = await svc.from('patients').select('id, phone').eq('tenant_id', tenantId).ilike('phone', `%${last10}%`)
-  const match = ((existing ?? []) as Array<Record<string, unknown>>).find((p) => normalizePhone(p.phone as string) === session.phone)
-  if (match) return { success: true, patientId: match.id as string }
+  // Already registered here for this member → reuse it.
+  const { data: existing } = await svc.from('patients')
+    .select('id').eq('tenant_id', tenantId).eq('patient_member_id', memberId).maybeSingle()
+  if (existing) return { success: true, patientId: existing.id as string }
 
   const { data: uhid } = await svc.rpc('get_next_uhid_for', { p_tenant_id: tenantId })
   if (!uhid) return { success: false, error: 'Could not generate a UHID' }
@@ -503,8 +630,12 @@ export async function selfRegisterPatient(
   const id = crypto.randomUUID()
   const { error } = await svc.from('patients').insert({
     id, tenant_id: tenantId, uhid: uhid as string,
-    full_name: input.full_name.trim(), phone: '+' + session.phone,
-    gender: input.gender || null, dob: input.dob || null, self_registered: true,
+    full_name: member.full_name as string, phone: '+' + session.phone,
+    gender: (member.gender as string | null) || null, dob: (member.dob as string | null) || null,
+    aadhaar_no: (member.aadhaar as string | null) || null,
+    self_registered: true,
+    patient_account_id: session.accountId,
+    patient_member_id: memberId,
   })
   if (error) return { success: false, error: error.message }
   return { success: true, patientId: id }

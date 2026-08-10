@@ -6,6 +6,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { listNotifications, retryNotification } from '@/app/actions/notifications'
+import { useMessagingEnabled } from '@/context/MessagingContext'
 import type { Notification, NotificationStatus } from '@/lib/types'
 
 const STATUS_VARIANT: Record<NotificationStatus, string> = {
@@ -23,6 +24,7 @@ const CHANNEL_ICON: Record<string, React.ReactNode> = {
 interface Props { initialNotifications: Notification[] }
 
 export default function NotificationsClient({ initialNotifications }: Props) {
+  const messagingEnabled = useMessagingEnabled()
   const [notifications, setNotifications] = useState(initialNotifications)
   const [loading, setLoading]   = useState(false)
   const [retrying, setRetrying] = useState<string | null>(null)
@@ -67,6 +69,14 @@ export default function NotificationsClient({ initialNotifications }: Props) {
           </button>
         }
       />
+
+      {!messagingEnabled && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm"
+          style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+          <MessageSquare className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          WhatsApp/SMS messaging is currently disabled platform-wide. Delivery is paused until it&apos;s re-enabled.
+        </div>
+      )}
 
       {/* Status filter */}
       <div className="flex gap-1.5 mb-5 flex-wrap">

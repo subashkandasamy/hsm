@@ -20,6 +20,43 @@ export function normalizePhone(raw: string): string | null {
   return digits
 }
 
+// Password hashing via Node's built-in scrypt (stored as "salt:hash", both hex).
+export function hashPassword(pw: string): string {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const hash = crypto.scryptSync(pw, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+export function verifyPassword(pw: string, stored: string | null): boolean {
+  if (!stored) return false
+  const [salt, hash] = stored.split(':')
+  if (!salt || !hash) return false
+  const test = crypto.scryptSync(pw, salt, 64).toString('hex')
+  const a = Buffer.from(hash, 'hex'), b = Buffer.from(test, 'hex')
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+// Stateless, signed, time-limited password-reset token (no DB row needed).
+export function makeResetToken(accountId: string, ttlSeconds = 3600): string {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+  const body = Buffer.from(JSON.stringify({ sub: accountId, exp })).toString('base64url')
+  const sig = crypto.createHmac('sha256', SECRET).update(`reset.${body}`).digest('base64url')
+  return `${body}.${sig}`
+}
+
+export function verifyResetToken(token: string): string | null {
+  const [body, sig] = (token ?? '').split('.')
+  if (!body || !sig) return null
+  const expect = crypto.createHmac('sha256', SECRET).update(`reset.${body}`).digest('base64url')
+  const a = Buffer.from(sig), b = Buffer.from(expect)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
+  try {
+    const c = JSON.parse(Buffer.from(body, 'base64url').toString()) as { sub: string; exp: number }
+    if (!c.exp || c.exp < Math.floor(Date.now() / 1000)) return null
+    return c.sub
+  } catch { return null }
+}
+
 interface PatientClaims { sub: string; phone: string; iat: number; exp: number }
 
 function sign(payload: PatientClaims): string {
