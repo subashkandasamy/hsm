@@ -17,6 +17,13 @@ export const GUIDE_CONTENT: Record<string, () => Promise<GuideContentModule>> = 
 
   // Tier 2 — module guides
   'nurse-duty-roster-hospital-guide': () => import('./nurse-duty-roster-hospital-guide'),
+  'hospital-staff-scheduling-software-guide': () => import('./hospital-staff-scheduling-software-guide'),
+  'hospital-cost-estimate-quotation-guide': () => import('./hospital-cost-estimate-quotation-guide'),
+  'hospital-cashier-day-book-shift-close-guide': () => import('./hospital-cashier-day-book-shift-close-guide'),
+  'hospital-discount-policy-approval-guide': () => import('./hospital-discount-policy-approval-guide'),
+  'hospital-refund-credit-note-guide': () => import('./hospital-refund-credit-note-guide'),
+  'patient-portal-family-health-records-guide': () => import('./patient-portal-family-health-records-guide'),
+  'ophthalmology-emr-software-guide': () => import('./ophthalmology-emr-software-guide'),
   'ipd-billing-software-explained': () => import('./ipd-billing-software-explained'),
   'hospital-pharmacy-management-software-guide': () => import('./hospital-pharmacy-management-software-guide'),
   'opd-queue-token-management-guide': () => import('./opd-queue-token-management-guide'),

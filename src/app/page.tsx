@@ -5,6 +5,7 @@ import {
   Stethoscope, BedDouble, FlaskConical, Scan, Pill, Scissors,
   Droplets, Receipt, ShieldPlus, Package, Users, Mic,
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
+  CalendarClock, Eye, Smile, HeartPulse,
 } from 'lucide-react'
 import ScrollReveal from '@/components/ui/ScrollReveal'
 import MarketingNav from '@/components/marketing/MarketingNav'
@@ -48,7 +49,7 @@ function Nav() {
 
 // ── Hero ───────────────────────────────────────────────────────────────────────
 function Hero() {
-  const modules = ['OPD', 'IPD & Wards', 'Emergency', 'Lab', 'Radiology', 'Pharmacy', 'OT', 'Blood Bank', 'Billing', 'Insurance', 'HR', 'Inventory']
+  const modules = ['OPD', 'IPD & Wards', 'Emergency', 'Lab', 'Radiology', 'Pharmacy', 'OT', 'Blood Bank', 'Billing', 'Insurance', 'Scheduling', 'Patient Portal', 'HR', 'Inventory', 'Dental', 'Ophthalmology']
 
   return (
     <section className="relative overflow-hidden px-4 sm:px-6" style={{ paddingTop: '80px', paddingBottom: '100px', background: 'linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 40%, #ffffff 100%)' }}>
@@ -137,7 +138,7 @@ function Hero() {
 
 // ── Stats bar ──────────────────────────────────────────────────────────────────
 const STATS = [
-  { value: '15',   label: 'Integrated modules',       suffix: '' },
+  { value: '18',   label: 'Integrated modules',       suffix: '+' },
   { value: '50+',  label: 'Connected data tables',    suffix: '' },
   { value: '7',    label: 'Role-based access tiers',  suffix: '' },
   { value: '100%', label: 'India data residency',     suffix: '' },
@@ -170,10 +171,14 @@ const ALL_MODULES = [
   { icon: <Pill className="w-5 h-5" />,         name: 'Pharmacy',      desc: 'FEFO dispensing, POS billing, stock alerts' },
   { icon: <Scissors className="w-5 h-5" />,     name: 'Operation Theatre', desc: 'Scheduling, consumables, OT records' },
   { icon: <Droplets className="w-5 h-5" />,     name: 'Blood Bank',    desc: 'Inventory, cross-matching, issue tracking' },
-  { icon: <Receipt className="w-5 h-5" />,      name: 'Billing',       desc: 'Auto-bills, advance deposits, combined bills' },
+  { icon: <Receipt className="w-5 h-5" />,      name: 'Billing',       desc: 'GST invoices, estimates, cash book, refunds' },
   { icon: <ShieldPlus className="w-5 h-5" />,   name: 'Insurance',     desc: 'TPA claims, pre-auth, status tracking' },
+  { icon: <CalendarClock className="w-5 h-5" />, name: 'Scheduling',   desc: 'Doctor hours, nurse roster, nursing units' },
+  { icon: <HeartPulse className="w-5 h-5" />,   name: 'Patient Portal', desc: 'Family accounts, records & online booking' },
   { icon: <Package className="w-5 h-5" />,      name: 'Inventory',     desc: 'Stock levels, reorder alerts, FEFO logic' },
   { icon: <Users className="w-5 h-5" />,        name: 'HR & Payroll',  desc: 'Staff management, attendance, shifts' },
+  { icon: <Smile className="w-5 h-5" />,        name: 'Dental',        desc: 'Tooth charting, treatment plans' },
+  { icon: <Eye className="w-5 h-5" />,          name: 'Ophthalmology', desc: 'Per-eye exams, refraction, spectacle Rx' },
   { icon: <Bell className="w-5 h-5" />,         name: 'Notifications', desc: 'WhatsApp & SMS alerts to patients & staff' },
   { icon: <Mic className="w-5 h-5" />,          name: 'Speech-to-Text', desc: 'Dictate clinical notes hands-free in OPD & IPD' },
   { icon: <Smartphone className="w-5 h-5" />,   name: 'Mobile App',    desc: 'Native iOS & Android via Capacitor' },
@@ -194,7 +199,7 @@ function ModulesGrid() {
               Everything in one place
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: S9 }}>
-              15 modules. Zero silos.
+              18+ modules. Zero silos.
             </h2>
             <p className="text-base max-w-xl mx-auto" style={{ color: S5 }}>
               Every department connected. Data flows automatically so your team never enters the same thing twice.
@@ -549,9 +554,9 @@ function Features() {
         <FeatureRow
           visual={<BillingMock />}
           eyebrow="Billing & Finance"
-          heading="Bills that build themselves"
-          body="Consultation fees, lab charges, pharmacy items, OT time, room rent — pulled automatically into a single combined bill. Advance deposits tracked per admission. Insurance claims file in-platform with full TPA tracking."
-          tags={['Auto Billing', 'Combined Bills', 'Advance Deposits', 'Insurance Claims', 'TPA Integration', 'POS Pharmacy']}
+          heading="Bills that build themselves — GST-ready"
+          body="Every charge flows into one combined bill, printed as a GST-compliant tax invoice with CGST/SGST and HSN. Give patients a cost estimate before admission, control discounts with approval limits, refund via credit notes, and reconcile every rupee in a cashier day-book with shift-close. Insurance claims file in-platform with full TPA tracking."
+          tags={['GST Tax Invoice', 'Cost Estimates', 'Cash Book & Shift Close', 'Discount Approvals', 'Refunds / Credit Notes', 'Advance Deposits', 'Insurance / TPA']}
         />
 
         <FeatureRow
@@ -562,8 +567,56 @@ function Features() {
           tags={['Speech-to-Text', 'Real-time Transcription', 'OPD Notes', 'IPD Progress Notes', 'Discharge Summary', 'Chrome & Android']}
           reverse
         />
+
+        <FeatureRow
+          visual={<PatientCareMock />}
+          eyebrow="Patients & Scheduling"
+          heading="A patient app for families — and smart staff rosters"
+          body="One family login holds every member, with records and reports across hospitals and self-service appointment booking. Behind the scenes, publish doctor OPD hours, roster nurses by nursing unit (block / floor / wing), and see shift coverage flagged against nurse-to-patient ratios."
+          tags={['Family Accounts', 'Records Across Hospitals', 'Online Booking', 'Doctor OPD Hours', 'Nurse Roster', 'Nursing Units']}
+        />
       </div>
     </section>
+  )
+}
+
+function PatientCareMock() {
+  const members = [
+    { name: 'Rahul Sharma', rel: 'You',    detail: 'City Care · Revathi MC' },
+    { name: 'Anita Sharma', rel: 'Spouse', detail: 'City Care' },
+    { name: 'Aarav Sharma', rel: 'Child',  detail: 'No visits yet' },
+  ]
+  return (
+    <div className="hover-lift rounded-2xl overflow-hidden"
+      style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.07)' }}>
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: S9 }}>Patient Portal — Your family</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>+91 98••• ••••6 · 3 members</p>
+        </div>
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold"
+          style={{ background: 'rgba(13,148,136,0.1)', color: T }}>One login</span>
+      </div>
+      {members.map(({ name, rel, detail }) => (
+        <div key={name} className="px-5 py-3 flex items-center gap-3" style={{ borderBottom: `1px solid ${S2}` }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(13,148,136,0.08)', color: T }}>
+            <HeartPulse className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold" style={{ color: S9 }}>{name}
+              <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(13,148,136,0.08)', color: T }}>{rel}</span>
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>{detail}</p>
+          </div>
+          <CalendarClock className="w-4 h-4 flex-shrink-0" style={{ color: S4 }} />
+        </div>
+      ))}
+      <div className="px-5 py-3.5 flex items-center justify-between"
+        style={{ background: 'rgba(13,148,136,0.04)', borderTop: '2px solid rgba(13,148,136,0.15)' }}>
+        <p className="text-xs font-semibold" style={{ color: T }}>+ Add family member · Book appointment</p>
+      </div>
+    </div>
   )
 }
 
