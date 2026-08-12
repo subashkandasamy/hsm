@@ -1985,6 +1985,116 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     disclaimer: TM('DocPulse'),
     updated: '2026-08-04',
   },
+
+  'insta-alternative': {
+    slug: 'insta-alternative',
+    eyebrow: 'Insta Alternative',
+    group: GROUP_COMPARE,
+    tagline: 'Weighing Insta by Practo? See how Uyirly runs the whole hospital on one system — and what to compare.',
+    metaTitle: 'Insta Alternative for Hospitals & Clinics — Uyirly',
+    description:
+      'Looking for an Insta (by Practo) alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial.',
+    keywords: [
+      'insta alternative',
+      'alternative to insta',
+      'insta by practo alternative',
+      'insta hms competitors',
+      'insta vs uyirly',
+      'hospital software like insta',
+    ],
+    primaryKeyword: 'insta alternative',
+    h1: 'An Insta alternative for hospitals and clinics',
+    subhead:
+      'Insta (by Practo) is a well-established hospital information system used across India, with a strength in larger hospitals. If it’s on your shortlist, comparing a second option is time well spent — especially if you run a clinic or nursing home, where fit and pricing matter as much as feature depth. Here’s how Uyirly approaches the same job, and what to check before you commit.',
+    heroBullets: [
+      'Every department on one shared patient record and bill',
+      'Built to fit clinics & nursing homes, not just large hospitals',
+      'Flat monthly pricing — no per-bed or per-user metering',
+      '30-day free trial, no credit card',
+    ],
+    sections: [
+      {
+        h2: 'Match the software to your size',
+        body:
+          'Some hospital systems are built for large multi-specialty hospitals and can feel heavy in a clinic or nursing home — more modules to configure, more per-user and per-bed cost, a longer rollout. The right question isn’t “which has the longest feature list,” it’s “which fits how we actually run, at our size, without paying for scale we don’t have yet.” Judge every option — including Uyirly — on that fit, not on the demo for a 500-bed hospital.',
+      },
+      {
+        h2: 'How Uyirly runs the whole hospital',
+        body:
+          'Uyirly connects OPD, IPD, pharmacy, lab (LIS), radiology (RIS), billing, insurance/TPA, blood bank, OT and staff on one shared patient record. A patient is registered once and flows through consultation, tests, medicines and billing without re-entry; bed charges accrue daily and the discharge bill and insurance claim build themselves in real time. It’s the same all-in-one integration a large hospital needs, packaged so a clinic can switch it on in days.',
+        preview: 'dashboard',
+        bullets: [
+          'One patient and one bill across every department',
+          'GST billing, TPA cashless claims, ABDM/ABHA-ready records',
+          'Patient app with family accounts — reports & bills online',
+        ],
+      },
+      {
+        h2: 'Uyirly at a glance — and what to confirm',
+        body:
+          'Where Uyirly stands on the things that decide the choice. We speak only for our own product — please confirm Insta’s current features and pricing with them directly.',
+        table: {
+          headers: ['What to compare', 'Uyirly', 'Insta'],
+          rows: [
+            ['Best-fit size', 'Clinics, nursing homes & hospitals', 'Confirm with vendor'],
+            ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
+            ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['Patient app', 'Family accounts, reports & bills online', 'Confirm with vendor'],
+            ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
+          ],
+        },
+      },
+      {
+        h2: 'The comparison that tells you the truth',
+        body:
+          'Run the same real scenario through each system: register a patient, order a lab test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Then ask for the total monthly cost at your current size and at double your size — a flat plan and a per-bed/user plan diverge fast. Whichever handles the workflow with the least friction, at a price that stays predictable as you grow, is your answer.',
+        bullets: [
+          'Does one patient and one bill flow through every department?',
+          'Is pricing flat, or does it climb with beds and users?',
+          'Can you trial it on your own hospital before committing?',
+        ],
+      },
+      {
+        h2: 'How to compare in a week',
+        body:
+          'The fairest comparison is a short, real test — not a feature spreadsheet. See our [buyer’s guide](/best-hospital-management-software-in-india) for the full method.',
+        steps: [
+          { title: 'Run the same scenario in each', body: 'Register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and insurance claim ready.' },
+          { title: 'Check the pricing model', body: 'Ask for the total monthly cost at your current size and at double it — flat vs per-bed/user changes the answer fast.' },
+          { title: 'Let your staff try it', body: 'A front-desk person and a nurse will tell you in minutes which is easier to use day to day.' },
+          { title: 'Decide on fit', body: 'Pick the one that handled your workflow with the least friction. Start a [free Uyirly trial](/signup) to include it in the test.' },
+        ],
+      },
+      {
+        h2: 'Why Uyirly could be your alternative',
+        body:
+          'Uyirly’s bet is simple: all-in-one integration that fits a clinic as well as a hospital, flat monthly pricing with no per-bed fees, native India-fit (GST, TPA, ABDM, NABH), a patient app your patients actually use, and a 30-day free trial with no card. If you’re looking beyond Insta because you want something that fits your size and keeps pricing predictable, it’s worth a trial on your own patients — the most honest comparison you can run.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Is Uyirly a good alternative to Insta?',
+        a: 'It depends on your hospital’s size, specialties and budget. Uyirly is an all-in-one cloud HMS that fits clinics and nursing homes as well as hospitals, with flat pricing and a 30-day free trial — so the fairest way to judge it is to run your real workflows through it. Please verify any other product’s current features and pricing with them directly.',
+      },
+      {
+        q: 'What should I compare between Uyirly and Insta?',
+        a: 'Focus on best-fit size for your hospital, integration (does one patient and one bill flow through every department?), the pricing model (flat vs per-bed/user), India-fit (GST, TPA, ABDM, NABH handled natively), and whether you can trial the software on real patients before committing.',
+      },
+      {
+        q: 'Does Uyirly offer a free trial?',
+        a: 'Yes — a 30-day free trial with no credit card, so you can run your real front desk, consultations and billing before paying anything.',
+      },
+    ],
+    related: [
+      { label: 'Clinic management software', href: '/clinic-management-software' },
+      { label: 'Nursing home management software', href: '/nursing-home-management-software' },
+      { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    disclaimer: TM('Insta'),
+    updated: '2026-08-12',
+  },
 }
 
 export function solutionSlugs(): string[] {
