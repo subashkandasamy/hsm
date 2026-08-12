@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { upsertTenantProfile, uploadTenantLogo } from '@/app/actions/tenantProfile'
+import { upsertTenantProfile, uploadTenantLogo, setTenantCode } from '@/app/actions/tenantProfile'
 import type { TenantProfile } from '@/lib/types'
 import GlassCard from '@/components/ui/GlassCard'
+
+// Client-side mirror of SQL tenant_doc_prefix() / server computePrefix().
+function previewPrefix(code: string, slug: string): string {
+  const src = code.trim() ? code : slug
+  return (src.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()) || 'HOSP'
+}
 
 type Field = { key: keyof Omit<TenantProfile, 'tenant_id' | 'updated_at' | 'logo_url'>; label: string; placeholder?: string }
 
@@ -60,7 +66,10 @@ function initValues(profile: TenantProfile | null): FormValues {
   return out
 }
 
-export default function TenantProfileForm({ initialProfile }: { initialProfile: TenantProfile | null }) {
+export default function TenantProfileForm({ initialProfile, initialCode }: {
+  initialProfile: TenantProfile | null
+  initialCode: { code: string | null; slug: string; prefix: string }
+}) {
   const [values, setValues] = useState<FormValues>(initValues(initialProfile))
   const [logoUrl, setLogoUrl] = useState<string | null>(initialProfile?.logo_url ?? null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
@@ -69,6 +78,20 @@ export default function TenantProfileForm({ initialProfile }: { initialProfile: 
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Hospital code (document-number prefix) — writes to tenants, so its own save.
+  const [code, setCode] = useState<string>(initialCode.code ?? '')
+  const [codeSaving, setCodeSaving] = useState(false)
+  const [codeMsg, setCodeMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const effectivePrefix = previewPrefix(code, initialCode.slug)
+
+  async function handleSaveCode() {
+    setCodeSaving(true)
+    setCodeMsg(null)
+    const res = await setTenantCode(code)
+    setCodeSaving(false)
+    setCodeMsg(res.success ? { ok: true, text: 'Hospital code saved.' } : { ok: false, text: res.error })
+  }
 
   // GST tax-invoice config (boolean + number, so kept out of the text-field map)
   const [gstEnabled, setGstEnabled]   = useState<boolean>(initialProfile?.gst_enabled ?? false)
@@ -155,6 +178,51 @@ export default function TenantProfileForm({ initialProfile }: { initialProfile: 
               </p>
             )}
           </div>
+        </div>
+      </GlassCard>
+
+      {/* Hospital code / document-number prefix */}
+      <GlassCard className="p-6">
+        <p className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>Hospital Code (ID prefix)</p>
+        <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+          A short code that prefixes every new patient UHID, bill, estimate and credit note — so your numbers are
+          distinct from other hospitals (useful across the patient app, exports and support). Existing numbers are
+          unchanged; only new ones use it. Leave blank to fall back to your subdomain (<strong>{initialCode.slug || '—'}</strong>).
+        </p>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ minWidth: '180px' }}>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Code (2–8 letters/digits)</label>
+            <input
+              type="text"
+              value={code}
+              placeholder="e.g. CITY"
+              maxLength={8}
+              onChange={(e) => { setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); setCodeMsg(null) }}
+              className="w-full px-3 py-2.5 rounded-xl text-sm"
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', letterSpacing: '1px', fontWeight: 600 }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: '220px' }}>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Preview</label>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontFamily: 'monospace', fontSize: '13px', color: '#0F766E' }}>
+              <span style={{ background: '#F0FDF9', border: '1px solid #CCFBF1', borderRadius: '8px', padding: '6px 10px' }}>{effectivePrefix}-UH-2026-00005</span>
+              <span style={{ background: '#F0FDF9', border: '1px solid #CCFBF1', borderRadius: '8px', padding: '6px 10px' }}>{effectivePrefix}-BILL-2026-00046</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '16px' }}>
+          <button
+            onClick={handleSaveCode}
+            disabled={codeSaving}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer', opacity: codeSaving ? 0.6 : 1 }}>
+            {codeSaving ? 'Saving…' : 'Save Code'}
+          </button>
+          {codeMsg && (
+            <span className="text-sm" style={{ color: codeMsg.ok ? '#10B981' : '#DC2626' }}>{codeMsg.text}</span>
+          )}
         </div>
       </GlassCard>
 

@@ -31,7 +31,7 @@ export async function getSetupProgress(): Promise<SetupProgress> {
   // Tenant-level flags via service role (tenants row isn't tenant-user-readable via RLS).
   const { data: tenant } = await svc
     .from('tenants')
-    .select('enabled_modules, onboarding_dismissed_at')
+    .select('enabled_modules, onboarding_dismissed_at, code')
     .eq('id', actor.tenant_id)
     .maybeSingle()
 
@@ -88,6 +88,13 @@ export async function getSetupProgress(): Promise<SetupProgress> {
       description: 'Add your logo, address and contact details — they appear on bills and reports.',
       href: '/settings/profile',
       done: !!(profile?.name && profile?.address_line1),
+    },
+    {
+      key: 'code', show: true,
+      title: 'Set your hospital code',
+      description: 'A short code that prefixes your patient IDs and bills (e.g. CITY-UH-2026-00005).',
+      href: '/settings/profile',
+      done: !!tenant?.code,
     },
     {
       key: 'team', show: true,

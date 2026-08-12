@@ -37,6 +37,54 @@ export async function upsertTenantProfile(
   return { success: true }
 }
 
+// ── Hospital code (document-number prefix) ────────────────────────────────────
+// Mirrors the SQL tenant_doc_prefix(): sanitise to A-Z0-9, uppercase, and fall
+// back to the slug when no code is set. Keep this in sync with migration 0128.
+function computePrefix(code: string | null, slug: string): string {
+  const src = (code && code.trim()) ? code : slug
+  const cleaned = src.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+  return cleaned || 'HOSP'
+}
+
+export async function getTenantCode(): Promise<{ code: string | null; slug: string; prefix: string }> {
+  const actor = await getActorProfile()
+  const svc = createServiceClient()
+  const { data } = await svc.from('tenants').select('code, slug').eq('id', actor.tenant_id).maybeSingle()
+  const code = (data?.code as string | null) ?? null
+  const slug = (data?.slug as string) ?? ''
+  return { code, slug, prefix: computePrefix(code, slug) }
+}
+
+export async function setTenantCode(
+  rawCode: string
+): Promise<{ success: true; prefix: string } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'settings:write')
+
+  const code = rawCode.trim().toUpperCase()
+  // Empty clears it → generators fall back to the slug.
+  if (code && !/^[A-Z0-9]{2,8}$/.test(code)) {
+    return { success: false, error: 'Code must be 2–8 letters or digits (A–Z, 0–9), no spaces.' }
+  }
+
+  const svc = createServiceClient()
+
+  // Enforce global uniqueness (case-insensitive) ourselves for a clean message —
+  // the DB has a backstop unique index too.
+  if (code) {
+    const { data: clash } = await svc
+      .from('tenants').select('id').ilike('code', code).neq('id', actor.tenant_id).maybeSingle()
+    if (clash) return { success: false, error: `Code “${code}” is already in use by another hospital.` }
+  }
+
+  const { data: tenant, error } = await svc
+    .from('tenants').update({ code: code || null }).eq('id', actor.tenant_id).select('code, slug').single()
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'tenant_code', actor.tenant_id, { code: code || null })
+  return { success: true, prefix: computePrefix((tenant?.code as string | null) ?? null, (tenant?.slug as string) ?? '') }
+}
+
 // ── Patient app directory opt-in ──────────────────────────────────────────────
 export async function getDirectoryListing(): Promise<{ listed: boolean; city: string | null }> {
   const actor = await getActorProfile()
