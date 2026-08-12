@@ -182,8 +182,13 @@ export default function AppointmentsTab({ patientId, doctors, appointments, requ
                           <div><p style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>{queue.completed}</p><p style={{ fontSize: 11, color: '#94A3B8' }}>completed</p></div>
                           <div><p style={{ fontSize: 22, fontWeight: 700, color: '#B45309' }}>{queue.ahead}</p><p style={{ fontSize: 11, color: '#94A3B8' }}>ahead of you</p></div>
                         </div>
-                        <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', marginTop: 8 }}>
-                          {queue.ahead === 0 ? "You're next!" : `About ${queue.estWaitMin} min wait`} · {queue.total} booked today
+                        <p style={{ fontSize: 12, textAlign: 'center', marginTop: 8, fontWeight: queue.status === 'in_consultation' ? 700 : 400, color: queue.status === 'in_consultation' ? TEAL : '#475569' }}>
+                          {queue.status === 'in_consultation'
+                            ? '🩺 The doctor is seeing you now'
+                            : queue.status === 'done'
+                              ? '✓ Consultation complete'
+                              : queue.ahead === 0 ? "You're next!" : `About ${queue.estWaitMin} min wait`}
+                          {queue.status !== 'in_consultation' && queue.status !== 'done' ? ` · ${queue.total} booked today` : ''}
                         </p>
                         <button onClick={async () => { setQueueBusy(true); setQueue(await getQueueStatus(patientId, a.id)); setQueueBusy(false) }}
                           style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 5, margin: '8px auto 0', padding: '5px 10px', borderRadius: 8, background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', fontSize: 12, cursor: 'pointer' }}>

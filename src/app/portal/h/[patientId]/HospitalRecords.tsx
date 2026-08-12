@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Stethoscope, Pill, FlaskConical, Scan, CalendarClock } from 'lucide-react'
-import { type PatientRecords, type PatientAppointment, type PatientRequest, type HospitalDoctor } from '@/app/actions/patientPortal'
+import { ArrowLeft, Stethoscope, Pill, FlaskConical, Scan, CalendarClock, Printer, ImageIcon, Loader2 } from 'lucide-react'
+import { type PatientRecords, type PatientAppointment, type PatientRequest, type HospitalDoctor, getPortalScanImageUrl } from '@/app/actions/patientPortal'
 import AppointmentsTab from './AppointmentsTab'
 
 const TEAL = '#0D9488'
@@ -13,6 +13,21 @@ function fmt(d: string): string {
   try { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) } catch { return d }
 }
 const FLAG_COLOR: Record<string, string> = { high: '#DC2626', low: '#B45309', normal: '#15803D', pending: '#94A3B8' }
+const FLAG_PILL: Record<string, { bg: string; color: string; label: string }> = {
+  high: { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
+  low: { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
+  normal: { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
+  pending: { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
+}
+
+function printBtn(href: string) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, background: TEAL, color: '#fff', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
+      <Printer style={{ width: 13, height: 13 }} /> Print / Download
+    </a>
+  )
+}
 
 interface Props {
   patientId: string
@@ -104,17 +119,47 @@ export default function HospitalRecords({ patientId, records, appointments, requ
         {/* Lab */}
         {tab === 'lab' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {records.labs.length === 0 ? empty('No lab reports.') : records.labs.map((l) => (
-              <div key={l.id} style={card}>
-                <p style={{ fontSize: 12, color: '#94A3B8', marginBottom: 8 }}>{fmt(l.date)} · {l.status}</p>
-                {l.items.map((it, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span style={{ fontSize: 13, color: '#0F172A' }}>{it.test}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: FLAG_COLOR[it.flag] ?? '#0F172A' }}>{it.result ?? '—'}{it.unit ? ` ${it.unit}` : ''}</span>
+            {records.labs.length === 0 ? empty('No lab reports.') : records.labs.map((l) => {
+              const hasResults = l.items.some((it) => it.result != null)
+              return (
+                <div key={l.id} style={card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(l.date)} · {l.status}</span>
+                    {hasResults && printBtn(`/portal/print/lab/${l.id}`)}
                   </div>
-                ))}
-              </div>
-            ))}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: '#94A3B8', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          <th style={{ padding: '4px 8px 6px 0', fontWeight: 700 }}>Investigation</th>
+                          <th style={{ padding: '4px 8px 6px', fontWeight: 700, textAlign: 'right' }}>Result</th>
+                          <th style={{ padding: '4px 8px 6px', fontWeight: 700 }}>Reference</th>
+                          <th style={{ padding: '4px 0 6px 8px', fontWeight: 700, textAlign: 'center' }}>Flag</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {l.items.map((it, i) => {
+                          const pill = FLAG_PILL[it.flag] ?? FLAG_PILL.pending
+                          const abnormal = it.flag === 'high' || it.flag === 'low'
+                          return (
+                            <tr key={i} style={{ borderTop: '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '7px 8px 7px 0', color: '#0F172A', fontWeight: 600 }}>{it.test}</td>
+                              <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: abnormal ? 800 : 600, color: abnormal ? (FLAG_COLOR[it.flag] ?? '#0F172A') : '#0F172A' }}>
+                                {it.result ?? '—'}{it.unit ? ` ${it.unit}` : ''}
+                              </td>
+                              <td style={{ padding: '7px 8px', color: '#64748B' }}>{it.reference ?? '—'}</td>
+                              <td style={{ padding: '7px 0 7px 8px', textAlign: 'center' }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: pill.bg, color: pill.color }}>{pill.label}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -122,17 +167,56 @@ export default function HospitalRecords({ patientId, records, appointments, requ
         {tab === 'radiology' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {records.radiology.length === 0 ? empty('No scans.') : records.radiology.map((r) => (
-              <div key={r.id} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{r.test}</span>
-                  <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(r.date)} · {r.status}</span>
-                </div>
-                {r.report ? <p style={{ fontSize: 13, color: '#475569', whiteSpace: 'pre-wrap' }}>{r.report}</p> : <p style={{ fontSize: 13, color: '#94A3B8' }}>Report pending.</p>}
-              </div>
+              <ScanCard key={r.id} scan={r} />
             ))}
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+function ScanCard({ scan: r }: { scan: PatientRecords['radiology'][number] }) {
+  const [img, setImg] = useState<{ url: string; isPdf: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const hasContent = !!r.report || r.hasImage
+
+  async function loadImage() {
+    setLoading(true)
+    try {
+      const res = await getPortalScanImageUrl(r.id)
+      if (res.url) setImg({ url: res.url, isPdf: res.isPdf })
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{r.test}</span>
+        <span style={{ fontSize: 12, color: '#94A3B8', whiteSpace: 'nowrap' }}>{fmt(r.date)} · {r.status}</span>
+      </div>
+      {r.report ? <p style={{ fontSize: 13, color: '#475569', whiteSpace: 'pre-wrap' }}>{r.report}</p> : <p style={{ fontSize: 13, color: '#94A3B8' }}>Report pending.</p>}
+
+      {img && !img.isPdf && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={img.url} alt={`${r.test} scan`} style={{ marginTop: 10, maxWidth: '100%', maxHeight: 360, objectFit: 'contain', borderRadius: 8, border: '1px solid #E2E8F0' }} />
+      )}
+      {img && img.isPdf && (
+        <a href={img.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 13, color: TEAL, fontWeight: 600 }}>Open PDF scan ↗</a>
+      )}
+
+      {hasContent && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          {r.hasImage && !img && (
+            <button onClick={loadImage} disabled={loading}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: loading ? 'default' : 'pointer' }}>
+              {loading ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <ImageIcon style={{ width: 13, height: 13 }} />}
+              {loading ? 'Loading…' : 'View scan image'}
+            </button>
+          )}
+          {printBtn(`/portal/print/radiology/${r.id}`)}
+        </div>
+      )}
     </div>
   )
 }

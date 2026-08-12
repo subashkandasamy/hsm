@@ -282,8 +282,8 @@ export interface PatientRecords {
     complaint: string | null; diagnosis: string | null; notes: string | null
     prescriptions: Array<{ drug: string; dosage: string | null; frequency: string | null; duration: string | null; instructions: string | null }>
   }>
-  labs: Array<{ id: string; date: string; status: string; items: Array<{ test: string; result: string | null; unit: string | null; flag: string }> }>
-  radiology: Array<{ id: string; date: string; status: string; test: string; report: string | null }>
+  labs: Array<{ id: string; date: string; status: string; items: Array<{ test: string; result: string | null; unit: string | null; reference: string | null; flag: string }> }>
+  radiology: Array<{ id: string; date: string; status: string; test: string; report: string | null; hasImage: boolean }>
 }
 
 // Confirm this patient_id belongs to the logged-in phone (prevents enumeration).
@@ -316,10 +316,10 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       .select('id, type, visit_date, complaint, diagnosis, notes, doctor:profiles(full_name)')
       .eq('patient_id', patientId).order('visit_date', { ascending: false }),
     svc.from('lab_orders')
-      .select('id, status, ordered_at, reported_at, items:lab_order_items(result_value, result_text, unit, flag, test:lab_tests_catalog(name))')
+      .select('id, status, ordered_at, reported_at, items:lab_order_items(result_value, result_text, unit, flag, test:lab_tests_catalog(name, unit, reference_range))')
       .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
     svc.from('radiology_orders')
-      .select('id, status, ordered_at, reported_at, report, test:radiology_catalog(name)')
+      .select('id, status, ordered_at, reported_at, report, image_url, test:radiology_catalog(name)')
       .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
   ])
 
@@ -358,12 +358,16 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       id: l.id as string,
       date: (l.reported_at ?? l.ordered_at) as string,
       status: l.status as string,
-      items: ((l.items ?? []) as Array<Record<string, unknown>>).map((it) => ({
-        test: (it.test as { name?: string } | null)?.name ?? 'Test',
-        result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
-        unit: it.unit as string | null,
-        flag: it.flag as string,
-      })),
+      items: ((l.items ?? []) as Array<Record<string, unknown>>).map((it) => {
+        const t = it.test as { name?: string; unit?: string | null; reference_range?: string | null } | null
+        return {
+          test: t?.name ?? 'Test',
+          result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
+          unit: (it.unit as string | null) ?? (t?.unit ?? null),
+          reference: t?.reference_range ?? null,
+          flag: it.flag as string,
+        }
+      }),
     })),
     radiology: ((radRes.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       id: r.id as string,
@@ -371,8 +375,104 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       status: r.status as string,
       test: (r.test as { name?: string } | null)?.name ?? 'Study',
       report: r.report as string | null,
+      hasImage: !!(r.image_url as string | null),
     })),
   }
+}
+
+// ── Printable reports (patient-owned) ─────────────────────────────────────────
+// The staff /print routes are behind dashboard auth; the portal needs its own
+// ownership-verified fetchers that reuse the same presentational components.
+const PORTAL_RADIOLOGY_BUCKET = 'radiology'
+const PORTAL_SIGNED_URL_EXPIRY = 60 * 60 // 1 hour
+
+// Load an order by id, then confirm the logged-in family owns its patient.
+async function ownedOrderPatient(
+  svc: ReturnType<typeof createServiceClient>,
+  table: 'lab_orders' | 'radiology_orders',
+  orderId: string,
+): Promise<{ owner: { name: string; uhid: string; tenant: string; tenantId: string }; patientId: string } | null> {
+  const session = await getPatientSession()
+  if (!session) return null
+  const { data } = await svc.from(table).select('patient_id').eq('id', orderId).maybeSingle()
+  const patientId = (data?.patient_id as string | null) ?? null
+  if (!patientId) return null
+  const owner = await ownsPatient(svc, patientId, session)
+  if (!owner) return null
+  return { owner, patientId }
+}
+
+async function portalTenantProfile(svc: ReturnType<typeof createServiceClient>, tenantId: string) {
+  const { data } = await svc.from('tenant_profiles').select('*').eq('tenant_id', tenantId).maybeSingle()
+  return data ?? null
+}
+
+async function portalPatientDemographics(svc: ReturnType<typeof createServiceClient>, patientId: string) {
+  const { data } = await svc.from('patients')
+    .select('id, full_name, uhid, dob, gender, phone').eq('id', patientId).maybeSingle()
+  return data ?? null
+}
+
+export async function getPortalLabReport(orderId: string): Promise<{
+  order: unknown; patient: unknown; tenantProfile: unknown
+} | null> {
+  const svc = createServiceClient()
+  const owned = await ownedOrderPatient(svc, 'lab_orders', orderId)
+  if (!owned) return null
+  const [{ data: order }, tenantProfile, patient] = await Promise.all([
+    svc.from('lab_orders')
+      .select('*, patient:patients(id,full_name,uhid), orderer:profiles(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
+      .eq('id', orderId).maybeSingle(),
+    portalTenantProfile(svc, owned.owner.tenantId),
+    portalPatientDemographics(svc, owned.patientId),
+  ])
+  if (!order) return null
+  return { order, patient, tenantProfile }
+}
+
+export async function getPortalRadiologyReport(orderId: string): Promise<{
+  order: unknown; patient: unknown; tenantProfile: unknown; imageUrl: string | null; imageIsPdf: boolean
+} | null> {
+  const svc = createServiceClient()
+  const owned = await ownedOrderPatient(svc, 'radiology_orders', orderId)
+  if (!owned) return null
+  const [{ data: order }, tenantProfile, patient] = await Promise.all([
+    svc.from('radiology_orders')
+      .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles(id,full_name)')
+      .eq('id', orderId).maybeSingle(),
+    portalTenantProfile(svc, owned.owner.tenantId),
+    portalPatientDemographics(svc, owned.patientId),
+  ])
+  if (!order) return null
+
+  // Sign the scan image (same PHI-safe scheme as staff getRadiologyImageUrl).
+  let imageUrl: string | null = null
+  let imageIsPdf = false
+  const stored = (order.image_url as string | null) ?? null
+  if (stored) {
+    imageIsPdf = stored.toLowerCase().split('?')[0].endsWith('.pdf')
+    if (/^https?:\/\//i.test(stored)) {
+      imageUrl = stored
+    } else {
+      const { data } = await svc.storage.from(PORTAL_RADIOLOGY_BUCKET).createSignedUrl(stored, PORTAL_SIGNED_URL_EXPIRY)
+      imageUrl = data?.signedUrl ?? null
+    }
+  }
+  return { order, patient, tenantProfile, imageUrl, imageIsPdf }
+}
+
+// Lightweight signed-URL fetch for inline scan viewing in the Scans tab.
+export async function getPortalScanImageUrl(orderId: string): Promise<{ url: string | null; isPdf: boolean }> {
+  const svc = createServiceClient()
+  const owned = await ownedOrderPatient(svc, 'radiology_orders', orderId)
+  if (!owned) return { url: null, isPdf: false }
+  const { data: order } = await svc.from('radiology_orders').select('image_url').eq('id', orderId).maybeSingle()
+  const stored = (order?.image_url as string | null) ?? null
+  if (!stored) return { url: null, isPdf: false }
+  const isPdf = stored.toLowerCase().split('?')[0].endsWith('.pdf')
+  if (/^https?:\/\//i.test(stored)) return { url: stored, isPdf }
+  const { data } = await svc.storage.from(PORTAL_RADIOLOGY_BUCKET).createSignedUrl(stored, PORTAL_SIGNED_URL_EXPIRY)
+  return { url: data?.signedUrl ?? null, isPdf }
 }
 
 // ── Appointments & requests at one hospital (Phase 4) ─────────────────────────
@@ -526,13 +626,46 @@ export async function bookPatientAppointment(
     .eq('doctor_id', doctorId).gte('scheduled_at', dayLo).lte('scheduled_at', dayHi).neq('status', 'cancelled')
   const token = (existing ?? []).reduce((m, r) => Math.max(m, (r.token_no as number) ?? 0), 0) + 1
 
+  const apptId = crypto.randomUUID()
   const { error } = await svc.from('appointments').insert({
-    id: crypto.randomUUID(), tenant_id: owner.tenantId, patient_id: patientId, doctor_id: doctorId,
+    id: apptId, tenant_id: owner.tenantId, patient_id: patientId, doctor_id: doctorId,
     department_id: null, scheduled_at: `${dateStr}T${startTime ?? '10:00'}:00`,
     token_no: token, status: 'booked', reason: 'Booked via patient app',
   })
   if (error) return { success: false, error: error.message }
+
+  // Raise the consultation bill (unpaid) at booking, like a staff booking does —
+  // the fee is collected at the counter; a no-show auto-cancels this bill.
+  const fee = await resolvePortalConsultFee(svc, owner.tenantId, doctorId)
+  if (fee > 0) {
+    const { data: billNoData } = await svc.rpc('get_next_bill_no', { p_tenant_id: owner.tenantId })
+    if (billNoData) {
+      const billId = crypto.randomUUID()
+      const { error: billErr } = await svc.from('bills').insert({
+        id: billId, tenant_id: owner.tenantId, patient_id: patientId, appointment_id: apptId,
+        bill_no: billNoData as string, subtotal: fee, discount: 0, tax: 0, total: fee, paid: 0, status: 'unpaid',
+      })
+      if (!billErr) {
+        await svc.from('bill_items').insert({
+          id: crypto.randomUUID(), tenant_id: owner.tenantId, bill_id: billId,
+          source: 'consultation', ref_id: apptId, description: 'Consultation fee',
+          qty: 1, unit_price: fee, amount: fee,
+        })
+      }
+    }
+  }
   return { success: true, token }
+}
+
+// Consultation fee for a doctor (service-role): staff fee → tariff default → 300.
+async function resolvePortalConsultFee(
+  svc: ReturnType<typeof createServiceClient>, tenantId: string, doctorId: string,
+): Promise<number> {
+  const { data: sp } = await svc.from('staff_profiles')
+    .select('consultation_fee').eq('profile_id', doctorId).eq('tenant_id', tenantId).maybeSingle()
+  if (sp?.consultation_fee != null && (sp.consultation_fee as number) > 0) return sp.consultation_fee as number
+  const { data: tariff } = await svc.from('tariffs').select('amount').eq('key', 'default_consultation_fee').maybeSingle()
+  return (tariff?.amount as number) ?? 300
 }
 
 // Live queue status for one of the patient's appointments.
@@ -546,6 +679,15 @@ export async function getQueueStatus(patientId: string, appointmentId: string): 
     .select('doctor_id, scheduled_at, token_no, status, doctor:profiles(full_name)')
     .eq('id', appointmentId).eq('patient_id', patientId).maybeSingle()
   if (!appt) return null
+
+  // The appointment stays "checked_in" while the doctor is actually consulting —
+  // the live signal is the visit. Reflect it so the patient sees the right state.
+  let effectiveStatus = appt.status as string
+  if (effectiveStatus !== 'done' && effectiveStatus !== 'cancelled') {
+    const { data: visit } = await svc.from('visits')
+      .select('status').eq('appointment_id', appointmentId).maybeSingle()
+    if (visit) effectiveStatus = (visit.status as string) === 'open' ? 'in_consultation' : 'done'
+  }
 
   const dateStr = (appt.scheduled_at as string).split('T')[0]
   const myToken = (appt.token_no as number) ?? 0
@@ -566,7 +708,7 @@ export async function getQueueStatus(patientId: string, appointmentId: string): 
   }
   return {
     token: myToken, date: dateStr, doctor: (appt.doctor as { full_name?: string } | null)?.full_name ?? '',
-    status: appt.status as string, completed, ahead, total, estWaitMin: ahead * 10,
+    status: effectiveStatus, completed, ahead, total, estWaitMin: ahead * 10,
   }
 }
 
