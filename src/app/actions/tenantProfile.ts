@@ -69,12 +69,19 @@ export async function setTenantCode(
 
   const svc = createServiceClient()
 
-  // Enforce global uniqueness (case-insensitive) ourselves for a clean message —
-  // the DB has a backstop unique index too.
-  if (code) {
-    const { data: clash } = await svc
-      .from('tenants').select('id').ilike('code', code).neq('id', actor.tenant_id).maybeSingle()
-    if (clash) return { success: false, error: `Code “${code}” is already in use by another hospital.` }
+  // Uniqueness must be on the EFFECTIVE prefix, not the raw code — otherwise a
+  // code could collide with another tenant's slug-derived fallback (e.g. code
+  // "CITY" vs a tenant whose slug is "city" with no code set). Compare the prefix
+  // this change would produce against every other tenant's effective prefix.
+  // (The DB unique index on code is a backstop for the raw code-vs-code case.)
+  const { data: allTenants } = await svc.from('tenants').select('id, code, slug')
+  const self = (allTenants ?? []).find((t) => t.id === actor.tenant_id)
+  const candidate = computePrefix(code || null, (self?.slug as string) ?? '')
+  const clash = (allTenants ?? []).find(
+    (t) => t.id !== actor.tenant_id && computePrefix(t.code as string | null, (t.slug as string) ?? '') === candidate
+  )
+  if (clash) {
+    return { success: false, error: `Prefix “${candidate}” is already used by another hospital — pick a different code.` }
   }
 
   const { data: tenant, error } = await svc
