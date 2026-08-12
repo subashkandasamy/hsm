@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
-  CheckCircle, ArrowRight, X, Star, Activity,
+  CheckCircle, ArrowRight, X, Activity,
   Stethoscope, BedDouble, FlaskConical, Scan, Pill, Scissors,
   Droplets, Receipt, ShieldPlus, Package, Users, Mic,
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
@@ -96,7 +96,7 @@ function Hero() {
         <div style={{ animation: 'fadeInUp 0.6s ease 0.2s both' }}>
           <p className="max-w-2xl mx-auto mb-10 leading-relaxed" style={{ color: S5, fontSize: 'clamp(1.1rem, 2vw, 1.35rem)' }}>
             OPD to discharge, lab to pharmacy, billing to insurance — all connected in real time.
-            Built for Indian hospitals. DPDP Act aligned. Native mobile app included.
+            Built for Indian hospitals. DPDP Act aligned. Works on any device.
           </p>
         </div>
 
@@ -181,7 +181,7 @@ const ALL_MODULES = [
   { icon: <Eye className="w-5 h-5" />,          name: 'Ophthalmology', desc: 'Per-eye exams, refraction, spectacle Rx' },
   { icon: <Bell className="w-5 h-5" />,         name: 'Notifications', desc: 'WhatsApp & SMS alerts to patients & staff' },
   { icon: <Mic className="w-5 h-5" />,          name: 'Speech-to-Text', desc: 'Dictate clinical notes hands-free in OPD & IPD' },
-  { icon: <Smartphone className="w-5 h-5" />,   name: 'Mobile App',    desc: 'Native iOS & Android via Capacitor' },
+  { icon: <Smartphone className="w-5 h-5" />,   name: 'Mobile App',    desc: 'Full web app today · native iOS & Android coming soon' },
 ]
 
 function ModulesGrid() {
@@ -641,14 +641,15 @@ function MobileSection() {
           {/* Left: content */}
           <ScrollReveal className="w-full md:w-1/2" direction="left">
             <span className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: T }}>
-              <Smartphone className="w-3.5 h-3.5" /> Native Mobile App
+              <Smartphone className="w-3.5 h-3.5" /> Mobile App · Coming Soon
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold mb-4" style={{ color: S9 }}>
               Your HMS in your pocket
             </h2>
             <p className="text-base leading-relaxed mb-8" style={{ color: S5 }}>
-              Uyirly ships as a native iOS and Android app. Nurses check vitals at the bedside.
-              Doctors review labs between consultations. Everything syncs in real time.
+              Uyirly runs in any mobile browser today — nurses check vitals at the bedside,
+              doctors review labs between consultations, everything in real time. Dedicated
+              native iOS and Android apps are on the way.
             </p>
             <ul className="space-y-3 mb-8">
               {points.map(({ icon, text }) => (
@@ -662,7 +663,7 @@ function MobileSection() {
               ))}
             </ul>
             <div className="flex gap-3 flex-wrap">
-              {['🍎 iOS', '🤖 Android', '🌐 Web'].map(label => (
+              {['🌐 Web — available now', '🍎 iOS — coming soon', '🤖 Android — coming soon'].map(label => (
                 <span key={label} className="px-3 py-1.5 rounded-xl text-xs font-semibold"
                   style={{ background: 'rgba(13,148,136,0.08)', color: TD, border: '1px solid rgba(13,148,136,0.18)' }}>
                   {label}
@@ -706,69 +707,6 @@ function MobileSection() {
               </div>
             </div>
           </ScrollReveal>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Social proof ───────────────────────────────────────────────────────────────
-const TESTIMONIALS = [
-  {
-    quote: 'We moved from paper registers and scattered Excel sheets to one system in a week. Billing errors dropped to near zero on day one.',
-    name: 'Dr. Meena Krishnan',
-    role: 'CMO, Sriram Hospital — Chennai',
-    stars: 5,
-  },
-  {
-    quote: 'The insurance claim module alone saves my billing team three hours every day. TPAs get complete documentation without manual data entry.',
-    name: 'Mr. Rajesh Nair',
-    role: 'Administrator, Coastal Medical Centre — Kozhikode',
-    stars: 5,
-  },
-  {
-    quote: 'What convinced us was the audit trail. Every action, every change — logged with actor and timestamp. That matters for NABH compliance.',
-    name: 'Dr. Ananya Reddy',
-    role: 'Medical Director, Lotus Clinic — Hyderabad',
-    stars: 5,
-  },
-]
-
-function SocialProof() {
-  return (
-    <section className="py-24 px-4 sm:px-6 relative overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #f0fdfa 0%, #ffffff 50%, #ecfdf5 100%)' }}>
-      <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(13,148,136,0.08) 0%, transparent 60%)' }} />
-
-      <div className="max-w-6xl mx-auto relative">
-        <ScrollReveal>
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: S9 }}>
-              Hospitals running on Uyirly
-            </h2>
-            <p className="text-base" style={{ color: S5 }}>Real teams, real clinical environments.</p>
-          </div>
-        </ScrollReveal>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {TESTIMONIALS.map(({ quote, name, role, stars }, i) => (
-            <ScrollReveal key={name} delay={i * 100}>
-              <div className="hover-lift rounded-2xl p-7 flex flex-col gap-5 h-full"
-                style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 2px 16px rgba(13,148,136,0.06)' }}>
-                <div className="flex gap-1">
-                  {Array.from({ length: stars }).map((_, j) => (
-                    <Star key={j} className="w-4 h-4 fill-current" style={{ color: '#F59E0B' }} />
-                  ))}
-                </div>
-                <p className="text-sm leading-relaxed flex-1" style={{ color: S6 }}>"{quote}"</p>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: S9 }}>{name}</p>
-                  <p className="text-xs mt-0.5" style={{ color: S4 }}>{role}</p>
-                </div>
-              </div>
-            </ScrollReveal>
-          ))}
         </div>
       </div>
     </section>
@@ -1009,7 +947,7 @@ const FAQS = [
   { q: 'What happens when the 30-day trial ends?',
     a: "You'll receive reminders before the trial ends. If you don't subscribe, your data is retained for 30 days and then deleted. No automatic charges." },
   { q: 'Does it work on mobile and tablets?',
-    a: 'Yes. The web app is fully responsive. A native iOS and Android app is also available — the same system, optimised for mobile workflows like bedside nursing and ward rounds.' },
+    a: 'Yes. The web app is fully responsive and works on any phone or tablet browser today. Dedicated native iOS and Android apps are coming soon, optimised for mobile workflows like bedside nursing and ward rounds.' },
   { q: 'Can we run multiple branches on one account?',
     a: 'The Enterprise plan supports multi-location: each branch gets its own subdomain and data isolation, but a super-admin can view cross-location reports.' },
   { q: 'How long does initial setup take?',
@@ -1177,7 +1115,7 @@ const jsonLd = {
       name: 'Uyirly Hospital Management Software',
       applicationCategory: 'BusinessApplication',
       applicationSubCategory: 'Hospital Management System',
-      operatingSystem: 'Web, iOS, Android',
+      operatingSystem: 'Web',
       url: SITE,
       publisher: { '@id': `${SITE}/#organization` },
       description:
@@ -1234,7 +1172,6 @@ export default function HomePage() {
         <BeforeAfter />
         <Features />
         <MobileSection />
-        <SocialProof />
         <DemoStrip />
         <Trust />
         <HowItWorks />
