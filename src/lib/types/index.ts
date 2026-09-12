@@ -779,7 +779,10 @@ export interface CostEstimate {
 
 export interface CombinedBillSection {
   label: string
-  rows: Array<{ date: string; billNo: string; description: string; qty: number; unitPrice: number; amount: number; hsn_sac?: string | null; gstRate?: number; taxInclusive?: boolean }>
+  // `cancelled` rows are shown struck through so a reversed charge is visible on
+  // the summary instead of silently vanishing. They are excluded from `subtotal`,
+  // from the GST summary and from every total on the bill.
+  rows: Array<{ date: string; billNo: string; description: string; qty: number; unitPrice: number; amount: number; hsn_sac?: string | null; gstRate?: number; taxInclusive?: boolean; cancelled?: boolean }>
   subtotal: number
 }
 

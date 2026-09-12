@@ -839,7 +839,7 @@ const COMBINED_BILL_SECTIONS: Array<{ label: string; sources: string[] }> = [
 ]
 
 type CombinedBillRawItem = { source: string; description: string; qty: number; unit_price: number; amount: number; gst_rate?: number; hsn_sac?: string | null; tax_inclusive?: boolean }
-type CombinedBillRaw = { bill_no: string; billing_date: string | null; created_at: string; total: number; paid: number; bill_source?: string | null; items: CombinedBillRawItem[] }
+type CombinedBillRaw = { bill_no: string; billing_date: string | null; created_at: string; total: number; paid: number; bill_source?: string | null; status?: string | null; items: CombinedBillRawItem[] }
 
 function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').CombinedBillSection[] {
   const sections: import('@/lib/types').CombinedBillSection[] = []
@@ -853,11 +853,12 @@ function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').Combined
             date, billNo: bill.bill_no, description: item.description,
             qty: item.qty, unitPrice: item.unit_price, amount: item.amount,
             hsn_sac: item.hsn_sac ?? null, gstRate: item.gst_rate ?? 0, taxInclusive: !!item.tax_inclusive,
+            cancelled: bill.status === 'cancelled',
           })
         }
       }
     }
-    if (rows.length > 0) sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + r.amount, 0) })
+    if (rows.length > 0) sections.push({ label: sectionDef.label, rows, subtotal: rows.reduce((s, r) => s + (r.cancelled ? 0 : r.amount), 0) })
   }
   return sections
 }
@@ -1035,20 +1036,22 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   }
   type RawBill = {
     id: string; bill_no: string; billing_date: string | null; created_at: string
-    total: number; paid: number; bill_source: string | null; patient_id?: string
+    total: number; paid: number; bill_source: string | null; status: string | null; patient_id?: string
     items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
   }
-  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, patient_id, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, status, patient_id, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
 
   // No visit row found — visitId is an appointmentId for a booking where OPD visit hasn't started yet.
   // Fall back to appointment-stage bills directly.
   if (!visitRow) {
+    // Cancelled bills are fetched too — a cancelled booking still deserves a
+    // summary that says so, rather than a 404. They render struck through and
+    // count toward no total. (A `.neq` filter here would also drop NULL statuses.)
     const { data: apptBillRows } = await supabase
       .from('bills')
       .select(BILL_SELECT)
       .eq('appointment_id', visitId)
       .is('visit_id', null)
-      .neq('status', 'cancelled')
       .order('created_at', { ascending: true })
     const apptBills = ((apptBillRows ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
     if (apptBills.length === 0) return null
@@ -1060,7 +1063,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     const { data: billNoData } = await supabase.rpc('get_next_bill_no')
     const combinedBillNoAppt = (billNoData as string | null) ?? 'COMBINED'
     const apptSections = buildSections(apptBills)
-    const apptRegular = apptBills.filter(b => b.bill_source !== 'advance_refund')
+    const apptRegular = apptBills.filter(b => b.bill_source !== 'advance_refund' && b.status !== 'cancelled')
     return {
       combinedBillNo: combinedBillNoAppt,
       tenantName,
@@ -1102,12 +1105,13 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
   if (!patient) return null
 
-  // 4. Fetch all non-cancelled bills for this visit (filter consolidated in JS — PG neq drops NULLs)
+  // 4. Fetch every bill for this visit, cancelled ones included (filter consolidated
+  //    in JS — PG neq drops NULLs). Cancelled rows are struck through on the view
+  //    and excluded from all totals by buildSections.
   const { data: visitBills } = await supabase
     .from('bills')
     .select(BILL_SELECT)
     .eq('visit_id', resolvedVisitId)
-    .neq('status', 'cancelled')
     .order('billing_date', { ascending: true })
     .order('created_at', { ascending: true })
 
@@ -1120,7 +1124,6 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
       .select(BILL_SELECT)
       .eq('appointment_id', visitApptId)
       .is('visit_id', null)
-      .neq('status', 'cancelled')
       .order('billing_date', { ascending: true })
       .order('created_at', { ascending: true })
     preVisitBills = ((pb ?? []) as unknown as RawBill[]).filter((b) => b.bill_source !== 'consolidated')
@@ -1134,7 +1137,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   // 5. Group items into sections
   const sections = buildSections(allBills)
 
-  const regularBills2 = allBills.filter(b => b.bill_source !== 'advance_refund')
+  const regularBills2 = allBills.filter(b => b.bill_source !== 'advance_refund' && b.status !== 'cancelled')
   const grandTotal = regularBills2.reduce((s, b) => s + b.total, 0)
   const totalPaid  = regularBills2.reduce((s, b) => s + b.paid, 0)
 

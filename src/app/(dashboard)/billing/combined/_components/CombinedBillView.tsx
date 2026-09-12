@@ -48,7 +48,7 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
   const gstRegistered = !!profile?.gst_enabled
   const gstSummary = gstRegistered
     ? summarizeBillGst(
-        data.sections.flatMap((s) => s.rows).map((r) => ({
+        data.sections.flatMap((s) => s.rows).filter((r) => !r.cancelled).map((r) => ({
           amount: r.amount, gst_rate: r.gstRate ?? 0, tax_inclusive: !!r.taxInclusive,
         })),
       )
@@ -201,17 +201,30 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                     <th style={{ padding: '5px 12px', color: '#B0BAC9', fontWeight: 600, fontSize: '11px', textAlign: 'right', width: '110px' }}>Amount</th>
                   </tr>
                   {/* Data rows */}
-                  {section.rows.map((row, i) => (
+                  {section.rows.map((row, i) => {
+                    // A cancelled charge stays on the summary — struck through and
+                    // dimmed — so the reversal is auditable. It adds nothing to any total.
+                    const strike = row.cancelled ? { textDecoration: 'line-through' as const } : undefined
+                    const dim    = row.cancelled ? '#CBD5E1' : undefined
+                    return (
                     <tr key={i} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                      <td style={{ padding: '7px 12px', color: '#94A3B8', whiteSpace: 'nowrap', fontSize: '12.5px' }}>{fmtDate(row.date)}</td>
-                      <td style={{ padding: '7px 12px', color: '#475569', fontSize: '13px' }}>{row.description}</td>
-                      {gstRegistered && <td style={{ padding: '7px 12px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>{row.hsn_sac || '—'}</td>}
-                      <td style={{ padding: '7px 12px', color: '#94A3B8', textAlign: 'right', fontSize: '13px' }}>{row.qty}</td>
-                      <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.unitPrice)}</td>
-                      {gstRegistered && <td style={{ padding: '7px 12px', color: '#64748B', textAlign: 'right', fontSize: '13px' }}>{(row.gstRate ?? 0) > 0 ? `${row.gstRate}%` : 'Exempt'}</td>}
-                      <td style={{ padding: '7px 12px', color: '#1E293B', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmt(row.amount)}</td>
+                      <td style={{ padding: '7px 12px', color: dim ?? '#94A3B8', whiteSpace: 'nowrap', fontSize: '12.5px', ...strike }}>{fmtDate(row.date)}</td>
+                      <td style={{ padding: '7px 12px', color: dim ?? '#475569', fontSize: '13px' }}>
+                        <span style={strike}>{row.description}</span>
+                        {row.cancelled && (
+                          <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: '#DC2626', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap' }}>
+                            Cancelled
+                          </span>
+                        )}
+                      </td>
+                      {gstRegistered && <td style={{ padding: '7px 12px', color: dim ?? '#94A3B8', fontFamily: 'monospace', fontSize: '12px', ...strike }}>{row.hsn_sac || '—'}</td>}
+                      <td style={{ padding: '7px 12px', color: dim ?? '#94A3B8', textAlign: 'right', fontSize: '13px', ...strike }}>{row.qty}</td>
+                      <td style={{ padding: '7px 12px', color: dim ?? '#64748B', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px', ...strike }}>{fmt(row.unitPrice)}</td>
+                      {gstRegistered && <td style={{ padding: '7px 12px', color: dim ?? '#64748B', textAlign: 'right', fontSize: '13px', ...strike }}>{(row.gstRate ?? 0) > 0 ? `${row.gstRate}%` : 'Exempt'}</td>}
+                      <td style={{ padding: '7px 12px', color: dim ?? '#1E293B', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap', fontSize: '13px', ...strike }}>{fmt(row.amount)}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {/* Section subtotal — bottom of section */}
                   <tr style={{ borderTop: '1px dashed #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
                     <td colSpan={gstCols - 1} style={{ padding: '6px 12px', fontSize: '11px', color: '#94A3B8', textAlign: 'right', fontStyle: 'italic' }}>

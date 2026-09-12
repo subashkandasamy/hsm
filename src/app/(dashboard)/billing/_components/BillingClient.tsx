@@ -462,6 +462,13 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     })
   }, [bills, deposits, advanceSummaries])
 
+  // The combined-bill builders skip `consolidated` bills, so a group holding
+  // nothing else has no summary to render and its link would 404. Cancelled bills
+  // DO render (struck through), so they still count as renderable here.
+  function hasRenderableBills(bills: Bill[]): boolean {
+    return bills.some((b) => b.bill_source !== 'consolidated')
+  }
+
   function allGroupBills(g: PatientGroup): Bill[] {
     return g.months.flatMap((m) => [
       ...m.opdVisits.flatMap((v) => v.bills),
@@ -716,8 +723,16 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                           </div>
                         </div>
 
-                        {/* Chevron only — no chips here */}
-                        <div className="flex-shrink-0 mt-1" style={{ color: '#94A3B8' }}>
+                        {/* Lifetime summary + chevron */}
+                        <div className="flex-shrink-0 mt-1 flex items-center gap-2" style={{ color: '#94A3B8' }}>
+                          {billCount > 0 && hasRenderableBills(allGroupBills(group)) && (
+                            <Link href={`/billing/combined/patient/${group.patientId}`}
+                              className="flex items-center gap-1 text-xs font-semibold"
+                              style={{ color: '#7C3AED', textDecoration: 'none' }}
+                              onClick={(e) => e.stopPropagation()}>
+                              <FileText className="w-3 h-3" /> Full Summary →
+                            </Link>
+                          )}
                           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </div>
                       </div>
@@ -799,7 +814,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                     ) : null}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {(opdVisit.visitId || opdVisit.appointmentId) && (
+                                    {(opdVisit.visitId || opdVisit.appointmentId) && hasRenderableBills(opdVisit.bills) && (
                                       <Link
                                         href={`/billing/combined/visit/${opdVisit.visitId ?? opdVisit.appointmentId}`}
                                         className="flex items-center gap-1 text-xs font-semibold"
@@ -930,12 +945,14 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       ) : null}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <Link href={`/billing/combined/${ipd.admissionId}`}
-                                        className="flex items-center gap-1 text-xs font-semibold"
-                                        style={{ color: '#7C3AED', textDecoration: 'none' }}
-                                        onClick={(e) => e.stopPropagation()}>
-                                        <FileText className="w-3 h-3" /> Summary →
-                                      </Link>
+                                      {ipd.admissionId && (
+                                        <Link href={`/billing/combined/${ipd.admissionId}`}
+                                          className="flex items-center gap-1 text-xs font-semibold"
+                                          style={{ color: '#7C3AED', textDecoration: 'none' }}
+                                          onClick={(e) => e.stopPropagation()}>
+                                          <FileText className="w-3 h-3" /> Summary →
+                                        </Link>
+                                      )}
                                       {ipdOpen
                                         ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                                         : <ChevronRight className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />}
