@@ -18,7 +18,7 @@ export default async function TariffsPage() {
     <div>
       <PageHeader
         title="Tariffs & Fees"
-        subtitle="Configure procedure pricing and default consultation fees. Room rates are managed on the Ward Board."
+        subtitle="Configure procedure pricing and role-wise discount limits. Doctor consultation fees are set under Staff & HR; room rates on the Ward Board."
       />
       <TariffsManager initialTariffs={tariffs} />
       <DiscountLimitsCard initial={discountLimits} />

@@ -259,6 +259,8 @@ export async function proxy(request: NextRequest) {
       const GROWTH_ONLY_ROUTES = [
         '/ipd', '/wards', '/emergency', '/lab', '/radiology',
         '/ot', '/blood', '/insurance', '/inventory',
+        // Configures the IPD daily auto-bill only — nothing on it applies without IPD.
+        '/settings/ipd-billing',
         // /staff is accessible on starter with per-role limits
       ]
       if (tenant.plan === 'starter' && tenant.status !== 'trial') {

@@ -30,7 +30,7 @@ These 3 tables sit **above all hospitals**. They exist once globally — not per
 |-------|---------------|------------|
 | `tenants` | One row per hospital — name, slug, plan (starter/pro), status (trial/active/suspended), trial_ends_at | `onboarding.ts` → `signupHospital()` |
 | `platform_admins` | ID of super-admins who can manage all tenants from the platform dashboard | Manually seeded in DB |
-| `subscriptions` | Stripe/payment subscription per tenant — plan, status, current_period_start/end | `subscription.ts` |
+| `subscriptions` | Razorpay subscription per tenant — plan, status, current_period_start/end | `subscription.ts` |
 
 **Key columns — `tenants`:**
 ```
