@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Save, CheckCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Save, CheckCircle, Lock } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import { updateEnabledModules } from '@/app/actions/tenantSettings'
 import type { ModuleKey } from '@/app/actions/tenantSettings'
+import { isGrowthOnly, planHasModule } from '@/lib/plans'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 
 const ALL_MODULES: { key: ModuleKey; label: string; description: string }[] = [
   { key: 'ipd',       label: 'IPD (Inpatient)',     description: 'Ward board, bed management, admissions, and progress notes.' },
@@ -21,9 +24,11 @@ const ALL_MODULES: { key: ModuleKey; label: string; description: string }[] = [
 
 interface Props {
   initialEnabled: ModuleKey[]
+  plan: PlanKey
+  status: TenantStatus
 }
 
-export default function ModuleVisibility({ initialEnabled }: Props) {
+export default function ModuleVisibility({ initialEnabled, plan, status }: Props) {
   const [enabled, setEnabled] = useState<Set<ModuleKey>>(new Set(initialEnabled))
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -53,42 +58,79 @@ export default function ModuleVisibility({ initialEnabled }: Props) {
   return (
     <div className="max-w-2xl space-y-4">
       <GlassCard className="divide-y" style={{ '--divide-color': '#F1F5F9' } as React.CSSProperties}>
-        {ALL_MODULES.map(({ key, label, description }) => (
-          <label
-            key={key}
-            className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50/60 transition-colors"
-          >
-            {/* Toggle switch */}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={enabled.has(key)}
-              onClick={() => toggle(key)}
-              className="relative flex-shrink-0 w-10 h-6 rounded-full transition-colors duration-200"
-              style={{
-                background: enabled.has(key) ? '#0D9488' : '#CBD5E1',
-                border: 'none', cursor: 'pointer',
-              }}
+        {ALL_MODULES.map(({ key, label, description }) => {
+          // Locked = a Growth-only module the current plan can't use. These
+          // become an upgrade prompt instead of a live toggle, matching the sidebar.
+          const locked = isGrowthOnly(key) && !planHasModule(plan, status, key)
+
+          if (locked) {
+            return (
+              <div
+                key={key}
+                className="flex items-center gap-4 px-5 py-4"
+                style={{ opacity: 0.85 }}
+              >
+                {/* Static locked switch */}
+                <div
+                  className="relative flex-shrink-0 w-10 h-6 rounded-full flex items-center justify-center"
+                  style={{ background: '#E2E8F0' }}
+                  aria-hidden
+                >
+                  <Lock className="w-3 h-3" style={{ color: '#94A3B8' }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: '#64748B' }}>{label}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{description}</p>
+                </div>
+                <Link
+                  href="/account/subscription?upgrade=1"
+                  className="ml-auto flex-shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors"
+                  style={{ background: '#0D9488', color: '#fff' }}
+                  title="Upgrade to the Growth plan to unlock this module"
+                >
+                  <Lock className="w-3 h-3" /> Upgrade
+                </Link>
+              </div>
+            )
+          }
+
+          return (
+            <label
+              key={key}
+              className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50/60 transition-colors"
             >
+              {/* Toggle switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enabled.has(key)}
+                onClick={() => toggle(key)}
+                className="relative flex-shrink-0 w-10 h-6 rounded-full transition-colors duration-200"
+                style={{
+                  background: enabled.has(key) ? '#0D9488' : '#CBD5E1',
+                  border: 'none', cursor: 'pointer',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                  style={{ transform: enabled.has(key) ? 'translateX(16px)' : 'translateX(0)' }}
+                />
+              </button>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{label}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>{description}</p>
+              </div>
               <span
-                className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
-                style={{ transform: enabled.has(key) ? 'translateX(16px)' : 'translateX(0)' }}
-              />
-            </button>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{label}</p>
-              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>{description}</p>
-            </div>
-            <span
-              className="ml-auto flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
-              style={enabled.has(key)
-                ? { background: '#CCFBF1', color: '#0D9488' }
-                : { background: '#F1F5F9', color: '#94A3B8' }}
-            >
-              {enabled.has(key) ? 'On' : 'Off'}
-            </span>
-          </label>
-        ))}
+                className="ml-auto flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={enabled.has(key)
+                  ? { background: '#CCFBF1', color: '#0D9488' }
+                  : { background: '#F1F5F9', color: '#94A3B8' }}
+              >
+                {enabled.has(key) ? 'On' : 'Off'}
+              </span>
+            </label>
+          )
+        })}
       </GlassCard>
 
       {error && (

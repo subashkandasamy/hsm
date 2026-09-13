@@ -6,6 +6,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
+import { planHasModule } from '@/lib/plans'
+import type { PlanKey, TenantStatus } from '@/lib/plans'
 import { z } from 'zod'
 
 const VALID_MODULES = ['ipd','emergency','bloodbank','ot','lab','radiology','pharmacy','insurance','inventory','hr'] as const
@@ -51,14 +53,24 @@ export async function updateEnabledModules(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const service = createServiceClient()
+
+  // Defense in depth: never persist a module the tenant's plan can't use, so a
+  // Growth-only module can't be left "enabled" on a Starter plan (which would
+  // contradict the sidebar, where it stays locked).
+  const { data: tenant } = await service
+    .from('tenants').select('plan, status').eq('id', actor.tenant_id).maybeSingle()
+  const plan = (tenant?.plan ?? 'starter') as PlanKey
+  const status = (tenant?.status ?? 'trial') as TenantStatus
+  const modules = parsed.data.modules.filter((m) => planHasModule(plan, status, m))
+
   const { error } = await service
     .from('tenants')
-    .update({ enabled_modules: parsed.data.modules })
+    .update({ enabled_modules: modules })
     .eq('id', actor.tenant_id)
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'update', 'tenant_modules', actor.tenant_id, {
-    enabled_modules: parsed.data.modules,
+    enabled_modules: modules,
   })
   return { success: true }
 }
