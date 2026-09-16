@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
@@ -305,23 +306,10 @@ export async function cancelLabOrder(orderId: string): Promise<SimpleResult> {
     .from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
 
-  // Phase 15: cancel linked bill if it has no payments yet
-  const { data: billItem } = await supabase
-    .from('bill_items')
-    .select('bill_id')
-    .eq('ref_id', orderId)
-    .eq('source', 'lab')
-    .maybeSingle()
+  // Take the order off its bill(s) — only its own lines, never other charges.
+  const billing = await removeOrderFromBills(supabase, 'lab', orderId)
 
-  if (billItem?.bill_id) {
-    const { count } = await supabase
-      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
-    if ((count ?? 0) === 0) {
-      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
-    }
-  }
-
-  await logAudit(actor.id, 'cancel', 'lab_order', orderId)
+  await logAudit(actor.id, 'cancel', 'lab_order', orderId, { billing })
   return { success: true }
 }
 

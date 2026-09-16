@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
@@ -728,18 +729,11 @@ export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> 
   const { error } = await supabase.from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
 
-  // Cancel linked bill if no payments made yet
-  const { data: billItem } = await supabase
-    .from('bill_items').select('bill_id').eq('ref_id', orderId).eq('source', 'lab').maybeSingle()
-  if (billItem?.bill_id) {
-    const { count } = await supabase
-      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
-    if ((count ?? 0) === 0) {
-      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
-    }
-  }
+  // Take the order off its bill — IPD orders share a pooled per-day bill, so only
+  // this order's lines are removed; the rest of the day's charges stay billed.
+  const billing = await removeOrderFromBills(supabase, 'lab', orderId)
 
-  await logAudit(actor.id, 'cancel', 'lab_order', orderId, {})
+  await logAudit(actor.id, 'cancel', 'lab_order', orderId, { billing })
   return { success: true }
 }
 
@@ -827,18 +821,11 @@ export async function cancelIpdRadiologyOrder(orderId: string): Promise<SimpleRe
   const { error } = await supabase.from('radiology_orders').update({ status: 'cancelled' }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
 
-  // Cancel linked bill if no payments made yet
-  const { data: billItem } = await supabase
-    .from('bill_items').select('bill_id').eq('ref_id', orderId).eq('source', 'radiology').maybeSingle()
-  if (billItem?.bill_id) {
-    const { count } = await supabase
-      .from('payments').select('id', { count: 'exact', head: true }).eq('bill_id', billItem.bill_id)
-    if ((count ?? 0) === 0) {
-      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billItem.bill_id)
-    }
-  }
+  // Take the order off its bill — IPD orders share a pooled per-day bill, so only
+  // this order's lines are removed; the rest of the day's charges stay billed.
+  const billing = await removeOrderFromBills(supabase, 'radiology', orderId)
 
-  await logAudit(actor.id, 'cancel', 'radiology_order', orderId, {})
+  await logAudit(actor.id, 'cancel', 'radiology_order', orderId, { billing })
   return { success: true }
 }
 
