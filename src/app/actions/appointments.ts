@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AppointmentCreateSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Appointment } from '@/lib/types'
+import { refundCancelledConsultation, type RefundOutcome } from '@/lib/billing/refundConsultation'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -306,12 +307,12 @@ export async function cancelAppointment(id: string): Promise<SimpleResult> {
 
   const supabase = await createClient()
 
-  // Fetch patient_id alongside cancelling the appointment
-  const { data: appt, error } = await supabase
+  // .single() errors when nothing matched (already cancelled / done) — that's the guard.
+  const { error } = await supabase
     .from('appointments')
     .update({ status: 'cancelled' })
     .eq('id', id).in('status', ['booked', 'checked_in'])
-    .select('patient_id')
+    .select('id')
     .single()
   if (error) return { success: false, error: error.message }
 
@@ -325,58 +326,21 @@ export async function cancelAppointment(id: string): Promise<SimpleResult> {
     .neq('status', 'cancelled')
     .maybeSingle()
 
+  let refundInfo: RefundOutcome | null = null
   if (bill && bill.bill_source !== 'appointment_refund') {
     await supabase.from('bills').update({ status: 'cancelled' }).eq('id', bill.id)
 
-    const paid = (bill.paid as number) ?? 0
-    if (paid > 0) {
-      // Auto-create a refund bill so it surfaces in billing as acknowledgement
-      const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-      const refundBillId = crypto.randomUUID()
-      const today = new Date().toISOString().split('T')[0]
-
-      const { error: billErr } = await supabase.from('bills').insert({
-        id:             refundBillId,
-        tenant_id:      actor.tenant_id,
-        patient_id:     appt.patient_id as string,
-        appointment_id: id,
-        bill_no:        billNoData as string,
-        billing_date:   today,
-        subtotal:       -paid,
-        discount:       0,
-        tax:            0,
-        total:          -paid,
-        paid:           -paid,
-        status:         'paid',
-        bill_source:    'appointment_refund',
-        created_by:     actor.id,
-      })
-
-      if (!billErr) {
-        await supabase.from('bill_items').insert({
-          id:          crypto.randomUUID(),
-          tenant_id:   actor.tenant_id,
-          bill_id:     refundBillId,
-          source:      'manual',
-          description: 'Consultation Fee Refund (Appointment Cancelled)',
-          qty:         1,
-          unit_price:  -paid,
-          amount:      -paid,
-        })
-        await supabase.from('payments').insert({
-          id:          crypto.randomUUID(),
-          tenant_id:   actor.tenant_id,
-          bill_id:     refundBillId,
-          amount:      -paid,
-          method:      'cash',
-          reference:   null,
-          received_by: actor.id,
-        })
-      }
-    }
+    // Refund what the patient paid as credit notes, one per ORIGINAL payment
+    // method — a UPI/card payment is refunded as UPI/card, not cash, so the
+    // shift close's per-method drawer totals stay right. Credit notes are the
+    // hospital's refund record (cash book + shift close read them). Anything
+    // already credit-noted is subtracted. Insurance-paid amounts go back through
+    // the insurer, not to the patient, so they're only noted in the audit log.
+    const refund = await refundCancelledConsultation(supabase, actor, bill.id as string)
+    refundInfo = refund
   }
 
-  await logAudit(actor.id, 'cancel', 'appointment', id)
+  await logAudit(actor.id, 'cancel', 'appointment', id, refundInfo ? { refund: refundInfo } : undefined)
   return { success: true }
 }
 

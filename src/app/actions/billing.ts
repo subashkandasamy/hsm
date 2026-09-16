@@ -823,7 +823,7 @@ export async function listBills(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('bills')
-    .select('*, patient:patients(id,full_name,uhid,phone), items:bill_items(source)')
+    .select('*, patient:patients(id,full_name,uhid,phone), items:bill_items(source), credit_notes(amount)')
     .order('created_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)

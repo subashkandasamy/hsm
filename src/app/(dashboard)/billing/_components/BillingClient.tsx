@@ -838,10 +838,14 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                   return opdVisit.bills.map((bill, i) => {
                                   const balance = Math.max(0, bill.total - bill.paid)
                                   const apptId = (bill as unknown as { appointment_id: string | null }).appointment_id
+                                  // Refunded = an old-style refund bill exists, or credit notes were issued
+                                  // on this cancelled bill (how cancelled appointments are refunded now).
+                                  const credited = ((bill as unknown as { credit_notes?: Array<{ amount: number }> }).credit_notes ?? [])
+                                    .reduce((s, c) => s + Number(c.amount), 0)
                                   const isApptRefunded = bill.status === 'cancelled'
                                     && bill.paid > 0
                                     && bill.bill_source !== 'appointment_refund'
-                                    && !!apptId && refundedApptIds.has(apptId)
+                                    && ((!!apptId && refundedApptIds.has(apptId)) || credited > 0)
                                   return (
                                     <div key={bill.id} className="px-4 py-3 cursor-pointer"
                                       style={{
