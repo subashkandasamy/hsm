@@ -8,6 +8,7 @@ import { AppointmentCreateSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import type { Appointment } from '@/lib/types'
 import { refundCancelledConsultation, type RefundOutcome } from '@/lib/billing/refundConsultation'
+import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -209,18 +210,24 @@ export async function updateAppointment(
 
     if (bill && (bill.status === 'unpaid' || bill.status === 'draft' || bill.status === 'partial')) {
       // Update bill to reflect new doctor's fee
+      // Change the fee on the consultation line, then let reconcileBill recompute the
+      // totals (keeping any discount/GST) and paid/status. Setting subtotal/total
+      // directly dropped the discount and could leave a part-paid bill below what
+      // was already paid.
       const newFee = await resolveConsultationFee(supabase, input.doctor_id)
-      const { error: billErr } = await supabase
-        .from('bills')
-        .update({ subtotal: newFee, total: newFee })
-        .eq('id', bill.id as string)
-      if (!billErr) {
-        // Update the bill_item too
-        await supabase
-          .from('bill_items')
-          .update({ unit_price: newFee, amount: newFee })
-          .eq('bill_id', bill.id as string)
-          .eq('source', 'consultation')
+      const { data: feeLines } = await supabase
+        .from('bill_items').select('id, unit_price, amount, taxable_value')
+        .eq('bill_id', bill.id as string).eq('source', 'consultation')
+      for (const l of feeLines ?? []) {
+        await supabase.from('bill_items').update({ unit_price: newFee, amount: newFee, taxable_value: newFee }).eq('id', l.id)
+      }
+      const rec = await reconcileBill(supabase, bill.id as string)
+      if (!rec.ok) {
+        for (const l of feeLines ?? []) {
+          await supabase.from('bill_items').update({ unit_price: l.unit_price, amount: l.amount, taxable_value: l.taxable_value }).eq('id', l.id)
+        }
+        await reconcileBill(supabase, bill.id as string, { allowOverpaid: true })
+        return { success: false, error: `Cannot change doctor — ${overpaidMessage(rec)}` }
       }
     }
   }

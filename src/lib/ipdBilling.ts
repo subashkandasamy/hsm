@@ -3,6 +3,7 @@ import type { BillItemSource } from '@/lib/types'
 import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals, type GstConfig } from '@/lib/billing/gst'
 import { tenantHasIpd } from '@/lib/billing/ipdAccess'
+import { reconcileBill } from '@/lib/billing/reconcile'
 
 export interface IpdBillLineItem {
   source: BillItemSource
@@ -170,11 +171,13 @@ export async function autoIpdBill(
       .eq('admission_id', admissionId)
     const totalRefunded = (refRows ?? []).reduce((s, r) => s + (r.amount as number), 0)
 
+    // Count advance applied to EVERY live bill of the admission, this one included —
+    // excluding this bill made its own advance look unused, so appending a line to
+    // an already-covered bill applied the same advance again (more than deposited).
     const { data: priorBills } = await supabase
       .from('bills')
       .select('id')
       .eq('admission_id', admissionId)
-      .neq('id', billId)
       .not('status', 'eq', 'cancelled')
     const priorIds = (priorBills ?? []).map((b) => b.id as string)
 
@@ -190,13 +193,12 @@ export async function autoIpdBill(
 
     const unusedAdvance = Math.max(0, totalAdvance - totalRefunded - advanceApplied)
 
-    // Fetch current bill paid amount (may have been partially paid already)
-    const { data: billNow } = await supabase
-      .from('bills')
-      .select('paid, total')
-      .eq('id', billId)
-      .single()
-    const alreadyPaid = (billNow?.paid as number) ?? 0
+    // What's still due on this bill, from its actual payments (bills.paid can drift).
+    const [{ data: billNow }, { data: billPays }] = await Promise.all([
+      supabase.from('bills').select('total').eq('id', billId).single(),
+      supabase.from('payments').select('amount').eq('bill_id', billId),
+    ])
+    const alreadyPaid = (billPays ?? []).reduce((s, p) => s + Number(p.amount), 0)
     const billTotal   = (billNow?.total as number) ?? currentSubtotal
     const remaining   = Math.max(0, billTotal - alreadyPaid)
 
@@ -210,12 +212,12 @@ export async function autoIpdBill(
         method: 'advance',
         received_by: actorId,
       })
-      const newPaid   = alreadyPaid + applyAmount
-      const newStatus = newPaid >= billTotal ? 'paid' : 'partial'
-      await supabase.from('bills').update({ paid: newPaid, status: newStatus }).eq('id', billId)
     }
   }
 
+  // Always settle paid/status from the payments — a new line on an already-paid
+  // day bill must show as due again, and any over-applied advance is released.
+  await reconcileBill(supabase, billId, { allowOverpaid: true })
   return billId
 }
 
@@ -261,7 +263,7 @@ export async function syncNursingBillLine(
   if (bill) {
     const { data: item } = await supabase
       .from('bill_items')
-      .select('id, unit_price')
+      .select('id, unit_price, gst_rate, tax_inclusive')
       .eq('bill_id', bill.id)
       .eq('ref_id', p.shiftDefId)
       .maybeSingle()
@@ -269,10 +271,14 @@ export async function syncNursingBillLine(
     if (item) {
       // Rate change (e.g. a different nurse took over the shift) — update in place.
       if (Number(item.unit_price) !== p.charge) {
-        await supabase.from('bill_items').update({ unit_price: p.charge, amount: p.charge }).eq('id', item.id)
-        const { data: items } = await supabase.from('bill_items').select('amount').eq('bill_id', bill.id)
-        const sum = (items ?? []).reduce((s, i) => s + Number(i.amount), 0)
-        await supabase.from('bills').update({ subtotal: sum, total: sum }).eq('id', bill.id)
+        const { taxableValue, taxAmount } = computeLineGst(p.charge, Number(item.gst_rate) || 0, !!item.tax_inclusive)
+        await supabase.from('bill_items').update({
+          unit_price: p.charge, amount: p.charge, taxable_value: taxableValue, tax_amount: taxAmount,
+        }).eq('id', item.id)
+        // Recompute totals (GST, discount, round-off) and paid/status — the raw sum
+        // ignored all of those and never touched paid/status. A rate drop below what
+        // was paid releases advance; cash overpayment is left for a refund.
+        await reconcileBill(supabase, bill.id as string, { allowOverpaid: true })
       }
       return
     }

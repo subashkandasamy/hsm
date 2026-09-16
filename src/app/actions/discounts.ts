@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission, hasPermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { recomputeBillGstTotals } from '@/lib/billing/gst'
+import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import type { DiscountLimitRow, DiscountRequestRow, Role } from '@/lib/types'
 
 type Result = { success: true } | { success: false; error: string }
@@ -45,13 +45,25 @@ export async function setDiscountLimit(role: string, maxPercent: number): Promis
   return { success: true }
 }
 
+/** Applies a discount; returns an error message (and leaves the bill unchanged) if it
+ *  would drop the total below what the patient already paid. */
 async function applyDiscountToBill(
   supabase: Awaited<ReturnType<typeof createClient>>,
   billId: string, amount: number, pct: number, reason: string | null,
-): Promise<void> {
+): Promise<string | null> {
+  const { data: prev } = await supabase
+    .from('bills').select('discount, discount_pct, discount_reason').eq('id', billId).single()
   await supabase.from('bills')
     .update({ discount: amount, discount_pct: pct, discount_reason: reason }).eq('id', billId)
-  await recomputeBillGstTotals(supabase, billId)
+  const rec = await reconcileBill(supabase, billId)
+  if (!rec.ok) {
+    await supabase.from('bills').update({
+      discount: prev?.discount ?? 0, discount_pct: prev?.discount_pct ?? null, discount_reason: prev?.discount_reason ?? null,
+    }).eq('id', billId)
+    await reconcileBill(supabase, billId, { allowOverpaid: true })
+    return overpaidMessage(rec)
+  }
+  return null
 }
 
 // ── Apply within cap, else raise an approval request ──────────────────────────
@@ -86,7 +98,8 @@ export async function applyOrRequestDiscount(input: {
 
   const cap = await roleCap(supabase, actor.role)
   if (pct <= cap + 0.001) {
-    await applyDiscountToBill(supabase, input.bill_id, amount, pct, reason)
+    const discountErr = await applyDiscountToBill(supabase, input.bill_id, amount, pct, reason)
+    if (discountErr) return { success: false, error: discountErr }
     await logAudit(actor.id, 'discount', 'bill', input.bill_id, { amount, pct, reason })
     return { success: true, status: 'applied' }
   }
@@ -165,7 +178,8 @@ export async function approveDiscountRequest(id: string): Promise<Result> {
   if (!bill || (bill.status as string) === 'paid' || (bill.status as string) === 'cancelled')
     return { success: false, error: 'The bill is already paid or cancelled' }
 
-  await applyDiscountToBill(supabase, req.bill_id as string, Number(req.requested_amount), Number(req.requested_pct), (req.reason as string | null) ?? null)
+  const discountErr = await applyDiscountToBill(supabase, req.bill_id as string, Number(req.requested_amount), Number(req.requested_pct), (req.reason as string | null) ?? null)
+  if (discountErr) return { success: false, error: discountErr }
   await supabase.from('discount_requests')
     .update({ status: 'approved', decided_by: actor.id, decided_at: new Date().toISOString() }).eq('id', id)
   await logAudit(actor.id, 'discount_approve', 'bill', req.bill_id as string, { request_id: id, pct: req.requested_pct })

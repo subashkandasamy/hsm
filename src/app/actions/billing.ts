@@ -5,13 +5,14 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, hasModule, isReadOnlyRequest } from '@/lib/server-utils'
 import {
-  GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
+  GenerateBillSchema, ApplyDiscountSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
-import { gstForSource, getTenantGstConfig, recomputeBillGstTotals } from '@/lib/billing/gst'
+import { gstForSource, getTenantGstConfig } from '@/lib/billing/gst'
+import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -524,7 +525,7 @@ export async function applyDiscount(
 
   const supabase = await createClient()
   const { data: bill } = await supabase
-    .from('bills').select('subtotal, tax, status').eq('id', parsed.data.bill_id).single()
+    .from('bills').select('subtotal, tax, discount, status').eq('id', parsed.data.bill_id).single()
   if (!bill) return { success: false, error: 'Bill not found' }
   if ((bill.status as string) === 'paid' || (bill.status as string) === 'cancelled')
     return { success: false, error: 'Cannot modify a paid or cancelled bill' }
@@ -532,36 +533,15 @@ export async function applyDiscount(
   const { error } = await supabase.from('bills')
     .update({ discount: parsed.data.discount }).eq('id', parsed.data.bill_id)
   if (error) return { success: false, error: error.message }
-  await recomputeBillGstTotals(supabase, parsed.data.bill_id)
+  const rec = await reconcileBill(supabase, parsed.data.bill_id)
+  if (!rec.ok) {
+    // Would leave the bill below what was already paid — undo.
+    await supabase.from('bills').update({ discount: bill.discount }).eq('id', parsed.data.bill_id)
+    await reconcileBill(supabase, parsed.data.bill_id, { allowOverpaid: true })
+    return { success: false, error: overpaidMessage(rec) }
+  }
 
   await logAudit(actor.id, 'discount', 'bill', parsed.data.bill_id, { discount: parsed.data.discount })
-  return { success: true }
-}
-
-export async function setTax(
-  input: Record<string, unknown>
-): Promise<SimpleResult> {
-  await requireWriteAccess()
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'billing:manage')
-
-  const parsed = SetTaxSchema.safeParse(input)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-
-  const supabase = await createClient()
-  const { data: bill } = await supabase
-    .from('bills').select('subtotal, discount, status').eq('id', parsed.data.bill_id).single()
-  if (!bill) return { success: false, error: 'Bill not found' }
-  if ((bill.status as string) === 'paid' || (bill.status as string) === 'cancelled')
-    return { success: false, error: 'Cannot modify a paid or cancelled bill' }
-
-  const total = Math.max(0, (bill.subtotal as number) - (bill.discount as number) + parsed.data.tax)
-  const { error } = await supabase.from('bills').update({
-    tax: parsed.data.tax, total,
-  }).eq('id', parsed.data.bill_id)
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'tax', 'bill', parsed.data.bill_id, { tax: parsed.data.tax })
   return { success: true }
 }
 
@@ -585,7 +565,7 @@ export async function updateBillItemGst(
   const supabase = await createClient()
   const { data: item } = await supabase
     .from('bill_items')
-    .select('id, bill_id, amount, tax_inclusive, bill:bills(status)')
+    .select('id, bill_id, amount, tax_inclusive, gst_rate, hsn_sac, taxable_value, tax_amount, bill:bills(status)')
     .eq('id', input.item_id)
     .single()
   if (!item) return { success: false, error: 'Line item not found' }
@@ -603,7 +583,15 @@ export async function updateBillItemGst(
   }).eq('id', input.item_id)
   if (error) return { success: false, error: error.message }
 
-  await recomputeBillGstTotals(supabase, item.bill_id as string)
+  const rec = await reconcileBill(supabase, item.bill_id as string)
+  if (!rec.ok) {
+    // Would leave the bill below what was already paid — undo.
+    await supabase.from('bill_items').update({
+      gst_rate: item.gst_rate, hsn_sac: item.hsn_sac, taxable_value: item.taxable_value, tax_amount: item.tax_amount,
+    }).eq('id', input.item_id)
+    await reconcileBill(supabase, item.bill_id as string, { allowOverpaid: true })
+    return { success: false, error: overpaidMessage(rec) }
+  }
   await logAudit(actor.id, 'gst_edit', 'bill', item.bill_id as string, { item_id: input.item_id, gst_rate: rate })
   return { success: true }
 }

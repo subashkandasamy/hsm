@@ -507,11 +507,6 @@ export const ApplyDiscountSchema = z.object({
   discount: z.number().min(0),
 })
 
-export const SetTaxSchema = z.object({
-  bill_id: z.string().uuid(),
-  tax:     z.number().min(0),
-})
-
 export const RecordPaymentSchema = z.object({
   bill_id:   z.string().uuid(),
   amount:    z.number().positive('Amount must be positive'),
