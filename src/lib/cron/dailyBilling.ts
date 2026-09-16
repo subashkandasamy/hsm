@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { generateDailyChargesForAdmissions, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
+import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 
 interface TenantRow {
   id: string
@@ -14,6 +14,10 @@ export interface DailyBillingRunResult {
   tenantsSkippedReadOnly: number
   tenantsNoActor: number
   admissionsProcessed: number
+  /** Missed past days billed by the catch-up. */
+  daysBackfilled: number
+  /** Unbilled days older than the catch-up window, left for staff review. */
+  olderDaysSkipped: number
   errors: { tenantId: string; error: string }[]
 }
 
@@ -47,7 +51,7 @@ export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunRes
   const service = createServiceClient()
   const result: DailyBillingRunResult = {
     tenantsTotal: 0, tenantsBilled: 0, tenantsSkippedReadOnly: 0,
-    tenantsNoActor: 0, admissionsProcessed: 0, errors: [],
+    tenantsNoActor: 0, admissionsProcessed: 0, daysBackfilled: 0, olderDaysSkipped: 0, errors: [],
   }
 
   const { data: tenants, error: tenantsErr } = await service
@@ -107,7 +111,9 @@ export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunRes
       }))
       if (!admissions.length) continue
 
-      await generateDailyChargesForAdmissions(service, admin.id as string, tenant.id, admissions)
+      const catchUp = await catchUpDailyCharges(service, admin.id as string, tenant.id, admissions)
+      result.daysBackfilled += catchUp.backfilled.length
+      result.olderDaysSkipped += catchUp.skippedOlder.reduce((n, s) => n + s.days, 0)
       result.tenantsBilled++
       result.admissionsProcessed += admissions.length
     } catch (e) {

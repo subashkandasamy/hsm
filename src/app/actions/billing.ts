@@ -8,7 +8,7 @@ import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
-import { generateDailyChargesForAdmissions, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
+import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
 import { gstForSource, getTenantGstConfig, recomputeBillGstTotals } from '@/lib/billing/gst'
@@ -677,7 +677,13 @@ export async function generateMissingDailyCharges(
   const supabase = await createClient()
   // Core logic lives in a session-free lib so the same generator can run from a
   // headless cron (service-role client, per-tenant actor) — see lib/cron/dailyBilling.
-  await generateDailyChargesForAdmissions(supabase, actor.id, actor.tenant_id, admissions)
+  // Bills any missed past days too (not just today) — see catchUpDailyCharges.
+  const catchUp = await catchUpDailyCharges(supabase, actor.id, actor.tenant_id, admissions)
+  if (catchUp.backfilled.length || catchUp.skippedOlder.length) {
+    await logAudit(actor.id, 'ipd_daily_catch_up', 'admission', null, {
+      backfilled: catchUp.backfilled, skipped_older: catchUp.skippedOlder,
+    })
+  }
 }
 
 // ---- Payments ----
