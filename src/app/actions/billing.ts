@@ -70,7 +70,14 @@ export async function getUnbilledCharges(params: {
   }
 
   // ---- Bed charges (admissions, unbilled) ----
-  {
+  // Only when the hospital has switched OFF daily room-rent auto-billing. With it
+  // on (the default), room rent is already charged day by day, so offering a
+  // whole-stay "Bed charges (N nights)" line here double-bills the same nights.
+  const { tenant_id: tenantId } = await getActorProfile()
+  const { data: ipdCfg } = await supabase
+    .from('ipd_billing_config').select('charge_room_rent').eq('tenant_id', tenantId).maybeSingle()
+  const autoRoomRent = (ipdCfg?.charge_room_rent ?? true) !== false
+  if (!autoRoomRent) {
     let q = supabase
       .from('admissions')
       .select('id, admitted_at, discharged_at, ward:wards(daily_rate)')
