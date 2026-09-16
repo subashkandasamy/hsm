@@ -103,7 +103,10 @@ export async function autoIpdBill(
 
     const itemsToInsert = newItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
     const { error: insertErr } = await supabase.from('bill_items').insert(itemsToInsert)
-    if (insertErr) return null
+    if (insertErr) {
+      console.error('[autoIpdBill] appending lines failed', { billSource, billingDate, admissionId, error: insertErr.message })
+      return null
+    }
 
     // Re-derive GST aggregates + total from ALL items on the bill.
     currentSubtotal = await recomputeBillGstTotals(supabase, billId)
@@ -133,12 +136,17 @@ export async function autoIpdBill(
       status: 'unpaid',
       created_by: actorId,
     })
-    if (billErr) return null
+    if (billErr) {
+      // Never swallow silently — a rejected insert hid never-billed charges before.
+      console.error('[autoIpdBill] bill insert failed', { billSource, billingDate, admissionId, error: billErr.message })
+      return null
+    }
 
     const { error: itemErr } = await supabase.from('bill_items').insert(
       lineItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
     )
     if (itemErr) {
+      console.error('[autoIpdBill] bill line insert failed', { billSource, billingDate, admissionId, error: itemErr.message })
       // Void, don't delete: the invoice number is already issued and must stay in sequence.
       await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
       return null

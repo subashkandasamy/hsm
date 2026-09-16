@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { autoIpdBill, syncNursingBillLine, type IpdBillLineItem } from '@/lib/ipdBilling'
 import { tenantHasIpd } from '@/lib/billing/ipdAccess'
@@ -19,6 +20,17 @@ function addDays(ymd: string, n: number): string {
   const t = new Date(`${ymd}T00:00:00Z`)
   t.setUTCDate(t.getUTCDate() + n)
   return t.toISOString().slice(0, 10)
+}
+
+/**
+ * Stable per-charge line reference (bill_items.ref_id is a uuid). The same
+ * admission + charge always maps to the same id, so re-runs dedup, while
+ * different charges no longer collide — they used to all share the admission id,
+ * so once one extra charge was on the day's bill every other one was filtered out.
+ */
+function chargeRef(admissionId: string, key: string): string {
+  const h = createHash('sha1').update(`ipd-daily-charge:${admissionId}:${key}`).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
 }
 
 /** How far back the catch-up will bill a missed day automatically. */
@@ -52,7 +64,7 @@ export async function generateDailyChargesForAdmissions(
   // ── 1. Fetch billing config + custom charges for this tenant once ─────────────
   const [{ data: cfg }, { data: customCharges }] = await Promise.all([
     supabase.from('ipd_billing_config').select('*').eq('tenant_id', tenantId).maybeSingle(),
-    supabase.from('ipd_custom_charges').select('name, amount').eq('tenant_id', tenantId).eq('is_active', true),
+    supabase.from('ipd_custom_charges').select('id, name, amount').eq('tenant_id', tenantId).eq('is_active', true),
   ])
 
   const chargeRoomRent  = cfg?.charge_room_rent     ?? true
@@ -215,28 +227,48 @@ export async function generateDailyChargesForAdmissions(
   }
 
   // ── 6. Admission fee (Day 1 only), service charge, custom charges ─────────────
-  for (const adm of admissions) {
-    if (billedToday.get(adm.id)?.has('manual')) continue
+  // Each charge has its own line ref, so a charge added later in the day (a new
+  // custom charge, or the admission fee after the service charge was billed) is
+  // still appended to the day's 'manual' bill instead of being skipped.
+  const { data: manualLines } = await supabase
+    .from('bill_items')
+    .select('ref_id, description, bill:bills!inner(admission_id, billing_date, bill_source, status)')
+    .eq('source', 'manual')
+    .in('bill.admission_id', admissionIds)
+    .eq('bill.billing_date', today)
+    .eq('bill.bill_source', 'manual')
+    .neq('bill.status', 'cancelled')
+  const billedRefs = new Set<string>()
+  const legacyDescs = new Map<string, Set<string>>()   // lines from before per-charge refs
+  for (const l of (manualLines ?? []) as unknown as Array<{ ref_id: string | null; description: string; bill: { admission_id: string } }>) {
+    if (l.ref_id) billedRefs.add(l.ref_id)
+    if (l.ref_id === l.bill.admission_id) {
+      if (!legacyDescs.has(l.bill.admission_id)) legacyDescs.set(l.bill.admission_id, new Set())
+      legacyDescs.get(l.bill.admission_id)!.add(l.description)
+    }
+  }
 
+  for (const adm of admissions) {
     const lineItems: IpdBillLineItem[] = []
+    const add = (key: string, description: string, amount: number) => {
+      const ref = chargeRef(adm.id, key)
+      if (billedRefs.has(ref) || legacyDescs.get(adm.id)?.has(description)) return
+      lineItems.push({ source: 'manual', ref_id: ref, description, qty: 1, unit_price: amount })
+    }
 
     // Admission fee — Day 1 only
     if (chargeAdmFee && admFeeAmount > 0) {
       const dayOne = adm.admitted_at ? istDate(adm.admitted_at) : null
-      if (dayOne === today) {
-        lineItems.push({ source: 'manual', ref_id: adm.id, description: 'Admission fee', qty: 1, unit_price: admFeeAmount })
-      }
+      if (dayOne === today) add('admission_fee', 'Admission fee', admFeeAmount)
     }
 
     // Daily service charge
-    if (svcCharge > 0) {
-      lineItems.push({ source: 'manual', ref_id: adm.id, description: 'Daily service charge', qty: 1, unit_price: svcCharge })
-    }
+    if (svcCharge > 0) add('service_charge', 'Daily service charge', svcCharge)
 
-    // Active custom charges
+    // Active custom charges (keyed by the charge's id, so a rename doesn't re-bill)
     for (const cc of customCharges ?? []) {
       const amt = (cc.amount as number) ?? 0
-      if (amt > 0) lineItems.push({ source: 'manual', ref_id: adm.id, description: cc.name as string, qty: 1, unit_price: amt })
+      if (amt > 0) add(`custom:${cc.id as string}`, cc.name as string, amt)
     }
 
     if (!lineItems.length) continue
