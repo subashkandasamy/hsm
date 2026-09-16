@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { AddCareTeamSchema, RequestConsultSchema, LogVisitSchema, CompleteVisitSchema } from '@/lib/schemas'
 import type { CareTeamMember, DoctorVisit } from '@/lib/types'
@@ -37,6 +37,7 @@ async function ensureOnTeam(supabase: Supa, tenantId: string, admissionId: strin
 
 export async function addCareTeamDoctor(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const parsed = AddCareTeamSchema.safeParse(input)
@@ -49,6 +50,7 @@ export async function addCareTeamDoctor(admissionId: string, input: Record<strin
 
 export async function removeCareTeamDoctor(id: string): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const supabase = await createClient()
@@ -90,6 +92,7 @@ export async function listMyConsults(): Promise<(DoctorVisit & { patient_name?: 
 // visit that appears in their worklist.
 export async function requestConsult(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const parsed = RequestConsultSchema.safeParse(input)
@@ -139,6 +142,7 @@ async function billVisit(supabase: Supa, actorId: string, tenantId: string, visi
 // Log a completed visit directly (a round/consult/procedure by a care-team doctor).
 export async function logVisit(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const parsed = LogVisitSchema.safeParse(input)
@@ -162,6 +166,7 @@ export async function logVisit(admissionId: string, input: Record<string, unknow
 // Complete a requested consult (specialist records the note; it bills).
 export async function completeVisit(visitId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const parsed = CompleteVisitSchema.safeParse(input)
@@ -184,6 +189,7 @@ export async function completeVisit(visitId: string, input: Record<string, unkno
 
 export async function cancelVisit(visitId: string): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const supabase = await createClient()

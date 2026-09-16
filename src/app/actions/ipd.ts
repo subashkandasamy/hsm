@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
 import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
@@ -31,6 +31,7 @@ export async function admitPatient(
   input: Record<string, unknown>
 ): Promise<{ success: true; admissionId: string } | { success: false; error: string }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -246,6 +247,7 @@ export async function addProgressNote(
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
@@ -281,6 +283,7 @@ export async function postOpTransferToWard(
   }
 ): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -355,6 +358,7 @@ export async function transferBed(
   newBedId: string
 ): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -413,6 +417,8 @@ export async function dischargePatient(
   admissionId: string,
   input: Record<string, unknown>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
@@ -492,6 +498,7 @@ export async function updateDischargeSummary(
   summary: string
 ): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 

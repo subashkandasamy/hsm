@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { autoIpdBill, syncNursingBillLine, type IpdBillLineItem } from '@/lib/ipdBilling'
+import { tenantHasIpd } from '@/lib/billing/ipdAccess'
 
 export interface DailyBillAdmission {
   id: string
@@ -42,6 +43,7 @@ export async function generateDailyChargesForAdmissions(
   date?: string,             // 'YYYY-MM-DD' IST; defaults to today. Past dates = catch-up.
 ): Promise<void> {
   if (!admissions.length) return
+  if (!(await tenantHasIpd(tenantId))) return   // plan without IPD — no charges
   // Named `today` for readability: it is "the day being billed".
   const today = date ?? istDate()
   const isBackfill = today < istDate()
@@ -270,6 +272,8 @@ export interface CatchUpResult {
  * re-created. Nights covered by a manual whole-stay "Bed charges (N nights)"
  * line also count. Missed days use the rate of the last room-rent bill before
  * them (there is no ward-transfer history), falling back to the current ward.
+ * Days recorded in ipd_billing_blocked_days (hospital read-only, or on a plan
+ * without IPD) are never billed, and a tenant whose plan lacks IPD bills nothing.
  */
 export async function catchUpDailyCharges(
   supabase: SupabaseClient,
@@ -279,12 +283,13 @@ export async function catchUpDailyCharges(
 ): Promise<CatchUpResult> {
   const result: CatchUpResult = { backfilled: [], skippedOlder: [] }
   if (!admissions.length) return result
+  if (!(await tenantHasIpd(tenantId))) return result   // plan without IPD — no charges
 
   const today = istDate()
   const windowStart = addDays(today, -(CATCH_UP_MAX_DAYS - 1))
   const admissionIds = admissions.map((a) => a.id)
 
-  const [{ data: cfg }, { data: bedBills }] = await Promise.all([
+  const [{ data: cfg }, { data: bedBills }, { data: blockedRows }] = await Promise.all([
     supabase.from('ipd_billing_config').select('charge_room_rent').eq('tenant_id', tenantId).maybeSingle(),
     // Auto room-rent bills ('bed') plus manual bills (no bill_source) that may carry a bed line.
     supabase
@@ -292,7 +297,10 @@ export async function catchUpDailyCharges(
       .select('admission_id, billing_date, created_at, status, bill_source, items:bill_items(source, description, qty, unit_price)')
       .in('admission_id', admissionIds)
       .or('bill_source.eq.bed,bill_source.is.null'),
+    // Days the hospital was blocked (read-only / plan without IPD) — never billed.
+    supabase.from('ipd_billing_blocked_days').select('day').eq('tenant_id', tenantId).gte('day', windowStart),
   ])
+  const blockedDays = new Set((blockedRows ?? []).map((r) => r.day as string))
   if ((cfg?.charge_room_rent ?? true) === false) {
     // No per-day room-rent marker to detect gaps with — keep the old today-only behaviour.
     await generateDailyChargesForAdmissions(supabase, actorId, tenantId, admissions, today)
@@ -331,7 +339,7 @@ export async function catchUpDailyCharges(
 
     let olderMissing = 0
     for (let d = admitDay; d < today; d = addDays(d, 1)) {
-      if (handled.has(d)) continue
+      if (handled.has(d) || blockedDays.has(d)) continue
       if (d < windowStart) { olderMissing++; continue }
       const prev = autoRates.filter((r) => r.date < d).sort((a, b) => (a.date < b.date ? 1 : -1))[0]
       const ward = prev ? { name: prev.name, daily_rate: prev.rate } : adm.ward

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BillItemSource } from '@/lib/types'
 import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals, type GstConfig } from '@/lib/billing/gst'
+import { tenantHasIpd } from '@/lib/billing/ipdAccess'
 
 export interface IpdBillLineItem {
   source: BillItemSource
@@ -62,6 +63,8 @@ export async function autoIpdBill(
 ): Promise<string | null> {
   const { tenantId, admissionId, patientId, billingDate, billSource, lineItems } = params
   if (!lineItems.length) return null
+  // No IPD charges at all for a plan without IPD (e.g. Starter after the trial).
+  if (!(await tenantHasIpd(tenantId))) return null
 
   const cfg = await getTenantGstConfig(supabase, tenantId)
 
@@ -234,6 +237,7 @@ export async function syncNursingBillLine(
   }
 ): Promise<void> {
   if (p.charge <= 0) return
+  if (!(await tenantHasIpd(p.tenantId))) return
 
   const { data: bill } = await supabase
     .from('bills')

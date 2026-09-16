@@ -1,4 +1,5 @@
 import { headers } from 'next/headers'
+import { planHasModule, type PlanKey, type TenantStatus } from '@/lib/plans'
 import { createClient } from './supabase/server'
 import { getCachedUser } from './supabase/cached-user'
 import type { Role } from './types'
@@ -10,6 +11,34 @@ export async function requireWriteAccess(): Promise<void> {
   const h = await headers()
   if (h.get('x-tenant-readonly') === '1') {
     throw new Error('READONLY: Your subscription has ended. Renew to make changes.')
+  }
+}
+
+/** True when the tenant is in read-only mode (expired trial / lapsed subscription). */
+export async function isReadOnlyRequest(): Promise<boolean> {
+  const h = await headers()
+  return h.get('x-tenant-readonly') === '1'
+}
+
+/** Whether the current tenant's plan includes a module (trial includes everything). */
+export async function hasModule(moduleKey: string): Promise<boolean> {
+  const h = await headers()
+  // No tenant headers (non-tenant context) — don't block.
+  if (!h.get('x-tenant-id')) return true
+  const plan = (h.get('x-tenant-plan') ?? 'starter') as PlanKey
+  const status = (h.get('x-tenant-status') ?? 'active') as TenantStatus
+  return planHasModule(plan, status, moduleKey)
+}
+
+/**
+ * Blocks a server action when the tenant's plan doesn't include the module.
+ * The proxy only hides the pages; this stops the actions themselves — e.g. a
+ * hospital that moved to Starter after its trial can't act on IPD patients
+ * admitted during the trial until it upgrades.
+ */
+export async function requireModule(moduleKey: string): Promise<void> {
+  if (!(await hasModule(moduleKey))) {
+    throw new Error('PLAN: This feature is not included in your plan. Upgrade to Growth to use it.')
   }
 }
 

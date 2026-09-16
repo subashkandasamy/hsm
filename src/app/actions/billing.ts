@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, hasModule, isReadOnlyRequest } from '@/lib/server-utils'
 import {
   GenerateBillSchema, ApplyDiscountSchema, SetTaxSchema, RecordPaymentSchema,
 } from '@/lib/schemas'
@@ -296,6 +296,11 @@ export async function generateBill(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const { patient_id, visit_id, admission_id, selected_refs, manual_items } = parsed.data
+  // IPD bills need a plan with IPD — a hospital that moved to Starter can't bill
+  // admissions from its trial until it upgrades.
+  if (admission_id && !(await hasModule('ipd'))) {
+    return { success: false, error: 'IPD billing is not included in your plan. Upgrade to Growth to bill admissions.' }
+  }
   const supabase = await createClient()
 
   // Get all unbilled charge data for the selected refs
@@ -678,8 +683,9 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 export async function generateMissingDailyCharges(
   admissions: DailyBillAdmission[]
 ): Promise<void> {
-  await requireWriteAccess()
-  if (!admissions.length) return
+  // Runs on ward-board page load: a read-only hospital must still be able to VIEW
+  // its patients (throwing here crashed the page), and a plan without IPD bills nothing.
+  if (!admissions.length || (await isReadOnlyRequest()) || !(await hasModule('ipd'))) return
   const actor = await getActorProfile()
   const supabase = await createClient()
   // Core logic lives in a session-free lib so the same generator can run from a

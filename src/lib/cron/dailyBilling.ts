@@ -1,9 +1,11 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
+import { catchUpDailyCharges, istDate, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
+import { planHasModule, type PlanKey, type TenantStatus } from '@/lib/plans'
 
 interface TenantRow {
   id: string
   status: string
+  plan: string
   trial_ends_at: string | null
   override_access_until: string | null
 }
@@ -12,6 +14,8 @@ export interface DailyBillingRunResult {
   tenantsTotal: number
   tenantsBilled: number
   tenantsSkippedReadOnly: number
+  /** Plan without IPD (e.g. Starter) — no IPD charges generated. */
+  tenantsSkippedNoIpd: number
   tenantsNoActor: number
   admissionsProcessed: number
   /** Missed past days billed by the catch-up. */
@@ -50,13 +54,13 @@ function isReadOnly(tenant: TenantRow, currentPeriodEnd: string | null): boolean
 export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunResult> {
   const service = createServiceClient()
   const result: DailyBillingRunResult = {
-    tenantsTotal: 0, tenantsBilled: 0, tenantsSkippedReadOnly: 0,
+    tenantsTotal: 0, tenantsBilled: 0, tenantsSkippedReadOnly: 0, tenantsSkippedNoIpd: 0,
     tenantsNoActor: 0, admissionsProcessed: 0, daysBackfilled: 0, olderDaysSkipped: 0, errors: [],
   }
 
   const { data: tenants, error: tenantsErr } = await service
     .from('tenants')
-    .select('id, status, trial_ends_at, override_access_until')
+    .select('id, status, plan, trial_ends_at, override_access_until')
   if (tenantsErr) {
     result.errors.push({ tenantId: '*', error: `tenants query: ${tenantsErr.message}` })
     return result
@@ -74,8 +78,24 @@ export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunRes
 
   for (const tenant of tenants as TenantRow[]) {
     try {
-      if (isReadOnly(tenant, periodEndByTenant.get(tenant.id) ?? null)) {
-        result.tenantsSkippedReadOnly++
+      if (tenant.status === 'purged') continue
+
+      // Blocked hospitals get no IPD charges. Record the day as blocked (when
+      // there are admitted patients) so a later catch-up never back-bills it.
+      const readOnly = isReadOnly(tenant, periodEndByTenant.get(tenant.id) ?? null)
+      const noIpd = !planHasModule((tenant.plan ?? 'starter') as PlanKey, tenant.status as TenantStatus, 'ipd')
+      if (readOnly || noIpd) {
+        if (readOnly) result.tenantsSkippedReadOnly++
+        else result.tenantsSkippedNoIpd++
+        const { count: admitted } = await service
+          .from('admissions').select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenant.id).eq('status', 'admitted')
+        if ((admitted ?? 0) > 0) {
+          await service.from('ipd_billing_blocked_days').upsert(
+            { tenant_id: tenant.id, day: istDate(), reason: readOnly ? 'readonly' : 'plan' },
+            { onConflict: 'tenant_id,day', ignoreDuplicates: true },
+          )
+        }
         continue
       }
 

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { DEFAULT_DECLARATION_TEMPLATE } from '@/lib/ipdDeclarationTemplate'
 import type { IpdDeclaration, IpdDeclarationSignerRelationship } from '@/lib/types'
 
@@ -70,6 +70,8 @@ export async function signDeclarationDigitally(input: {
   signerRelationship: IpdDeclarationSignerRelationship
   signatureData?: string | null
 }): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
@@ -116,6 +118,8 @@ export async function markManualPendingUpload(input: {
   signerName: string
   signerRelationship: IpdDeclarationSignerRelationship
 }): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
@@ -162,6 +166,8 @@ export async function attachSignedUpload(input: {
   filePath: string
   title: string
 }): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emr:document:upload')
 

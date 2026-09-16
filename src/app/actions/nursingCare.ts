@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { CarePlanSchema, HandoverSchema } from '@/lib/schemas'
 import type { NursingCarePlan, NursingHandover, CarePlanStatus } from '@/lib/types'
 
@@ -20,6 +20,7 @@ export async function listCarePlans(admissionId: string): Promise<NursingCarePla
 
 export async function addCarePlan(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = CarePlanSchema.safeParse(input)
@@ -36,6 +37,7 @@ export async function addCarePlan(admissionId: string, input: Record<string, unk
 
 export async function setCarePlanStatus(id: string, status: CarePlanStatus): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const supabase = await createClient()
@@ -57,6 +59,7 @@ export async function listHandovers(admissionId: string): Promise<NursingHandove
 
 export async function addHandover(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = HandoverSchema.safeParse(input)

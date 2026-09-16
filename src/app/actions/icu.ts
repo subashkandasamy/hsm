@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
@@ -72,6 +72,7 @@ export async function admissionBedIsIcu(admissionId: string): Promise<boolean> {
 
 export async function setCriticalCare(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
   const parsed = CriticalCareSchema.safeParse(input)
@@ -107,6 +108,7 @@ export async function setCriticalCare(admissionId: string, input: Record<string,
 
 export async function recordIcuObservation(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = IcuObservationSchema.safeParse(input)
@@ -141,6 +143,7 @@ export async function listIcuObservations(admissionId: string, limit = 48): Prom
 
 export async function recordFluidBalance(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = FluidBalanceSchema.safeParse(input)

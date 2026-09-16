@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
 
@@ -41,6 +41,7 @@ export async function recordAdvance(params: {
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
 }): Promise<{ success: true; advanceId: string } | { success: false; error: string }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -140,6 +141,7 @@ export async function applyAdvanceToBill(
   admissionId: string
 ): Promise<SimpleResult> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -244,6 +246,7 @@ export async function collectAdvanceDeposit(
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
 ): Promise<{ success: true; advanceId: string } | { success: false; error: string }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -290,6 +293,7 @@ export async function generateDailyAdmissionBills(): Promise<{
   errors: string[]
 }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const supabase = await createClient()
   const errors: string[] = []
   let processed = 0
@@ -541,6 +545,7 @@ export async function recordAdvanceRefund(params: {
   method: 'cash' | 'card' | 'upi' | 'bank_transfer'
 }): Promise<{ success: true; refundId: string } | { success: false; error: string }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:advance')
 
@@ -673,6 +678,7 @@ export async function issueAdvanceRefundBill(params: {
   reference?: string
 }): Promise<{ success: true; billId: string } | { success: false; error: string }> {
   await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'billing:write')
 

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import { syncNursingBillLine } from '@/lib/ipdBilling'
 import { AssignNurseSchema } from '@/lib/schemas'
@@ -17,6 +17,8 @@ export async function assignNurse(params: {
   shift: string
   date: string
 }): Promise<{ success: true; assignment: AdmissionNurseAssignment } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
 
@@ -94,6 +96,8 @@ export async function assignNurse(params: {
 }
 
 export async function unassignNurse(assignmentId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
 
@@ -152,6 +156,8 @@ export async function setNursingCharge(
   profileId: string,
   amount: number | null
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 
