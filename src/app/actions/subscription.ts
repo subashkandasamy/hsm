@@ -157,18 +157,34 @@ export async function syncSubscription(): Promise<{ success: boolean }> {
 
   try {
     // Fetch the stored subscription first
-    let rzpSub = await (razorpay.subscriptions as any).fetch(row.stripe_subscription_id) as any
+    let rzpSub: any = null
+    try {
+      rzpSub = await (razorpay.subscriptions as any).fetch(row.stripe_subscription_id)
+    } catch (err: any) {
+      // The stored ID isn't in the Razorpay account these keys point to — e.g. it
+      // was created with other keys (test vs live, or another account). Don't
+      // fail on every page load; look the subscription up by tenant instead.
+      const notFound = err?.statusCode === 404 ||
+        (err?.statusCode === 400 && err?.error?.code === 'BAD_REQUEST_ERROR' &&
+          /invalid|not be found|does not exist/i.test(err?.error?.description ?? ''))
+      if (!notFound) throw err
+    }
 
-    // If the stored sub is not yet paid, the user tested checkout but a newer
-    // unactivated sub_id was saved over the real active one.
-    // Fall back: list recent subs for the account and match by notes.tenant_id.
+    // If the stored sub is missing or not yet paid (the user tested checkout but a
+    // newer unactivated sub_id was saved over the real active one), fall back:
+    // list recent subs for the account and match by notes.tenant_id.
     // 'authenticated' = mandate approved but first charge not collected yet.
-    if (rzpSub.status === 'created' || rzpSub.status === 'pending' || rzpSub.status === 'authenticated') {
+    if (!rzpSub || rzpSub.status === 'created' || rzpSub.status === 'pending' || rzpSub.status === 'authenticated') {
       const list = await (razorpay.subscriptions as any).all({ count: 100 }) as any
       const activeSub = (list?.items ?? []).find(
         (s: any) => s.status === 'active' && s.notes?.tenant_id === actor.tenant_id
       )
-      if (!activeSub) return { success: false }
+      if (!activeSub) {
+        if (!rzpSub) {
+          console.warn(`[syncSubscription] subscription ${row.stripe_subscription_id} not found in this Razorpay account — keeping the saved plan and status`)
+        }
+        return { success: false }
+      }
       rzpSub = activeSub
     }
 
