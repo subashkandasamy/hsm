@@ -9,6 +9,7 @@ import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientL
 import type { Appointment } from '@/lib/types'
 import { refundCancelledConsultation, type RefundOutcome } from '@/lib/billing/refundConsultation'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
+import { istToday, istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -50,15 +51,15 @@ export async function bookAppointment(
   const supabase = await createClient()
 
   // Block booking in the past
-  const scheduledDate = new Date(scheduled_at).toISOString().split('T')[0]
-  const today = new Date().toISOString().split('T')[0]
+  const scheduledDate = istDate(scheduled_at)
+  const today = istToday()
   if (scheduledDate < today) {
     return { success: false, error: 'Cannot book appointments for past dates' }
   }
 
   // Block duplicate active appointment for same patient on same date
-  const dayStart = `${scheduledDate}T00:00:00`
-  const dayEnd   = `${scheduledDate}T23:59:59`
+  const dayStart = istDayStartISO(scheduledDate)
+  const dayEnd   = istDayEndISO(scheduledDate)
   const { data: existing } = await supabase
     .from('appointments')
     .select('id')
@@ -170,13 +171,13 @@ export async function updateAppointment(
   if (existing.status !== 'booked') return { success: false, error: 'Only booked appointments can be edited' }
 
   // Block past dates
-  const newDate = new Date(input.scheduled_at).toISOString().split('T')[0]
-  const today   = new Date().toISOString().split('T')[0]
+  const newDate = istDate(input.scheduled_at)
+  const today   = istToday()
   if (newDate < today) return { success: false, error: 'Cannot reschedule to a past date' }
 
   // Duplicate active-appointment check on the new date (exclude self)
-  const dayStart = `${newDate}T00:00:00`
-  const dayEnd   = `${newDate}T23:59:59`
+  const dayStart = istDayStartISO(newDate)
+  const dayEnd   = istDayEndISO(newDate)
   const { data: conflict } = await supabase
     .from('appointments')
     .select('id')
@@ -233,7 +234,7 @@ export async function updateAppointment(
   }
 
   // Re-generate token if date or doctor changed
-  const oldDate = new Date(existing.scheduled_at as string).toISOString().split('T')[0]
+  const oldDate = istDate(existing.scheduled_at as string)
   let tokenNo: number | undefined
   if (newDate !== oldDate || doctorChanged) {
     const { data: tokenData } = await supabase.rpc('get_next_appointment_token', {
@@ -396,8 +397,8 @@ export async function listAppointments(filters: {
     .order('token_no', { ascending: true })
 
   if (filters.date) {
-    const start = `${filters.date}T00:00:00`
-    const end   = `${filters.date}T23:59:59`
+    const start = istDayStartISO(filters.date)
+    const end   = istDayEndISO(filters.date)
     q = q.gte('scheduled_at', start).lte('scheduled_at', end)
   }
   if (filters.doctorId) q = q.eq('doctor_id', filters.doctorId)
@@ -409,7 +410,7 @@ export async function listAppointments(filters: {
 }
 
 export async function getTodaysQueue(doctorId?: string): Promise<Appointment[]> {
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const supabase = await createClient()
 
   // Patients currently admitted to IPD or active in Emergency must not appear

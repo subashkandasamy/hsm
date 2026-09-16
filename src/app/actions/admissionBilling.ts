@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
+import { istToday, istDayStartISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -297,7 +298,7 @@ export async function generateDailyAdmissionBills(): Promise<{
   const supabase = await createClient()
   const errors: string[] = []
   let processed = 0
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   const { data: admissions } = await supabase
     .from('admissions')
@@ -313,7 +314,7 @@ export async function generateDailyAdmissionBills(): Promise<{
       .from('bills')
       .select('id', { count: 'exact', head: true })
       .eq('admission_id', admission.id)
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', istDayStartISO(today))
     if ((existingCount ?? 0) > 0) continue
 
     // Fetch per-tenant billing config
@@ -704,7 +705,7 @@ export async function issueAdvanceRefundBill(params: {
   const billNo = billNoData as string
 
   const billId = crypto.randomUUID()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   // 5. Create negative bill (amount is negative — money going out)
   const { error: billErr } = await supabase.from('bills').insert({

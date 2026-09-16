@@ -18,6 +18,7 @@ import {
 import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 import type { TenantWithStats } from '@/lib/types'
 import type { AdminSubscriptionRow, AuditRow, PartnerPayoutRow } from '@/app/actions/platform'
+import { istToday } from '@/lib/istDate'
 
 // Slice ISO string — identical on server and client, no locale variance
 const fmtDate = (iso: string) => iso.slice(0, 10)           // 2026-07-01
@@ -93,7 +94,7 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
     })
   }
 
-  const todayISO = useMemo(() => new Date().toISOString().split('T')[0], [])
+  const todayISO = useMemo(() => istToday(), [])
 
   const toast = (msg: string) => { setError(msg); setTimeout(() => setError(''), 4000) }
 

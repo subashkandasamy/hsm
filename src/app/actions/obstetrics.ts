@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { AncRecordSchema, AncVisitSchema, PartographSchema } from '@/lib/schemas'
 import type { AncRecord, AncVisit, PartographObs } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -64,7 +65,7 @@ export async function addAncVisit(ancId: string, input: Record<string, unknown>)
   const supabase = await createClient()
   const { error } = await supabase.from('anc_visits').insert({
     tenant_id: actor.tenant_id, anc_id: ancId, recorded_by: actor.id,
-    ...parsed.data, visit_date: parsed.data.visit_date || new Date().toISOString().split('T')[0],
+    ...parsed.data, visit_date: parsed.data.visit_date || istToday(),
   })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'anc_visit', 'anc_record', ancId)

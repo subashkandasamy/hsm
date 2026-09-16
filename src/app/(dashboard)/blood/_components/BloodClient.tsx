@@ -21,10 +21,11 @@ import TransfusionModal from './TransfusionModal'
 import SeparateModal from './SeparateModal'
 import CampModal from './CampModal'
 import UnitTraceModal from './UnitTraceModal'
+import { istToday } from '@/lib/istDate'
 
 // Eligibility: deferred if under active deferral or donated within 90 days.
 function donorEligible(d: BloodDonor): boolean {
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (d.deferral_until && d.deferral_until >= today) return false
   if (d.last_donation_date) {
     const days = (Date.now() - new Date(d.last_donation_date).getTime()) / 86400000
@@ -370,7 +371,7 @@ function InventoryGrid({ inventory, alertCount, summary }: { inventory: BloodInv
 
 // ---- Units View ----
 function UnitsView({ units, canScreen, canManage, onScreen, onSeparate, onTrace }: { units: BloodUnit[]; canScreen: boolean; canManage: boolean; onScreen: (u: BloodUnit) => void; onSeparate: (u: BloodUnit) => void; onTrace: (u: BloodUnit) => void }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (units.length === 0) {
     return <GlassCard className="p-6"><EmptyState title="No blood units" description="Add units via 'Add Unit' to begin tracking." icon={<Droplets className="w-6 h-6" style={{ color: '#94A3B8' }} />} /></GlassCard>
   }

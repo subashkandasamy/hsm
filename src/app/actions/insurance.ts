@@ -23,6 +23,7 @@ import type {
   InsuranceTariffPackage, InsuranceRemittanceBatch,
   Admission, Visit,
 } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -308,7 +309,7 @@ export async function getPolicyCoverage(policyId: string): Promise<PolicyCoverag
   const claimed = await committedOnPolicy(supabase, policyId)
   const coverage = pol?.coverage_amount ?? null
   const validTill = pol?.valid_till ?? null
-  const expired = !!validTill && validTill < new Date().toISOString().split('T')[0]
+  const expired = !!validTill && validTill < istToday()
   return {
     coverage_amount: coverage,
     claimed,
@@ -354,7 +355,7 @@ export async function createClaim(
     return { success: false, error: 'This policy belongs to a different patient than the selected encounter' }
 
   // Guardrail: policy must be valid on the claim date.
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (pol.valid_till && pol.valid_till < today)
     return { success: false, error: `Policy expired on ${pol.valid_till} — cannot raise a claim against it` }
 
@@ -411,7 +412,7 @@ export async function startClaim(
   if (!pol) return { success: false, error: 'Policy not found' }
   if (encPatient && pol.patient_id !== encPatient)
     return { success: false, error: 'This policy belongs to a different patient than the encounter' }
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (pol.valid_till && pol.valid_till < today)
     return { success: false, error: `Policy expired on ${pol.valid_till}` }
 

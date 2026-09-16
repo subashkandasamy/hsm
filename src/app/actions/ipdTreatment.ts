@@ -10,6 +10,7 @@ import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, IpdPharmacyRequest,
   LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
 } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -572,7 +573,7 @@ export async function dispenseIpdRequest(
     const { autoIpdBill } = await import('@/lib/ipdBilling')
     const patientId = (req.admission as unknown as { patient_id: string } | null)?.patient_id
     if (patientId) {
-      const today = new Date().toISOString().split('T')[0]
+      const today = istToday()
 
       // Inherit HSN + GST rate from a batch of this drug (drug-level attributes,
       // captured at goods-receipt) so the pharmacy line bills GST correctly.
@@ -624,7 +625,7 @@ export async function dispenseIpdRequest(
   if (req) {
     const resolvedId = ((req as Record<string, unknown>).drug_master_id ?? (req as Record<string, unknown>).drug_id) as string | null | undefined
     const qty = req.quantity as number
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
 
     if (resolvedId && qty > 0) {
       const { data: batches } = await supabase
@@ -692,7 +693,7 @@ export async function createIpdLabOrder(
     id: orderId, tenant_id: actor.tenant_id,
     patient_id: patientId, admission_id: admissionId,
     ordered_by: actor.id, status: 'ordered', billing_status: 'unbilled',
-    priority, scheduled_for: scheduledFor ?? new Date().toISOString().split('T')[0],
+    priority, scheduled_for: scheduledFor ?? istToday(),
   })
   if (orderErr) return { success: false, error: orderErr.message }
 
@@ -708,7 +709,7 @@ export async function createIpdLabOrder(
   const totalAmount = items.reduce((s, i) => s + i.price_snapshot, 0)
   if (totalAmount > 0) {
     const { autoIpdBill } = await import('@/lib/ipdBilling')
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
     await autoIpdBill(supabase, actor.id, {
       tenantId: actor.tenant_id,
       admissionId,
@@ -795,14 +796,14 @@ export async function createIpdRadiologyOrder(
     price_snapshot: priceSnapshot,
     status: 'ordered', billing_status: 'unbilled',
     report: notes ?? null,
-    priority, scheduled_for: scheduledFor ?? new Date().toISOString().split('T')[0],
+    priority, scheduled_for: scheduledFor ?? istToday(),
   })
   if (error) return { success: false, error: error.message }
 
   // Auto-generate IPD bill immediately on order creation
   if (priceSnapshot > 0) {
     const { autoIpdBill } = await import('@/lib/ipdBilling')
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
     await autoIpdBill(supabase, actor.id, {
       tenantId: actor.tenant_id,
       admissionId,

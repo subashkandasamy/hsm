@@ -2,10 +2,11 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { listAppointments, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import AppointmentsClient from './_components/AppointmentsClient'
+import { istToday } from '@/lib/istDate'
 
 export default async function AppointmentsPage() {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   const [appts, profilesRes, deptsRes, admissionsRes] = await Promise.all([
     listAppointments({ date: today }),

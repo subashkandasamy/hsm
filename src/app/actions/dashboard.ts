@@ -6,6 +6,7 @@ import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/c
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
+import { istAddDays, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 function todayRange() {
   const now = new Date()
@@ -14,9 +15,8 @@ function todayRange() {
   return { start, end }
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+// IST day — matches mv_daily_footfall_by_tenant, which buckets by Asia/Kolkata.
+const today = (): string => istToday()
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 // KPI tiles read from materialized views via the read replica (≤5 min stale).
@@ -129,8 +129,8 @@ export async function getPharmacistDashboard(): Promise<PharmacistKPIs> {
   ])
 
   const batches = (stockRes.data ?? []) as Array<{ qty_remaining: number; expiry_date: string | null }>
-  const soon = new Date(); soon.setDate(soon.getDate() + 90)
-  const nearExpiryCount = batches.filter((b) => b.expiry_date && b.expiry_date <= soon.toISOString().slice(0, 10)).length
+  const soon = istAddDays(istToday(), 90)
+  const nearExpiryCount = batches.filter((b) => b.expiry_date && b.expiry_date <= soon).length
   const lowStockCount   = batches.filter((b) => b.qty_remaining < 10).length
 
   return {
@@ -151,8 +151,8 @@ export async function exportReport(params: {
   await requirePermission(actor.role, 'billing:read')
 
   const rd   = getReadClient()
-  const from = params.dateFrom
-  const to   = params.dateTo + 'T23:59:59.999Z'
+  const from = istDayStartISO(params.dateFrom)
+  const to   = istDayEndISO(params.dateTo)
 
   let csv = ''
 

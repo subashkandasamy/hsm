@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Plus, Trash2, Printer } from 'lucide-react'
+import { istToday } from '@/lib/istDate'
 
 const TEAL = '#0D9488'
 const SLATE9 = '#0F172A'
@@ -35,7 +36,7 @@ const label = 'block text-xs font-medium mb-1'
 export default function BillGenerator() {
   const [mode, setMode] = useState<Mode>('opd')
   const [hosp, setHosp] = useState({ name: 'City General Hospital', address: '99, Avinashi Road, Coimbatore, Tamil Nadu', gstin: '', phone: '' })
-  const [pat, setPat] = useState({ name: 'Rajesh Kumar', id: 'UH-2026-00042', date: new Date().toISOString().slice(0, 10) })
+  const [pat, setPat] = useState({ name: 'Rajesh Kumar', id: 'UH-2026-00042', date: istToday() })
   const [billNo, setBillNo] = useState('INV-0001')
   const [items, setItems] = useState<Item[]>(OPD_ITEMS)
   const [gstRate, setGstRate] = useState('0')

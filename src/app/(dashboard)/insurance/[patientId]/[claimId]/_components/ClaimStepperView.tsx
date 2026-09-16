@@ -28,6 +28,7 @@ import type {
   InsuranceClaimChecklistItem, InsuranceClaimEnhancement,
   ClaimAdmissionType, DeductionType, ShortfallResolution,
 } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 const STANDARD_DOCS = ['Discharge Summary', 'Final Bill', 'Investigation Reports', 'ID Proof / KYC', 'Pre-auth Form', 'Doctor Notes']
 
@@ -554,7 +555,7 @@ export default function ClaimStepperView({
   // Aging / SLA — only meaningful while the claim is live.
   const terminal = !!claim && (claim.status === 'settled' || claim.status === 'rejected')
   const agingDays = claim && !terminal ? Math.floor((Date.now() - new Date(claim.submitted_at ?? claim.created_at).getTime()) / 86400000) : null
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const overdue = !!claim?.follow_up_due && !terminal && claim.follow_up_due < today
   const requiredDocsMissing = checklist.filter((c) => !c.is_provided).length
 

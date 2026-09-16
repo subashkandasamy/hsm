@@ -11,6 +11,7 @@ import Money from '@/components/ui/Money'
 import KpiTile from './KpiTile'
 import { exportReport } from '@/app/actions/dashboard'
 import type { AdminKPIs } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 const REPORT_TYPES = [
   { value: 'daily_collection',  label: 'Daily Collection' },
@@ -34,7 +35,7 @@ export default function AdminDashboard({ kpis }: { kpis: AdminKPIs | null }) {
     const d = new Date(); d.setDate(d.getDate() - 30)
     return d.toISOString().slice(0, 10)
   })
-  const [dateTo, setDateTo]           = useState(() => new Date().toISOString().slice(0, 10))
+  const [dateTo, setDateTo]           = useState(() => istToday())
   const [exporting, setExporting]     = useState(false)
 
   async function handleExport() {

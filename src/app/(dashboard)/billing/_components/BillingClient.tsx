@@ -20,6 +20,7 @@ import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
+import { istToday } from '@/lib/istDate'
 
 const STATUS_MAP: Record<string, string> = {
   draft:     'info',
@@ -597,7 +598,7 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
       {/* ── By Patient (grouped) — DEFAULT ── */}
       {viewMode === 'patient' && (() => {
-        const todayStr = new Date().toISOString().split('T')[0]
+        const todayStr = istToday()
         const isActiveToday = (g: PatientGroup) =>
           g.totalOutstanding > 0 ||
           g.pendingAdvance > 0 ||

@@ -16,16 +16,8 @@ export interface CollectionSummary {
   refunds: number       // advance refunds + credit notes (money paid out)
 }
 
-/** Today's date in IST (YYYY-MM-DD) — matches how the app reckons a "day". */
-export function istToday(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-}
-
-/** UTC ISO bounds [from, to) for a given IST calendar day. */
-export function istDayBoundsISO(dateIST: string): { from: string; to: string } {
-  const startMs = new Date(`${dateIST}T00:00:00+05:30`).getTime()
-  return { from: new Date(startMs).toISOString(), to: new Date(startMs + 86400000).toISOString() }
-}
+// IST day helpers live in lib/istDate (re-exported for existing imports).
+export { istToday, istDayBoundsISO } from '@/lib/istDate'
 
 export async function getCollectionSummary(
   supabase: SupabaseClient,

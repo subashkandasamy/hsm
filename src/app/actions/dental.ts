@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { z } from 'zod'
 import type { DentalTooth, DentalTreatment, DentalRecall, ToothStatus } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -161,8 +162,8 @@ export async function listDueRecalls(): Promise<DentalRecall[]> {
   await requirePermission((await getActorProfile()).role, 'dental:read')
   const supabase = await createClient()
 
-  const today = new Date().toISOString().split('T')[0]
-  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const today = istToday()
+  const nextWeek = istAddDays(istToday(), 7)
 
   const { data } = await supabase
     .from('dental_recalls')

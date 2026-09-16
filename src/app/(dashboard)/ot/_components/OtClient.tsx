@@ -12,6 +12,7 @@ import { listSchedules } from '@/app/actions/ot'
 import type { OtRoom, OtSchedule, Profile } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
+import { istToday } from '@/lib/istDate'
 
 const STATUS_MAP: Record<string, string> = {
   scheduled: 'pending', in_progress: 'info', completed: 'success', cancelled: 'cancelled',
@@ -73,7 +74,7 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
     loadDay(date, t)
   }
 
-  const isToday = date === new Date().toISOString().split('T')[0]
+  const isToday = date === istToday()
 
   const filtered = schedules
     .filter(s => !filterRoom   || s.ot_room_id === filterRoom)
@@ -110,7 +111,7 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
           <ChevronRight className="w-4 h-4" style={{ color: '#64748B' }} />
         </button>
         {!isToday && (
-          <button onClick={() => { const t = new Date().toISOString().split('T')[0]; setDate(t); loadDay(t) }}
+          <button onClick={() => { const t = istToday(); setDate(t); loadDay(t) }}
             className="text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
             style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)', cursor: 'pointer' }}>
             Today

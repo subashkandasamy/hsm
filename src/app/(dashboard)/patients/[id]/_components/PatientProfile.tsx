@@ -26,6 +26,7 @@ import type {
   PatientAllergy, PatientDocument, TimelineEvent, DiagnosisSummary, Role,
 } from '@/lib/types'
 import { hasPermission } from '@/lib/rbac'
+import { istToday } from '@/lib/istDate'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -117,7 +118,7 @@ export default function PatientProfile({
 
   // Detect active encounter for bill generation context
   const activeAdmission = admissions.find((a) => (a.status as string) === 'admitted')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = istToday()
   const activeVisit = !activeAdmission
     ? visits.find((v) => (v.visit_date as string).slice(0, 10) === today && v.status === 'open')
     : undefined

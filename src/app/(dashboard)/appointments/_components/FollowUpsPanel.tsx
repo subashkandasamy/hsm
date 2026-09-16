@@ -11,11 +11,12 @@ import EmptyState from '@/components/ui/EmptyState'
 import { listFollowUps, convertFollowUp, cancelFollowUp, createFollowUp } from '@/app/actions/followUps'
 import { searchPatients } from '@/app/actions/patients'
 import type { FollowUp, Patient } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 interface Doctor { id: string; full_name: string; role: string }
 type StatusFilter = 'pending' | 'converted' | 'cancelled' | 'all'
 
-const TODAY = () => new Date().toISOString().split('T')[0]
+const TODAY = () => istToday()
 
 const SOURCE_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   opd:    { label: 'OPD',    bg: '#E0F2F1', color: '#0F766E' },

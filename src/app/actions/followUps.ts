@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { FollowUpCreateSchema, FollowUpConvertSchema } from '@/lib/schemas'
 import { bookAppointment } from './appointments'
 import type { Appointment, FollowUp } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -59,7 +60,7 @@ export async function listFollowUps(filters?: {
 }): Promise<FollowUp[]> {
   const supabase = await createClient()
   const status = filters?.status ?? 'pending'
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   let q = supabase.from('follow_ups').select(SELECT)
   if (status !== 'all') q = q.eq('status', status)

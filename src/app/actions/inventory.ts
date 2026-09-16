@@ -9,6 +9,7 @@ import {
   ReceivePOSchema, StockIssueSchema, StockAdjustSchema,
 } from '@/lib/schemas'
 import type { Supplier, InventoryItem, PurchaseOrder, StockMovement, InventoryBatch } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 type SB = Awaited<ReturnType<typeof createClient>>
@@ -355,7 +356,7 @@ export async function adjustStock(input: Record<string, unknown>): Promise<Simpl
 // derived days-to-expiry, for the Expiry alerts tab.
 export async function getExpiryAlerts(withinDays = 90): Promise<Array<InventoryBatch & { days_to_expiry: number }>> {
   const supabase = await createClient()
-  const cutoff = new Date(Date.now() + withinDays * 86400000).toISOString().split('T')[0]
+  const cutoff = istAddDays(istToday(), withinDays)
   const { data } = await supabase
     .from('inventory_batches')
     .select('*, item:inventory_items(id, name, unit)')

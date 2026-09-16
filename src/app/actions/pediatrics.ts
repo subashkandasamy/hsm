@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { GrowthSchema, ImmunizationRecordSchema } from '@/lib/schemas'
 import type { GrowthRecord, ImmunizationStatusItem, ImmunizationState } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -27,7 +28,7 @@ export async function recordGrowth(patientId: string, input: Record<string, unkn
   const supabase = await createClient()
   const { error } = await supabase.from('pediatric_growth').insert({
     tenant_id: actor.tenant_id, patient_id: patientId, recorded_by: actor.id,
-    ...parsed.data, recorded_at: parsed.data.recorded_at || new Date().toISOString().split('T')[0],
+    ...parsed.data, recorded_at: parsed.data.recorded_at || istToday(),
   })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'growth', 'patient', patientId)
@@ -47,8 +48,8 @@ export async function getImmunizationStatus(patientId: string): Promise<Immuniza
   const dob = patient?.dob as string | null
   if (!dob) return []
   const dobMs = new Date(dob).getTime()
-  const today = new Date().toISOString().split('T')[0]
-  const soon = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+  const today = istToday()
+  const soon = istAddDays(istToday(), 30)
   const givenMap = new Map<string, string>()
   for (const g of given ?? []) givenMap.set(`${g.vaccine}|${g.dose_label}`, g.given_date as string)
 
@@ -75,7 +76,7 @@ export async function recordImmunization(patientId: string, input: Record<string
   const { error } = await supabase.from('patient_immunizations').insert({
     tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id,
     vaccine: parsed.data.vaccine, dose_label: parsed.data.dose_label,
-    given_date: parsed.data.given_date || new Date().toISOString().split('T')[0],
+    given_date: parsed.data.given_date || istToday(),
     notes: parsed.data.notes ?? null,
   })
   if (error) return { success: false, error: error.message }

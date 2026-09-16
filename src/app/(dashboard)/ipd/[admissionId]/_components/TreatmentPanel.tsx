@@ -7,6 +7,7 @@ import {
   FlaskConical, ScanLine, Search, XCircle, RotateCcw,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import { istToday } from '@/lib/istDate'
 
 // ─── Collapsible Section wrapper ─────────────────────────────────────────────
 
@@ -404,7 +405,7 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
 
 interface LabPanelProps { admissionId: string; patientId: string; canOrder: boolean }
 function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = istToday()
 
   const [orders, setOrders]             = useState<LabOrder[]>([])
   const [catalog, setCatalog]           = useState<LabTestCatalog[]>([])
@@ -773,7 +774,7 @@ function IpdLabTestRow({ test, selected, onToggle }: {
 
 interface RadPanelProps { admissionId: string; patientId: string; canOrder: boolean }
 function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = istToday()
 
   const [orders, setOrders]                 = useState<RadiologyOrder[]>([])
   const [catalog, setCatalog]               = useState<RadiologyCatalog[]>([])
@@ -1088,7 +1089,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [actingId, setActingId]       = useState<string | null>(null)
   const [stoppingId, setStoppingId]   = useState<string | null>(null)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = istToday()
 
   useEffect(() => {
     Promise.all([listOrders(admissionId), listSchedule(admissionId)]).then(([o, s]) => {

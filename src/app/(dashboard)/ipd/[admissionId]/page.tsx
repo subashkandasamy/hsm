@@ -7,12 +7,13 @@ import { listNurses, listAssignments } from '@/app/actions/nurseAssignment'
 import { listDoctors, listAdmissionSchedules } from '@/app/actions/ot'
 import { listProcedureTariffs } from '@/app/actions/tariffs'
 import AdmissionDetail from './_components/AdmissionDetail'
+import { istToday } from '@/lib/istDate'
 
 interface Props { params: Promise<{ admissionId: string }> }
 
 export default async function AdmissionDetailPage({ params }: Props) {
   const { admissionId } = await params
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   const [admission, notes, board, nurses, depositStatus, todayAssignments, otDoctors, otTariffs, otSchedules] = await Promise.all([
     getAdmission(admissionId),

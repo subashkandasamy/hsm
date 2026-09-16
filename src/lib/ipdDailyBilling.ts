@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { autoIpdBill, syncNursingBillLine, type IpdBillLineItem } from '@/lib/ipdBilling'
 import { tenantHasIpd } from '@/lib/billing/ipdAccess'
+import { istDate, istAddDays as addDays } from '@/lib/istDate'
 
 export interface DailyBillAdmission {
   id: string
@@ -11,16 +12,7 @@ export interface DailyBillAdmission {
   ward: { name: string; daily_rate: number }
 }
 
-/** Calendar date in IST (Asia/Kolkata, UTC+5:30) as 'YYYY-MM-DD'. */
-export function istDate(d: Date | string = new Date()): string {
-  return new Date(new Date(d).getTime() + 5.5 * 3600_000).toISOString().slice(0, 10)
-}
-
-function addDays(ymd: string, n: number): string {
-  const t = new Date(`${ymd}T00:00:00Z`)
-  t.setUTCDate(t.getUTCDate() + n)
-  return t.toISOString().slice(0, 10)
-}
+export { istDate }
 
 /**
  * Stable per-charge line reference (bill_items.ref_id is a uuid). The same

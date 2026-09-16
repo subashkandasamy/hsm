@@ -5,15 +5,11 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import type { CashMovement, CashSummary, DayBook, ShiftSummary, CashShiftClose } from '@/lib/types'
+import { istToday, istDayStartISO, istDayBoundsISO } from '@/lib/istDate'
 
-// NOTE: day boundaries use UTC to stay consistent with the rest of the app
-// (dashboard "today", daily billing all key off UTC dates).
-function dayBounds(date: string): { from: string; to: string } {
-  const from = `${date}T00:00:00.000Z`
-  const next = new Date(`${date}T00:00:00.000Z`)
-  next.setUTCDate(next.getUTCDate() + 1)
-  return { from, to: next.toISOString() }
-}
+// Day windows are IST calendar days (a payment at 02:00 IST belongs to that day's
+// book, not the previous one) — see lib/istDate.
+const dayBounds = (date: string) => istDayBoundsISO(date)
 
 function bucketKey(method: string): 'cash' | 'card' | 'upi' | 'bank' | 'insurance' | null {
   if (method === 'cash') return 'cash'
@@ -183,7 +179,7 @@ export async function getShiftSummary(): Promise<ShiftSummary> {
     .maybeSingle()
 
   const now = new Date()
-  const startOfToday = `${now.toISOString().split('T')[0]}T00:00:00.000Z`
+  const startOfToday = istDayStartISO(istToday())
   const fromTime = (last?.to_time as string | null) ?? startOfToday
   const toTime = now.toISOString()
 

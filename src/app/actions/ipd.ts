@@ -10,6 +10,7 @@ import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
 import { catchUpDailyCharges } from '@/lib/ipdDailyBilling'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type { Admission, IpdProgressNote } from '@/lib/types'
+import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -165,14 +166,14 @@ export async function admitPatient(
   }
 
   // Auto-close today's checked_in/booked appointment — patient moved to IPD
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = istToday()
   await supabase
     .from('appointments')
     .update({ status: 'done' })
     .eq('patient_id', patient_id)
     .in('status', ['checked_in', 'booked'])
-    .gte('scheduled_at', `${todayStr}T00:00:00`)
-    .lte('scheduled_at', `${todayStr}T23:59:59`)
+    .gte('scheduled_at', istDayStartISO(todayStr))
+    .lte('scheduled_at', istDayEndISO(todayStr))
 
   // Auto-close any open OPD visits today — patient is now an IPD inpatient
   await supabase
@@ -180,8 +181,8 @@ export async function admitPatient(
     .update({ status: 'closed' })
     .eq('patient_id', patient_id)
     .eq('status', 'open')
-    .gte('visit_date', `${todayStr}T00:00:00`)
-    .lte('visit_date', `${todayStr}T23:59:59`)
+    .gte('visit_date', istDayStartISO(todayStr))
+    .lte('visit_date', istDayEndISO(todayStr))
 
   // Assign a combined bill number to this admission.
   // Carry forward from a same-day OPD visit if one exists; otherwise generate a new one.
@@ -189,8 +190,8 @@ export async function admitPatient(
     .from('visits')
     .select('combined_bill_no')
     .eq('patient_id', patient_id)
-    .gte('visit_date', `${todayStr}T00:00:00`)
-    .lt('visit_date', `${todayStr}T23:59:59`)
+    .gte('visit_date', istDayStartISO(todayStr))
+    .lt('visit_date', istDayEndISO(todayStr))
     .not('combined_bill_no', 'is', null)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -217,8 +218,8 @@ export async function admitPatient(
       .from('visits')
       .select('id')
       .eq('patient_id', patient_id)
-      .gte('visit_date', `${todayStr}T00:00:00`)
-      .lt('visit_date', `${todayStr}T23:59:59`)
+      .gte('visit_date', istDayStartISO(todayStr))
+      .lt('visit_date', istDayEndISO(todayStr))
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

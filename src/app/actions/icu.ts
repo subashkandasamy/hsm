@@ -8,6 +8,7 @@ import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
+import { istToday, istDate } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -168,10 +169,10 @@ export async function listFluidBalance(admissionId: string): Promise<{
     .order('recorded_at', { ascending: false })
     .limit(200)
   const entries = (data ?? []) as unknown as IcuFluidEntry[]
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   let intake = 0, output = 0, todayIntake = 0, todayOutput = 0
   for (const e of entries) {
-    const isToday = (e.recorded_at ?? '').startsWith(today)
+    const isToday = !!e.recorded_at && istDate(e.recorded_at) === today
     if (e.direction === 'intake') { intake += e.volume_ml; if (isToday) todayIntake += e.volume_ml }
     else { output += e.volume_ml; if (isToday) todayOutput += e.volume_ml }
   }

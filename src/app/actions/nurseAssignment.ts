@@ -8,6 +8,7 @@ import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import { syncNursingBillLine } from '@/lib/ipdBilling'
 import { AssignNurseSchema } from '@/lib/schemas'
 import type { AdmissionNurseAssignment, PickerNurse, NursePickerData } from '@/lib/types'
+import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -69,7 +70,7 @@ export async function assignNurse(params: {
   await logAudit(actor.id, 'assign', 'nurse', id, { admissionId, nurseId, shift, date, chargeSnapshot })
 
   // Auto-bill today's shift onto the day's nursing bill (per-shift line, deduped by shift id).
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (date === today && chargeSnapshot > 0) {
     const { data: adm } = await supabase
       .from('admissions').select('patient_id').eq('id', admissionId).single()
@@ -116,8 +117,8 @@ export async function unassignNurse(assignmentId: string): Promise<SimpleResult>
     .from('bills')
     .select('id', { count: 'exact', head: true })
     .eq('admission_id', assignment.admission_id)
-    .gte('created_at', `${assignment.assigned_date}T00:00:00`)
-    .lt('created_at', `${assignment.assigned_date}T23:59:59`)
+    .gte('created_at', istDayStartISO(assignment.assigned_date))
+    .lt('created_at', istDayEndISO(assignment.assigned_date))
 
   if ((count ?? 0) > 0)
     return { success: false, error: 'Cannot unassign — this shift has already been billed' }

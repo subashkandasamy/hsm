@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { AddCareTeamSchema, RequestConsultSchema, LogVisitSchema, CompleteVisitSchema } from '@/lib/schemas'
 import type { CareTeamMember, DoctorVisit } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 type Supa = Awaited<ReturnType<typeof createClient>>
@@ -126,7 +127,7 @@ async function billVisit(supabase: Supa, actorId: string, tenantId: string, visi
   if (fee <= 0) return 'waived'
 
   const { data: doc } = await supabase.from('profiles').select('full_name').eq('id', doctorId).single()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   await autoIpdBill(supabase, actorId, {
     tenantId, admissionId, patientId: adm.patient_id as string, billingDate: today, billSource: 'consultation',
     lineItems: [{

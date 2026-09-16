@@ -9,6 +9,7 @@ import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -157,8 +158,8 @@ export async function listUnits(filters?: {
 
 export async function getInventory(): Promise<BloodInventoryCell[]> {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
-  const in7   = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  const today = istToday()
+  const in7   = istAddDays(istToday(), 7)
 
   const { data: units } = await supabase
     .from('blood_units')
@@ -187,7 +188,7 @@ export async function expireOldUnits(): Promise<{ expired: number }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:manage')
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const { data, error } = await supabase.from('blood_units')
     .update({ status: 'expired' })
     .eq('status', 'available')
@@ -325,7 +326,7 @@ export async function listCompatibleUnits(requestId: string): Promise<BloodUnit[
     .from('blood_requests').select('blood_group, component').eq('id', requestId).single()
   if (!req) return []
   const groups = compatibleDonorGroups(req.blood_group as BloodGroup, req.component as BloodComponent)
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const { data } = await supabase.from('blood_units')
     .select('*, donor:blood_donors(id, name)')
     .eq('component', req.component)
@@ -345,7 +346,7 @@ export async function listCrossMatchedUnits(requestId: string): Promise<BloodUni
     .from('blood_crossmatches').select('blood_unit_id, compatible').eq('request_id', requestId)
   const unitIds = [...new Set((xms ?? []).filter((x) => x.compatible).map((x) => x.blood_unit_id as string))]
   if (!unitIds.length) return []
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const { data } = await supabase.from('blood_units')
     .select('*, donor:blood_donors(id, name)')
     .in('id', unitIds)
@@ -432,8 +433,8 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
 export async function getStockSummary(): Promise<BloodStockSummary> {
   const supabase = await createClient()
   const { data } = await supabase.from('blood_units').select('status, screening_status, expiry')
-  const today = new Date().toISOString().split('T')[0]
-  const soon = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  const today = istToday()
+  const soon = istAddDays(istToday(), 7)
   const s: BloodStockSummary = { total: 0, available: 0, reserved: 0, issued: 0, unscreened: 0, nearExpiry: 0, expired: 0, separated: 0 }
   for (const u of data ?? []) {
     s.total++
@@ -700,7 +701,7 @@ export async function issueUnit(input: {
   // IPD: auto-attach the processing charge to the admission bill so it isn't
   // missed at the manual counter.
   if (req.admission_id && price > 0) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
     await autoIpdBill(supabase, actor.id, {
       tenantId:    actor.tenant_id,
       admissionId: req.admission_id as string,

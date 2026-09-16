@@ -5,6 +5,7 @@ import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
 import { issueUnit, listCrossMatchedUnits, listComponentCharges } from '@/app/actions/blood'
 import type { BloodRequest, BloodUnit } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 const COMPONENT_LABELS: Record<string, string> = {
   whole: 'Whole Blood', prbc: 'PRBC', plasma: 'Plasma', platelets: 'Platelets',
@@ -50,7 +51,7 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
     onSuccess()
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   return (
     <Modal open={open} onClose={onClose}

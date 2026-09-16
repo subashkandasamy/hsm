@@ -14,6 +14,7 @@ import type {
   ShiftDefinition, WardCoverageRule, WardIncharge, LeaveRequest,
   RosterPattern, DutyRoster, ShiftCoverage, WardRosterData,
 } from '@/lib/types'
+import { istAddDays } from '@/lib/istDate'
 
 type Result = { success: true } | { success: false; error: string }
 
@@ -24,15 +25,16 @@ const DEFAULT_MIN_NURSES = 1
 
 function eachDate(start: string, end: string): string[] {
   const out: string[] = []
-  const d = new Date(start + 'T00:00:00')
-  const last = new Date(end + 'T00:00:00')
-  while (d <= last) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1) }
+  // Parse as UTC so the result doesn't depend on the server's timezone (on an IST
+  // machine a local-midnight parse turned every date into the previous day).
+  const d = new Date(start + 'T00:00:00Z')
+  const last = new Date(end + 'T00:00:00Z')
+  while (d <= last) { out.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1) }
   return out
 }
 
 function shiftDate(date: string, days: number): string {
-  const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return istAddDays(date, days)
 }
 
 /** Occupied beds in a nursing unit = admitted patients across ALL rooms in that unit. */
@@ -477,10 +479,10 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
       const cycle = pat.cycle_days as number
       for (const m of members) {
         if (m.nursing_unit_id && m.nursing_unit_id !== d.nursing_unit_id) continue
-        const anchor = new Date((m.anchor_date as string) + 'T00:00:00').getTime()
+        const anchor = new Date((m.anchor_date as string) + 'T00:00:00Z').getTime()
         const offset = (m.offset_days as number) ?? 0
         for (const date of dates) {
-          const dayDiff = Math.round((new Date(date + 'T00:00:00').getTime() - anchor) / 86400000)
+          const dayDiff = Math.round((new Date(date + 'T00:00:00Z').getTime() - anchor) / 86400000)
           const idx = (((dayDiff + offset) % cycle) + cycle) % cycle
           const shift = dayPlan[idx]
           if (shift && shift !== 'off') stage(m.profile_id as string, date, shift, 'pattern')

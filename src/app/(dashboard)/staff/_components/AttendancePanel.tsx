@@ -9,6 +9,7 @@ import { markAttendance, getAttendance } from '@/app/actions/hr'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { StaffMember, StaffAttendance, AttendanceStatus, Shift } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 const STATUS_STYLES: Record<AttendanceStatus, { label: string; variant: string }> = {
   present:  { label: 'Present',  variant: 'success' },
@@ -38,7 +39,7 @@ export default function AttendancePanel({ staff, initialAttendance, currentMonth
   const [month, setMonth] = useState(currentMonth)
   const [attendance, setAttendance] = useState(initialAttendance)
   const [loading, setLoading] = useState(false)
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10))
+  const [selectedDate, setSelectedDate] = useState(istToday())
   const [marking, setMarking] = useState<Record<string, boolean>>({})
   const [markError, setMarkError] = useState('')
 

@@ -9,6 +9,7 @@ import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -237,7 +238,7 @@ export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
 
 export async function getStock(): Promise<DrugWithStock[]> {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   // All batches for this tenant (all expiry/qty states — to show full inventory)
   const { data: allBatches } = await supabase
@@ -359,8 +360,8 @@ export interface PharmacyAlerts {
 
 export async function getAlerts(): Promise<PharmacyAlerts> {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
-  const in30 = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+  const today = istToday()
+  const in30 = istAddDays(istToday(), 30)
 
   const stock = await getStock()
   const lowStock = stock.filter((d) => d.total_qty <= (d.reorder_level ?? 0))
@@ -473,7 +474,7 @@ export async function dispense(
 
   const { patient_id, prescription_id, admission_id, drug_id, qty } = parsed.data
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   // FEFO: pick earliest non-expired batch with enough stock.
   // drug_id here is a generic ref — could be drug_master.id or drugs.id.
@@ -904,7 +905,7 @@ export async function getFefoPreview(
   drugId: string, qty: number
 ): Promise<{ batch: DrugBatch; price: number } | null> {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   // drugId is a generic ref — could be drug_master.id or drugs.id
   const { data: batches } = await supabase
     .from('drug_batches')

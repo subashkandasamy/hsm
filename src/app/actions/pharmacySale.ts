@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import type { PharmacySale } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -63,7 +64,7 @@ export async function addSaleItem(params: {
   const isMasterDrug = !tenantDrug
 
   // Snapshot current MRP from the earliest non-expired batch (works for both sources)
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   const { data: batches } = await supabase
     .from('drug_batches')
     .select('mrp')
@@ -319,7 +320,7 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
     drug_id: string | null; drug_master_id: string | null; prescription_id: string | null; qty: number; unit_price: number
   }>
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
 
   // FEFO dispense: for each item, pick earliest non-expired batch and call dispense_drug RPC
   for (const item of items) {

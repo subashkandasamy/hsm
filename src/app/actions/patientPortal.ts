@@ -6,6 +6,7 @@ import {
   normalizePhone, setPatientSession, clearPatientSession, getPatientSession,
   hashPassword, verifyPassword, makeResetToken, verifyResetToken,
 } from '@/lib/patientAuth'
+import { istToday, istDayStartISO, istDayEndISO, istAddDays, istWeekday } from '@/lib/istDate'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -583,9 +584,9 @@ export async function getDoctorAvailability(patientId: string, doctorId: string,
 
   const out: AvailableDay[] = []
   for (let i = 0; i < days; i++) {
-    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i)
-    const s = byDow.get(d.getDay())
-    if (s && s.length) out.push({ date: d.toISOString().split('T')[0], sessions: s })
+    const date = istAddDays(istToday(), i)   // IST days — never offer "yesterday" before 05:30
+    const s = byDow.get(istWeekday(date))
+    if (s && s.length) out.push({ date, sessions: s })
   }
   return out
 }
@@ -608,11 +609,11 @@ export async function bookPatientAppointment(
   const svc = createServiceClient()
   const owner = await ownsPatient(svc, patientId, session)
   if (!owner) return { success: false, error: 'Record not found' }
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (!dateStr || dateStr < today) return { success: false, error: 'Pick a future date' }
 
   // One active appointment per patient per day.
-  const dayLo = `${dateStr}T00:00:00`, dayHi = `${dateStr}T23:59:59`
+  const dayLo = istDayStartISO(dateStr), dayHi = istDayEndISO(dateStr)
   const { data: dup } = await svc.from('appointments').select('id')
     .eq('patient_id', patientId).gte('scheduled_at', dayLo).lte('scheduled_at', dayHi)
     .in('status', ['booked', 'checked_in']).limit(1)
@@ -694,7 +695,7 @@ export async function getQueueStatus(patientId: string, appointmentId: string): 
   const { data: sameDay } = await svc.from('appointments')
     .select('token_no, status')
     .eq('doctor_id', appt.doctor_id as string)
-    .gte('scheduled_at', `${dateStr}T00:00:00`).lte('scheduled_at', `${dateStr}T23:59:59`)
+    .gte('scheduled_at', istDayStartISO(dateStr)).lte('scheduled_at', istDayEndISO(dateStr))
 
   let completed = 0, ahead = 0, total = 0
   for (const a of (sameDay ?? []) as Array<Record<string, unknown>>) {
