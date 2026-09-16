@@ -399,7 +399,8 @@ export async function generateBill(
   if (itemsToInsert.length > 0) {
     const { error: itemErr } = await supabase.from('bill_items').insert(itemsToInsert)
     if (itemErr) {
-      await supabase.from('bills').delete().eq('id', billId)
+      // Void, don't delete: the invoice number is already issued and must stay in sequence.
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
       return { success: false, error: itemErr.message }
     }
   }
@@ -413,6 +414,11 @@ export async function generateBill(
     refsBySource.set(c.source, existing)
   }
 
+  // Rows THIS bill flipped to 'billed' — reverted if the bill fails part-way, so
+  // no charge is left marked billed without a live bill (it would vanish from the
+  // unbilled list forever). Rows another bill already owned are never touched.
+  const flipped: Array<{ table: string; ids: string[] }> = []
+
   // Helper: update billing_status with double-bill guard — returns error string or null
   async function flipToBilled(table: string, refs: string[]): Promise<string | null> {
     const { data, error } = await supabase
@@ -422,7 +428,9 @@ export async function generateBill(
       .eq('billing_status', 'unbilled')
       .select('id')
     if (error) return error.message
-    if ((data?.length ?? 0) < refs.length) return `Some ${table} charges were already billed`
+    const ids = (data ?? []).map((r) => r.id as string)
+    if (ids.length) flipped.push({ table, ids })
+    if (ids.length < refs.length) return `Some ${table} charges were already billed`
     return null
   }
 
@@ -444,7 +452,11 @@ export async function generateBill(
 
     const flipErr = await flipToBilled(table, refs)
     if (flipErr) {
-      await supabase.from('bills').delete().eq('id', billId)
+      for (const f of flipped) {
+        await supabase.from(f.table as 'visits').update({ billing_status: 'unbilled' }).in('id', f.ids)
+      }
+      // Void, don't delete: the invoice number is already issued and must stay in sequence.
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
       return { success: false, error: flipErr }
     }
   }
@@ -912,13 +924,13 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       .eq('admission_id', admissionId).neq('status', 'cancelled')
       .order('billing_date', { ascending: true }).order('created_at', { ascending: true })
     const allBillsFb = ((admBillsFb ?? []) as unknown as CombinedBillRaw[]).filter((b) => (b as { bill_source?: string | null }).bill_source !== 'consolidated')
-    const { data: billNoFb } = await supabase.rpc('get_next_bill_no')
     const { data: advRowsFb } = await supabase.from('admission_advances').select('amount').eq('admission_id', admissionId)
     const advFb = (advRowsFb ?? []).reduce((s, a) => s + (a.amount as number), 0)
     const secFb = buildSections(allBillsFb)
     const regFb = allBillsFb.filter((b) => (b as { bill_source?: string | null }).bill_source !== 'advance_refund')
     return {
-      combinedBillNo: (billNoFb as string | null) ?? 'COMBINED',
+      // A view must never take a number — show the first bill's own number.
+      combinedBillNo: ((allBillsFb[0] as { bill_no?: string } | undefined)?.bill_no) ?? 'SUMMARY',
       tenantName,
       patient: { full_name: fbPatient.full_name as string, uhid: fbPatient.uhid as string, phone: fbPatient.phone as string | null },
       generatedAt: new Date().toISOString(),
@@ -939,7 +951,8 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
   if (existingNo) {
     combinedBillNo = existingNo
   } else {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    // Summaries have their own series — invoice numbers are only for real bills.
+    const { data: billNoData } = await supabase.rpc('get_next_summary_no', { p_tenant_id: actor.tenant_id })
     if (billNoData) {
       combinedBillNo = billNoData as string
       await supabase.from('admissions').update({ combined_bill_no: combinedBillNo }).eq('id', admissionId)
@@ -1079,8 +1092,8 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     const { data: apptPatient } = await supabase
       .from('patients').select('full_name, uhid, phone').eq('id', apptPatientId).single()
     if (!apptPatient) return null
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-    const combinedBillNoAppt = (billNoData as string | null) ?? 'COMBINED'
+    // A view must never take a number — show the booking bill's own number.
+    const combinedBillNoAppt = apptBills[0].bill_no ?? 'SUMMARY'
     const apptSections = buildSections(apptBills)
     const apptRegular = apptBills.filter(b => b.bill_source !== 'advance_refund' && b.status !== 'cancelled')
     return {
@@ -1112,7 +1125,8 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   if (existingNo) {
     combinedBillNo = existingNo
   } else {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    // Summaries have their own series — invoice numbers are only for real bills.
+    const { data: billNoData } = await supabase.rpc('get_next_summary_no', { p_tenant_id: actor.tenant_id })
     if (billNoData) {
       combinedBillNo = billNoData as string
       await supabase.from('visits').update({ combined_bill_no: combinedBillNo }).eq('id', resolvedVisitId)
@@ -1198,7 +1212,8 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
   if (existingNo) {
     combinedBillNo = existingNo
   } else {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    // Summaries have their own series — invoice numbers are only for real bills.
+    const { data: billNoData } = await supabase.rpc('get_next_summary_no', { p_tenant_id: actor.tenant_id })
     if (billNoData) {
       combinedBillNo = billNoData as string
       await supabase.from('patients').update({ combined_bill_no: combinedBillNo }).eq('id', patientId)

@@ -200,7 +200,8 @@ export async function admitPatient(
   if (todayVisit?.combined_bill_no) {
     admissionCombinedNo = todayVisit.combined_bill_no as string
   } else {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+    // Summary numbers have their own series — invoice numbers are only for real bills.
+    const { data: billNoData } = await supabase.rpc('get_next_summary_no', { p_tenant_id: actor.tenant_id })
     admissionCombinedNo = billNoData as string | null
   }
 

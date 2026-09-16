@@ -609,7 +609,8 @@ export async function generatePharmacyBill(params: {
     })
   )
   if (itemErr) {
-    await supabase.from('bills').delete().eq('id', billId)
+    // Void, don't delete: the invoice number is already issued and must stay in sequence.
+    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
     return { success: false, error: itemErr.message }
   }
 
