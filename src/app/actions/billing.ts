@@ -712,35 +712,17 @@ export async function recordPayment(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const supabase = await createClient()
-  const { data: bill } = await supabase
-    .from('bills').select('total, paid, status').eq('id', parsed.data.bill_id).single()
-  if (!bill) return { success: false, error: 'Bill not found' }
-  if ((bill.status as string) === 'cancelled') return { success: false, error: 'Bill is cancelled' }
-  if ((bill.status as string) === 'paid') return { success: false, error: 'Bill is already fully paid' }
-
-  const balanceDue = (bill.total as number) - (bill.paid as number)
-  if (parsed.data.amount > balanceDue + 0.001) {
-    return { success: false, error: `Payment of ₹${parsed.data.amount.toFixed(2)} exceeds balance due of ₹${balanceDue.toFixed(2)}` }
-  }
-
-  const { error: payErr } = await supabase.from('payments').insert({
-    id: crypto.randomUUID(),
-    tenant_id: actor.tenant_id,
-    bill_id: parsed.data.bill_id,
-    amount: parsed.data.amount,
-    method: parsed.data.method,
-    reference: parsed.data.reference ?? null,
-    received_by: actor.id,
+  // One locked transaction in the database: two cashiers paying the same bill at
+  // once can no longer both pass the balance check or overwrite each other's paid.
+  const { data: res, error: rpcErr } = await supabase.rpc('record_bill_payment', {
+    p_bill_id: parsed.data.bill_id,
+    p_amount: parsed.data.amount,
+    p_method: parsed.data.method,
+    p_reference: parsed.data.reference ?? null,
   })
-  if (payErr) return { success: false, error: payErr.message }
-
-  const newPaid = (bill.paid as number) + parsed.data.amount
-  const newStatus = newPaid >= (bill.total as number) ? 'paid' : 'partial'
-
-  const { error: billErr } = await supabase.from('bills').update({
-    paid: newPaid, status: newStatus,
-  }).eq('id', parsed.data.bill_id)
-  if (billErr) return { success: false, error: billErr.message }
+  if (rpcErr) return { success: false, error: rpcErr.message }
+  const result = res as { ok: boolean; error?: string }
+  if (!result?.ok) return { success: false, error: result?.error ?? 'Payment failed' }
 
   await logAudit(actor.id, 'payment', 'bill', parsed.data.bill_id, {
     amount: parsed.data.amount, method: parsed.data.method,
