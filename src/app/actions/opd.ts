@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
-import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import type { Visit, Prescription, VisitFinancials } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -37,12 +37,10 @@ export async function getVisitFinancials(visitId: string): Promise<VisitFinancia
     insuranceSettled = (insPayments ?? []).reduce((s, p) => s + (p.amount as number), 0)
   }
 
-  const { data: apprClaims } = await supabase
-    .from('insurance_claims')
-    .select(INSURANCE_CREDIT_COLUMNS)
-    .eq('visit_id', visitId)
-    .or('eligibility_status.eq.approved,status.eq.settled')
-  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
+  // Claims on the visit or on any of its bills (a cashless claim is often raised on
+  // the consultation bill before the visit starts); only unreceived credit counts.
+  const ins = await encounterInsurance(supabase, { visitId, billIds })
+  const insuranceApproved = ins.outstanding
 
   const balanceDue = Math.max(0, totalBilled - totalPaid)
   const patientBalanceDue = Math.max(0, balanceDue - insuranceApproved)

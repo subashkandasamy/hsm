@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
-import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
 
@@ -117,12 +117,10 @@ export async function getAdmissionFinancials(
   // eligibility-approved receivable (pre-auth lets the patient leave without
   // paying); post-settlement it reflects what was actually received unless the
   // shortfall was written off — see claimInsuranceCredit for the full rule.
-  const { data: apprClaims } = await supabase
-    .from('insurance_claims')
-    .select(INSURANCE_CREDIT_COLUMNS)
-    .eq('admission_id', admissionId)
-    .or('eligibility_status.eq.approved,status.eq.settled')
-  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
+  // Only the insurance credit not yet received offsets the balance — settled money
+  // is already in totalPaid (see encounterInsurance).
+  const ins = await encounterInsurance(supabase, { admissionId, billIds })
+  const insuranceApproved = ins.outstanding
 
   const advanceSpent  = totalAdvance - totalRefunded
   const balanceDue    = Math.max(0, totalBilled - totalPaid)

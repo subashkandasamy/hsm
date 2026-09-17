@@ -204,6 +204,12 @@ export async function getOrCreateEmergencyVisit(
     if ('error' in bill) console.error('[getOrCreateEmergencyVisit] consultation bill failed:', bill.error)
   }
 
+  // The registration fee and ER charges billed before the consultation belong to
+  // this ER visit too — so a claim on the visit, the visit's financials and its
+  // summary include them.
+  await supabase.from('bills').update({ visit_id: visitId })
+    .eq('emergency_case_id', caseId).is('visit_id', null).neq('status', 'cancelled')
+
   await logAudit(actor.id, 'visit', 'emergency_case', caseId, { visit_id: visitId })
   return { success: true, visitId }
 }
@@ -216,16 +222,18 @@ export async function getExistingEmergencyVisit(caseId: string): Promise<string 
   const supabase = await createClient()
   const { data: ec } = await supabase
     .from('emergency_cases')
-    .select('patient_id')
+    .select('patient_id, arrived_at')
     .eq('id', caseId)
     .single()
   if (!ec) return null
 
+  // Only this case's visit — a patient's earlier ER visit must not be picked up.
   const { data: visit } = await supabase
     .from('visits')
     .select('id')
     .eq('patient_id', ec.patient_id)
     .eq('type', 'emergency')
+    .gte('created_at', new Date(new Date(ec.arrived_at as string).getTime() - 5 * 60_000).toISOString())
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -410,6 +418,8 @@ export async function addEmergencyCharge(input: {
     .order('created_at', { ascending: false }).limit(1).maybeSingle()
 
   const line = { source: 'manual' as const, ref_id: input.caseId, description, qty, unit_price: unitPrice }
+  // Once the ER consultation visit exists, new ER charge bills belong to it too.
+  const erVisitId = await getExistingEmergencyVisit(input.caseId)
   if (open) {
     const cfg = await getTenantGstConfig(supabase, actor.tenant_id)
     const { error } = await supabase.from('bill_items').insert(stampBillItem(line, { tenantId: actor.tenant_id, billId: open.id as string, cfg }))
@@ -417,7 +427,7 @@ export async function addEmergencyCharge(input: {
     await reconcileBill(supabase, open.id as string)
   } else {
     const bill = await createServiceBill(supabase, {
-      tenantId: actor.tenant_id, patientId: c.patientId, actorId: actor.id, emergencyCaseId: input.caseId,
+      tenantId: actor.tenant_id, patientId: c.patientId, actorId: actor.id, emergencyCaseId: input.caseId, visitId: erVisitId,
       billSource: 'manual', lines: [line],
     })
     if ('error' in bill) return { success: false, error: bill.error }

@@ -131,12 +131,50 @@ async function committedOnPolicy(
 ): Promise<number> {
   let q = supabase
     .from('insurance_claims')
-    .select('claim_amount, estimated_amount, status')
+    .select('claim_amount, eligibility_approved_amount, estimated_amount, status')
     .eq('policy_id', policyId)
     .neq('status', 'rejected')
   if (excludeClaimId) q = q.neq('id', excludeClaimId)
   const { data } = await q
-  return (data ?? []).reduce((s, c) => s + ((c.claim_amount as number | null) ?? (c.estimated_amount as number | null) ?? 0), 0)
+  // Firmest figure first: the raised claim amount, else the eligibility-approved
+  // amount (a cashless approval commits cover), else the estimate.
+  return (data ?? []).reduce((s, c) => s + (
+    (c.claim_amount as number | null) ??
+    (c.eligibility_approved_amount as number | null) ??
+    (c.estimated_amount as number | null) ?? 0
+  ), 0)
+}
+
+/** Refuses an amount that would take the policy past its coverage (null coverage = no limit). */
+async function checkCoverage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claimId: string,
+  amount: number,
+): Promise<string | null> {
+  const { data: claim } = await supabase.from('insurance_claims').select('policy_id').eq('id', claimId).maybeSingle()
+  if (!claim) return 'Claim not found'
+  const pol = await policyPatient(supabase, claim.policy_id as string)
+  if (pol?.coverage_amount == null) return null
+  const committed = await committedOnPolicy(supabase, claim.policy_id as string, claimId)
+  if (committed + amount > pol.coverage_amount + 0.005) {
+    const remaining = Math.max(0, pol.coverage_amount - committed)
+    return `This exceeds the policy's remaining coverage — ₹${remaining.toFixed(0)} available.`
+  }
+  return null
+}
+
+/** Another live (non-rejected) claim on the same encounter as this one, if any. */
+async function otherLiveClaimOnEncounter(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claim: { id: string; admission_id: string | null; visit_id: string | null; bill_id: string | null },
+): Promise<boolean> {
+  let q = supabase.from('insurance_claims').select('id', { count: 'exact', head: true }).neq('status', 'rejected').neq('id', claim.id)
+  if (claim.admission_id) q = q.eq('admission_id', claim.admission_id)
+  else if (claim.visit_id) q = q.eq('visit_id', claim.visit_id)
+  else if (claim.bill_id) q = q.eq('bill_id', claim.bill_id)
+  else return false
+  const { count } = await q
+  return (count ?? 0) > 0
 }
 
 // ── TPA master ────────────────────────────────────────────────────────────────
@@ -485,6 +523,10 @@ export async function decideEligibility(input: Record<string, unknown>): Promise
   if (claim.eligibility_status !== 'pending') return { success: false, error: 'Eligibility has already been decided for this claim' }
   if (d.decision === 'approved' && !claim.estimated_amount)
     return { success: false, error: 'Enter an estimated amount before approving' }
+  if (d.decision === 'approved') {
+    const coverageErr = await checkCoverage(supabase, d.id, (d.approved_amount ?? claim.estimated_amount) as number)
+    if (coverageErr) return { success: false, error: coverageErr }
+  }
 
   const now = new Date().toISOString()
   const updateData: Record<string, unknown> = {
@@ -534,6 +576,10 @@ export async function advanceClaim(
   // hospital must commit to a real claim_amount before it can be submitted.
   if (nextStatus === 'raised' && parsed.data.claim_amount == null && claim.claim_amount == null)
     return { success: false, error: 'Claim amount is required to raise this claim' }
+  if (nextStatus === 'raised' && parsed.data.claim_amount != null) {
+    const coverageErr = await checkCoverage(supabase, id, parsed.data.claim_amount)
+    if (coverageErr) return { success: false, error: coverageErr }
+  }
 
   const now = new Date().toISOString()
   const updateData: Record<string, unknown> = { status: nextStatus }
@@ -598,7 +644,9 @@ export async function recordSettlement(input: Record<string, unknown>): Promise<
   }
 
   const now = new Date().toISOString()
-  const { error } = await supabase.from('insurance_claims').update({
+  // Conditional on status: two settlement clicks at once used to both pass the
+  // 'approved' check above and post the insurer's money twice.
+  const { data: settledRows, error } = await supabase.from('insurance_claims').update({
     status: 'settled',
     settled_at: now,
     settled_amount: d.settled_amount,
@@ -608,41 +656,41 @@ export async function recordSettlement(input: Record<string, unknown>): Promise<
     tds_amount: d.tds_amount ?? null,
     shortfall_amount: shortfall > 0 ? shortfall : null,
     shortfall_resolution: shortfall > 0 ? (d.shortfall_resolution ?? null) : null,
-  }).eq('id', d.id)
+  }).eq('id', d.id).eq('status', 'approved').select('id')
   if (error) return { success: false, error: error.message }
+  if (!settledRows?.length) return { success: false, error: 'This claim has already been settled' }
 
+  let unallocated = 0
   if (d.settled_amount > 0) {
     const bills = await encounterBills(supabase, {
       admission_id: claim.admission_id as string | null,
       visit_id: claim.visit_id as string | null,
       bill_id: claim.bill_id as string | null,
     })
-    let leftover = d.settled_amount
+    let leftover = Math.round(d.settled_amount * 100) / 100
     for (const b of bills) {
       if (leftover <= 0) break
-      const remaining = b.total - b.paid
+      // Balance from the payments table (bills.paid can drift), posted through the
+      // row-locked record_bill_payment so paid/status stay consistent.
+      const { data: pays } = await supabase.from('payments').select('amount').eq('bill_id', b.id)
+      const paidSoFar = (pays ?? []).reduce((s, p) => s + Number(p.amount), 0)
+      const remaining = Math.round((b.total - paidSoFar) * 100) / 100
       if (remaining <= 0) continue
       const pay = Math.min(remaining, leftover)
-      const { error: payErr } = await supabase.from('payments').insert({
-        id: crypto.randomUUID(),
-        tenant_id: actor.tenant_id,
-        bill_id: b.id,
-        amount: pay,
-        method: 'insurance',
-        reference: `Claim ${d.id}`,
-        received_by: actor.id,
+      const { data: res, error: payErr } = await supabase.rpc('record_bill_payment', {
+        p_bill_id: b.id, p_amount: pay, p_method: 'insurance', p_reference: `Claim ${d.id}`,
       })
-      if (payErr) continue
-      const newPaid = b.paid + pay
-      await supabase.from('bills')
-        .update({ paid: newPaid, status: newPaid >= b.total ? 'paid' : 'partial' })
-        .eq('id', b.id)
-      leftover -= pay
+      if (payErr || !(res as { ok?: boolean } | null)?.ok) {
+        console.error('[recordSettlement] posting to bill failed', b.id, payErr?.message ?? (res as { error?: string } | null)?.error)
+        continue
+      }
+      leftover = Math.round((leftover - pay) * 100) / 100
     }
+    unallocated = leftover
   }
 
   await logAudit(actor.id, 'settle', 'insurance_claim', d.id, {
-    settled_amount: d.settled_amount, account_id: d.settlement_account_id,
+    settled_amount: d.settled_amount, account_id: d.settlement_account_id, unallocated,
     tds: d.tds_amount ?? 0, shortfall, shortfall_resolution: d.shortfall_resolution ?? null,
   })
   return { success: true }
@@ -676,6 +724,14 @@ export async function updateClaimFields(claimId: string, input: Record<string, u
   if (Object.keys(parsed.data).length === 0) return { success: true }
 
   const supabase = await createClient()
+  // Settlement already posted the insurer's money to the bills; changing the
+  // settled figure here would leave the claim and the bills disagreeing.
+  if (parsed.data.settled_amount !== undefined) {
+    const { data: cur } = await supabase.from('insurance_claims').select('status, settled_amount').eq('id', claimId).maybeSingle()
+    if (cur?.status === 'settled' && Number(cur.settled_amount ?? 0) !== Number(parsed.data.settled_amount ?? 0)) {
+      return { success: false, error: 'The settled amount is already posted to the bills and can’t be edited here. Record a refund or adjustment from Billing instead.' }
+    }
+  }
   const { error } = await supabase.from('insurance_claims').update(parsed.data).eq('id', claimId)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'edit_fields', 'insurance_claim', claimId, parsed.data)
@@ -786,6 +842,7 @@ export async function addChecklistItem(input: Record<string, unknown>): Promise<
 }
 
 export async function toggleChecklistItem(id: string, isProvided: boolean): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
   const supabase = await createClient()
@@ -797,6 +854,7 @@ export async function toggleChecklistItem(id: string, isProvided: boolean): Prom
 }
 
 export async function deleteChecklistItem(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
   const supabase = await createClient()
@@ -850,6 +908,10 @@ export async function decideEnhancement(input: Record<string, unknown>): Promise
   if (!enh) return { success: false, error: 'Enhancement not found' }
 
   const approved = d.decision === 'approved' ? (d.approved_amount ?? (enh.requested_amount as number)) : null
+  if (approved != null) {
+    const coverageErr = await checkCoverage(supabase, enh.claim_id as string, approved)
+    if (coverageErr) return { success: false, error: coverageErr }
+  }
   const { error } = await supabase.from('insurance_claim_enhancements').update({
     status: d.decision, approved_amount: approved, al_number: d.al_number ?? null,
   }).eq('id', d.id)
@@ -1001,6 +1063,7 @@ export async function listEncountersForPatient(patientId: string): Promise<Insur
 // ── Enquiry log (TPA back-and-forth loop) ───────────────────────────────────────
 
 export async function addClaimNote(claimId: string, note: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 
@@ -1034,6 +1097,7 @@ export async function listClaimNotes(claimId: string): Promise<InsuranceClaimNot
 }
 
 export async function updateClaimNote(noteId: string, note: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 
@@ -1047,6 +1111,7 @@ export async function updateClaimNote(noteId: string, note: string): Promise<Sim
 }
 
 export async function deleteClaimNote(noteId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
 
@@ -1217,9 +1282,13 @@ export async function appealClaim(claimId: string): Promise<SimpleResult> {
 
   const supabase = await createClient()
   const { data: claim } = await supabase
-    .from('insurance_claims').select('status, eligibility_status').eq('id', claimId).maybeSingle()
+    .from('insurance_claims').select('id, status, eligibility_status, admission_id, visit_id, bill_id').eq('id', claimId).maybeSingle()
   if (!claim) return { success: false, error: 'Claim not found' }
   if (claim.status !== 'rejected') return { success: false, error: 'Only a rejected claim can be appealed' }
+  // Reopening next to a newer claim on the same encounter would count cover twice.
+  if (await otherLiveClaimOnEncounter(supabase, claim as { id: string; admission_id: string | null; visit_id: string | null; bill_id: string | null })) {
+    return { success: false, error: 'A newer claim is already active for this encounter — continue that claim instead of appealing this one.' }
+  }
 
   // Reopen to the right stage: an eligibility rejection returns to the
   // eligibility decision; a claim-stage rejection returns to submitted.
@@ -1367,13 +1436,14 @@ export async function getReceivables(): Promise<InsuranceReceivables> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('insurance_claims')
-    .select('status, claim_amount, approved_amount, submitted_at, created_at')
+    .select('status, claim_amount, approved_amount, settled_amount, submitted_at, settled_at, created_at')
     .in('status', ['raised', 'submitted', 'approved', 'settled'])
     .limit(2000)
 
   const rows = data ?? []
   const now = Date.now()
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  // First day of the current month in IST.
+  const monthStart = `${istToday().slice(0, 8)}01T00:00:00+05:30`
 
   let pending = 0, approved = 0, settledThisMonth = 0
   const buckets = [
@@ -1395,8 +1465,8 @@ export async function getReceivables(): Promise<InsuranceReceivables> {
       const bucket = buckets.find((b) => days <= b.max)!
       bucket.amount += apprAmt; bucket.count += 1
     }
-    if (c.status === 'settled' && (c.submitted_at as string | null ?? c.created_at as string) >= monthStart) {
-      settledThisMonth += apprAmt
+    if (c.status === 'settled' && c.settled_at && new Date(c.settled_at as string) >= new Date(monthStart)) {
+      settledThisMonth += (c.settled_amount as number | null) ?? apprAmt
     }
   }
 

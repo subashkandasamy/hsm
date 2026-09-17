@@ -10,7 +10,7 @@ import {
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
-import { totalInsuranceCredit, INSURANCE_CREDIT_COLUMNS, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
 import { gstForSource, getTenantGstConfig } from '@/lib/billing/gst'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
@@ -207,7 +207,7 @@ export async function getUnbilledCharges(params: {
 
   // ---- OT schedules (unbilled, completed) ----
   {
-    let q = supabase
+    const q = supabase
       .from('ot_schedules')
       .select('id, procedure_name, price_snapshot, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id)')
       .eq('patient_id', patientId)
@@ -1043,10 +1043,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       .from('payments').select('amount').in('bill_id', billIds).eq('method', 'insurance')
     insuranceSettled = (insPays ?? []).reduce((s, p) => s + (p.amount as number), 0)
   }
-  const { data: apprClaims } = await supabase
-    .from('insurance_claims').select(INSURANCE_CREDIT_COLUMNS)
-    .eq('admission_id', admissionId).or('eligibility_status.eq.approved,status.eq.settled')
-  const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
+  const insuranceApproved = (await encounterInsurance(supabase, { admissionId, billIds: regularBills.map((b) => b.id) })).outstanding
 
   const adm = admission as unknown as { admitted_at: string | null; discharged_at: string | null; ward: { name: string } | null; bed: { bed_no: string } | null; doctor: { full_name: string } | null }
   return {
@@ -1230,6 +1227,15 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   const { data: visitDoctor } = visitRow.doctor_id
     ? await supabase.from('profiles').select('full_name').eq('id', visitRow.doctor_id).maybeSingle()
     : { data: null }
+
+  // Insurance on the OPD / ER visit (claims on the visit or any of its bills).
+  const opdBillIds = regularBills2.map((b) => b.id)
+  const opdIns = await encounterInsurance(supabase, { visitId: resolvedVisitId, billIds: opdBillIds })
+  let opdInsuranceSettled = 0
+  if (opdBillIds.length) {
+    const { data: insPays } = await supabase.from('payments').select('amount').in('bill_id', opdBillIds).eq('method', 'insurance')
+    opdInsuranceSettled = (insPays ?? []).reduce((s, p) => s + Number(p.amount), 0)
+  }
   return {
     kind: 'opd',
     encounter: { visitDate: visitRow.visit_date, doctor: (visitDoctor?.full_name as string | undefined) ?? null },
@@ -1251,6 +1257,11 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     advanceCollected: 0,
     advanceRefunded: 0,
     balanceDue: Math.max(0, grandTotal - totalPaid),
+    ...(opdIns.credit > 0 ? {
+      insuranceSettled: opdInsuranceSettled,
+      insuranceApproved: opdIns.outstanding,
+      patientBalance: Math.max(0, grandTotal - totalPaid - opdIns.outstanding),
+    } : {}),
   }
 }
 
