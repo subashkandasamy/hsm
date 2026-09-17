@@ -522,6 +522,7 @@ export async function issueAdvanceRefundBill(params: {
 
   // 4. Get next bill number
   const { data: billNoData } = await supabase.rpc('get_next_bill_no')
+  if (!billNoData) return { success: false, error: 'Failed to generate bill number' }
   const billNo = billNoData as string
 
   const billId = crypto.randomUUID()
@@ -557,7 +558,11 @@ export async function issueAdvanceRefundBill(params: {
     unit_price:  -refundAmount,
     amount:      -refundAmount,
   })
-  if (itemErr) return { success: false, error: itemErr.message }
+  if (itemErr) {
+    // Void, don't delete (invoice series) — and so a retry isn't blocked as "already issued".
+    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
+    return { success: false, error: itemErr.message }
+  }
 
   // 7. Record outgoing payment entry for audit trail
   const { error: payErr } = await supabase.from('payments').insert({
@@ -569,7 +574,10 @@ export async function issueAdvanceRefundBill(params: {
     reference:   reference ?? null,
     received_by: actor.id,
   })
-  if (payErr) return { success: false, error: payErr.message }
+  if (payErr) {
+    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
+    return { success: false, error: payErr.message }
+  }
 
   await logAudit(actor.id, 'refund', 'bill', billId, { admissionId, refundAmount, method })
   return { success: true, billId }

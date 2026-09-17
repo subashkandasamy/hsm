@@ -27,6 +27,7 @@ export async function createServiceBill(
     visitId?: string | null
     appointmentId?: string | null
     admissionId?: string | null
+    emergencyCaseId?: string | null
     billingDate?: string
   },
 ): Promise<{ billId: string; billNo: string } | { error: string }> {
@@ -44,6 +45,7 @@ export async function createServiceBill(
     visit_id: params.visitId ?? null,
     appointment_id: params.appointmentId ?? null,
     admission_id: params.admissionId ?? null,
+    emergency_case_id: params.emergencyCaseId ?? null,
     bill_no: billNo as string,
     billing_date: params.billingDate ?? istToday(),
     bill_source: params.billSource,

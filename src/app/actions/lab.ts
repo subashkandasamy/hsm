@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
@@ -149,44 +150,20 @@ export async function createLabOrder(
   const { error: itemErr } = await supabase.from('lab_order_items').insert(items)
   if (itemErr) return { success: false, error: itemErr.message }
 
-  // Phase 15: auto-generate bill for this order immediately
+  // Bill the order immediately (OPD lab is paid before sample processing).
   const totalAmount = items.reduce((s, i) => s + i.price_snapshot, 0)
   if (totalAmount > 0) {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-    if (billNoData) {
-      const billId = crypto.randomUUID()
-      const { error: billErr } = await supabase.from('bills').insert({
-        id: billId,
-        tenant_id: actor.tenant_id,
-        patient_id,
-        visit_id: visit_id ?? null,
-        bill_no: billNoData as string,
-        subtotal: totalAmount,
-        discount: 0, tax: 0, total: totalAmount, paid: 0,
-        status: 'unpaid',
-        created_by: actor.id,
-      })
-      if (!billErr) {
-        await supabase.from('bill_items').insert(
-          items.map((item) => ({
-            id: crypto.randomUUID(),
-            tenant_id: actor.tenant_id,
-            bill_id: billId,
-            source: 'lab',
-            ref_id: orderId,
-            description: tests?.find((t) => t.id === item.test_id)?.name ?? 'Lab test',
-            qty: 1,
-            unit_price: item.price_snapshot,
-            amount: item.price_snapshot,
-          }))
-        )
-        // Mark order as billed
-        await supabase
-          .from('lab_orders')
-          .update({ billing_status: 'billed' })
-          .eq('id', orderId)
-      }
-    }
+    const bill = await createServiceBill(supabase, {
+      tenantId: actor.tenant_id, patientId: patient_id, actorId: actor.id, visitId: visit_id ?? null,
+      billSource: 'lab',
+      lines: items.map((item) => ({
+        source: 'lab' as const, ref_id: orderId,
+        description: tests?.find((t) => t.id === item.test_id)?.name ?? 'Lab test',
+        qty: 1, unit_price: item.price_snapshot,
+      })),
+    })
+    if ('error' in bill) console.error('[createLabOrder] bill failed:', bill.error)
+    else await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
   }
 
   await logAudit(actor.id, 'create', 'lab_order', orderId, { patient_id, test_count: test_ids.length })

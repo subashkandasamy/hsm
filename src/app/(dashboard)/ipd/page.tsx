@@ -14,7 +14,7 @@ export default async function IpdPage() {
     listAdmissions({ status: 'admitted' }),
     listWards(),
     supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
-    supabase.from('procedure_tariffs').select('*').eq('is_active', true).neq('category', 'general').order('name'),
+    supabase.from('procedure_tariffs').select('*').eq('is_active', true).not('category', 'in', '(general,emergency)').order('name'),
     supabase.from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single(),
     supabase.from('procedure_tariffs').select('default_price').eq('category', 'general').eq('is_active', true).limit(1).maybeSingle(),
   ])

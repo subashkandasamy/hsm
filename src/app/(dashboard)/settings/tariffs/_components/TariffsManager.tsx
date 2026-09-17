@@ -15,7 +15,7 @@ interface Props {
   initialTariffs: ProcedureTariff[]
 }
 
-const CATEGORIES = ['general', 'surgery', 'procedure', 'package'] as const
+const CATEGORIES = ['general', 'surgery', 'procedure', 'package', 'emergency'] as const
 
 export default function TariffsManager({ initialTariffs }: Props) {
   const [tariffs, setTariffs]   = useState(initialTariffs)
@@ -25,7 +25,7 @@ export default function TariffsManager({ initialTariffs }: Props) {
   const [editingTariffId, setEditingTariffId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [tariffForm, setTariffForm] = useState({
-    name: '', category: '' as '' | 'general' | 'surgery' | 'procedure' | 'package', default_price: '',
+    name: '', category: '' as '' | 'general' | 'surgery' | 'procedure' | 'package' | 'emergency', default_price: '',
   })
 
   function openCreate() {
@@ -40,7 +40,7 @@ export default function TariffsManager({ initialTariffs }: Props) {
     setEditingTariffId(t.id)
     setTariffForm({
       name: t.name,
-      category: (t.category ?? '') as '' | 'general' | 'surgery' | 'procedure' | 'package',
+      category: (t.category ?? '') as '' | 'general' | 'surgery' | 'procedure' | 'package' | 'emergency',
       default_price: String(t.default_price),
     })
     setError('')
@@ -135,7 +135,7 @@ export default function TariffsManager({ initialTariffs }: Props) {
                 />
                 <Select
                   value={tariffForm.category}
-                  onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
+                  onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' | 'emergency' }))}
                 >
                   <option value="">Category (optional)</option>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}
@@ -200,7 +200,7 @@ export default function TariffsManager({ initialTariffs }: Props) {
                         {isEditing ? (
                           <Select
                             value={tariffForm.category}
-                            onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' }))}
+                            onChange={(e) => setTariffForm((f) => ({ ...f, category: e.target.value as '' | 'general' | 'surgery' | 'procedure' | 'package' | 'emergency' }))}
                           >
                             <option value="">—</option>
                             {CATEGORIES.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}

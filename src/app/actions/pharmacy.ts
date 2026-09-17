@@ -618,10 +618,12 @@ export async function generatePharmacyBill(params: {
   // Set GST aggregates + total from the stamped items.
   await recomputeBillGstTotals(supabase, billId)
 
+  // Only the dispenses on this bill — one dispensed after the bill was built stays
+  // unbilled for the next bill instead of being marked billed with no charge.
   await supabase
     .from('dispenses')
     .update({ billing_status: 'billed' })
-    .eq('patient_id', patientId)
+    .in('id', rows.map((r) => r.id as string))
     .eq('billing_status', 'unbilled')
 
   await logAudit(actor.id, 'generate', 'pharmacy_bill', billId, {

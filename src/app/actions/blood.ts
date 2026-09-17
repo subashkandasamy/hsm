@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
@@ -230,23 +231,12 @@ export async function raiseRequest(
     const units = parsed.data.units_required
     const total = unitPrice * units
     if (total > 0) {
-      const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-      if (billNoData) {
-        const billId = crypto.randomUUID()
-        const { error: billErr } = await supabase.from('bills').insert({
-          id: billId, tenant_id: actor.tenant_id, patient_id: parsed.data.patient_id,
-          visit_id: parsed.data.visit_id, bill_no: billNoData as string,
-          subtotal: total, discount: 0, tax: 0, total, paid: 0, status: 'unpaid', created_by: actor.id,
-        })
-        if (!billErr) {
-          await supabase.from('bill_items').insert({
-            id: crypto.randomUUID(), tenant_id: actor.tenant_id, bill_id: billId,
-            source: 'blood', ref_id: id,
-            description: `Blood: ${parsed.data.blood_group} ${COMPONENT_LABELS[parsed.data.component]} ×${units}`,
-            qty: units, unit_price: unitPrice, amount: total,
-          })
-        }
-      }
+      const bill = await createServiceBill(supabase, {
+        tenantId: actor.tenant_id, patientId: parsed.data.patient_id, actorId: actor.id, visitId: parsed.data.visit_id,
+        billSource: 'blood',
+        lines: [{ source: 'blood', ref_id: id, description: `Blood: ${parsed.data.blood_group} ${COMPONENT_LABELS[parsed.data.component]} ×${units}`, qty: units, unit_price: unitPrice }],
+      })
+      if ('error' in bill) console.error('[raiseRequest] OPD blood bill failed:', bill.error)
     }
   }
 

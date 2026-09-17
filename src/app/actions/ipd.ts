@@ -248,12 +248,20 @@ export async function admitPatient(
         .gte('created_at', new Date(new Date(erCase.arrived_at as string).getTime() - 5 * 60_000).toISOString())
       const erVisitIds = (erVisits ?? []).map((v) => v.id as string)
       if (erVisitIds.length) {
-        await supabase.from('bills')
+        const { error: visitLinkErr } = await supabase.from('bills')
           .update({ admission_id: admissionId })
           .in('visit_id', erVisitIds)
           .is('admission_id', null)
           .neq('status', 'cancelled')
+        if (visitLinkErr) console.error('[admitPatient] linking ER visit bills failed:', visitLinkErr.message)
       }
+      // ER registration fee and ER procedure charges are billed against the case.
+      const { error: caseLinkErr } = await supabase.from('bills')
+        .update({ admission_id: admissionId })
+        .eq('emergency_case_id', emergency_case_id)
+        .is('admission_id', null)
+        .neq('status', 'cancelled')
+      if (caseLinkErr) console.error('[admitPatient] linking ER case bills failed:', caseLinkErr.message)
     }
   }
 

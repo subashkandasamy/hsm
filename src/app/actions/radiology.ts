@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
@@ -92,42 +93,17 @@ export async function createRadiologyOrder(
   })
   if (error) return { success: false, error: error.message }
 
-  // Phase 15: auto-generate bill immediately on order creation
+  // Bill the order immediately (OPD scans are paid before they are performed).
   if (priceSnapshot > 0) {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
     const { data: testDetail } = await supabase
       .from('radiology_catalog').select('name').eq('id', test_id).single()
-    if (billNoData) {
-      const billId = crypto.randomUUID()
-      const { error: billErr } = await supabase.from('bills').insert({
-        id: billId,
-        tenant_id: actor.tenant_id,
-        patient_id,
-        visit_id: visit_id ?? null,
-        bill_no: billNoData as string,
-        subtotal: priceSnapshot,
-        discount: 0, tax: 0, total: priceSnapshot, paid: 0,
-        status: 'unpaid',
-        created_by: actor.id,
-      })
-      if (!billErr) {
-        await supabase.from('bill_items').insert({
-          id: crypto.randomUUID(),
-          tenant_id: actor.tenant_id,
-          bill_id: billId,
-          source: 'radiology',
-          ref_id: id,
-          description: (testDetail?.name as string) ?? 'Radiology scan',
-          qty: 1,
-          unit_price: priceSnapshot,
-          amount: priceSnapshot,
-        })
-        await supabase
-          .from('radiology_orders')
-          .update({ billing_status: 'billed' })
-          .eq('id', id)
-      }
-    }
+    const bill = await createServiceBill(supabase, {
+      tenantId: actor.tenant_id, patientId: patient_id, actorId: actor.id, visitId: visit_id ?? null,
+      billSource: 'radiology',
+      lines: [{ source: 'radiology', ref_id: id, description: (testDetail?.name as string) ?? 'Radiology scan', qty: 1, unit_price: priceSnapshot }],
+    })
+    if ('error' in bill) console.error('[createRadiologyOrder] bill failed:', bill.error)
+    else await supabase.from('radiology_orders').update({ billing_status: 'billed' }).eq('id', id)
   }
 
   await logAudit(actor.id, 'create', 'radiology_order', id, { patient_id, test_id })

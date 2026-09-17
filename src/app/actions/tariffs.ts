@@ -59,7 +59,7 @@ export async function listProcedureTariffs(): Promise<ProcedureTariff[]> {
 
 export async function createProcedureTariff(input: {
   name: string
-  category: 'surgery' | 'procedure' | 'package' | 'general' | null
+  category: 'surgery' | 'procedure' | 'package' | 'general' | 'emergency' | null
   default_price: number
 }): Promise<{ success: true; tariff: ProcedureTariff } | { success: false; error: string }> {
   const actor = await getActorProfile()
@@ -90,7 +90,7 @@ export async function updateProcedureTariff(
   id: string,
   input: {
     name?: string
-    category?: 'surgery' | 'procedure' | 'package' | 'general' | null
+    category?: 'surgery' | 'procedure' | 'package' | 'general' | 'emergency' | null
     default_price?: number
     is_active?: boolean
   }

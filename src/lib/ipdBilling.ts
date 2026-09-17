@@ -77,7 +77,13 @@ export async function autoIpdBill(
     .eq('admission_id', admissionId)
     .eq('billing_date', billingDate)
     .eq('bill_source', billSource)
+    // Only its own daily bills: an ER or OPD visit bill later linked to the
+    // admission can share the date and source but must not collect IPD charges.
+    .is('visit_id', null)
+    .is('emergency_case_id', null)
     .neq('status', 'cancelled')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   let billId: string

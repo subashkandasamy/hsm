@@ -1,5 +1,6 @@
 'use server'
 
+import { istDate } from '@/lib/istDate'
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
@@ -891,7 +892,7 @@ function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').Combined
   for (const sectionDef of COMBINED_BILL_SECTIONS) {
     const rows: import('@/lib/types').CombinedBillSection['rows'] = []
     for (const bill of bills) {
-      const date = (bill.billing_date ?? bill.created_at).slice(0, 10)
+      const date = bill.billing_date ?? istDate(bill.created_at)
       for (const item of bill.items) {
         if (sectionDef.sources.includes(item.source)) {
           rows.push({

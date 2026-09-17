@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock, ClipboardList, Printer } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -12,9 +12,10 @@ import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import EmptyState from '@/components/ui/EmptyState'
 import {
-  listEmergencyCases, setTriage, attendCase,
+  listEmergencyCases, listRecentEmergencyCases, setTriage, attendCase,
   resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit, getExistingEmergencyVisit,
 } from '@/app/actions/emergency'
+import ErChargesModal from './ErChargesModal'
 import { admitPatient, hasActiveAdmission } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
 import RegisterEmergencyModal from './RegisterEmergencyModal'
@@ -51,12 +52,17 @@ interface Props {
   admitTariffs?: ProcedureTariff[]
   admitGeneralTariffPrice?: number
   admitAdvancePercentage?: number
+  erTariffs?: ProcedureTariff[]
+  initialRecent?: EmergencyCase[]
 }
 
-export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50 }: Props) {
+export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50, erTariffs = [], initialRecent = [] }: Props) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
   const [cases, setCases] = useState<EmergencyCase[]>(initialCases)
+  const [view, setView] = useState<'active' | 'recent'>('active')
+  const [recent, setRecent] = useState<EmergencyCase[]>(initialRecent)
+  const [chargesCase, setChargesCase] = useState<EmergencyCase | null>(null)
   const [loading, setLoading] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -112,8 +118,9 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
 
   async function refresh() {
     setLoading(true)
-    const data = await listEmergencyCases(true)
+    const [data, closed] = await Promise.all([listEmergencyCases(true), listRecentEmergencyCases(7)])
     setCases(data)
+    setRecent(closed)
     setLoading(false)
   }
 
@@ -158,6 +165,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
       if (!r.success) { tab?.close(); setResolveError(r.error); setResolving(false); return }
       if (tab) tab.location.href = `/print/emergency/${resolveCase.id}/pdf`
       setCases((c) => c.filter((ec) => ec.id !== resolveCase.id))
+      setRecent((r) => [{ ...resolveCase, status: resolveType === 'refer' ? 'referred' : 'discharged', outcome: outcomeNote }, ...r])
       setResolveCase(null)
     }
     setResolving(false)
@@ -199,7 +207,50 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
         ))}
       </div>
 
-      {cases.length === 0 ? (
+      {/* Active board / recently closed cases (reprint discharge & referral notes) */}
+      <div className="flex gap-1 mb-4 p-1 rounded-xl" role="tablist" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0', width: 'fit-content' }}>
+        {([['active', `Active (${cases.length})`], ['recent', `Closed — last 7 days (${recent.length})`]] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={view === k} onClick={() => setView(k)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium"
+            style={{ background: view === k ? '#fff' : 'transparent', color: view === k ? '#0F172A' : '#64748B', border: 'none', cursor: 'pointer', boxShadow: view === k ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'recent' ? (
+        recent.length === 0 ? (
+          <GlassCard className="p-6">
+            <EmptyState title="No closed cases" description="Discharged, referred and admitted cases from the last 7 days appear here." />
+          </GlassCard>
+        ) : (
+          <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
+            {recent.map((ec) => (
+              <div key={ec.id} className="flex items-center gap-3 px-4 py-3 flex-wrap" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: (TRIAGE[ec.triage_level as TriageLevel] ?? TRIAGE[3]).bg, color: (TRIAGE[ec.triage_level as TriageLevel] ?? TRIAGE[3]).text }}>T{ec.triage_level}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{ec.patient?.full_name ?? '—'} <span className="font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>{ec.patient?.uhid}</span></p>
+                  <p className="text-xs truncate" style={{ color: '#64748B' }}>
+                    {new Date(ec.arrived_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                    {ec.complaint ? ` · ${ec.complaint}` : ''}{ec.outcome ? ` · ${ec.outcome}` : ''}
+                  </p>
+                </div>
+                <StatusBadge status={STATUS_MAP[ec.status] ?? 'pending'} label={ec.status} />
+                <a href={`/print/emergency/${ec.id}/pdf`} target="_blank" rel="noopener"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
+                  <Printer className="w-3 h-3" /> {ec.status === 'referred' ? 'Referral note' : ec.status === 'discharged' ? 'Discharge note' : 'Case sheet'}
+                </a>
+                <button onClick={() => setChargesCase(ec)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                  <IndianRupee className="w-3 h-3" /> Charges
+                </button>
+              </div>
+            ))}
+          </GlassCard>
+        )
+      ) : cases.length === 0 ? (
         <GlassCard className="p-6">
           <EmptyState title="No active cases" description="Register an emergency case to get started." />
         </GlassCard>
@@ -286,8 +337,13 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: openingAdmitId === ec.id ? 'not-allowed' : 'pointer', opacity: openingAdmitId === ec.id ? 0.6 : 1 }}>
                           {openingAdmitId === ec.id ? 'Checking…' : 'Admit to IPD'}
                         </button>
-                        <a href={`/print/emergency/${ec.id}/pdf`} target="_blank" rel="noopener"
+                        <button onClick={() => setChargesCase(ec)}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ml-auto"
+                          style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                          <IndianRupee className="w-3 h-3" /> Charges
+                        </button>
+                        <a href={`/print/emergency/${ec.id}/pdf`} target="_blank" rel="noopener"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
                           style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
                           <Printer className="w-3 h-3" /> Case sheet
                         </a>
@@ -370,6 +426,12 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
           </div>
         </div>
       </Modal>
+
+      {chargesCase && (
+        <ErChargesModal ec={chargesCase} erTariffs={erTariffs}
+          readOnly={isReadOnly || !['waiting', 'in_treatment'].includes(chargesCase.status)}
+          onClose={() => setChargesCase(null)} />
+      )}
 
       {/* Resolve modal */}
       <Modal open={!!resolveCase} onClose={() => setResolveCase(null)} title="Resolve Case" maxWidth="26rem">

@@ -1392,7 +1392,7 @@ export interface ProcedureTariff {
   id: string
   tenant_id: string
   name: string
-  category: 'surgery' | 'procedure' | 'package' | 'general' | null
+  category: 'surgery' | 'procedure' | 'package' | 'general' | 'emergency' | null
   default_price: number
   is_active: boolean
   created_at: string
