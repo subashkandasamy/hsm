@@ -22,8 +22,8 @@ type BoolKey = 'charge_room_rent' | 'charge_doctor_fee' | 'charge_nursing' | 'ch
 const TOGGLES: { key: BoolKey; label: string; hint: string }[] = [
   { key: 'charge_room_rent',     label: 'Room Rent',          hint: "Uses the ward's daily rate — set directly on each ward in the Ward Board." },
   { key: 'charge_doctor_fee',    label: 'Daily Doctor Fee',   hint: "Uses the attending doctor's consultation fee — set on their staff profile." },
-  { key: 'charge_nursing',       label: 'Nursing Charges',    hint: 'Charges each nurse assigned to a shift at their configured per-shift rate.' },
-  { key: 'charge_medicines',     label: 'Medicine Dispenses', hint: 'Auto-includes pharmacy dispenses for this patient during the day.' },
+  { key: 'charge_nursing',       label: 'Nursing Charges',    hint: "Charges each nurse assigned to a shift at their per-shift rate. Off: shifts are not billed (existing bills stay)." },
+  { key: 'charge_medicines',     label: 'Medicine Dispenses', hint: "On: IPD medicines are added to the day's bill when pharmacy dispenses them. Off: they wait in the Bill Builder to be billed manually." },
   { key: 'charge_admission_fee', label: 'Admission Fee',      hint: 'One-time fee charged only on Day 1 of admission.' },
 ]
 
@@ -233,7 +233,7 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
                     style={{ transform: cfg[key] ? 'translateX(20px)' : 'translateX(4px)' }}
                   />
                 </button>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{label}</p>
                   <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{hint}</p>
                 </div>
@@ -243,17 +243,19 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
 
           {/* Admission fee amount */}
           {cfg.charge_admission_fee && (
-            <div className="mt-5 pl-14 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>
-                  Admission Fee Amount (₹)
-                </label>
+            <div className="mt-5 pl-14 min-w-0">
+              <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>
+                Admission fee amount
+              </label>
+              <div className="relative w-full max-w-[10rem]">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm" style={{ color: '#94A3B8' }}>₹</span>
                 <input
                   type="number"
                   min={0}
+                  inputMode="decimal"
                   value={admFeeInput}
                   onChange={(e) => setAdmFeeInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-sm border"
+                  className="w-full pl-6 pr-3 py-2 rounded-xl text-sm border"
                   style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                 />
               </div>
@@ -264,16 +266,17 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
           <div className="mt-5">
             <div className="flex items-start gap-4">
               <div className="w-10 flex-shrink-0" />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Daily Service Charge</p>
                 <p className="text-xs mt-0.5 mb-2" style={{ color: '#94A3B8' }}>
                   Optional flat daily charge (misc. services). Set to 0 to disable.
                 </p>
-                <div className="relative w-40">
+                <div className="relative w-full max-w-[10rem]">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm" style={{ color: '#94A3B8' }}>₹</span>
                   <input
                     type="number"
                     min={0}
+                    inputMode="decimal"
                     value={svcInput}
                     onChange={(e) => setSvcInput(e.target.value)}
                     className="w-full pl-6 pr-3 py-2 rounded-xl text-sm border"
@@ -288,18 +291,19 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
           <div className="mt-5">
             <div className="flex items-start gap-4">
               <div className="w-10 flex-shrink-0" />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Critical Care — Daily Charges</p>
                 <p className="text-xs mt-0.5 mb-2" style={{ color: '#94A3B8' }}>
                   Applied per day when the admission is flagged ICU / on ventilator. Set 0 to disable.
                 </p>
-                <div className="flex gap-4">
+                {/* Stacks on phones — side by side the second field ran off the screen */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {([['ICU monitoring / day', icuInput, setIcuInput], ['Ventilator / day', ventInput, setVentInput]] as const).map(([label, val, set]) => (
-                    <div key={label}>
+                    <div key={label} className="min-w-0">
                       <label className="text-xs block mb-1" style={{ color: '#64748B' }}>{label}</label>
-                      <div className="relative w-40">
+                      <div className="relative w-full max-w-[10rem]">
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm" style={{ color: '#94A3B8' }}>₹</span>
-                        <input type="number" min={0} value={val} onChange={(e) => set(e.target.value)}
+                        <input type="number" min={0} inputMode="decimal" value={val} onChange={(e) => set(e.target.value)}
                           className="w-full pl-6 pr-3 py-2 rounded-xl text-sm border" style={{ borderColor: '#CBD5E1', color: '#0F172A' }} />
                       </div>
                     </div>

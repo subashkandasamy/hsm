@@ -240,6 +240,19 @@ export async function autoIpdBill(
  * - updates the line's rate in place if the assigned nurse's charge changed
  * - no-ops when the charge is 0 or the line already matches
  */
+/**
+ * Whether the tenant's IPD Billing settings allow a charge type to auto-bill.
+ * Missing config = the defaults (everything on except the admission fee).
+ */
+export async function ipdChargeEnabled(
+  supabase: SupabaseClient,
+  tenantId: string,
+  key: 'charge_nursing' | 'charge_medicines',
+): Promise<boolean> {
+  const { data } = await supabase.from('ipd_billing_config').select(key).eq('tenant_id', tenantId).maybeSingle()
+  return ((data as Record<string, unknown> | null)?.[key] ?? true) !== false
+}
+
 export async function syncNursingBillLine(
   supabase: SupabaseClient,
   actorId: string,
@@ -255,6 +268,8 @@ export async function syncNursingBillLine(
 ): Promise<void> {
   if (p.charge <= 0) return
   if (!(await tenantHasIpd(p.tenantId))) return
+  // Settings → IPD Billing → Nursing Charges off: nurse shifts are not billed.
+  if (!(await ipdChargeEnabled(supabase, p.tenantId, 'charge_nursing'))) return
 
   const { data: bill } = await supabase
     .from('bills')
@@ -263,6 +278,8 @@ export async function syncNursingBillLine(
     .eq('admission_id', p.admissionId)
     .eq('billing_date', p.date)
     .eq('bill_source', 'nursing')
+    .is('visit_id', null)
+    .is('emergency_case_id', null)
     .neq('status', 'cancelled')
     .maybeSingle()
 

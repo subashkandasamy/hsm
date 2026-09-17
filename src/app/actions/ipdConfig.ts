@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireModule, requireWriteAccess } from '@/lib/server-utils'
 import type { IpdBillingConfig, IpdCustomCharge } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -22,6 +22,8 @@ export async function getIpdConfig(): Promise<IpdBillingConfig | null> {
 export async function updateIpdConfig(
   input: Partial<Omit<IpdBillingConfig, 'tenant_id' | 'updated_at'>>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 
@@ -47,6 +49,8 @@ export async function getAdvancePercentage(): Promise<number> {
 }
 
 export async function setAdvancePercentage(percent: number): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 
@@ -81,6 +85,8 @@ export async function createCustomCharge(
   name: string,
   amount: number
 ): Promise<{ success: true; charge: IpdCustomCharge } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 
@@ -106,6 +112,8 @@ export async function updateCustomCharge(
   id: string,
   input: Partial<{ name: string; amount: number; is_active: boolean }>
 ): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 
@@ -126,6 +134,8 @@ export async function updateCustomCharge(
 }
 
 export async function deleteCustomCharge(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:config')
 

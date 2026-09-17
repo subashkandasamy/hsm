@@ -568,9 +568,11 @@ export async function dispenseIpdRequest(
 
   if (error) return { success: false, error: error.message }
 
-  // Auto-create the IPD pharmacy bill for today
-  if (req && pricePerUnit > 0) {
-    const { autoIpdBill } = await import('@/lib/ipdBilling')
+  // Auto-create the IPD pharmacy bill for today — unless Settings → IPD Billing →
+  // Medicine Dispenses is off, in which case the dispensed medicine stays
+  // 'unbilled' and is billed from the Bill Builder.
+  const { autoIpdBill, ipdChargeEnabled } = await import('@/lib/ipdBilling')
+  if (req && pricePerUnit > 0 && await ipdChargeEnabled(supabase, actor.tenant_id, 'charge_medicines')) {
     const patientId = (req.admission as unknown as { patient_id: string } | null)?.patient_id
     if (patientId) {
       const today = istToday()
