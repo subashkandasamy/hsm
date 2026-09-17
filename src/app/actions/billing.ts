@@ -286,6 +286,34 @@ export async function getUnbilledCharges(params: {
 
 // ---- Generate bill (transactional, double-bill-safe) ----
 
+/**
+ * The admission the selected charges belong to, if any. Room-rent charges use the
+ * admission id as their ref; lab, radiology, pharmacy, IPD pharmacy and OT rows
+ * record their admission_id. Charges from two different admissions are refused.
+ */
+async function admissionOfCharges(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  charges: ChargePreviewLine[],
+): Promise<{ admissionId: string | null } | { error: string }> {
+  const TABLES: Partial<Record<BillItemSource, string>> = {
+    lab: 'lab_orders', radiology: 'radiology_orders', pharmacy: 'dispenses',
+    ipd_pharmacy: 'ipd_pharmacy_requests', ot: 'ot_schedules',
+  }
+  const found = new Set<string>()
+  const refsByTable = new Map<string, string[]>()
+  for (const c of charges) {
+    if (c.source === 'bed') { found.add(c.ref_id); continue }
+    const table = TABLES[c.source]
+    if (table) refsByTable.set(table, [...(refsByTable.get(table) ?? []), c.ref_id])
+  }
+  for (const [table, ids] of refsByTable) {
+    const { data } = await supabase.from(table as 'lab_orders').select('admission_id').in('id', ids)
+    for (const r of data ?? []) if (r.admission_id) found.add(r.admission_id as string)
+  }
+  if (found.size > 1) return { error: 'The selected charges belong to different admissions — bill each admission separately.' }
+  return { admissionId: [...found][0] ?? null }
+}
+
 export async function generateBill(
   input: Record<string, unknown>
 ): Promise<{ success: true; billId: string } | { success: false; error: string }> {
@@ -296,22 +324,34 @@ export async function generateBill(
   const parsed = GenerateBillSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const { patient_id, visit_id, admission_id, selected_refs, manual_items } = parsed.data
-  // IPD bills need a plan with IPD — a hospital that moved to Starter can't bill
-  // admissions from its trial until it upgrades.
-  if (admission_id && !(await hasModule('ipd'))) {
-    return { success: false, error: 'IPD billing is not included in your plan. Upgrade to Growth to bill admissions.' }
-  }
+  const { patient_id, visit_id, admission_id: requestedAdmissionId, selected_refs, manual_items } = parsed.data
   const supabase = await createClient()
 
   // Get all unbilled charge data for the selected refs
   const allCharges = await getUnbilledCharges({
     patientId: patient_id,
     visitId: visit_id ?? null,
-    admissionId: admission_id ?? null,
+    admissionId: requestedAdmissionId ?? null,
   })
 
   const selectedCharges = allCharges.filter((c) => selected_refs.includes(c.ref_id))
+
+  // Link the bill to its admission even when the builder was opened from the
+  // Billing page with just a patient: work it out from the charges. Without the
+  // link an IPD bill is missing from the admission's combined bill, its discharge
+  // balance check and advance application.
+  const inferred = await admissionOfCharges(supabase, selectedCharges)
+  if ('error' in inferred) return { success: false, error: inferred.error }
+  if (requestedAdmissionId && inferred.admissionId && inferred.admissionId !== requestedAdmissionId) {
+    return { success: false, error: 'Some selected charges belong to a different admission — bill them from that admission.' }
+  }
+  const admission_id = requestedAdmissionId ?? inferred.admissionId
+
+  // IPD bills need a plan with IPD — a hospital that moved to Starter can't bill
+  // admissions from its trial until it upgrades.
+  if (admission_id && !(await hasModule('ipd'))) {
+    return { success: false, error: 'IPD billing is not included in your plan. Upgrade to Growth to bill admissions.' }
+  }
 
   // Generate race-safe bill number
   const { data: billNoData, error: billNoErr } = await supabase.rpc('get_next_bill_no')
