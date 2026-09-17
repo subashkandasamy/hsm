@@ -12,6 +12,7 @@ const TEMPLATES: { value: ClinicalTemplate; label: string; description: string }
   { value: 'dental',         label: 'Dental',         description: 'Adds tooth chart + dental treatment recording below the general form.' },
   { value: 'ophthalmology',  label: 'Ophthalmology',  description: 'Adds per-eye exam fields (acuity, IOP, refraction) below the general form.' },
   { value: 'paediatrics',    label: 'Paediatrics',    description: 'Adds WHO growth charts and z-scores, vaccinations due, milestones and birth history below the general form.' },
+  { value: 'obgyn',          label: 'Obstetrics & Gynaecology', description: 'Adds antenatal care (gestation, EDD, checks, care schedule, warnings) and gynaecology history, examination and screening below the general form.' },
 ]
 
 const TEMPLATE_BADGE: Record<ClinicalTemplate, string> = {
@@ -241,6 +242,7 @@ function DeptForm({
     { value: 'dental',        label: 'Dental',        note: 'Adds a tooth chart and treatment recording section.' },
     { value: 'ophthalmology', label: 'Ophthalmology', note: 'Adds per-eye exam fields (visual acuity, IOP, refraction).' },
     { value: 'paediatrics',   label: 'Paediatrics',   note: 'Adds WHO growth charts with z-scores, vaccinations due, developmental milestones and birth history.' },
+    { value: 'obgyn',         label: 'Obstetrics & Gynaecology', note: 'Adds antenatal care — gestation and EDD, antenatal checks with warnings, tests, scans and Td schedule — and gynaecology history, examination and cervical screening.' },
   ]
 
   return (
@@ -284,7 +286,7 @@ function DeptForm({
               <div>
                 <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{t.label}</p>
                 <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>{t.note}</p>
-                {t.value === 'general' && form.name && !['General Medicine','Surgery','Paediatrics','Emergency'].some(n => form.name.toLowerCase().includes(n.toLowerCase())) && (
+                {t.value === 'general' && form.name && !['General Medicine','Surgery','Paediatrics','Gynaecology','Obstetrics','Emergency'].some(n => form.name.toLowerCase().includes(n.toLowerCase())) && (
                   <p className="text-xs mt-1 italic" style={{ color: '#94A3B8' }}>
                     No dedicated specialty template yet — this department will use the general consultation form.
                   </p>

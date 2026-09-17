@@ -9,6 +9,7 @@ import { listRadiologyCatalog, listRadiologyOrders } from '@/app/actions/radiolo
 import { listAllergies } from '@/app/actions/allergies'
 import { getDentalChart, listTreatmentHistory, listDueRecalls } from '@/app/actions/dental'
 import { getPaediatricAssessment } from '@/app/actions/pediatrics'
+import { getObgynContext } from '@/app/actions/obstetrics'
 import { getWardBoard } from '@/app/actions/wards'
 import { resolveVisitTemplate } from '@/lib/clinicalTemplates'
 import { getActorProfile } from '@/lib/server-utils'
@@ -81,6 +82,9 @@ export default async function OpdVisitPage({ params }: Props) {
   const paediatricAssessment = template === 'paediatrics'
     ? await getPaediatricAssessment(patient.id, visit.id).catch((e) => { console.error('[OpdVisitPage] paediatric assessment failed:', e); return null })
     : null
+  const obgynContext = template === 'obgyn'
+    ? await getObgynContext(patient.id, visit.id).catch((e) => { console.error('[OpdVisitPage] obgyn context failed:', e); return null })
+    : null
 
   const admitWards = (wards as import('@/lib/types').WardWithBeds[]).map((w) => ({
     id: w.id,
@@ -114,6 +118,7 @@ export default async function OpdVisitPage({ params }: Props) {
       plan={tenantPlan}
       tenantStatus={tenantStatus}
       paediatricAssessment={paediatricAssessment}
+      obgynContext={obgynContext}
     />
   )
 }

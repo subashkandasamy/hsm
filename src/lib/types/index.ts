@@ -257,12 +257,16 @@ export interface AncRecord {
   gravida: number | null; para: number | null; abortions: number | null
   blood_group: string | null; high_risk: boolean; high_risk_notes: string | null
   status: 'active' | 'delivered' | 'closed'
+  living?: number | null; previous_caesareans?: number | null
+  scan_date?: string | null; scan_ga_days?: number | null; edd_basis?: 'lmp' | 'scan' | null
+  risk_factors?: string[]
 }
 export interface AncVisit {
   id: string; anc_id: string; visit_date: string
   weight_kg: number | null; bp: string | null; pallor: boolean | null
   fundal_height_cm: number | null; fetal_heart_rate: number | null; fetal_movements: string | null
   urine_albumin: string | null; urine_sugar: string | null; hb: number | null; notes: string | null
+  visit_id?: string | null; oedema?: string | null; presentation?: string | null
 }
 export interface PartographObs {
   id: string; anc_id: string; recorded_at: string
@@ -1344,6 +1348,28 @@ export interface PaediatricVisitData {
   milestones: Record<string, 'yes' | 'not_yet'>
   development_notes: string
   feeding_notes: string
+}
+
+/** ObGyn OPD visit notes (visits.clinical_data when the template is obgyn). The antenatal
+ *  check itself is an anc_visits row linked to the visit. */
+export interface ObgynVisitData {
+  template: 'obgyn'
+  mode: 'antenatal' | 'gynaecology'
+  danger_signs: string[]
+  complaints: string
+  menstrual: {
+    lmp: string | null; cycle_days: number | null; bleeding_days: number | null
+    regularity: 'regular' | 'irregular' | null; flow: 'scanty' | 'normal' | 'heavy' | null
+    dysmenorrhoea: 'none' | 'mild' | 'moderate' | 'severe' | null
+    intermenstrual_bleeding: boolean; postcoital_bleeding: boolean
+    menarche_age: number | null; menopausal: boolean; menopause_age: number | null; postmenopausal_bleeding: boolean
+  }
+  obstetric: { gravida: number | null; para: number | null; abortions: number | null; living: number | null; caesareans: number | null }
+  contraception: string
+  hysterectomy: boolean
+  exam: { breast: string; abdomen: string; per_speculum: string; per_vaginal: string }
+  screening: { test: 'pap' | 'hpv' | 'via' | null; date: string | null; result: string }
+  notes: string
 }
 
 export interface PediatricProfile {

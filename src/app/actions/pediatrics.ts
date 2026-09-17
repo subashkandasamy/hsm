@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { GrowthSchema, ImmunizationRecordSchema } from '@/lib/schemas'
 import type { GrowthRecord, ImmunizationStatusItem, ImmunizationState } from '@/lib/types'
-import { istToday, istAddDays } from '@/lib/istDate'
+import { istDate, istToday, istAddDays } from '@/lib/istDate'
 import { assessGrowth, sdCurves, AGE_MAX_DAYS, type Assessment, type Severity, type Sex } from '@/lib/growth/zscore'
 import type { PediatricProfile } from '@/lib/types'
 
@@ -125,7 +125,7 @@ export async function getPaediatricAssessment(patientId: string, visitId?: strin
   const dob = (patient?.dob as string | null) ?? null
   const g = patient?.gender as string | null
   const sex: Sex | null = g === 'male' || g === 'female' ? g : null
-  const onDate = (visitRes.data?.visit_date as string | undefined)?.slice(0, 10) ?? istToday()
+  const onDate = visitRes.data?.visit_date ? istDate(visitRes.data.visit_date as string) : istToday()
   const ageDays = dob ? dayDiff(dob, onDate) : null
 
   const history: GrowthPoint[] = ((rows ?? []) as unknown as GrowthRecord[]).map((r) => {
@@ -167,7 +167,7 @@ export async function saveVisitGrowth(visitId: string, input: Record<string, unk
   if (!visit) return { success: false, error: 'Visit not found' }
   const row = {
     tenant_id: actor.tenant_id, patient_id: visit.patient_id as string, visit_id: visitId, recorded_by: actor.id,
-    recorded_at: (visit.visit_date as string).slice(0, 10),
+    recorded_at: istDate(visit.visit_date as string),
     weight_kg: d.weight_kg ?? null, height_cm: d.height_cm ?? null, head_circ_cm: d.head_circ_cm ?? null, muac_cm: d.muac_cm ?? null,
     notes: d.notes ?? null,
   }

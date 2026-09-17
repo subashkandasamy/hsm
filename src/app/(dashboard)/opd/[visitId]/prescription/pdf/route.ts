@@ -2,6 +2,8 @@ import { createElement } from 'react'
 import { listAllergies } from '@/app/actions/allergies'
 import { listTreatmentHistory } from '@/app/actions/dental'
 import { getPaediatricAssessment } from '@/app/actions/pediatrics'
+import { getObgynContext } from '@/app/actions/obstetrics'
+import { istDate } from '@/lib/istDate'
 import { getVisit } from '@/app/actions/opd'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
 import { resolveVisitTemplate } from '@/lib/clinicalTemplates'
@@ -35,14 +37,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ visi
       : Promise.resolve([] as DentalTreatment[]),
   ])
   if (!patient) return new Response('Patient not found', { status: 404 })
-  const [logo, paediatric] = await Promise.all([
+  const [logo, paediatric, obgyn] = await Promise.all([
     loadLogo(profile?.logo_url),
     template === 'paediatrics' ? getPaediatricAssessment(visit.patient_id, visit.id).catch(() => null) : Promise.resolve(null),
+    template === 'obgyn' ? getObgynContext(visit.patient_id, visit.id).catch(() => null) : Promise.resolve(null),
   ])
 
   return renderPdfResponse(request,
     createElement(PrescriptionPdf, {
-      visit, patient: patient as RxPatient, prescriptions: visit.prescriptions ?? [], allergies, template, dental, profile, logo, paediatric,
+      visit, patient: patient as RxPatient, prescriptions: visit.prescriptions ?? [], allergies, template, dental, profile, logo, paediatric, obgyn,
     }),
-    `Prescription_${fileSafe(patient.full_name)}_${visit.visit_date.slice(0, 10)}.pdf`)
+    `Prescription_${fileSafe(patient.full_name)}_${istDate(visit.visit_date)}.pdf`)
 }

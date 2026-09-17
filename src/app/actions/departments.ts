@@ -11,7 +11,7 @@ type SimpleResult = { success: true } | { success: false; error: string }
 
 const DepartmentSchema = z.object({
   name:             z.string().min(1, 'Name is required').max(100),
-  clinical_template: z.enum(['general', 'dental', 'ophthalmology', 'paediatrics']),
+  clinical_template: z.enum(['general', 'dental', 'ophthalmology', 'paediatrics', 'obgyn']),
 })
 
 export async function listDepartments(): Promise<DepartmentWithTemplate[]> {

@@ -42,8 +42,10 @@ import InstructionsPicker from './InstructionsPicker'
 import DentalClinicalSection from './DentalClinicalSection'
 import EyeClinicalSection from './EyeClinicalSection'
 import PaediatricClinicalSection from './PaediatricClinicalSection'
+import ObgynClinicalSection from './ObgynClinicalSection'
+import type { ObgynContext } from '@/app/actions/obstetrics'
 import type { PaediatricAssessment } from '@/app/actions/pediatrics'
-import type { PaediatricVisitData } from '@/lib/types'
+import type { ObgynVisitData, PaediatricVisitData } from '@/lib/types'
 
 interface WardOption {
   id: string
@@ -69,6 +71,7 @@ interface Props {
   dentalTreatments?: DentalTreatment[] | null
   dentalRecalls?: DentalRecall[] | null
   paediatricAssessment?: PaediatricAssessment | null
+  obgynContext?: ObgynContext | null
   // IPD admission
   admitDoctors: { id: string; full_name: string }[]
   admitWards: WardOption[]
@@ -92,7 +95,7 @@ export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
-  paediatricAssessment = null, plan = 'starter', tenantStatus = 'trial',
+  paediatricAssessment = null, obgynContext = null, plan = 'starter', tenantStatus = 'trial',
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -651,6 +654,16 @@ export default function ConsultationWorkspace({
               patientId={patient.id}
               initialAssessment={paediatricAssessment}
               initialData={(visit.clinical_data as { template?: string } | null)?.template === 'paediatrics' ? (visit.clinical_data as unknown as PaediatricVisitData) : null}
+              disabled={isClosed || !isDoctor}
+            />
+          )}
+
+          {clinicalTemplate === 'obgyn' && obgynContext && (
+            <ObgynClinicalSection
+              visitId={visit.id}
+              patientId={patient.id}
+              initialContext={obgynContext}
+              initialData={(visit.clinical_data as { template?: string } | null)?.template === 'obgyn' ? (visit.clinical_data as unknown as ObgynVisitData) : null}
               disabled={isClosed || !isDoctor}
             />
           )}

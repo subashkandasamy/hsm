@@ -360,9 +360,12 @@ export async function saveClinicalData(
   await requirePermission(actor.role, 'opd:write')
 
   const supabase = await createClient()
+  // The general examination lives in the same column (saveExamination) — keep it.
+  const { data: v } = await supabase.from('visits').select('clinical_data').eq('id', visitId).single()
+  const generalExam = (v?.clinical_data as Record<string, unknown> | null)?.general_exam
   const { error } = await supabase
     .from('visits')
-    .update({ clinical_data: clinicalData })
+    .update({ clinical_data: generalExam === undefined ? clinicalData : { ...clinicalData, general_exam: generalExam } })
     .eq('id', visitId)
   if (error) return { success: false, error: error.message }
 

@@ -103,6 +103,11 @@ export const AncRecordSchema = z.object({
   blood_group:     z.string().nullable().optional(),
   high_risk:       z.boolean().optional(),
   high_risk_notes: z.string().nullable().optional(),
+  living:              z.number().int().min(0).max(20).nullable().optional(),
+  previous_caesareans: z.number().int().min(0).max(10).nullable().optional(),
+  scan_date:           z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  scan_ga_days:        z.number().int().min(35, 'Scan gestation must be at least 5 weeks').max(300).nullable().optional(),
+  risk_factors:        z.array(z.string().max(100)).max(30).optional(),
 })
 export const AncVisitSchema = z.object({
   visit_date:       z.string().nullable().optional(),
@@ -116,6 +121,8 @@ export const AncVisitSchema = z.object({
   urine_sugar:      z.string().nullable().optional(),
   hb:               z.number().positive().nullable().optional(),
   notes:            z.string().nullable().optional(),
+  oedema:           z.string().nullable().optional(),
+  presentation:     z.string().nullable().optional(),
 })
 export const PartographSchema = z.object({
   cervix_cm:            z.number().int().min(0).max(10).nullable().optional(),
