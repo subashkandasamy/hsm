@@ -864,6 +864,16 @@ function buildSections(bills: CombinedBillRaw[]): import('@/lib/types').Combined
   return sections
 }
 
+/** Total refunded via credit notes on the given bills (summaries must show refunds). */
+async function sumCreditNotes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  billIds: string[],
+): Promise<number> {
+  if (!billIds.length) return 0
+  const { data } = await supabase.from('credit_notes').select('amount').in('bill_id', billIds)
+  return Math.round((data ?? []).reduce((s, c) => s + Number(c.amount), 0) * 100) / 100
+}
+
 export async function getCombinedBillData(admissionId: string): Promise<CombinedBillData | null> {
   const actor = await getActorProfile()
   const supabase = await createClient()
@@ -907,6 +917,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       sections: secFb,
       grandTotal: regFb.reduce((s, b) => s + (b as { total: number }).total, 0),
       totalPaid: regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0),
+      refunded: await sumCreditNotes(supabase, regFb.map((b) => (b as unknown as { id: string }).id)),
       advanceCollected: advFb,
       advanceRefunded: 0,
       balanceDue: Math.max(0, regFb.reduce((s, b) => s + (b as { total: number }).total, 0) - regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0)),
@@ -993,6 +1004,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     sections,
     grandTotal,
     totalPaid,
+    refunded: await sumCreditNotes(supabase, regularBills.map((b) => b.id)),
     advanceCollected,
     advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
@@ -1078,6 +1090,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
       sections: apptSections,
       grandTotal: apptRegular.reduce((s, b) => s + b.total, 0),
       totalPaid: apptRegular.reduce((s, b) => s + b.paid, 0),
+      refunded: await sumCreditNotes(supabase, apptRegular.map((b) => b.id)),
       advanceCollected: 0,
       advanceRefunded: 0,
       balanceDue: Math.max(0, apptRegular.reduce((s, b) => s + b.total, 0) - apptRegular.reduce((s, b) => s + b.paid, 0)),
@@ -1156,6 +1169,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     sections,
     grandTotal,
     totalPaid,
+    refunded: await sumCreditNotes(supabase, regularBills2.map((b) => b.id)),
     advanceCollected: 0,
     advanceRefunded: 0,
     balanceDue: Math.max(0, grandTotal - totalPaid),
@@ -1231,6 +1245,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
     sections,
     grandTotal,
     totalPaid,
+    refunded: await sumCreditNotes(supabase, regularBills3.map((b) => b.id)),
     advanceCollected,
     advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),

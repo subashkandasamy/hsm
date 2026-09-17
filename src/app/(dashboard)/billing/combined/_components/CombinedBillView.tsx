@@ -278,6 +278,8 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 { label: 'Advance Collected',       value: data.advanceCollected, size: '13px', weight: 500, color: '#0D9488', border: false, show: data.advanceCollected > 0 },
                 { label: 'Advance Refunded',        value: -data.advanceRefunded, size: '13px', weight: 500, color: '#F59E0B', border: false, show: data.advanceRefunded > 0 },
                 { label: 'Total Payments Received', value: data.totalPaid,        size: '13px', weight: 500, color: '#10B981', border: false, show: true },
+                { label: 'Refunded (credit notes)', value: -(data.refunded ?? 0), size: '13px', weight: 500, color: '#B45309', border: false, show: (data.refunded ?? 0) > 0 },
+                { label: 'Net Collected',           value: data.totalPaid - (data.refunded ?? 0), size: '13px', weight: 600, color: '#0F172A', border: false, show: (data.refunded ?? 0) > 0 },
                 { label: 'Insurance (settled)',     value: data.insuranceSettled ?? 0, size: '13px', weight: 500, color: '#6366F1', border: false, show: (data.insuranceSettled ?? 0) > 0 },
                 { label: 'Insurance (approved, pending)', value: data.insuranceApproved ?? 0, size: '13px', weight: 500, color: '#6366F1', border: false, show: (data.insuranceApproved ?? 0) > 0 },
                 { label: 'Balance Due',             value: data.balanceDue,       size: '16px', weight: 800, color: data.balanceDue > 0 ? '#DC2626' : '#10B981', border: true, show: true },

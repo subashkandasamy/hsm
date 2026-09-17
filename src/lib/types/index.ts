@@ -814,6 +814,8 @@ export interface CombinedBillData {
   sections: CombinedBillSection[]
   grandTotal: number
   totalPaid: number
+  /** Refunds issued as credit notes on the bills in this summary (money paid back). */
+  refunded?: number
   advanceCollected: number
   advanceRefunded: number
   balanceDue: number
