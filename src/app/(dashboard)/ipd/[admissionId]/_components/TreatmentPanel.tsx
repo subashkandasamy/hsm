@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
+import DoseCheckPanel from '@/components/ui/DoseCheckPanel'
 import {
   Pill, Droplets, Wind, Plus, StopCircle, Check,
   ChevronDown, ChevronRight, Copy, AlertCircle, X, Ban, Pause,
@@ -1079,6 +1080,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [form, setForm]               = useState<OrderForm>(BLANK)
   const [formError, setFormError]     = useState('')
   const [formSaving, setFormSaving]   = useState(false)
+  const [doseOverride, setDoseOverride] = useState(false)
 
   const [showCopy, setShowCopy]       = useState(false)
   const [visitGroups, setVisitGroups] = useState<Awaited<ReturnType<typeof getVisitPrescriptions>>>([])
@@ -1119,12 +1121,13 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       frequency_hours: form.frequency_type === 'every_x_hours' && form.frequency_hours ? parseInt(form.frequency_hours) : undefined,
       duration_days:   dur,
       notes:           form.notes || undefined,
+      dose_override:   doseOverride,
     })
     setFormSaving(false)
     if (!res.success) { setFormError(res.error); return }
     setOrders((prev) => [res.order, ...prev])
     setSchedule(await listSchedule(admissionId))
-    setShowForm(false); setForm(BLANK)
+    setShowForm(false); setForm(BLANK); setDoseOverride(false)
   }
 
   async function handleStop(orderId: string) {
@@ -1262,6 +1265,20 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                   </SelectUI>
                 </div>
               </div>
+            )}
+            {form.type === 'medication' && (
+              <DoseCheckPanel
+                input={{
+                  patientId, drugName: form.drug_name, dose: form.dose ? parseFloat(form.dose) : null, doseUnit: form.dose_unit,
+                  route: form.route, frequencyType: form.frequency_type,
+                  frequencyHours: form.frequency_type === 'every_x_hours' && form.frequency_hours ? parseInt(form.frequency_hours) : null,
+                  drugRef: form.drug_ref_id ? { id: form.drug_ref_id, isGlobal: form.drug_is_global } : null,
+                }}
+                override={doseOverride}
+                onOverride={setDoseOverride}
+                onOverMax={(over) => { if (!over) setDoseOverride(false) }}
+                canRecordWeight={canOrder}
+              />
             )}
 
             {form.type === 'iv_infusion' && (

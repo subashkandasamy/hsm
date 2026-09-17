@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
+import { doseOverMaxError } from '@/lib/dosing/evaluate'
 import type { Visit, Prescription, VisitFinancials } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -203,8 +204,18 @@ export async function addPrescription(
   const parsed = PrescriptionSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const id = crypto.randomUUID()
   const supabase = await createClient()
+  // Children: a dose above the maximum for their weight needs an explicit override.
+  const { data: visitRow } = await supabase.from('visits').select('patient_id').eq('id', visitId).maybeSingle()
+  if (!visitRow) return { success: false, error: 'Visit not found' }
+  const override = input.dose_override === true
+  const doseError = await doseOverMaxError(supabase, {
+    patientId: visitRow.patient_id as string, visitId, drugName: parsed.data.drug_name,
+    dosage: parsed.data.dosage ?? null, frequency: parsed.data.frequency ?? null,
+  }, override)
+  if (doseError) return { success: false, error: doseError }
+
+  const id = crypto.randomUUID()
   const { error } = await supabase.from('prescriptions').insert({
     id,
     tenant_id:    actor.tenant_id,
@@ -216,6 +227,7 @@ export async function addPrescription(
     instructions: parsed.data.instructions ?? null,
   })
   if (error) return { success: false, error: error.message }
+  if (override) await logAudit(actor.id, 'dose_override', 'prescription', id, { drug: parsed.data.drug_name, dosage: parsed.data.dosage, frequency: parsed.data.frequency })
 
   return {
     success: true,

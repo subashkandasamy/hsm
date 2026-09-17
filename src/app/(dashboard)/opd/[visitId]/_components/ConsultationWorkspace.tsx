@@ -31,6 +31,7 @@ import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/Radiol
 import HistoryProblemsPanel from './HistoryProblemsPanel'
 import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
+import DoseCheckPanel from '@/components/ui/DoseCheckPanel'
 import FollowUpCard from './FollowUpCard'
 import ExaminationPanel from './ExaminationPanel'
 import SendToPatientButton from '@/components/ui/SendToPatientButton'
@@ -146,6 +147,7 @@ export default function ConsultationWorkspace({
   const [rxError, setRxError] = useState<string | null>(null)
   const [removingRx, setRemovingRx] = useState<string | null>(null)
   const [rxWarnings, setRxWarnings] = useState<import('@/lib/types').RxWarning[]>([])
+  const [rxOverride, setRxOverride] = useState(false)
 
   // Prescribing safety — allergy + interaction check as the doctor types a drug.
   useEffect(() => {
@@ -251,11 +253,13 @@ export default function ConsultationWorkspace({
       frequency: newRx.frequency || null,
       duration: newRx.duration || null,
       instructions: newRx.instructions || null,
+      dose_override: rxOverride,
     })
     setRxSaving(false)
     if (result.success) {
       setPrescriptions((p) => [...p, result.prescription])
       setNewRx({ drug_name: '', dosage: '', frequency: '', duration: '', instructions: '' })
+      setRxOverride(false)
     } else {
       setRxError(result.error)
     }
@@ -892,6 +896,13 @@ export default function ConsultationWorkspace({
                     })}
                   </div>
                 )}
+                <DoseCheckPanel
+                  input={{ patientId: patient.id, visitId: visit.id, drugName: newRx.drug_name, dosage: newRx.dosage, frequency: newRx.frequency }}
+                  override={rxOverride}
+                  onOverride={setRxOverride}
+                  onOverMax={(over) => { if (!over) setRxOverride(false) }}
+                  canRecordWeight={!!canVitals}
+                />
                 {rxError && (
                   <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{rxError}</p>
                 )}

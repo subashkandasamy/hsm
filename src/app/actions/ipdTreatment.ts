@@ -11,6 +11,7 @@ import type {
   LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
 } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { doseOverMaxError } from '@/lib/dosing/evaluate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -102,6 +103,7 @@ export async function createOrder(
     frequency_hours?: number
     duration_days: number
     notes?: string
+    dose_override?: boolean
   }
 ): Promise<{ success: true; order: IpdMedicationOrder } | { success: false; error: string }> {
   await requireWriteAccess()
@@ -113,6 +115,18 @@ export async function createOrder(
   if (!gate.success) return gate
 
   const supabase = await createClient()
+  if (input.type === 'medication' && input.drug_name) {
+    // Children: a dose above the maximum for their weight needs an explicit override.
+    const { data: adm } = await supabase.from('admissions').select('patient_id').eq('id', admissionId).maybeSingle()
+    if (!adm) return { success: false, error: 'Admission not found' }
+    const doseError = await doseOverMaxError(supabase, {
+      patientId: adm.patient_id as string, drugName: input.drug_name,
+      dose: input.dose ?? null, doseUnit: input.dose_unit ?? null, route: input.route ?? null,
+      frequencyType: input.frequency_type, frequencyHours: input.frequency_hours ?? null,
+      drugRef: input.drug_ref_id ? { id: input.drug_ref_id, isGlobal: !!input.drug_is_global } : null,
+    }, input.dose_override === true)
+    if (doseError) return { success: false, error: doseError }
+  }
   const orderId = crypto.randomUUID()
   const startAt = new Date()
 
@@ -185,7 +199,7 @@ export async function createOrder(
     })
   }
 
-  await logAudit(actor.id, 'create', 'ipd_medication_order', orderId, { admissionId, type: input.type })
+  await logAudit(actor.id, 'create', 'ipd_medication_order', orderId, { admissionId, type: input.type, ...(input.dose_override ? { dose_override: true, drug: input.drug_name, dose: input.dose, dose_unit: input.dose_unit } : {}) })
 
   const { data: row } = await supabase
     .from('ipd_medication_orders')
