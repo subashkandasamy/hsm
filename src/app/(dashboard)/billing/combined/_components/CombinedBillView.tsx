@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
 import type { CombinedBillData, TenantProfile } from '@/lib/types'
 
@@ -25,6 +25,7 @@ function InfoCell({ label, value, mono }: { label: string; value: string | null 
 
 export default function CombinedBillView({ data, profile }: { data: CombinedBillData; profile: TenantProfile | null }) {
   const router = useRouter()
+  const pathname = usePathname()
 
   const name = profile?.name || data.tenantName
   const addrParts = [
@@ -93,11 +94,23 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
             style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569', cursor: 'pointer' }}>
             ← Back
           </button>
-          <button onClick={() => window.print()}
+          {/* Printing uses the generated PDF (same layout on every browser/printer, page numbers, repeated headers). */}
+          <a href={`${pathname}/pdf`} target="_blank" rel="noopener"
             className="text-sm px-4 py-2 rounded-lg font-semibold"
             style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-            🖨 Print
-          </button>
+            🖨 Print summary
+          </a>
+          <a href={`${pathname}/pdf?detail=1`} target="_blank" rel="noopener"
+            className="text-sm px-3 py-2 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569' }}
+            title="Every charge line, day by day">
+            Day-wise statement
+          </a>
+          <a href={`${pathname}/pdf?download=1`}
+            className="text-sm px-3 py-2 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569' }}>
+            ⬇ Download PDF
+          </a>
         </div>
 
         {/* Bill card */}

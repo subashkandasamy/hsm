@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Printer, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
+import { ArrowLeft, Printer, Download, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -290,14 +290,26 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => window.print()}
+          {/* Printing uses the generated PDF so the invoice looks the same on every browser and printer. */}
+          <a
+            href={`/billing/${bill.id}/pdf`}
+            target="_blank"
+            rel="noopener"
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
             style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '40px' }}
           >
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">Print</span>
-          </button>
+          </a>
+          <a
+            href={`/billing/${bill.id}/pdf?download=1`}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+            style={{ border: '1px solid #E2E8F0', color: '#475569', minHeight: '40px' }}
+            title="Download PDF"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">PDF</span>
+          </a>
 
           {canNotify && (
             <>

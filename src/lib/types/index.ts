@@ -652,7 +652,7 @@ export interface Bill {
   billing_date?: string | null
   bill_source?: 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'consolidated' | 'advance_refund' | 'appointment_refund' | 'ot' | null
   consolidated_by?: string | null
-  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'> & { dob?: string | null; gender?: string | null }
   items?: BillItem[]
   payments?: Payment[]
 }
@@ -807,15 +807,21 @@ export interface AdvanceReceiptData {
 }
 
 export interface CombinedBillData {
+  /** Which summary this is — drives the printed title. */
+  kind?: 'ipd' | 'opd' | 'patient'
   combinedBillNo: string
   tenantName: string
-  patient: { full_name: string; uhid: string; phone: string | null }
+  patient: { full_name: string; uhid: string; phone: string | null; dob?: string | null; gender?: string | null; address?: string | null }
+  /** Admission (IPD) or visit (OPD) details printed under the patient. */
+  encounter?: { admittedAt?: string | null; dischargedAt?: string | null; ward?: string | null; bed?: string | null; doctor?: string | null; visitDate?: string | null }
   generatedAt: string
   sections: CombinedBillSection[]
   grandTotal: number
   totalPaid: number
   /** Refunds issued as credit notes on the bills in this summary (money paid back). */
   refunded?: number
+  /** Part of totalPaid that was adjusted from the advance deposit (not new money). */
+  advanceAdjusted?: number
   advanceCollected: number
   advanceRefunded: number
   balanceDue: number

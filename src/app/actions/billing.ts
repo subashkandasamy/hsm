@@ -776,7 +776,7 @@ export async function getBill(id: string): Promise<Bill | null> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('bills')
-    .select(`*, patient:patients(id,full_name,uhid,phone),
+    .select(`*, patient:patients(id,full_name,uhid,phone,dob,gender),
              items:bill_items(*),
              payments(*, receiver:profiles(id,full_name))`)
     .eq('id', id)
@@ -914,6 +914,16 @@ async function sumCreditNotes(
   return Math.round((data ?? []).reduce((s, c) => s + Number(c.amount), 0) * 100) / 100
 }
 
+/** Amount on the given bills that was adjusted from an advance deposit. */
+async function sumAdvanceAdjusted(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  billIds: string[],
+): Promise<number> {
+  if (!billIds.length) return 0
+  const { data } = await supabase.from('payments').select('amount').in('bill_id', billIds).eq('method', 'advance')
+  return Math.round((data ?? []).reduce((s, p) => s + Number(p.amount), 0) * 100) / 100
+}
+
 export async function getCombinedBillData(admissionId: string): Promise<CombinedBillData | null> {
   const actor = await getActorProfile()
   const supabase = await createClient()
@@ -926,7 +936,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
   // 1. Fetch admission
   const { data: admission, error: admError } = await supabase
     .from('admissions')
-    .select('id, patient_id, combined_bill_no')
+    .select('id, patient_id, combined_bill_no, admitted_at, discharged_at, ward:wards(name), bed:beds(bed_no), doctor:profiles!admissions_admitting_doctor_id_fkey(full_name)')
     .eq('id', admissionId)
     .maybeSingle()
   if (admError) console.error('[getCombinedBillData] admission fetch error:', admError.message)
@@ -936,7 +946,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       .from('bills').select('patient_id').eq('admission_id', admissionId).limit(1).maybeSingle()
     if (!firstBill?.patient_id) { console.error('[getCombinedBillData] no admission or bills found for', admissionId); return null }
     const pid = firstBill.patient_id as string
-    const { data: fbPatient } = await supabase.from('patients').select('full_name, uhid, phone').eq('id', pid).single()
+    const { data: fbPatient } = await supabase.from('patients').select('full_name, uhid, phone, dob, gender, address').eq('id', pid).single()
     if (!fbPatient) return null
     const { data: admBillsFb } = await supabase
       .from('bills')
@@ -949,10 +959,11 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     const secFb = buildSections(allBillsFb)
     const regFb = allBillsFb.filter((b) => (b as { bill_source?: string | null }).bill_source !== 'advance_refund')
     return {
+      kind: 'ipd',
       // A view must never take a number — show the first bill's own number.
       combinedBillNo: ((allBillsFb[0] as { bill_no?: string } | undefined)?.bill_no) ?? 'SUMMARY',
       tenantName,
-      patient: { full_name: fbPatient.full_name as string, uhid: fbPatient.uhid as string, phone: fbPatient.phone as string | null },
+      patient: { full_name: fbPatient.full_name as string, uhid: fbPatient.uhid as string, phone: fbPatient.phone as string | null, dob: (fbPatient.dob as string | null) ?? null, gender: (fbPatient.gender as string | null) ?? null, address: (fbPatient.address as string | null) ?? null },
       generatedAt: new Date().toISOString(),
       sections: secFb,
       grandTotal: regFb.reduce((s, b) => s + (b as { total: number }).total, 0),
@@ -982,7 +993,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
 
   // 3. Fetch patient info
   const { data: patient } = await supabase
-    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+    .from('patients').select('full_name, uhid, phone, dob, gender, address').eq('id', patientId).single()
   if (!patient) return null
 
   type RawBill = {
@@ -1032,19 +1043,29 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     .eq('admission_id', admissionId).or('eligibility_status.eq.approved,status.eq.settled')
   const insuranceApproved = totalInsuranceCredit((apprClaims ?? []) as unknown as InsuranceCreditRow[])
 
+  const adm = admission as unknown as { admitted_at: string | null; discharged_at: string | null; ward: { name: string } | null; bed: { bed_no: string } | null; doctor: { full_name: string } | null }
   return {
+    kind: 'ipd',
+    encounter: {
+      admittedAt: adm.admitted_at, dischargedAt: adm.discharged_at,
+      ward: adm.ward?.name ?? null, bed: adm.bed?.bed_no ?? null, doctor: adm.doctor?.full_name ?? null,
+    },
     combinedBillNo,
     tenantName,
     patient: {
       full_name: patient.full_name as string,
       uhid: patient.uhid as string,
       phone: patient.phone as string | null,
+      dob: (patient.dob as string | null) ?? null,
+      gender: (patient.gender as string | null) ?? null,
+      address: (patient.address as string | null) ?? null,
     },
     generatedAt: new Date().toISOString(),
     sections,
     grandTotal,
     totalPaid,
     refunded: await sumCreditNotes(supabase, regularBills.map((b) => b.id)),
+    advanceAdjusted: await sumAdvanceAdjusted(supabase, regularBills.map((b) => b.id)),
     advanceCollected,
     advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
@@ -1064,13 +1085,13 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
   // 1. Fetch visit — try by visit id, then by appointment_id as fallback
-  type VisitRow = { id: string; patient_id: string; combined_bill_no: string | null; appointment_id: string | null }
+  type VisitRow = { id: string; patient_id: string; combined_bill_no: string | null; appointment_id: string | null; doctor_id: string | null; visit_date: string | null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let visitRow: VisitRow | null = null
   {
     const { data, error } = await supabase
       .from('visits')
-      .select('id, patient_id, combined_bill_no, appointment_id')
+      .select('id, patient_id, combined_bill_no, appointment_id, doctor_id, visit_date')
       .eq('id', visitId)
       .maybeSingle()
     if (error) console.error('[getOpdCombinedBillData] visit lookup error:', error.message)
@@ -1081,7 +1102,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   if (!visitRow) {
     const { data, error } = await supabase
       .from('visits')
-      .select('id, patient_id, combined_bill_no, appointment_id')
+      .select('id, patient_id, combined_bill_no, appointment_id, doctor_id, visit_date')
       .eq('appointment_id', visitId)
       .maybeSingle()
     if (error) console.error('[getOpdCombinedBillData] appt fallback error:', error.message)
@@ -1112,19 +1133,23 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
     const apptPatientId = apptBills[0].patient_id
     if (!apptPatientId) return null
     const { data: apptPatient } = await supabase
-      .from('patients').select('full_name, uhid, phone').eq('id', apptPatientId).single()
+      .from('patients').select('full_name, uhid, phone, dob, gender, address').eq('id', apptPatientId).single()
     if (!apptPatient) return null
     // A view must never take a number — show the booking bill's own number.
     const combinedBillNoAppt = apptBills[0].bill_no ?? 'SUMMARY'
     const apptSections = buildSections(apptBills)
     const apptRegular = apptBills.filter(b => b.bill_source !== 'advance_refund' && b.status !== 'cancelled')
     return {
+      kind: 'opd',
       combinedBillNo: combinedBillNoAppt,
       tenantName,
       patient: {
         full_name: apptPatient.full_name as string,
         uhid: apptPatient.uhid as string,
         phone: apptPatient.phone as string | null,
+        dob: (apptPatient.dob as string | null) ?? null,
+        gender: (apptPatient.gender as string | null) ?? null,
+        address: (apptPatient.address as string | null) ?? null,
       },
       generatedAt: new Date().toISOString(),
       sections: apptSections,
@@ -1158,7 +1183,7 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
 
   // 3. Fetch patient info
   const { data: patient } = await supabase
-    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+    .from('patients').select('full_name, uhid, phone, dob, gender, address').eq('id', patientId).single()
   if (!patient) return null
 
   // 4. Fetch every bill for this visit, cancelled ones included (filter consolidated
@@ -1197,13 +1222,21 @@ export async function getOpdCombinedBillData(visitId: string): Promise<CombinedB
   const grandTotal = regularBills2.reduce((s, b) => s + b.total, 0)
   const totalPaid  = regularBills2.reduce((s, b) => s + b.paid, 0)
 
+  const { data: visitDoctor } = visitRow.doctor_id
+    ? await supabase.from('profiles').select('full_name').eq('id', visitRow.doctor_id).maybeSingle()
+    : { data: null }
   return {
+    kind: 'opd',
+    encounter: { visitDate: visitRow.visit_date, doctor: (visitDoctor?.full_name as string | undefined) ?? null },
     combinedBillNo,
     tenantName,
     patient: {
       full_name: patient.full_name as string,
       uhid: patient.uhid as string,
       phone: patient.phone as string | null,
+      dob: (patient.dob as string | null) ?? null,
+      gender: (patient.gender as string | null) ?? null,
+      address: (patient.address as string | null) ?? null,
     },
     generatedAt: new Date().toISOString(),
     sections,
@@ -1225,7 +1258,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
   const tenantName = (tenantRow?.name as string | null) ?? 'Hospital'
 
   const { data: patient } = await supabase
-    .from('patients').select('full_name, uhid, phone').eq('id', patientId).single()
+    .from('patients').select('full_name, uhid, phone, dob, gender, address').eq('id', patientId).single()
   if (!patient) return null
 
   // Use combined_bill_no on the patient row, or generate one
@@ -1278,14 +1311,16 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
   const advanceRefunded = refundBills3.reduce((s, b) => s + Math.abs(b.total), 0)
 
   return {
+    kind: 'patient',
     combinedBillNo,
     tenantName,
-    patient: { full_name: patient.full_name as string, uhid: patient.uhid as string, phone: patient.phone as string | null },
+    patient: { full_name: patient.full_name as string, uhid: patient.uhid as string, phone: patient.phone as string | null, dob: (patient.dob as string | null) ?? null, gender: (patient.gender as string | null) ?? null, address: (patient.address as string | null) ?? null },
     generatedAt: new Date().toISOString(),
     sections,
     grandTotal,
     totalPaid,
     refunded: await sumCreditNotes(supabase, regularBills3.map((b) => b.id)),
+    advanceAdjusted: await sumAdvanceAdjusted(supabase, regularBills3.map((b) => b.id)),
     advanceCollected,
     advanceRefunded,
     balanceDue: Math.max(0, grandTotal - totalPaid),
