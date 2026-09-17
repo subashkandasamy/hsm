@@ -6,9 +6,10 @@ import { sendWelcomeEmail } from '@/lib/email'
 import { z } from 'zod'
 
 // Map from user-facing department choice to clinical_template
-const DEPT_TEMPLATE_MAP: Record<string, 'dental' | 'ophthalmology' | 'general'> = {
+const DEPT_TEMPLATE_MAP: Record<string, 'dental' | 'ophthalmology' | 'paediatrics' | 'general'> = {
   'Dental':        'dental',
   'Eye Care':      'ophthalmology',
+  'Paediatrics':   'paediatrics',
 }
 
 // All offered starter departments

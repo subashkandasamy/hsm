@@ -241,6 +241,7 @@ export interface IcuFluidEntry {
 
 export interface GrowthRecord {
   id: string; patient_id: string; recorded_at: string
+  visit_id?: string | null
   weight_kg: number | null; height_cm: number | null; head_circ_cm: number | null; muac_cm: number | null
   notes: string | null
 }
@@ -1335,7 +1336,27 @@ export interface NavGroup { label: string; items: NavItem[] }
 
 // ---- Phase 12: Specialty Clinical Templates ----
 
-export type ClinicalTemplate = 'general' | 'dental' | 'ophthalmology'
+export type ClinicalTemplate = 'general' | 'dental' | 'ophthalmology' | 'paediatrics' | 'obgyn'
+
+/** Paediatric OPD visit notes (visits.clinical_data when the template is paediatrics). */
+export interface PaediatricVisitData {
+  template: 'paediatrics'
+  milestones: Record<string, 'yes' | 'not_yet'>
+  development_notes: string
+  feeding_notes: string
+}
+
+export interface PediatricProfile {
+  patient_id: string
+  gestational_age_weeks: number | null
+  birth_weight_kg: number | null
+  birth_length_cm: number | null
+  birth_head_circ_cm: number | null
+  delivery_mode: 'normal' | 'assisted' | 'caesarean' | null
+  nicu_admission: boolean | null
+  neonatal_notes: string | null
+  feeding: 'exclusive_breastfeeding' | 'mixed' | 'formula' | 'complementary' | 'family_diet' | null
+}
 
 export type ToothStatus = 'healthy' | 'decayed' | 'filled' | 'crowned' | 'root_canal' | 'missing' | 'extracted' | 'implant'
 export type DentalProcedure = 'filling' | 'extraction' | 'root_canal' | 'crown' | 'cleaning' | 'implant' | 'other'

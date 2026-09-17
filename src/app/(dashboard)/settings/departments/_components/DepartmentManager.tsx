@@ -11,12 +11,15 @@ const TEMPLATES: { value: ClinicalTemplate; label: string; description: string }
   { value: 'general',        label: 'General',        description: 'Standard consultation form — complaint, diagnosis, ICD, notes.' },
   { value: 'dental',         label: 'Dental',         description: 'Adds tooth chart + dental treatment recording below the general form.' },
   { value: 'ophthalmology',  label: 'Ophthalmology',  description: 'Adds per-eye exam fields (acuity, IOP, refraction) below the general form.' },
+  { value: 'paediatrics',    label: 'Paediatrics',    description: 'Adds WHO growth charts and z-scores, vaccinations due, milestones and birth history below the general form.' },
 ]
 
 const TEMPLATE_BADGE: Record<ClinicalTemplate, string> = {
   general:       'default',
   dental:        'active',
   ophthalmology: 'booked',
+  paediatrics:   'info',
+  obgyn:         'info',
 }
 
 interface Props {
@@ -237,6 +240,7 @@ function DeptForm({
     { value: 'general',       label: 'General',       note: 'Standard consultation form (complaint, diagnosis, ICD, notes). Works for any specialty without a dedicated template.' },
     { value: 'dental',        label: 'Dental',        note: 'Adds a tooth chart and treatment recording section.' },
     { value: 'ophthalmology', label: 'Ophthalmology', note: 'Adds per-eye exam fields (visual acuity, IOP, refraction).' },
+    { value: 'paediatrics',   label: 'Paediatrics',   note: 'Adds WHO growth charts with z-scores, vaccinations due, developmental milestones and birth history.' },
   ]
 
   return (

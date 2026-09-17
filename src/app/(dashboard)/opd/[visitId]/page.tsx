@@ -8,6 +8,7 @@ import { listRadiologyCatalog, listRadiologyOrders } from '@/app/actions/radiolo
 
 import { listAllergies } from '@/app/actions/allergies'
 import { getDentalChart, listTreatmentHistory, listDueRecalls } from '@/app/actions/dental'
+import { getPaediatricAssessment } from '@/app/actions/pediatrics'
 import { getWardBoard } from '@/app/actions/wards'
 import { resolveVisitTemplate } from '@/lib/clinicalTemplates'
 import { getActorProfile } from '@/lib/server-utils'
@@ -77,6 +78,10 @@ export default async function OpdVisitPage({ params }: Props) {
     }
   }
 
+  const paediatricAssessment = template === 'paediatrics'
+    ? await getPaediatricAssessment(patient.id, visit.id).catch((e) => { console.error('[OpdVisitPage] paediatric assessment failed:', e); return null })
+    : null
+
   const admitWards = (wards as import('@/lib/types').WardWithBeds[]).map((w) => ({
     id: w.id,
     name: w.name,
@@ -108,6 +113,7 @@ export default async function OpdVisitPage({ params }: Props) {
       admitAdvancePercentage={(tenantRes.data?.advance_percentage as number) ?? 50}
       plan={tenantPlan}
       tenantStatus={tenantStatus}
+      paediatricAssessment={paediatricAssessment}
     />
   )
 }

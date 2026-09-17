@@ -41,6 +41,9 @@ import FrequencyPicker from './FrequencyPicker'
 import InstructionsPicker from './InstructionsPicker'
 import DentalClinicalSection from './DentalClinicalSection'
 import EyeClinicalSection from './EyeClinicalSection'
+import PaediatricClinicalSection from './PaediatricClinicalSection'
+import type { PaediatricAssessment } from '@/app/actions/pediatrics'
+import type { PaediatricVisitData } from '@/lib/types'
 
 interface WardOption {
   id: string
@@ -65,6 +68,7 @@ interface Props {
   dentalTeeth?: DentalTooth[] | null
   dentalTreatments?: DentalTreatment[] | null
   dentalRecalls?: DentalRecall[] | null
+  paediatricAssessment?: PaediatricAssessment | null
   // IPD admission
   admitDoctors: { id: string; full_name: string }[]
   admitWards: WardOption[]
@@ -88,7 +92,7 @@ export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
-  plan = 'starter', tenantStatus = 'trial',
+  paediatricAssessment = null, plan = 'starter', tenantStatus = 'trial',
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -637,6 +641,16 @@ export default function ConsultationWorkspace({
             <EyeClinicalSection
               visitId={visit.id}
               initialData={visit.clinical_data ? (visit.clinical_data as unknown as EyeExamData) : null}
+              disabled={isClosed || !isDoctor}
+            />
+          )}
+
+          {clinicalTemplate === 'paediatrics' && paediatricAssessment && (
+            <PaediatricClinicalSection
+              visitId={visit.id}
+              patientId={patient.id}
+              initialAssessment={paediatricAssessment}
+              initialData={(visit.clinical_data as { template?: string } | null)?.template === 'paediatrics' ? (visit.clinical_data as unknown as PaediatricVisitData) : null}
               disabled={isClosed || !isDoctor}
             />
           )}
