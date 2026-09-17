@@ -10,7 +10,7 @@ function computeAge(dob: string | null): string {
   return `${Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000)}y`
 }
 
-export default function PrintCard({ patient }: { patient: Patient }) {
+export default function PrintCard({ patient, hospitalName }: { patient: Patient; hospitalName: string | null }) {
   useEffect(() => {
     // Small delay so the QR SVG paints before the print dialog opens
     const t = setTimeout(() => window.print(), 350)
@@ -23,10 +23,10 @@ export default function PrintCard({ patient }: { patient: Patient }) {
   return (
     <>
       <style>{`
-        @page { size: 85.6mm 54mm landscape; margin: 0; }
+        @page { size: 85.6mm 54mm; margin: 0; }
 
         @media print {
-          html, body { width: 85.6mm; height: 54mm; margin: 0; padding: 0; overflow: hidden; }
+          html, body { width: 85.6mm; height: 54mm; margin: 0; padding: 0; overflow: hidden; background: #fff !important; }
           .screen-only { display: none !important; }
           .card { box-shadow: none !important; }
         }
@@ -70,8 +70,13 @@ export default function PrintCard({ patient }: { patient: Patient }) {
         }}
       >
         {/* Header */}
-        <div style={{ fontSize: '6.5pt', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#0D9488', marginBottom: '1.5mm' }}>
-          ID Card
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '2mm', marginBottom: '1.5mm' }}>
+          <div style={{ fontSize: '8pt', fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {hospitalName ?? ''}
+          </div>
+          <div style={{ fontSize: '6pt', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0F766E', whiteSpace: 'nowrap' }}>
+            Patient ID Card
+          </div>
         </div>
 
         <div style={{ height: '0.4mm', background: '#E2E8F0', marginBottom: '2mm' }} />

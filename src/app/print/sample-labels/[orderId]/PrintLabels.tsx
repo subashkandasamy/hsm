@@ -28,7 +28,8 @@ function groupBySampleType(order: OrderData): StickerGroup[] {
   return Array.from(map.entries()).map(([sampleType, testNames]) => ({ sampleType, testNames }))
 }
 
-function Sticker({ orderId, group, patient, date }: {
+function Sticker({ orderId, group, patient, date, last }: {
+  last: boolean
   orderId: string
   group: StickerGroup
   patient: { full_name: string; uhid: string } | null
@@ -36,7 +37,7 @@ function Sticker({ orderId, group, patient, date }: {
 }) {
   return (
     <div
-      className="sticker"
+      className={last ? 'sticker sticker-last' : 'sticker'}
       style={{
         width: '50mm',
         height: '30mm',
@@ -107,15 +108,16 @@ export default function PrintLabels({ order }: Props) {
         @page { size: 50mm 30mm; margin: 0; }
 
         @media print {
-          html, body { width: 50mm; height: 30mm; margin: 0; padding: 0; background: #fff; }
+          html, body { width: 50mm; margin: 0; padding: 0; background: #fff !important; }
           .screen-only { display: none !important; }
           .sticker {
             border: none !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            page-break-after: always;
           }
-          .sticker:last-child { page-break-after: auto; }
+          /* One label per page; the last one must not force a blank label after it
+             (a :last-child rule never matched because Next appends nodes after the stickers). */
+          .sticker:not(.sticker-last) { break-after: page; }
         }
 
         @media screen {
@@ -146,9 +148,10 @@ export default function PrintLabels({ order }: Props) {
         </button>
       </div>
 
-      {groups.map(({ sampleType, testNames }) => (
+      {groups.map(({ sampleType, testNames }, i) => (
         <Sticker
           key={sampleType}
+          last={i === groups.length - 1}
           orderId={order.id}
           group={{ sampleType, testNames }}
           patient={order.patient}

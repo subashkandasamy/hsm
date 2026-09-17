@@ -212,7 +212,7 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
 
           {/* ── Total ── */}
           <div style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ minWidth: '280px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ minWidth: '280px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
               <span style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>Total Advance Collected</span>
               <span style={{ fontSize: '20px', fontWeight: 900, color: '#0D9488', fontFamily: 'monospace' }}>
                 {fmt(data.totalCollected)}

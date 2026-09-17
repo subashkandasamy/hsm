@@ -34,7 +34,10 @@ export default function WristbandLabelModal({ patient, onClose }: Props) {
     style.id = 'wristband-print-css'
     style.textContent = `
       @media print {
-        @page { size: 101.6mm 25.4mm landscape; margin: 0; }
+        @page { size: 101.6mm 25.4mm; margin: 0; }
+        /* Clamp the page to one label: hidden content still takes space and would
+           otherwise print a blank wristband for every page of the screen behind the modal. */
+        html, body { height: 25.4mm !important; overflow: hidden !important; background: #fff !important; }
         body > * { visibility: hidden !important; }
         #${LABEL_ID}, #${LABEL_ID} * { visibility: visible !important; }
         #${LABEL_ID} {

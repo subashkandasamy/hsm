@@ -201,6 +201,10 @@ body {
 
 /* ── Print styles ── */
 @media print {
+  /* Paper is white: never print the app's gradient page background. */
+  html, body { background: #fff !important; }
+  /* Long reports/records: keep each table row and image whole across page breaks. */
+  tr, img { break-inside: avoid; }
   .no-print { display: none !important; }
   #rx-print-area {
     display: block !important;
