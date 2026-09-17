@@ -10,7 +10,7 @@ export function DeclarationPdf({ admission: adm, declaration, text, profile, log
 }) {
   const hospital = profile?.name || 'Hospital'
   const p = adm.patient
-  const ref = shortRef('IP', adm.id)
+  const ref = adm.ip_no ?? shortRef('IP', adm.id)
   const signed = declaration?.status === 'signed'
   // Drawn signatures are stored as PNG/JPEG data URLs from the signing pad.
   const sigImage = signed && declaration?.signature_data && /^data:image\/(png|jpe?g);base64,/.test(declaration.signature_data)

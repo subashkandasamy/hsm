@@ -9,7 +9,7 @@ const METHOD: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI',
 
 export function AdvanceReceiptPdf({ data, profile, logo }: { data: AdvanceReceiptData; profile: TenantProfile | null; logo: LogoImage }) {
   const hospital = profile?.name || data.tenantName
-  const ref = shortRef('IP', data.admission.id)
+  const ref = data.admission.ip_no ?? shortRef('IP', data.admission.id)
   const last = data.payments[data.payments.length - 1]
 
   return (

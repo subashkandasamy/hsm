@@ -30,7 +30,7 @@ const FLAG: Record<string, { label: string; color: string }> = {
 
 export function LabReportPdf({ order, patient, profile, logo }: { order: LabOrder; patient: ReportPatient; profile: TenantProfile | null; logo: LogoImage }) {
   const hospital = profile?.name || 'Hospital'
-  const ref = shortRef('LAB', order.id)
+  const ref = order.accession_no ?? shortRef('LAB', order.id)
   const items = order.items ?? []
   const abnormal = items.filter((i) => i.flag === 'high' || i.flag === 'low').length
   const pending = items.filter((i) => i.result_value == null && !i.result_text).length
@@ -49,7 +49,7 @@ export function LabReportPdf({ order, patient, profile, logo }: { order: LabOrde
       <TitleBand
         title="LABORATORY REPORT"
         subtitle={pending > 0 ? `${pending} result${pending > 1 ? 's' : ''} pending — interim report` : abnormal > 0 ? `${abnormal} result${abnormal > 1 ? 's' : ''} outside the reference range` : null}
-        numberLabel="Report Ref" number={ref}
+        numberLabel={order.accession_no ? 'Accession No' : 'Report Ref'} number={ref}
         date={order.reported_at ? `Reported ${fmtDateTime(order.reported_at)}` : 'Not yet reported'}
       />
       <InfoGrid items={[

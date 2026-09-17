@@ -445,7 +445,7 @@ export async function getAdmissionAdvanceReceipt(
 
   const { data: adm } = await supabase
     .from('admissions')
-    .select('id, admitted_at, combined_bill_no, patient:patients(full_name, uhid, phone), ward:wards(name), bed:beds(bed_no)')
+    .select('id, ip_no, admitted_at, combined_bill_no, patient:patients(full_name, uhid, phone), ward:wards(name), bed:beds(bed_no)')
     .eq('id', admissionId)
     .single()
   if (!adm) return null
@@ -480,6 +480,7 @@ export async function getAdmissionAdvanceReceipt(
     patient: { full_name: p.full_name, uhid: p.uhid, phone: p.phone },
     admission: {
       id: admissionId,
+      ip_no: (adm.ip_no as string | null) ?? null,
       admitted_at: adm.admitted_at as string,
       ward: (adm.ward as unknown as { name: string } | null)?.name ?? null,
       bed: (adm.bed as unknown as { bed_no: string } | null)?.bed_no ?? null,

@@ -232,6 +232,12 @@ export default function AdmissionDetail({
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>
                   {adm.patient?.uhid}
                 </span>
+                {adm.ip_no && (
+                  <span className="font-mono text-xs px-2 py-0.5 rounded-lg" title="Inpatient (admission) number"
+                    style={{ background: '#F1F5F9', color: '#475569' }}>
+                    {adm.ip_no}
+                  </span>
+                )}
                 <StatusBadge
                   status={adm.status === 'admitted' ? 'active' : adm.status === 'discharged' ? 'success' : 'pending'}
                   label={adm.status}
@@ -827,6 +833,7 @@ export default function AdmissionDetail({
 
       {showWristband && adm.patient && (
         <WristbandLabelModal
+          admissionId={adm.id}
           patient={adm.patient as import('@/lib/types').Patient}
           onClose={() => setShowWristband(false)}
         />

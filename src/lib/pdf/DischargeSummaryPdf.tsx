@@ -20,7 +20,7 @@ export function DischargeSummaryPdf({ admission: adm, allergies, profile, logo }
   const hospital = profile?.name || 'Hospital'
   const p = adm.patient
   const discharged = !!adm.discharged_at
-  const ref = shortRef('IP', adm.id)
+  const ref = adm.ip_no ?? shortRef('IP', adm.id)
   const allergyText = allergies.length
     ? allergies.map((a) => `${a.allergen}${a.reaction ? ` (${a.reaction})` : ''}`).join(', ')
     : p?.allergies || null

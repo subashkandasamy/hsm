@@ -52,7 +52,7 @@ export default function CameraScanButton() {
 
       const result = await resolveBarcodeScan(value)
       if (result.type === 'patient') {
-        router.push(`/patients/${result.id}`)
+        router.push(result.admissionId ? `/ipd/${result.admissionId}` : `/patients/${result.id}`)
       } else if (result.type === 'lab_order') {
         router.push(`/lab?highlight=${result.id}`)
       } else {

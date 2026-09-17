@@ -17,8 +17,9 @@ function computeAge(dob: string | null): string {
 }
 
 export default function PatientBarcodeModal({ patient, onClose, inline }: Props) {
-  function printIdCard() {
-    window.open(`/print/id-card/${patient.id}`, '_blank')
+  // Card printers take the CR80 page; everyone else prints the A4 sheet and cuts it out.
+  function printIdCard(layout: 'card' | 'a4') {
+    window.open(`/print/id-card/${patient.id}/pdf${layout === 'a4' ? '?layout=a4' : ''}`, '_blank')
   }
 
   const age = computeAge(patient.dob)
@@ -86,21 +87,28 @@ export default function PatientBarcodeModal({ patient, onClose, inline }: Props)
 
           <p className="text-xs text-center" style={{ color: '#94A3B8' }}>
             This barcode is the patient&apos;s permanent ID — used across all OPD visits, IPD admissions, and bills for life.
-            The physical wristband is printed at time of IPD admission.
+            The wristband is printed from the admission.
           </p>
         </div>
 
         {/* Footer */}
-        <div className="px-5 pb-5 flex gap-2">
+        <div className="px-5 pb-5 flex flex-wrap gap-2">
           <button
-            onClick={printIdCard}
-            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold"
+            onClick={() => printIdCard('a4')}
+            title="Card at true size on A4 with cut marks"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
             style={{ background: '#F0FDF9', color: '#0D9488', border: '1px solid #CCFBF1', cursor: 'pointer', flexShrink: 0 }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#CCFBF1' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = '#F0FDF9' }}
           >
             <Printer className="w-4 h-4" />
-            Print ID Card
+            ID card (A4)
+          </button>
+          <button
+            onClick={() => printIdCard('card')}
+            title="85.6 × 54 mm, for PVC card printers"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ background: '#F0FDF9', color: '#0D9488', border: '1px solid #CCFBF1', cursor: 'pointer', flexShrink: 0 }}
+          >
+            Card printer
           </button>
           <button
             onClick={onClose}

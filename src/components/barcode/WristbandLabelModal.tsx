@@ -1,176 +1,68 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { X, Printer, RefreshCw } from 'lucide-react'
-import QrRenderer from './QrRenderer'
 import { stampWristbandPrinted } from '@/app/actions/barcode'
+import LabelPrintTips from './LabelPrintTips'
 import type { Patient } from '@/lib/types'
 
 interface Props {
-  patient: Patient
+  admissionId: string
+  patient: Pick<Patient, 'id' | 'full_name' | 'uhid'> & { wristband_printed_at?: string | null }
   onClose: () => void
 }
 
-function computeAge(dob: string | null): string {
-  if (!dob) return '—'
-  const diff = Date.now() - new Date(dob).getTime()
-  return `${Math.floor(diff / 31557600000)}y`
-}
-
-const LABEL_ID = 'wristband-label-print'
-
-export default function WristbandLabelModal({ patient, onClose }: Props) {
-  const [printing, setPrinting] = useState(false)
+// The wristband is a generated PDF at the band's exact print size, so what is
+// previewed here is exactly what the printer receives.
+export default function WristbandLabelModal({ admissionId, patient, onClose }: Props) {
   const [printed, setPrinted] = useState(!!patient.wristband_printed_at)
+  const pdfUrl = `/print/wristband/${admissionId}/pdf`
 
-  const handlePrint = useCallback(async () => {
-    setPrinting(true)
-
-    // Stamp server-side before printing
+  function handlePrint() {
+    window.open(pdfUrl, '_blank')
     stampWristbandPrinted(patient.id)
-
-    // Inject print CSS — isolate just the label
-    const style = document.createElement('style')
-    style.id = 'wristband-print-css'
-    style.textContent = `
-      @media print {
-        @page { size: 101.6mm 25.4mm; margin: 0; }
-        /* Clamp the page to one label: hidden content still takes space and would
-           otherwise print a blank wristband for every page of the screen behind the modal. */
-        html, body { height: 25.4mm !important; overflow: hidden !important; background: #fff !important; }
-        body > * { visibility: hidden !important; }
-        #${LABEL_ID}, #${LABEL_ID} * { visibility: visible !important; }
-        #${LABEL_ID} {
-          position: fixed !important;
-          top: 0; left: 0;
-          width: 101.6mm; height: 25.4mm;
-          box-shadow: none !important;
-          border: none !important;
-        }
-      }
-    `
-    document.head.appendChild(style)
-    window.print()
-    document.head.removeChild(style)
-
     setPrinted(true)
-    setPrinting(false)
-  }, [patient.id])
-
-  const gender = patient.gender
-    ? patient.gender.charAt(0).toUpperCase()
-    : '—'
+  }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}
-        onClick={onClose}
-      >
-        <div
-          className="w-full max-w-lg rounded-2xl shadow-2xl"
-          style={{ background: '#fff', border: '1px solid #E2E8F0' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
-            <div>
-              <h2 className="font-semibold text-base" style={{ color: '#0F172A' }}>Print Wristband</h2>
-              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Code 128 · UHID encoded · 101.6 × 25.4 mm</p>
-            </div>
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
-              style={{ color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer', background: 'transparent' }}>
-              <X className="w-4 h-4" />
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+      <div className="w-full max-w-xl rounded-2xl shadow-2xl" style={{ background: '#fff', border: '1px solid #E2E8F0' }}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+          <div>
+            <h2 className="font-semibold text-base" style={{ color: '#0F172A' }}>Print wristband</h2>
+            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>QR (UHID) at both ends · 101.6 × 25.4 mm (4 × 1 in)</p>
           </div>
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 flex items-center justify-center rounded-lg"
+            style={{ color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer', background: 'transparent' }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-          {/* Preview */}
-          <div className="px-5 py-5">
-            <p className="text-xs font-medium mb-3" style={{ color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Label Preview
+        <div className="px-5 py-4 space-y-3">
+          <iframe title="Wristband preview" src={`${pdfUrl}#toolbar=0&navpanes=0&view=FitH`}
+            className="w-full rounded-lg" style={{ height: '150px', border: '1px solid #E2E8F0', background: '#F8FAFC' }} />
+          <p className="text-xs" style={{ color: '#475569' }}>
+            Prints name, DOB / age / sex, UHID, IP number, admission date, ward / bed, consultant, blood group and an
+            allergy alert. Scanning the code opens this admission.
+          </p>
+          <LabelPrintTips paper="101.6 × 25.4 mm (4 × 1 in)" />
+          {printed && (
+            <p className="text-xs flex items-center gap-1" style={{ color: '#0D9488' }}>
+              <RefreshCw className="w-3 h-3" />
+              {patient.wristband_printed_at ? `Last printed ${new Date(patient.wristband_printed_at).toLocaleDateString('en-IN')}` : 'Marked as printed'}
             </p>
+          )}
+        </div>
 
-            {/* The actual printable label */}
-            <div
-              id={LABEL_ID}
-              style={{
-                width: '100%',
-                border: '1.5px solid #CBD5E1',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                background: '#fff',
-                minHeight: '72px',
-                fontFamily: 'system-ui, sans-serif',
-              }}
-            >
-              {/* QR code */}
-              <div style={{ flexShrink: 0 }}>
-                <QrRenderer value={patient.uhid} size={64} />
-              </div>
-
-              {/* Patient info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {patient.full_name}
-                </p>
-                <p style={{ fontSize: '11px', color: '#0D9488', fontWeight: 600, margin: '2px 0 0', letterSpacing: '0.03em' }}>
-                  {patient.uhid}
-                </p>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '10px', color: '#475569' }}>
-                    {computeAge(patient.dob)} · {gender}
-                  </span>
-                  {patient.blood_group && (
-                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#DC2626', background: '#FEE2E2', padding: '0 4px', borderRadius: '3px' }}>
-                      {patient.blood_group}
-                    </span>
-                  )}
-                  {patient.phone && (
-                    <span style={{ fontSize: '10px', color: '#475569' }}>{patient.phone}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Reprint notice */}
-            {printed && (
-              <p className="text-xs mt-2 flex items-center gap-1" style={{ color: '#0D9488' }}>
-                <RefreshCw className="w-3 h-3" />
-                {patient.wristband_printed_at
-                  ? `Last printed ${new Date(patient.wristband_printed_at).toLocaleDateString()}`
-                  : 'Marked as printed'}
-              </p>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="px-5 pb-5 flex items-center justify-between gap-3">
-            <p className="text-xs" style={{ color: '#94A3B8' }}>
-              Send to your label/thermal printer after clicking Print.
-            </p>
-            <button
-              onClick={handlePrint}
-              disabled={printing}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
-              style={{
-                background: printing ? '#CBD5E1' : '#0D9488',
-                color: '#fff',
-                border: 'none',
-                cursor: printing ? 'not-allowed' : 'pointer',
-                flexShrink: 0,
-              }}
-            >
-              <Printer className="w-4 h-4" />
-              {printing ? 'Printing…' : 'Print'}
-            </button>
-          </div>
+        <div className="px-5 pb-5 flex justify-end">
+          <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+            <Printer className="w-4 h-4" /> {printed ? 'Reprint wristband' : 'Print wristband'}
+          </button>
         </div>
       </div>
-    </>
+    </div>
   )
 }

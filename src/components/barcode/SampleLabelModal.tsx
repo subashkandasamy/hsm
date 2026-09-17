@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
 import { X, Printer } from 'lucide-react'
-import QrRenderer from './QrRenderer'
 import { stampSampleLabelPrinted } from '@/app/actions/barcode'
+import LabelPrintTips from './LabelPrintTips'
 import type { LabOrder } from '@/lib/types'
 
 interface Props {
@@ -11,140 +10,68 @@ interface Props {
   onClose: () => void
 }
 
-// Group items by sample_type — one sticker per distinct sample type
-function groupBySampleType(order: LabOrder): Array<{ sampleType: string; testNames: string[] }> {
-  const map = new Map<string, string[]>()
+// One tube per sample type — must match the grouping in the label PDF route.
+function tubes(order: LabOrder): Array<{ sampleType: string; tests: string[] }> {
+  const map = new Map<string, { sampleType: string; tests: string[] }>()
   for (const item of order.items ?? []) {
-    const st = (item.test?.sample_type ?? 'General').trim()
-    if (!map.has(st)) map.set(st, [])
-    map.get(st)!.push(item.test?.name ?? 'Unknown')
+    const type = item.test?.sample_type?.trim() || 'Sample'
+    const tube = map.get(type.toLowerCase()) ?? { sampleType: type, tests: [] }
+    tube.tests.push(item.test?.name ?? 'Test')
+    map.set(type.toLowerCase(), tube)
   }
-  return Array.from(map.entries()).map(([sampleType, testNames]) => ({ sampleType, testNames }))
+  return [...map.values()]
 }
 
-const STICKER_ID_PREFIX = 'sample-sticker-print'
-
 export default function SampleLabelModal({ order, onClose }: Props) {
-  const [printing, setPrinting] = useState(false)
-  const groups = groupBySampleType(order)
-  const patient = order.patient
-  const orderedDate = new Date(order.ordered_at).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
+  const list = tubes(order)
+  const pdfUrl = `/print/sample-labels/${order.id}/pdf`
 
-  const handlePrint = useCallback(async () => {
-    setPrinting(true)
+  function handlePrint() {
+    window.open(pdfUrl, '_blank')
     stampSampleLabelPrinted(order.id)
-    window.open(`/print/sample-labels/${order.id}`, '_blank')
-    setPrinting(false)
-  }, [order.id])
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: '#fff', border: '1px solid #E2E8F0' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid #E2E8F0' }}
+        onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
           <div>
-            <h2 className="font-semibold text-base" style={{ color: '#0F172A' }}>Print Sample Label{groups.length > 1 ? 's' : ''}</h2>
+            <h2 className="font-semibold text-base" style={{ color: '#0F172A' }}>Print tube label{list.length > 1 ? 's' : ''}</h2>
             <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-              {groups.length} sticker{groups.length > 1 ? 's' : ''} · Code 128 · Order ID encoded · 50 × 30 mm
+              {list.length} label{list.length > 1 ? 's' : ''} · Code 128 · 50 × 25 mm · Accession {order.accession_no ?? '—'}
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 flex items-center justify-center rounded-lg"
             style={{ color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer', background: 'transparent' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Sticker previews */}
-        <div className="px-5 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
-          <p className="text-xs font-medium" style={{ color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            {groups.length > 1 ? 'Label Previews (one per sample type)' : 'Label Preview'}
+        <div className="px-5 py-4 space-y-3 max-h-[65vh] overflow-y-auto">
+          <iframe title="Label preview" src={`${pdfUrl}#toolbar=0&navpanes=0&view=Fit`}
+            className="w-full rounded-lg" style={{ height: '190px', border: '1px solid #E2E8F0', background: '#F8FAFC' }} />
+          <ul className="space-y-1">
+            {list.map((t, i) => (
+              <li key={t.sampleType} className="text-xs flex gap-2" style={{ color: '#334155' }}>
+                <span className="font-semibold tabular-nums">{order.accession_no ?? ''}-{String(i + 1).padStart(2, '0')}</span>
+                <span className="font-semibold uppercase">{t.sampleType}</span>
+                <span className="truncate" style={{ color: '#64748B' }}>{t.tests.join(', ')}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs" style={{ color: '#475569' }}>
+            Stick the label <strong>lengthwise</strong> along the tube, barcode running along its length, below the cap and
+            clear of the tube&apos;s own label — analyzers and scanners cannot read a barcode wrapped around the tube.
           </p>
-
-          {groups.map(({ sampleType, testNames }) => (
-            <div
-              key={sampleType}
-              className="sample-sticker-wrap"
-              style={{
-                border: '1.5px solid #CBD5E1',
-                borderRadius: '6px',
-                padding: '6px 8px',
-                background: '#fff',
-                fontFamily: 'system-ui, sans-serif',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Sample type + date */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{
-                  fontSize: '9px', fontWeight: 800, textTransform: 'uppercase',
-                  letterSpacing: '0.08em', color: '#7C3AED',
-                  background: '#F3E8FF', padding: '1px 5px', borderRadius: '3px',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {sampleType}
-                </span>
-                <span style={{ fontSize: '8px', color: '#94A3B8', whiteSpace: 'nowrap' }}>{orderedDate}</span>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', overflow: 'hidden' }}>
-                {/* QR code */}
-                <div style={{ flexShrink: 0 }}>
-                  <QrRenderer value={order.id} size={44} />
-                </div>
-
-                {/* Text — clipped to remaining space */}
-                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                  <p style={{ fontSize: '10px', fontWeight: 700, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {patient?.full_name ?? '—'}
-                  </p>
-                  <p style={{ fontSize: '9px', color: '#0D9488', fontWeight: 600, margin: '1px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {patient?.uhid ?? '—'}
-                  </p>
-                  {/* One test per line, max 3 shown */}
-                  {testNames.slice(0, 3).map((name) => (
-                    <p key={name} style={{ fontSize: '8px', color: '#475569', margin: 0, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {name}
-                    </p>
-                  ))}
-                  {testNames.length > 3 && (
-                    <p style={{ fontSize: '8px', color: '#94A3B8', margin: 0 }}>+{testNames.length - 3} more</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+          <LabelPrintTips paper="50 × 25 mm (2 × 1 in)" />
         </div>
 
-        {/* Footer */}
-        <div className="px-5 pb-5 flex items-center justify-between gap-3"
-          style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
-          <p className="text-xs" style={{ color: '#94A3B8' }}>
-            Each sticker prints on a separate 50×30mm label.
-          </p>
-          <button
-            onClick={handlePrint}
-            disabled={printing}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
-            style={{
-              background: printing ? '#CBD5E1' : '#7C3AED',
-              color: '#fff',
-              border: 'none',
-              cursor: printing ? 'not-allowed' : 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <Printer className="w-4 h-4" />
-            {printing ? 'Printing…' : `Print ${groups.length > 1 ? `${groups.length} Labels` : 'Label'}`}
+        <div className="px-5 pb-5 pt-3 flex justify-end" style={{ borderTop: '1px solid #E2E8F0' }}>
+          <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer' }}>
+            <Printer className="w-4 h-4" /> Print {list.length > 1 ? `${list.length} labels` : 'label'}
           </button>
         </div>
       </div>

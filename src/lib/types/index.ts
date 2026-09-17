@@ -186,6 +186,7 @@ export interface Admission {
   ward_id: string | null; bed_id: string | null
   direct_ot: boolean
   reason: string | null; admitted_at: string; discharged_at: string | null
+  ip_no?: string
   status: AdmissionStatus; discharge_summary: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
@@ -352,6 +353,7 @@ export interface LabOrder {
   priority: OrderPriority; scheduled_for: string | null
   ordered_at: string; reported_at: string | null
   sample_label_printed_at?: string | null
+  accession_no?: string
   items?: LabOrderItem[]
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
@@ -791,6 +793,7 @@ export interface AdvanceReceiptData {
   patient: { full_name: string; uhid: string; phone: string | null }
   admission: {
     id: string
+    ip_no?: string | null
     admitted_at: string
     ward: string | null
     bed: string | null

@@ -24,7 +24,7 @@ export default function ScanInput() {
     if (result.type === 'patient') {
       setValue('')
       setResolving(false)
-      router.push(`/patients/${result.id}`)
+      router.push(result.admissionId ? `/ipd/${result.admissionId}` : `/patients/${result.id}`)
     } else if (result.type === 'lab_order') {
       setValue('')
       setResolving(false)

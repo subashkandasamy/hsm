@@ -71,42 +71,63 @@ export async function stampSampleLabelPrinted(
 }
 
 // ── Resolve a scanned barcode value ─────────────────────────────────────────
-// Returns the route to navigate to, or null if not found.
+// What each printed code carries:
+//   ID card / wristband QR   → patient UHID (admitted patients open their admission)
+//   tube label Code 128      → lab accession no + 2-digit tube no (e.g. 260917001201)
+//   older labels             → lab order UUID
+// Lookups run under RLS, so a code only resolves inside the scanning user's hospital.
 
 export async function resolveBarcodeScan(
   value: string
 ): Promise<
-  | { type: 'patient'; id: string; name: string; uhid: string }
+  | { type: 'patient'; id: string; name: string; uhid: string; admissionId: string | null }
   | { type: 'lab_order'; id: string; patientName: string }
   | { type: 'not_found' }
 > {
   const supabase = await createClient()
   const trimmed = value.trim()
 
-  // 1. Try UHID match (patients.uhid)
+  // 1. UHID (case-insensitive: some keyboard-wedge scanners send lower case)
   const { data: patient } = await supabase
     .from('patients')
     .select('id, uhid, full_name')
-    .eq('uhid', trimmed)
+    .ilike('uhid', trimmed.replace(/[%_\\]/g, '\\$&'))
     .maybeSingle()
 
   if (patient) {
-    return { type: 'patient', id: patient.id as string, name: patient.full_name as string, uhid: patient.uhid as string }
+    const { data: adm } = await supabase
+      .from('admissions')
+      .select('id')
+      .eq('patient_id', patient.id)
+      .eq('status', 'admitted')
+      .order('admitted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return { type: 'patient', id: patient.id as string, name: patient.full_name as string, uhid: patient.uhid as string, admissionId: (adm?.id as string | undefined) ?? null }
   }
 
-  // 2. Try lab order UUID match
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (UUID_RE.test(trimmed)) {
+  const labOrder = async (column: 'id' | 'accession_no', v: string) => {
     const { data: order } = await supabase
       .from('lab_orders')
       .select('id, patient:patients(id, full_name)')
-      .eq('id', trimmed)
+      .eq(column, v)
       .maybeSingle()
+    if (!order) return null
+    const p = order.patient as unknown as { id: string; full_name: string } | null
+    return { type: 'lab_order' as const, id: order.id as string, patientName: p?.full_name ?? 'Unknown' }
+  }
 
-    if (order) {
-      const p = order.patient as unknown as { id: string; full_name: string } | null
-      return { type: 'lab_order', id: order.id as string, patientName: p?.full_name ?? 'Unknown' }
-    }
+  // 2. Tube label: accession no + 2-digit tube no; also accept the accession no typed on its own.
+  if (/^\d{10,}$/.test(trimmed)) {
+    const found = (await labOrder('accession_no', trimmed.slice(0, -2))) ?? (await labOrder('accession_no', trimmed))
+    if (found) return found
+  }
+
+  // 3. Older labels encoded the lab order UUID
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (UUID_RE.test(trimmed)) {
+    const found = await labOrder('id', trimmed)
+    if (found) return found
   }
 
   return { type: 'not_found' }

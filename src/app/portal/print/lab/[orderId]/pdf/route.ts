@@ -19,5 +19,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const patient = (data.patient ?? { full_name: order.patient?.full_name ?? '—', uhid: order.patient?.uhid ?? '—' }) as ReportPatient
   const logo = await loadLogo(profile?.logo_url)
   return renderPdfResponse(request, createElement(LabReportPdf, { order, patient, profile, logo }),
-    `Lab-report_${fileSafe(patient.full_name)}_${shortRef('LAB', order.id)}.pdf`)
+    `Lab-report_${fileSafe(patient.full_name)}_${order.accession_no ?? shortRef('LAB', order.id)}.pdf`)
 }
