@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Pencil, Check, X, Stethoscope } from 'lucide-react'
+import { Plus, Pencil, Check, X, Stethoscope, Trash2 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import Money from '@/components/ui/Money'
 import {
   createProcedureTariff,
   updateProcedureTariff,
+  deleteProcedureTariff,
 } from '@/app/actions/tariffs'
 import type { ProcedureTariff } from '@/lib/types'
 
@@ -16,6 +18,15 @@ interface Props {
 }
 
 const CATEGORIES = ['general', 'surgery', 'procedure', 'package', 'emergency'] as const
+
+// What each category is used for — shown on the page so admins know where a tariff appears.
+const CATEGORY_HELP: Record<(typeof CATEGORIES)[number], string> = {
+  general:   'Default admission charge when no procedure is chosen (only one can be active)',
+  surgery:   'Surgeries — offered when admitting, scheduling OT and in estimates',
+  procedure: 'Procedures — offered when admitting and in estimates',
+  package:   'Fixed-price packages — offered when admitting and in estimates',
+  emergency: 'Emergency charges — added from an ER case’s Charges button',
+}
 
 export default function TariffsManager({ initialTariffs }: Props) {
   const [tariffs, setTariffs]   = useState(initialTariffs)
@@ -83,9 +94,24 @@ export default function TariffsManager({ initialTariffs }: Props) {
   }
 
   function toggleTariffActive(t: ProcedureTariff) {
+    setError('')
     startTransition(async () => {
-      await updateProcedureTariff(t.id, { is_active: !t.is_active })
+      const res = await updateProcedureTariff(t.id, { is_active: !t.is_active })
+      if (!res.success) { setError(res.error); return }
       setTariffs((ts) => ts.map((x) => x.id === t.id ? { ...x, is_active: !x.is_active } : x))
+    })
+  }
+
+  const [deleting, setDeleting] = useState<ProcedureTariff | null>(null)
+  function confirmDelete() {
+    const t = deleting
+    if (!t) return
+    setError('')
+    startTransition(async () => {
+      const res = await deleteProcedureTariff(t.id)
+      setDeleting(null)
+      if (!res.success) { setError(res.error); return }
+      setTariffs((ts) => ts.filter((x) => x.id !== t.id))
     })
   }
 
@@ -170,6 +196,12 @@ export default function TariffsManager({ initialTariffs }: Props) {
             </div>
           )}
 
+          <ul className="mb-4 space-y-0.5 text-xs" style={{ color: '#64748B' }}>
+            {CATEGORIES.map((c) => (
+              <li key={c}><strong style={{ color: '#334155' }}>{catLabel(c)}</strong> — {CATEGORY_HELP[c]}</li>
+            ))}
+          </ul>
+
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -194,7 +226,15 @@ export default function TariffsManager({ initialTariffs }: Props) {
                             className="px-2 py-1 text-sm rounded border w-full"
                             style={{ borderColor: '#CBD5E1', color: '#0F172A' }}
                           />
-                        ) : t.name}
+                        ) : (
+                          <>
+                            {t.name}
+                            {/* Category column is hidden on phones — show it under the name */}
+                            <span className="block sm:hidden text-xs font-normal mt-0.5" style={{ color: '#64748B' }}>
+                              {catLabel(t.category)}{t.is_active ? '' : ' · disabled'}
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td className="py-3 hidden sm:table-cell" style={{ color: '#64748B' }}>
                         {isEditing ? (
@@ -262,6 +302,16 @@ export default function TariffsManager({ initialTariffs }: Props) {
                               >
                                 {t.is_active ? 'Disable' : 'Enable'}
                               </button>
+                              <button
+                                onClick={() => { setError(''); setDeleting(t) }}
+                                disabled={isPending}
+                                className="p-1.5 rounded-lg"
+                                style={{ background: '#FEF2F2', color: '#DC2626' }}
+                                title="Delete"
+                                aria-label={`Delete ${t.name}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -281,6 +331,17 @@ export default function TariffsManager({ initialTariffs }: Props) {
           </div>
         </div>
       </GlassCard>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete tariff?"
+        description={deleting ? `"${deleting.name}" will be removed. A tariff already used by an admission can't be deleted — disable it instead.` : ''}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={isPending}
+      />
 
       <p className="text-xs" style={{ color: '#94A3B8' }}>
         Tip: Per-doctor consultation fees can be set on each doctor&apos;s staff profile page.
