@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { isPractitioner } from '@/lib/doctors'
 import {
   Plus, RefreshCw, Users, CalendarCheck,
   Edit2, UserX, UserCheck, KeyRound, Phone, Mail, Briefcase, Search, Lock, Copy, CheckCheck,
@@ -300,7 +301,12 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                   key: 'role', header: 'Role', sortable: true,
                   render: (row) => {
                     const s = row as unknown as StaffMember
-                    return <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
+                    return (
+                      <span className="inline-flex items-center gap-1 flex-wrap">
+                        <StatusBadge status="info" label={ROLE_LABELS[s.role]} />
+                        {s.role === 'admin' && s.sees_patients && <StatusBadge status="active" label="Sees patients" />}
+                      </span>
+                    )
                   },
                 },
                 {
@@ -318,7 +324,7 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                       )
                     }
 
-                    if (s.role !== 'doctor') return <span style={{ color: '#CBD5E1' }}>—</span>
+                    if (!isPractitioner(s)) return <span style={{ color: '#CBD5E1' }}>—</span>
 
                     if (feeEditId === s.id) {
                       return (
@@ -549,6 +555,7 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
     email:                    '',
     consultation_fee:         member.staff?.consultation_fee != null ? String(member.staff.consultation_fee) : '',
     nursing_charge_per_shift: member.staff?.nursing_charge_per_shift != null ? String(member.staff.nursing_charge_per_shift) : '',
+    sees_patients:            !!member.sees_patients,
   })
   const originalEmail = useRef<string>('')
   const [emailLoading, setEmailLoading] = useState(true)
@@ -564,7 +571,7 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
     })
   }, [member.id])
 
-  function set(k: keyof typeof form, v: string) {
+  function set(k: Exclude<keyof typeof form, 'sees_patients'>, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
   }
 
@@ -588,7 +595,8 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
       joining_date:      form.joining_date || null,
       address:           form.address.trim() || null,
       emergency_contact: form.emergency_contact.trim() || null,
-      ...(form.role === 'doctor' ? {
+      ...(form.role === 'admin' ? { sees_patients: form.sees_patients } : {}),
+      ...(form.role === 'doctor' || (form.role === 'admin' && form.sees_patients) ? {
         consultation_fee: feeVal ? parseFloat(feeVal) : null,
       } : {}),
       ...(form.role === 'nurse' ? {
@@ -671,7 +679,16 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
             <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
           </FormField>
         </div>
-        {form.role === 'doctor' && (
+        {form.role === 'admin' && (
+          <label className="flex items-start gap-2 text-sm cursor-pointer" style={{ color: '#334155' }}>
+            <input type="checkbox" className="mt-1" checked={form.sees_patients} onChange={(e) => setForm((f) => ({ ...f, sees_patients: e.target.checked }))} />
+            <span>
+              Also sees patients as a doctor
+              <span className="block text-xs" style={{ color: '#64748B' }}>Lists them with the doctors for appointments, OPD, IPD, OT and emergency, with their own consultation fee.</span>
+            </span>
+          </label>
+        )}
+        {(form.role === 'doctor' || (form.role === 'admin' && form.sees_patients)) && (
           <FormField label="Consultation Fee (₹)" hint="Per-visit fee billed at appointment booking. Leave blank to use the hospital default.">
             <Input
               type="number"

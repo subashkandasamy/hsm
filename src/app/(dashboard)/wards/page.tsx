@@ -3,6 +3,7 @@ import { getWardBoard, listWards, listWardRoomTypes, listNursingUnits } from '@/
 import { listAllOtRooms } from '@/app/actions/ot'
 import { createClient } from '@/lib/supabase/server'
 import WardsClient from './_components/WardsClient'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export default async function WardsPage() {
   const supabase = await createClient()
@@ -13,7 +14,7 @@ export default async function WardsPage() {
     listWardRoomTypes(),
     listNursingUnits(),
     supabase.from('departments').select('id, name').order('name'),
-    supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
+    supabase.from('profiles').select('id, full_name').or(DOCTOR_FILTER).eq('is_active', true),
   ])
 
   return (

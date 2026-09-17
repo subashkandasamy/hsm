@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getActorProfile } from '@/lib/server-utils'
 import EmergencyBoard from './_components/EmergencyBoard'
 import type { ProcedureTariff } from '@/lib/types'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export default async function EmergencyPage() {
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
@@ -14,7 +15,7 @@ export default async function EmergencyPage() {
     listRecentEmergencyCases(7),
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).eq('category', 'emergency').order('name'),
     getWardBoard(),
-    supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
+    supabase.from('profiles').select('id, full_name').or(DOCTOR_FILTER).eq('is_active', true),
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).not('category', 'in', '(general,emergency)').order('name'),
     supabase.from('procedure_tariffs').select('default_price').eq('category', 'general').eq('is_active', true).limit(1).maybeSingle(),
     supabase.from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single(),

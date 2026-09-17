@@ -8,6 +8,7 @@ import {
   hashPassword, verifyPassword, makeResetToken, verifyResetToken,
 } from '@/lib/patientAuth'
 import { istToday, istDayStartISO, istDayEndISO, istAddDays, istWeekday } from '@/lib/istDate'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -524,7 +525,7 @@ export async function getHospitalDoctors(patientId: string): Promise<HospitalDoc
   if (!owner) return []
   const { data } = await svc
     .from('profiles').select('id, full_name')
-    .eq('tenant_id', owner.tenantId).eq('role', 'doctor').eq('is_active', true).order('full_name')
+    .eq('tenant_id', owner.tenantId).or(DOCTOR_FILTER).eq('is_active', true).order('full_name')
   return ((data ?? []) as Array<Record<string, unknown>>).map((d) => ({ id: d.id as string, name: d.full_name as string }))
 }
 

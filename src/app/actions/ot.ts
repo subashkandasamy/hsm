@@ -10,6 +10,7 @@ import { autoIpdBill } from '@/lib/ipdBilling'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { istDayEndISO, istDayStartISO, istToday } from '@/lib/istDate'
 import { revalidatePath } from 'next/cache'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -442,7 +443,7 @@ export async function listDoctors(): Promise<Pick<Profile, 'id' | 'full_name' | 
   const supabase = await createClient()
   const { data } = await supabase.from('profiles')
     .select('id, full_name, role')
-    .eq('role', 'doctor')
+    .or(DOCTOR_FILTER)
     .eq('is_active', true)
     .order('full_name')
   return (data ?? []) as Pick<Profile, 'id' | 'full_name' | 'role'>[]

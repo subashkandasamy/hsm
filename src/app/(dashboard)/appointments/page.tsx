@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { listAppointments, getAppointmentsBillStatuses } from '@/app/actions/appointments'
 import AppointmentsClient from './_components/AppointmentsClient'
 import { istToday } from '@/lib/istDate'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export default async function AppointmentsPage() {
   const supabase = await createClient()
@@ -10,7 +11,7 @@ export default async function AppointmentsPage() {
 
   const [appts, profilesRes, deptsRes, admissionsRes] = await Promise.all([
     listAppointments({ date: today }),
-    supabase.from('profiles').select('id, full_name, role').eq('role', 'doctor').eq('is_active', true),
+    supabase.from('profiles').select('id, full_name, role').or(DOCTOR_FILTER).eq('is_active', true),
     supabase.from('departments').select('id, name').order('name'),
     supabase.from('admissions').select('patient_id').eq('status', 'admitted'),
   ])

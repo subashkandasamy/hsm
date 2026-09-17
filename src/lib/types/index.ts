@@ -72,6 +72,8 @@ export interface Profile {
   phone_verified: boolean
   department_id: string | null
   is_active: boolean
+  /** Administrator who also consults as a doctor. */
+  sees_patients?: boolean
   must_change_password?: boolean
   temp_password_expires_at?: string | null
   created_at: string

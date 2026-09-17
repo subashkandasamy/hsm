@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getActorProfile } from '@/lib/server-utils'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export interface SetupStep {
   key: string
@@ -65,7 +66,7 @@ export async function getSetupProgress(): Promise<SetupProgress> {
     .eq('tenant_id', actor.tenant_id)
     .maybeSingle()
 
-  const doctorsQ = supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'doctor')
+  const doctorsQ = supabase.from('profiles').select('id', { count: 'exact', head: true }).or(DOCTOR_FILTER)
 
   const [doctorsRes, hours, labTests, radTests, pharmacyStock, wards, tariffs, patients] = await Promise.all([
     doctorsQ,

@@ -101,6 +101,7 @@ export async function createStaff(
     role: parsed.data.role,
     phone: parsed.data.phone ?? null,
     department_id: parsed.data.department_id ?? null,
+    sees_patients: parsed.data.role === 'admin' && !!parsed.data.sees_patients,
     is_active: true,
     must_change_password: true,
     temp_password_expires_at: expiresAt.toISOString(),
@@ -155,6 +156,9 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   if (parsed.data.role)         profileData.role         = parsed.data.role
   if (parsed.data.department_id !== undefined) profileData.department_id = parsed.data.department_id
   if (parsed.data.phone !== undefined)         profileData.phone = parsed.data.phone
+  // Only an administrator can be flagged as also seeing patients.
+  if (parsed.data.role && parsed.data.role !== 'admin') profileData.sees_patients = false
+  else if (parsed.data.sees_patients !== undefined)     profileData.sees_patients = parsed.data.sees_patients
 
   if (Object.keys(profileData).length > 0) {
     const { error } = await supabase.from('profiles').update(profileData).eq('id', profileId)

@@ -39,13 +39,14 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
     joining_date: '',
     consultation_fee: '',
     nursing_charge_per_shift: '',
+    sees_patients: false,
   })
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [createdPassword, setCreatedPassword] = useState<string | null>(null)
 
-  function set(k: keyof typeof form, v: string) {
+  function set(k: Exclude<keyof typeof form, 'sees_patients'>, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
   }
 
@@ -66,7 +67,8 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
       role: form.role,
       designation: form.designation.trim() || undefined,
       joining_date: form.joining_date || undefined,
-      ...(form.role === 'doctor' && form.consultation_fee
+      ...(form.role === 'admin' ? { sees_patients: form.sees_patients } : {}),
+      ...((form.role === 'doctor' || (form.role === 'admin' && form.sees_patients)) && form.consultation_fee
         ? { consultation_fee: parseFloat(form.consultation_fee) }
         : {}),
       ...(form.role === 'nurse' && form.nursing_charge_per_shift
@@ -81,7 +83,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
   function handleClose() {
     if (createdPassword) onSuccess()
     setCreatedPassword(null)
-    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', consultation_fee: '', nursing_charge_per_shift: '' })
+    setForm({ full_name: '', email: '', phone: '', role: '', designation: '', joining_date: '', consultation_fee: '', nursing_charge_per_shift: '', sees_patients: false })
     setError('')
     onClose()
   }
@@ -102,7 +104,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
         <div className="space-y-4">
           <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
             <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>Account created successfully</p>
-            <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed to the staff member. It expires in 72 hours, and they'll set their own password on first sign-in. You can also share it directly below.</p>
+            <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed to the staff member. It expires in 72 hours, and they&apos;ll set their own password on first sign-in. You can also share it directly below.</p>
           </div>
           <div className="p-4 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
             <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>Temporary Password</p>
@@ -195,7 +197,16 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
           </FormField>
         </div>
 
-        {form.role === 'doctor' && (
+        {form.role === 'admin' && (
+          <label className="flex items-start gap-2 text-sm cursor-pointer" style={{ color: '#334155' }}>
+            <input type="checkbox" className="mt-1" checked={form.sees_patients} onChange={(e) => setForm((f) => ({ ...f, sees_patients: e.target.checked }))} />
+            <span>
+              Also sees patients as a doctor
+              <span className="block text-xs" style={{ color: '#64748B' }}>Lists them with the doctors for appointments, OPD, IPD, OT and emergency, with their own consultation fee.</span>
+            </span>
+          </label>
+        )}
+        {(form.role === 'doctor' || (form.role === 'admin' && form.sees_patients)) && (
           <FormField label="Consultation Fee (₹)" hint="Per-visit fee billed at appointment booking. Leave blank to use the hospital default.">
             <Input
               type="number"
@@ -223,7 +234,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
 
         <div className="p-3 rounded-xl text-sm flex items-start gap-2" style={{ background: 'rgba(13,148,136,0.05)', color: '#0F766E', border: '1px solid rgba(13,148,136,0.15)' }}>
           <span>✉</span>
-          <span>A temporary password will be generated and emailed to the staff member along with their login link. They'll set their own password on first sign-in.</span>
+          <span>A temporary password will be generated and emailed to the staff member along with their login link. They&apos;ll set their own password on first sign-in.</span>
         </div>
       </form>
     </Modal>

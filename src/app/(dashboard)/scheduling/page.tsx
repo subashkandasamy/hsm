@@ -11,6 +11,7 @@ import {
   listPatterns, listLeaveRequests,
 } from '@/app/actions/scheduling'
 import SchedulingClient from './_components/SchedulingClient'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export const metadata = { title: 'Scheduling — Uyirly' }
 
@@ -28,7 +29,7 @@ export default async function SchedulingPage() {
     listPatterns(),
     listLeaveRequests(),
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
-    supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true).order('full_name'),
+    supabase.from('profiles').select('id, full_name').or(DOCTOR_FILTER).eq('is_active', true).order('full_name'),
   ])
 
   const canManage = hasPermission(actor.role, 'scheduling:manage')

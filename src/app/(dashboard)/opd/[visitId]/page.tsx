@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/server'
 import ConsultationWorkspace from './_components/ConsultationWorkspace'
 import type { ProcedureTariff } from '@/lib/types'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
+import { DOCTOR_FILTER } from '@/lib/doctors'
 
 interface Props { params: Promise<{ visitId: string }> }
 
@@ -53,7 +54,7 @@ export default async function OpdVisitPage({ params }: Props) {
     listRadiologyOrders({ visitId }),
     listAllergies(visit.patient_id),
     getWardBoard(),
-    supabase.from('profiles').select('id, full_name').eq('role', 'doctor').eq('is_active', true),
+    supabase.from('profiles').select('id, full_name').or(DOCTOR_FILTER).eq('is_active', true),
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).not('category', 'in', '(general,emergency)').order('name'),
     supabase.from('tenants').select('advance_percentage').eq('id', actor.tenant_id).single(),
     supabase.from('procedure_tariffs').select('default_price').eq('category', 'general').eq('is_active', true).limit(1).maybeSingle(),
