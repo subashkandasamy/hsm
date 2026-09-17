@@ -213,7 +213,7 @@ export default function IpdBillingConfigClient({ config, advancePercentage: init
         <div className="p-6">
           <h2 className="font-semibold mb-1" style={{ color: '#0F172A' }}>Daily Bill Composition</h2>
           <p className="text-sm mb-5" style={{ color: '#64748B' }}>
-            Choose which charges appear in each patient's daily auto-generated bill.
+            Choose which charges appear in each patient&apos;s daily auto-generated bill.
             Toggling a charge off removes it from all subsequent daily bills.
           </p>
 
