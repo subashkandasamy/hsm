@@ -102,7 +102,7 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
               <Pencil className="w-3.5 h-3.5" /> Edit Results
             </button>
           )}
-          <a href={`/print/lab/${order.id}`} target="_blank" rel="noreferrer"
+          <a href={`/print/lab/${order.id}/pdf`} target="_blank" rel="noreferrer"
             className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold"
             style={{ background: '#0D9488', color: '#fff', border: 'none', textDecoration: 'none' }}>
             <Printer className="w-3.5 h-3.5" /> Print Report

@@ -1,22 +1,7 @@
-import { notFound } from 'next/navigation'
-import { getAdmission } from '@/app/actions/ipd'
-import { getTenantProfile } from '@/app/actions/tenantProfile'
-import PrintDischargeSummary from './PrintDischargeSummary'
+import { redirect } from 'next/navigation'
 
-interface Props { params: Promise<{ admissionId: string }> }
-
-export default async function PrintDischargeSummaryPage({ params }: Props) {
+// The discharge summary prints as a generated PDF; old links land here.
+export default async function PrintDischargeSummaryPage({ params }: { params: Promise<{ admissionId: string }> }) {
   const { admissionId } = await params
-
-  const [admission, tenantProfile] = await Promise.all([
-    getAdmission(admissionId),
-    getTenantProfile(),
-  ])
-
-  if (!admission) notFound()
-
-  return (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    <PrintDischargeSummary admission={admission as any} tenantProfile={tenantProfile} />
-  )
+  redirect(`/print/ipd/${admissionId}/discharge/pdf`)
 }

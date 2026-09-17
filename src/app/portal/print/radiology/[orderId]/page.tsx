@@ -1,23 +1,7 @@
-import { notFound } from 'next/navigation'
-import { getPortalRadiologyReport } from '@/app/actions/patientPortal'
-import PrintRadiologyReport from '@/app/print/radiology/[orderId]/PrintRadiologyReport'
-import type { RadiologyOrder, Patient, TenantProfile } from '@/lib/types'
+import { redirect } from 'next/navigation'
 
-interface Props { params: Promise<{ orderId: string }> }
-
-// Patient-facing printable radiology report (with signed scan image).
-// Ownership is verified inside getPortalRadiologyReport.
-export default async function PortalPrintRadiologyPage({ params }: Props) {
+// Patient-facing radiology report prints as a generated PDF (ownership checked in the PDF route).
+export default async function PortalPrintRadiologyPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params
-  const data = await getPortalRadiologyReport(orderId)
-  if (!data) notFound()
-  return (
-    <PrintRadiologyReport
-      order={data.order as RadiologyOrder}
-      patient={data.patient as Patient | null}
-      tenantProfile={data.tenantProfile as TenantProfile | null}
-      imageUrl={data.imageUrl}
-      imageIsPdf={data.imageIsPdf}
-    />
-  )
+  redirect(`/portal/print/radiology/${orderId}/pdf`)
 }

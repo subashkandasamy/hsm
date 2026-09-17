@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, Droplet, AlertTriangle, ChevronDown, ChevronRight,
   Activity, FileText, Pill, CheckCircle, Plus, Trash2, Save, Lock,
-  FlaskConical, Scan, BedDouble, Printer,
+  FlaskConical, Scan, BedDouble, Printer, Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -22,7 +22,7 @@ import {
 } from '@/app/actions/opd'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import MicButton from '@/components/ui/MicButton'
-import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall, TenantProfile } from '@/lib/types'
+import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall } from '@/lib/types'
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
 import OrderRadiologyModal from '@/app/(dashboard)/radiology/_components/OrderRadiologyModal'
@@ -71,7 +71,6 @@ interface Props {
   admitTariffs: import('@/lib/types').ProcedureTariff[]
   admitGeneralTariffPrice?: number
   admitAdvancePercentage?: number
-  tenantProfile?: TenantProfile | null
   plan?: import('@/lib/plans').PlanKey
   tenantStatus?: import('@/lib/plans').TenantStatus
 }
@@ -89,7 +88,7 @@ export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
-  tenantProfile = null, plan = 'starter', tenantStatus = 'trial',
+  plan = 'starter', tenantStatus = 'trial',
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -205,6 +204,35 @@ export default function ConsultationWorkspace({
     }
   }
 
+  // The prescription prints as a server-generated PDF from saved data, so unsaved
+  // vitals/notes are saved first. The tab is opened synchronously (before any await)
+  // so popup blockers allow it, then pointed at the PDF once saving is done.
+  const [printingRx, setPrintingRx] = useState(false)
+  async function handlePrintRx() {
+    const tab = window.open('about:blank', '_blank')
+    setPrintingRx(true)
+    const saved = visit.vitals ?? {}
+    const vitalsDirty = (Object.keys(vitals) as Array<keyof typeof vitals>).some((k) => (vitals[k] || '') !== ((saved[k] as string | undefined) ?? ''))
+    const consultDirty = consult.complaint !== (visit.complaint ?? '') || consult.diagnosis !== (visit.diagnosis ?? '')
+      || consult.icd_code !== (visit.icd_code ?? '') || consult.notes !== (visit.notes ?? '')
+    if (vitalsDirty) {
+      const r = await saveVitals(visit.id, vitals)
+      if (r.success) setVisit((v) => ({ ...v, vitals: { ...vitals } }))
+    }
+    if (consultDirty) {
+      const r = await saveConsultation(visit.id, {
+        complaint: consult.complaint || null, diagnosis: consult.diagnosis || null,
+        icd_code: consult.icd_code || null, notes: consult.notes || null,
+      })
+      if (r.success) setVisit((v) => ({ ...v, complaint: consult.complaint || null, diagnosis: consult.diagnosis || null, icd_code: consult.icd_code || null, notes: consult.notes || null }))
+      else setConsultError(r.error)
+    }
+    setPrintingRx(false)
+    const url = `/opd/${visit.id}/prescription/pdf`
+    if (tab) tab.location.href = url
+    else window.open(url, '_blank')
+  }
+
   async function handleAddRx(e: React.FormEvent) {
     e.preventDefault()
     if (!newRx.drug_name.trim()) { setRxError('Drug name is required'); return }
@@ -273,36 +301,12 @@ export default function ConsultationWorkspace({
           <ArrowLeft className="w-4 h-4" /> Back to OPD
         </Link>
         <button
-          onClick={() => {
-            const el = document.getElementById('rx-print-area')
-            if (!el) return
-            const old = document.getElementById('rx-print-iframe')
-            if (old) old.remove()
-            const iframe = document.createElement('iframe')
-            iframe.id = 'rx-print-iframe'
-            iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;'
-            document.body.appendChild(iframe)
-            const doc = iframe.contentDocument ?? iframe.contentWindow?.document
-            if (!doc) { iframe.remove(); return }
-            doc.open()
-            doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Prescription</title><style>
-              *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-              body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #0F172A; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              table { border-collapse: collapse; width: 100%; }
-              td, th { vertical-align: top; }
-              @page { size: A4 portrait; margin: 10mm; }
-            </style></head><body>${el.innerHTML}</body></html>`)
-            doc.close()
-            iframe.contentWindow?.focus()
-            setTimeout(() => {
-              iframe.contentWindow?.print()
-              iframe.addEventListener('afterprint', () => iframe.remove())
-            }, 500)
-          }}
+          onClick={handlePrintRx}
+          disabled={printingRx}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}
+          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: printingRx ? 'wait' : 'pointer' }}
         >
-          <Printer className="w-3.5 h-3.5" /> Print Prescription
+          {printingRx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />} Print Prescription
         </button>
       </div>
 
@@ -1118,310 +1122,6 @@ export default function ConsultationWorkspace({
 
       </div>{/* end .no-print */}
 
-      {/* ── Print Prescription (hidden on screen, cloned into popup for printing) ── */}
-      <div id="rx-print-area" style={{ display: 'none' }}>
-        {(() => {
-          const p = tenantProfile
-          const hospName = p?.name || 'Hospital'
-          const addrParts = [p?.address_line1, p?.address_line2, [p?.city, p?.state].filter(Boolean).join(', '), p?.pincode && `- ${p.pincode}`].filter(Boolean)
-          const contactParts = [p?.phone1 && `Phone: ${p.phone1}`, p?.phone2 && p.phone2, p?.email && `Email: ${p.email}`, p?.website && `Web: ${p.website}`].filter(Boolean)
-          const legalParts = [p?.cin_no && `CIN No: ${p.cin_no}`, p?.gst_no && `GST: ${p.gst_no}`].filter(Boolean)
-
-          const templateLabel: Record<string, string> = {
-            general: 'General Consultation',
-            dental: 'Dental Consultation',
-            ophthalmology: 'Ophthalmology Consultation',
-          }
-          const rxLabel = templateLabel[clinicalTemplate] ?? 'Consultation'
-
-          const visitDate = new Date(visit.visit_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-          const printedAt = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-
-          const eyeData = clinicalTemplate === 'ophthalmology' && visit.clinical_data
-            ? visit.clinical_data as unknown as EyeExamData
-            : null
-
-          const thisVisitTreatments = clinicalTemplate === 'dental'
-            ? (dentalTreatments ?? []).filter((t) => t.visit_id === visit.id)
-            : []
-
-          const cell = (content: React.ReactNode, opts?: { bold?: boolean; mono?: boolean; color?: string; span?: number; align?: string; border?: string }) => (
-            <td style={{
-              padding: '8px 12px',
-              fontSize: '12px',
-              color: opts?.color ?? '#0F172A',
-              fontWeight: opts?.bold ? 700 : 400,
-              fontFamily: opts?.mono ? 'monospace' : 'inherit',
-              borderBottom: opts?.border ?? '1px solid #E2E8F0',
-              textAlign: (opts?.align ?? 'left') as React.CSSProperties['textAlign'],
-              ...(opts?.span ? { gridColumn: `span ${opts.span}` } : {}),
-            }}>{content}</td>
-          )
-
-          const label = (text: string) => (
-            <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase' as const, letterSpacing: '0.6px', margin: '0 0 3px' }}>{text}</p>
-          )
-          const value = (text: string | null | undefined, fallback = '—') => (
-            <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{text || fallback}</p>
-          )
-
-          return (
-            <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", background: '#fff', color: '#0F172A' }}>
-
-              {/* Hospital header */}
-              <div style={{ padding: '18px 28px 14px', borderBottom: '2.5px solid #0D9488' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-                  {p?.logo_url && (
-                    <img src={p.logo_url} alt="Logo" style={{ height: '80px', width: 'auto', maxWidth: '110px', objectFit: 'contain', flexShrink: 0 }} />
-                  )}
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px', margin: 0, lineHeight: 1.2 }}>{hospName.toUpperCase()}</h1>
-                    {(p?.tagline || p?.tagline2) && (
-                      <p style={{ fontSize: '12px', color: '#0D9488', fontWeight: 600, margin: '4px 0 0' }}>
-                        {[p?.tagline, p?.tagline2].filter(Boolean).join('  ·  ')}
-                      </p>
-                    )}
-                    {addrParts.length > 0 && <p style={{ fontSize: '11px', color: '#475569', margin: '4px 0 0', lineHeight: 1.5 }}>{addrParts.join(', ')}</p>}
-                    {contactParts.length > 0 && <p style={{ fontSize: '11px', color: '#475569', margin: '2px 0 0' }}>{contactParts.join('  |  ')}</p>}
-                    {legalParts.length > 0 && <p style={{ fontSize: '10px', color: '#94A3B8', margin: '3px 0 0', letterSpacing: '0.3px' }}>{legalParts.join('  |  ')}</p>}
-                  </div>
-                  <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '90px' }}>
-                    <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0 }}>Visit Date</p>
-                    <p style={{ fontSize: '13px', fontWeight: 700, color: '#0D9488', margin: '2px 0 0' }}>{visitDate}</p>
-                    <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: '6px 0 0' }}>UHID</p>
-                    <p style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', fontFamily: 'monospace', margin: '2px 0 0' }}>{patient.uhid}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Type banner */}
-              <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '6px 0', textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>{rxLabel}</span>
-              </div>
-
-              {/* Patient info grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid #E2E8F0' }}>
-                {/* Row 1 */}
-                <div style={{ padding: '10px 14px', borderRight: '1px solid #E2E8F0', gridColumn: 'span 2' }}>
-                  {label('Patient Name')}
-                  <p style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', margin: 0 }}>{patient.full_name}</p>
-                </div>
-                <div style={{ padding: '10px 14px' }}>
-                  {label('Doctor')}
-                  {value(visit.doctor?.full_name)}
-                </div>
-                {/* Row 2 */}
-                <div style={{ padding: '8px 14px', borderRight: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
-                  {label('Age / Sex')}
-                  {value(`${age !== null ? `${age} yrs` : '—'} / ${patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : '—'}`)}
-                </div>
-                <div style={{ padding: '8px 14px', borderRight: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
-                  {label('Phone')}
-                  {value(patient.phone)}
-                </div>
-                <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0' }}>
-                  {label('Department')}
-                  {value(rxLabel.replace(' Consultation', ''))}
-                </div>
-                {/* Row 3: Blood group + allergies */}
-                {(patient.blood_group || allergies.length > 0) && (
-                  <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', gridColumn: 'span 3', display: 'flex', gap: '24px', alignItems: 'center' }}>
-                    {patient.blood_group && (
-                      <div>
-                        {label('Blood Group')}
-                        <p style={{ fontSize: '13px', fontWeight: 700, color: '#DC2626', margin: 0 }}>{patient.blood_group}</p>
-                      </div>
-                    )}
-                    {allergies.length > 0 && (
-                      <div>
-                        {label('Allergies')}
-                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', margin: 0, background: '#FFFBEB', padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>
-                          ⚠ {allergies.map((a) => a.allergen).join(', ')}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Vitals */}
-              {Object.values(vitals).some(Boolean) && (
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 8px' }}>Vitals</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
-                    {[
-                      { label: 'BP', value: vitals.bp },
-                      { label: 'Pulse', value: vitals.pulse },
-                      { label: 'Temp', value: vitals.temp },
-                      { label: 'SpO₂', value: vitals.spo2 },
-                      { label: 'Weight', value: vitals.weight },
-                      { label: 'Height', value: vitals.height },
-                    ].filter((v) => v.value).map((v) => (
-                      <div key={v.label}>
-                        <p style={{ fontSize: '10px', color: '#94A3B8', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{v.label}</p>
-                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{v.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Consultation */}
-              {(consult.complaint || consult.diagnosis || consult.icd_code || consult.notes) && (
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 10px' }}>Consultation</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
-                    {consult.complaint && (
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 2px' }}>Chief Complaint</p>
-                        <p style={{ fontSize: '13px', color: '#0F172A', margin: 0, lineHeight: 1.5 }}>{consult.complaint}</p>
-                      </div>
-                    )}
-                    {consult.diagnosis && (
-                      <div>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 2px' }}>Diagnosis</p>
-                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0, lineHeight: 1.5 }}>{consult.diagnosis}</p>
-                      </div>
-                    )}
-                    {consult.icd_code && (
-                      <div>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 2px' }}>ICD Code</p>
-                        <p style={{ fontSize: '13px', fontFamily: 'monospace', color: '#0D9488', margin: 0 }}>{consult.icd_code}</p>
-                      </div>
-                    )}
-                    {consult.notes && (
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 2px' }}>Notes / Instructions</p>
-                        <p style={{ fontSize: '13px', color: '#0F172A', margin: 0, lineHeight: 1.6 }}>{consult.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Eye section (ophthalmology) */}
-              {eyeData && (
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 10px' }}>Eye Examination</p>
-                  <div style={{ display: 'flex', gap: '32px', marginBottom: '10px' }}>
-                    {(eyeData.visualAcuity?.od || eyeData.visualAcuity?.os) && (
-                      <div>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', margin: '0 0 4px' }}>Visual Acuity</p>
-                        <p style={{ fontSize: '12px', color: '#0F172A', margin: 0 }}>OD: <strong>{eyeData.visualAcuity.od || '—'}</strong> &nbsp; OS: <strong>{eyeData.visualAcuity.os || '—'}</strong></p>
-                      </div>
-                    )}
-                    {(eyeData.iop?.od !== null || eyeData.iop?.os !== null) && (
-                      <div>
-                        <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', margin: '0 0 4px' }}>IOP (mmHg)</p>
-                        <p style={{ fontSize: '12px', color: '#0F172A', margin: 0 }}>OD: <strong>{eyeData.iop.od ?? '—'}</strong> &nbsp; OS: <strong>{eyeData.iop.os ?? '—'}</strong></p>
-                      </div>
-                    )}
-                  </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                    <thead>
-                      <tr style={{ background: '#F0FDF9' }}>
-                        <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E', fontWeight: 700 }}>Refraction</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'center', border: '1px solid #E2E8F0' }}>Sphere</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'center', border: '1px solid #E2E8F0' }}>Cylinder</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'center', border: '1px solid #E2E8F0' }}>Axis</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(['od', 'os'] as const).map((eye) => (
-                        <tr key={eye}>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', fontWeight: 700, color: '#0D9488' }}>{eye.toUpperCase()}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', textAlign: 'center' }}>{eyeData.refraction[eye].sphere ?? '—'}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', textAlign: 'center' }}>{eyeData.refraction[eye].cylinder ?? '—'}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', textAlign: 'center' }}>{eyeData.refraction[eye].axis ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {eyeData.notes && <p style={{ fontSize: '12px', color: '#475569', margin: '8px 0 0' }}><strong>Notes:</strong> {eyeData.notes}</p>}
-                </div>
-              )}
-
-              {/* Dental treatments (dental) */}
-              {clinicalTemplate === 'dental' && thisVisitTreatments.length > 0 && (
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 10px' }}>Dental Treatments</p>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                    <thead>
-                      <tr style={{ background: '#F0FDF9' }}>
-                        <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E' }}>#</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E' }}>Tooth</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E' }}>Procedure</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E' }}>Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {thisVisitTreatments.map((t, i) => (
-                        <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0' }}>{i + 1}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', fontWeight: 600 }}>{t.tooth_number ?? '—'}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', fontWeight: 600 }}>{t.procedure}</td>
-                          <td style={{ padding: '6px 10px', border: '1px solid #E2E8F0', color: '#64748B' }}>{t.notes ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Prescriptions */}
-              {prescriptions.length > 0 && (
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 10px' }}>
-                    ℞ Prescriptions
-                  </p>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                    <thead>
-                      <tr style={{ background: '#F0FDF9' }}>
-                        {['#', 'Drug', 'Dosage', 'Frequency', 'Duration', 'Instructions'].map((h) => (
-                          <th key={h} style={{ padding: '7px 10px', textAlign: 'left', border: '1px solid #E2E8F0', color: '#0F766E', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {prescriptions.map((rx, i) => (
-                        <tr key={rx.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', color: '#94A3B8', fontWeight: 600 }}>{i + 1}</td>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', fontWeight: 700, color: '#0F172A' }}>{rx.drug_name}</td>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', color: '#475569' }}>{rx.dosage ?? '—'}</td>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', color: '#475569' }}>{rx.frequency ?? '—'}</td>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', color: '#475569' }}>{rx.duration ?? '—'}</td>
-                          <td style={{ padding: '7px 10px', border: '1px solid #E2E8F0', color: '#64748B', fontSize: '11px' }}>{rx.instructions ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Signature + footer */}
-              <div style={{ padding: '16px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <div>
-                  <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0 0 4px' }}>Next Visit / Follow-up</p>
-                  <div style={{ width: '180px', borderBottom: '1px dashed #CBD5E1', marginBottom: '4px' }}>&nbsp;</div>
-                  <p style={{ fontSize: '11px', color: '#CBD5E1', margin: 0 }}>Date / Instructions</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ width: '160px', borderBottom: '2px solid #0F172A', marginBottom: '6px', marginLeft: 'auto' }}>&nbsp;</div>
-                  <p style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', margin: 0 }}>{visit.doctor?.full_name ?? ''}</p>
-                  <p style={{ fontSize: '11px', color: '#64748B', margin: '2px 0 0' }}>Consulting Doctor</p>
-                </div>
-              </div>
-
-              {/* Printed timestamp */}
-              <div style={{ background: '#F8FAFC', borderTop: '1px solid #E2E8F0', padding: '6px 28px', display: 'flex', justifyContent: 'space-between' }}>
-                <p style={{ fontSize: '10px', color: '#94A3B8', margin: 0 }}>Printed: {printedAt}</p>
-                <p style={{ fontSize: '10px', color: '#94A3B8', margin: 0 }}>This is a computer-generated prescription.</p>
-              </div>
-
-            </div>
-          )
-        })()}
-      </div>
     </div>
   )
 }

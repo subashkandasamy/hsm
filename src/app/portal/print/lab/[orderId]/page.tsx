@@ -1,21 +1,7 @@
-import { notFound } from 'next/navigation'
-import { getPortalLabReport } from '@/app/actions/patientPortal'
-import PrintLabReport from '@/app/print/lab/[orderId]/PrintLabReport'
-import type { LabOrder, Patient, TenantProfile } from '@/lib/types'
+import { redirect } from 'next/navigation'
 
-interface Props { params: Promise<{ orderId: string }> }
-
-// Patient-facing printable lab report. Ownership is verified inside
-// getPortalLabReport against the logged-in family session.
-export default async function PortalPrintLabPage({ params }: Props) {
+// Patient-facing lab report prints as a generated PDF (ownership checked in the PDF route).
+export default async function PortalPrintLabPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params
-  const data = await getPortalLabReport(orderId)
-  if (!data) notFound()
-  return (
-    <PrintLabReport
-      order={data.order as LabOrder}
-      patient={data.patient as Patient | null}
-      tenantProfile={data.tenantProfile as TenantProfile | null}
-    />
-  )
+  redirect(`/portal/print/lab/${orderId}/pdf`)
 }

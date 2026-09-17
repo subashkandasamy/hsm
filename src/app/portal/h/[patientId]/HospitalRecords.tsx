@@ -125,7 +125,7 @@ export default function HospitalRecords({ patientId, records, appointments, requ
                 <div key={l.id} style={card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(l.date)} · {l.status}</span>
-                    {hasResults && printBtn(`/portal/print/lab/${l.id}`)}
+                    {hasResults && printBtn(`/portal/print/lab/${l.id}/pdf`)}
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -214,7 +214,7 @@ function ScanCard({ scan: r }: { scan: PatientRecords['radiology'][number] }) {
               {loading ? 'Loading…' : 'View scan image'}
             </button>
           )}
-          {printBtn(`/portal/print/radiology/${r.id}`)}
+          {printBtn(`/portal/print/radiology/${r.id}/pdf`)}
         </div>
       )}
     </div>

@@ -90,11 +90,16 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
             style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569', cursor: 'pointer' }}>
             ← Back
           </button>
-          <button onClick={() => window.print()}
+          <a href={`/billing/advance-receipt/${data.admission.id}/pdf`} target="_blank" rel="noopener"
             className="text-sm px-4 py-2 rounded-lg font-semibold"
             style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-            🖨 Print
-          </button>
+            🖨 Print receipt
+          </a>
+          <a href={`/billing/advance-receipt/${data.admission.id}/pdf?download=1`}
+            className="text-sm px-3 py-2 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#475569' }}>
+            ⬇ Download PDF
+          </a>
         </div>
 
         {/* Receipt card */}

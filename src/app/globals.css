@@ -206,11 +206,5 @@ body {
   /* Long reports/records: keep each table row and image whole across page breaks. */
   tr, img { break-inside: avoid; }
   .no-print { display: none !important; }
-  #rx-print-area {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    background: #fff !important;
-  }
   @page { size: A4 portrait; margin: 10mm; }
 }

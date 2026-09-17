@@ -94,29 +94,41 @@ export function ageSex(dob: string | null | undefined, gender: string | null | u
   return parts.length ? parts.join(' / ') : null
 }
 
+/** Short, stable reference printed on a document so a copy can be traced back to its record. */
+export const shortRef = (prefix: string, id: string) => `${prefix}-${id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+
 export type LogoImage = { data: Buffer; format: 'png' | 'jpg' } | null
 
-/** Fetches the hospital logo for embedding; PDFs support PNG/JPEG only. */
-export async function loadLogo(url: string | null | undefined): Promise<LogoImage> {
+/**
+ * Fetches an image for embedding. PDFs only take PNG/JPEG, and uploads are often
+ * large phone photos, so the image is re-encoded (and shrunk to `maxPx`) with sharp.
+ * Returns null for anything that isn't a readable image.
+ */
+export async function loadImage(url: string | null | undefined, maxPx: number): Promise<LogoImage> {
   if (!url) return null
   try {
     const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) return null
     const type = res.headers.get('content-type') ?? ''
-    const format = type.includes('png') ? 'png' : type.includes('jpeg') || type.includes('jpg') ? 'jpg' : null
-    if (!format) return null
     const raw = Buffer.from(await res.arrayBuffer())
-    // Uploaded logos are often large photos; the PDF only needs ~2x its 54pt box.
     try {
       const sharp = (await import('sharp')).default
-      const data = await sharp(raw).resize(240, 240, { fit: 'inside', withoutEnlargement: true }).png().toBuffer()
-      return { data, format: 'png' }
+      const img = sharp(raw).rotate().resize(maxPx, maxPx, { fit: 'inside', withoutEnlargement: true })
+      return type.includes('png')
+        ? { data: await img.png().toBuffer(), format: 'png' }
+        : { data: await img.jpeg({ quality: 85 }).toBuffer(), format: 'jpg' }
     } catch {
-      return { data: raw, format }
+      const format = type.includes('png') ? 'png' : type.includes('jpeg') || type.includes('jpg') ? 'jpg' : null
+      return format ? { data: raw, format } : null
     }
   } catch {
     return null
   }
+}
+
+/** Hospital logo — the PDF only needs ~2x its 54pt box. */
+export function loadLogo(url: string | null | undefined): Promise<LogoImage> {
+  return loadImage(url, 240)
 }
 
 // ── Letterhead ────────────────────────────────────────────────────────────────
@@ -307,16 +319,95 @@ export function AmountInWords({ words }: { words: string }) {
   )
 }
 
-export function Signatures({ hospital, left = 'Patient / Attendant' }: { hospital: string; left?: string }) {
+/** Blank signature lines. `right` defaults to the hospital's authorised signatory. */
+export function Signatures({ hospital, left = 'Patient / Attendant', right }: { hospital: string; left?: string | null; right?: { name?: string | null; role: string } }) {
   return (
-    <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 34 }}>
-      <View style={{ width: 170, borderTopWidth: 0.75, borderTopColor: C.muted, paddingTop: 3 }}>
-        <Text style={s.small}>{left}</Text>
-      </View>
+    <View wrap={false} style={{ flexDirection: 'row', justifyContent: left ? 'space-between' : 'flex-end', marginTop: 34 }}>
+      {left ? (
+        <View style={{ width: 170, borderTopWidth: 0.75, borderTopColor: C.muted, paddingTop: 3 }}>
+          <Text style={s.small}>{left}</Text>
+        </View>
+      ) : null}
       <View style={{ width: 170, borderTopWidth: 0.75, borderTopColor: C.muted, paddingTop: 3, alignItems: 'flex-end' }}>
-        <Text style={s.small}>Authorised Signatory</Text>
-        <Text style={[s.small, { fontWeight: 600 }]}>for {hospital}</Text>
+        {right ? (
+          <>
+            {right.name ? <Text style={{ fontSize: 9, fontWeight: 700, color: C.ink }}>{right.name}</Text> : null}
+            <Text style={s.small}>{right.role}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.small}>Authorised Signatory</Text>
+            <Text style={[s.small, { fontWeight: 600 }]}>for {hospital}</Text>
+          </>
+        )}
       </View>
+    </View>
+  )
+}
+
+// ── Clinical document blocks ─────────────────────────────────────────────────
+/** Section heading bar. Kept with the start of its content by the caller's wrap={false} block. */
+export function SectionTitle({ children, tone = 'muted' }: { children: string; tone?: 'muted' | 'accent' }) {
+  return (
+    <View style={{ backgroundColor: tone === 'accent' ? C.accentFill : C.fill, paddingVertical: 3, paddingHorizontal: 6, marginTop: 10 }}>
+      <Text style={{ fontSize: 8, fontWeight: 700, color: tone === 'accent' ? C.accent : C.muted, letterSpacing: 0.8 }}>{children.toUpperCase()}</Text>
+    </View>
+  )
+}
+
+/** Free text written by staff (findings, summaries). Line breaks are kept; long text flows across pages. */
+export function TextBlock({ text, empty = '—', size = 9.5 }: { text: string | null | undefined; empty?: string; size?: number }) {
+  const body = text?.trim()
+  return (
+    <View style={{ paddingHorizontal: 6, paddingTop: 5 }}>
+      {body
+        ? body.split(/\r?\n/).map((line, i) => <Text key={i} style={{ fontSize: size, lineHeight: 1.5, minHeight: size * 1.5 }}>{line}</Text>)
+        : <Text style={{ fontSize: size, color: C.faint }}>{empty}</Text>}
+    </View>
+  )
+}
+
+/** Labelled values in a row (vitals, short facts). Empty values are skipped. */
+export function FactRow({ items }: { items: Array<[string, string | null | undefined]> }) {
+  const shown = items.filter(([, v]) => v)
+  if (shown.length === 0) return null
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 6, paddingTop: 5 }}>
+      {shown.map(([label, value]) => (
+        <View key={label} style={{ marginRight: 22, marginBottom: 3 }}>
+          <Text style={s.label}>{label}</Text>
+          <Text style={{ fontSize: 9.5, fontWeight: 600, color: C.ink }}>{value}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
+export interface TableColumn { label: string; width?: number; flex?: number; align?: 'left' | 'right' | 'center' }
+export interface TableCell { text: string; bold?: boolean; color?: string; note?: string | null }
+
+/** Plain data table: header row + rows that never split across pages. */
+export function DataTable({ columns, rows, empty = 'Nothing recorded' }: { columns: TableColumn[]; rows: Array<Array<string | TableCell>>; empty?: string }) {
+  const colStyle = (c: TableColumn) => ({ ...(c.width ? { width: c.width } : { flex: c.flex ?? 1 }), textAlign: c.align ?? 'left', paddingRight: 6 } as const)
+  return (
+    <View>
+      <View wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: C.rule, paddingVertical: 3, paddingHorizontal: 6 }}>
+        {columns.map((c) => <Text key={c.label} style={[s.label, colStyle(c)]}>{c.label}</Text>)}
+      </View>
+      {rows.length === 0 ? <Text style={{ paddingHorizontal: 6, paddingVertical: 4, color: C.faint }}>{empty}</Text> : null}
+      {rows.map((row, i) => (
+        <View key={i} wrap={false} style={{ flexDirection: 'row', paddingVertical: 3.5, paddingHorizontal: 6, borderBottomWidth: 0.5, borderBottomColor: C.hair }}>
+          {row.map((cell, j) => {
+            const c = typeof cell === 'string' ? { text: cell } : cell
+            return (
+              <View key={j} style={colStyle(columns[j])}>
+                <Text style={{ fontWeight: c.bold ? 700 : 400, color: c.color ?? C.text, textAlign: columns[j].align ?? 'left' }}>{c.text}</Text>
+                {c.note ? <Text style={[s.small, { textAlign: columns[j].align ?? 'left' }]}>{c.note}</Text> : null}
+              </View>
+            )
+          })}
+        </View>
+      ))}
     </View>
   )
 }

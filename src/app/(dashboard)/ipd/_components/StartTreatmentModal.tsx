@@ -122,7 +122,7 @@ export default function StartTreatmentModal({ admissionId, patientName, onClose,
     <Modal open onClose={onClose} title={`Treatment Declaration — ${patientName}`} maxWidth="34rem">
       <div className="space-y-4">
         <a
-          href={`/print/ipd/${admissionId}/declaration`}
+          href={`/print/ipd/${admissionId}/declaration/pdf`}
           target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium w-fit"
           style={{ background: '#F1F5F9', color: '#475569' }}
