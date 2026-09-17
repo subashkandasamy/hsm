@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock, ClipboardList } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList, Printer } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -143,14 +143,20 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
     router.push(`/opd/${r.visitId}`)
   }
 
+  const [printNote, setPrintNote] = useState(true)
+
   async function handleResolve() {
     if (!resolveCase) return
     setResolving(true)
     setResolveError(null)
 
     if (resolveType === 'discharge' || resolveType === 'refer') {
+      // Open the tab before any await so popup blockers allow it; it shows the
+      // discharge / referral note once the case is resolved.
+      const tab = printNote ? window.open('about:blank', '_blank') : null
       const r = await resolveEmergency(resolveCase.id, resolveType, outcomeNote)
-      if (!r.success) { setResolveError(r.error); setResolving(false); return }
+      if (!r.success) { tab?.close(); setResolveError(r.error); setResolving(false); return }
+      if (tab) tab.location.href = `/print/emergency/${resolveCase.id}/pdf`
       setCases((c) => c.filter((ec) => ec.id !== resolveCase.id))
       setResolveCase(null)
     }
@@ -280,9 +286,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: openingAdmitId === ec.id ? 'not-allowed' : 'pointer', opacity: openingAdmitId === ec.id ? 0.6 : 1 }}>
                           {openingAdmitId === ec.id ? 'Checking…' : 'Admit to IPD'}
                         </button>
+                        <a href={`/print/emergency/${ec.id}/pdf`} target="_blank" rel="noopener"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ml-auto"
+                          style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
+                          <Printer className="w-3 h-3" /> Case sheet
+                        </a>
                         <button
                           onClick={() => { setResolveCase(ec); setResolveType(''); setOutcomeNote('') }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium ml-auto"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium"
                           style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                           Resolve
                         </button>
@@ -375,6 +386,12 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
               <Textarea value={outcomeNote} onChange={(e) => setOutcomeNote(e.target.value)}
                 placeholder="Condition at discharge, referral details…" style={{ minHeight: '4rem' }} />
             </FormField>
+          )}
+          {resolveType && (
+            <label className="flex items-center gap-2 text-sm" style={{ color: '#475569' }}>
+              <input type="checkbox" checked={printNote} onChange={(e) => setPrintNote(e.target.checked)} />
+              Print {resolveType === 'refer' ? 'referral' : 'discharge'} note
+            </label>
           )}
           {resolveError && <p className="text-sm" style={{ color: '#DC2626' }}>{resolveError}</p>}
           <div className="flex gap-3 justify-end">

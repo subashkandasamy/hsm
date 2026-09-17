@@ -8,7 +8,7 @@ import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schema
 import type { OtRoom, OtSchedule, OtConsumable, OtTeamMember, Profile } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
-import { istToday } from '@/lib/istDate'
+import { istDayEndISO, istDayStartISO, istToday } from '@/lib/istDate'
 import { revalidatePath } from 'next/cache'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -334,8 +334,9 @@ export async function listSchedules(filters?: {
   if (filters?.tab === 'history') q = q.in('status', ['completed', 'cancelled'])
 
   if (filters?.date) {
-    const dayStart = `${filters.date}T00:00:00+00:00`
-    const dayEnd   = `${filters.date}T23:59:59+00:00`
+    // IST calendar day — UTC bounds put surgeries before 05:30 IST on the previous day's list.
+    const dayStart = istDayStartISO(filters.date)
+    const dayEnd   = istDayEndISO(filters.date)
     q = q.lte('scheduled_start', dayEnd).gte('scheduled_end', dayStart)
   }
 

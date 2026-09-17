@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, RefreshCw, Scissors } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Printer, RefreshCw, Scissors } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -117,6 +117,11 @@ export default function OtClient({ initialSchedules, rooms: initRooms, doctors, 
             Today
           </button>
         )}
+        <a href={`/print/ot-list/pdf?date=${date}`} target="_blank" rel="noopener"
+          className="ml-auto inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
+          style={{ background: 'rgba(255,255,255,0.8)', color: '#475569', border: '1px solid #E2E8F0' }}>
+          <Printer className="w-3.5 h-3.5" /> Print OT list
+        </a>
       </div>
 
       {/* Tabs */}

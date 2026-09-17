@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Trash2, Plus, Save } from 'lucide-react'
+import { Trash2, Plus, Save, Printer } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
@@ -186,6 +186,12 @@ export default function ScheduleDetailModal({ open, scheduleId, onClose, onSucce
             )}
           </div>
         )}
+
+        <a href={`/print/ot/${scheduleId}/pdf`} target="_blank" rel="noopener"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
+          <Printer className="w-4 h-4" /> Print operation record
+        </a>
 
         {/* OT Notes */}
         <div>

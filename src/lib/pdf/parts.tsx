@@ -183,7 +183,7 @@ export function InfoGrid({ items }: { items: Array<[string, string | null | unde
 }
 
 /** Running header (page 2+) and footer with page numbers — fixed on every page. */
-export function PageChrome({ hospital, identity, docRef }: { hospital: string; identity: string; docRef: string }) {
+export function PageChrome({ hospital, identity, docRef, landscape }: { hospital: string; identity: string; docRef: string; landscape?: boolean }) {
   return (
     <>
       <View fixed style={{ position: 'absolute', top: 12, left: 32, right: 32 }} render={({ pageNumber }) => (
@@ -196,7 +196,7 @@ export function PageChrome({ hospital, identity, docRef }: { hospital: string; i
       )} />
       {/* Anchored with `top`, not `bottom`: react-pdf misplaces bottom-anchored fixed
           elements on pages whose content overflows. A4 is 841.89pt tall. */}
-      <View fixed style={{ position: 'absolute', top: 841.89 - 36, left: 32, right: 32, flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: C.hair, paddingTop: 4 }}>
+      <View fixed style={{ position: 'absolute', top: (landscape ? 595.28 : 841.89) - 36, left: 32, right: 32, flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: C.hair, paddingTop: 4 }}>
         <Text style={[s.small, { flex: 1 }]}>Computer-generated document  ·  {docRef}  ·  Powered by Uyirly</Text>
         <Text style={s.small} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
       </View>
@@ -367,6 +367,18 @@ export function TextBlock({ text, empty = '—', size = 9.5 }: { text: string | 
   )
 }
 
+/** Blank ruled lines for details written by hand (e.g. intra-operative findings). */
+export function WriteIn({ label, lines = 1 }: { label: string; lines?: number }) {
+  return (
+    <View wrap={false} style={{ paddingHorizontal: 6, paddingTop: 7 }}>
+      <Text style={s.label}>{label}</Text>
+      {Array.from({ length: lines }, (_, i) => (
+        <View key={i} style={{ height: 15, borderBottomWidth: 0.5, borderBottomColor: C.rule }} />
+      ))}
+    </View>
+  )
+}
+
 /** Labelled values in a row (vitals, short facts). Empty values are skipped. */
 export function FactRow({ items }: { items: Array<[string, string | null | undefined]> }) {
   const shown = items.filter(([, v]) => v)
@@ -412,11 +424,11 @@ export function DataTable({ columns, rows, empty = 'Nothing recorded' }: { colum
   )
 }
 
-export function A4({ title, children }: { title: string; children: ReactNode }) {
+export function A4({ title, children, landscape }: { title: string; children: ReactNode; landscape?: boolean }) {
   registerPdfFonts()
   return (
     <Document title={title} author="Uyirly" creator="Uyirly">
-      <Page size="A4" style={s.page} wrap>
+      <Page size="A4" orientation={landscape ? 'landscape' : 'portrait'} style={s.page} wrap>
         {children}
       </Page>
     </Document>

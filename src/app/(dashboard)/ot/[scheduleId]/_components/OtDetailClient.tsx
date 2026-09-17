@@ -3,8 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, Save, Plus, Trash2, Search, UserPlus, X, Scissors, BedDouble,
-} from 'lucide-react'
+  ArrowLeft, Save, Plus, Trash2, Search, UserPlus, X, Scissors, BedDouble, Printer } from 'lucide-react'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import MicButton from '@/components/ui/MicButton'
@@ -297,6 +296,15 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
           </div>
         )}
       </GlassCard>
+
+      {/* Print — operation record with write-in fields for the OT register */}
+      <div className="flex justify-end">
+        <a href={`/print/ot/${schedule.id}/pdf`} target="_blank" rel="noopener"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+          style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
+          <Printer className="w-4 h-4" /> Print operation record
+        </a>
+      </div>
 
       {/* Status actions */}
       {!isClosed && canRecord && (
