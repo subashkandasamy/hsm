@@ -5,15 +5,10 @@ import { Baby, Syringe, Plus } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import DateText from '@/components/ui/DateText'
-import { listGrowth, recordGrowth, getImmunizationStatus, recordImmunization } from '@/app/actions/pediatrics'
-import type { GrowthRecord, ImmunizationStatusItem, ImmunizationState } from '@/lib/types'
-
-const IMMUN_STYLE: Record<ImmunizationState, { bg: string; color: string; label: string }> = {
-  given:    { bg: '#DCFCE7', color: '#15803D', label: 'Given' },
-  due:      { bg: '#FEF3C7', color: '#B45309', label: 'Due' },
-  overdue:  { bg: '#FEE2E2', color: '#DC2626', label: 'Overdue' },
-  upcoming: { bg: '#F1F5F9', color: '#64748B', label: 'Upcoming' },
-}
+import { listGrowth, recordGrowth } from '@/app/actions/pediatrics'
+import { getVaccination, type Vaccination } from '@/app/actions/vaccination'
+import VaccinationPanel from '@/components/ui/VaccinationPanel'
+import type { GrowthRecord } from '@/lib/types'
 
 function ageAt(dob: string | null, at: string): string {
   if (!dob) return '—'
@@ -31,14 +26,14 @@ interface Props {
 
 export default function PediatricsTab({ patientId, dob, canWrite }: Props) {
   const [growth, setGrowth] = useState<GrowthRecord[]>([])
-  const [immun, setImmun] = useState<ImmunizationStatusItem[]>([])
+  const [vaccination, setVaccination] = useState<Vaccination | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [showAdd, setShowAdd] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
     listGrowth(patientId).then(setGrowth)
-    getImmunizationStatus(patientId).then(setImmun)
+    getVaccination(patientId).then(setVaccination)
   }, [patientId])
   useEffect(() => { load() }, [load])
 
@@ -53,10 +48,7 @@ export default function PediatricsTab({ patientId, dob, canWrite }: Props) {
     if (res.success) { setForm({}); setShowAdd(false); load() }
   }
 
-  async function markGiven(i: ImmunizationStatusItem) {
-    await recordImmunization(patientId, { vaccine: i.vaccine, dose_label: i.dose_label })
-    load()
-  }
+
 
   const latest = growth[growth.length - 1]
 
@@ -125,33 +117,14 @@ export default function PediatricsTab({ patientId, dob, canWrite }: Props) {
       {/* Immunization */}
       <GlassCard className="p-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold mb-3" style={{ color: '#0F172A' }}>
-          <Syringe className="w-4 h-4" style={{ color: '#1D4ED8' }} /> Immunization Schedule
+          <Syringe className="w-4 h-4" style={{ color: '#1D4ED8' }} /> Immunization
         </h3>
         {!dob ? (
           <p className="text-xs" style={{ color: '#94A3B8' }}>Set the patient’s date of birth to compute the schedule.</p>
+        ) : vaccination ? (
+          <VaccinationPanel patientId={patientId} initial={vaccination} canWrite={canWrite} onChanged={setVaccination} />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: 'rgba(248,250,252,0.9)' }}>
-                {['Vaccine', 'Dose', 'Due', 'Status', ''].map((h, i) => <th key={i} className="text-left px-2 py-1.5 font-semibold" style={{ color: '#475569' }}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {immun.map((it, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid #F1F5F9' }}>
-                    <td className="px-2 py-1.5 font-medium" style={{ color: '#0F172A' }}>{it.vaccine}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#64748B' }}>{it.dose_label}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#94A3B8' }}>{it.given_date ? <DateText date={it.given_date} /> : <DateText date={it.due_date} />}</td>
-                    <td className="px-2 py-1.5"><span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: IMMUN_STYLE[it.status].bg, color: IMMUN_STYLE[it.status].color }}>{IMMUN_STYLE[it.status].label}</span></td>
-                    <td className="px-2 py-1.5">
-                      {canWrite && it.status !== 'given' && (
-                        <button onClick={() => markGiven(it)} className="px-2 py-0.5 rounded text-xs font-semibold" style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>Mark given</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <p className="text-xs" style={{ color: '#94A3B8' }}>Loading…</p>
         )}
       </GlassCard>
     </div>

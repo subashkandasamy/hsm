@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 import { AlertTriangle, Baby, CheckCircle, Clock, HeartPulse, Pencil, Plus, Save, Trash2, UserPlus } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import {
   addPartographReading, addPostpartumCheck, deletePartographReading, getLabourContext, registerNewborn, saveDelivery,
   type DeliveryBaby, type LabourContext,
@@ -166,6 +167,7 @@ function PartographSection({ ctx, admissionId, canNurse, canWrite, isPending, ru
   const blank = { recorded_at: '', cervix_cm: '', descent: '', contractions_per10: '', contraction_duration: '', fetal_heart_rate: '', liquor: '', moulding: '', bp: '', pulse: '', temp: '', urine_protein: '', oxytocin: '', notes: '' }
   const [f, setF] = useState(blank)
   const [open, setOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((s) => ({ ...s, [k]: e.target.value }))
   const readings = ctx.partograph
   const progress = labourProgress(readings)
@@ -261,7 +263,7 @@ function PartographSection({ ctx, admissionId, canNurse, canWrite, isPending, ru
                 <td className="px-2 py-1.5 text-right">
                   {canWrite && (
                     <button aria-label="Delete reading" title="Delete a wrong reading" disabled={isPending}
-                      onClick={() => { if (window.confirm('Delete this reading?')) run(() => deletePartographReading(r.id)) }}
+                      onClick={() => setDeleteId(r.id)}
                       style={{ color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -272,6 +274,15 @@ function PartographSection({ ctx, admissionId, canNurse, canWrite, isPending, ru
           </table>
         </div>
       )}
+      <ConfirmDialog
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={() => { const id = deleteId; setDeleteId(null); if (id) run(() => deletePartographReading(id)) }}
+        loading={isPending}
+        title="Delete this reading?"
+        description="Use this only for a reading entered by mistake (wrong patient or wrong values). It is removed from the partograph."
+        confirmLabel="Delete"
+      />
     </GlassCard>
   )
 }

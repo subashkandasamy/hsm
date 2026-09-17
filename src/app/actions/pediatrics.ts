@@ -4,9 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { GrowthSchema, ImmunizationRecordSchema } from '@/lib/schemas'
-import type { GrowthRecord, ImmunizationStatusItem, ImmunizationState } from '@/lib/types'
-import { istDate, istToday, istAddDays } from '@/lib/istDate'
+import { GrowthSchema } from '@/lib/schemas'
+import type { GrowthRecord } from '@/lib/types'
+import { getVaccination, type Vaccination } from '@/app/actions/vaccination'
+import { istDate, istToday } from '@/lib/istDate'
 import { assessGrowth, sdCurves, AGE_MAX_DAYS, type Assessment, type Severity, type Sex } from '@/lib/growth/zscore'
 import type { PediatricProfile } from '@/lib/types'
 
@@ -37,55 +38,6 @@ export async function recordGrowth(patientId: string, input: Record<string, unkn
   return { success: true }
 }
 
-// ---- Immunization ----
-
-// Computed schedule status vs the child's DOB and recorded doses.
-export async function getImmunizationStatus(patientId: string): Promise<ImmunizationStatusItem[]> {
-  const supabase = await createClient()
-  const [{ data: patient }, { data: schedule }, { data: given }] = await Promise.all([
-    supabase.from('patients').select('dob').eq('id', patientId).single(),
-    supabase.from('immunization_schedule').select('*').order('sort_order'),
-    supabase.from('patient_immunizations').select('vaccine, dose_label, given_date').eq('patient_id', patientId),
-  ])
-  const dob = patient?.dob as string | null
-  if (!dob) return []
-  const dobMs = new Date(dob).getTime()
-  const today = istToday()
-  const soon = istAddDays(istToday(), 30)
-  const givenMap = new Map<string, string>()
-  for (const g of given ?? []) givenMap.set(`${g.vaccine}|${g.dose_label}`, g.given_date as string)
-
-  return (schedule ?? []).map((s) => {
-    const dueMs = dobMs + (s.due_age_days as number) * 86400000
-    const dueDate = new Date(dueMs).toISOString().split('T')[0]
-    const givenDate = givenMap.get(`${s.vaccine}|${s.dose_label}`) ?? null
-    let status: ImmunizationState
-    if (givenDate) status = 'given'
-    else if (dueDate < today) status = 'overdue'
-    else if (dueDate <= soon) status = 'due'
-    else status = 'upcoming'
-    return { vaccine: s.vaccine as string, dose_label: s.dose_label as string, due_date: dueDate, given_date: givenDate, status }
-  })
-}
-
-export async function recordImmunization(patientId: string, input: Record<string, unknown>): Promise<SimpleResult> {
-  await requireWriteAccess()
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'opd:vitals')
-  const parsed = ImmunizationRecordSchema.safeParse(input)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const supabase = await createClient()
-  const { error } = await supabase.from('patient_immunizations').upsert({
-    tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id,
-    vaccine: parsed.data.vaccine, dose_label: parsed.data.dose_label,
-    given_date: parsed.data.given_date || istToday(),
-    notes: parsed.data.notes ?? null,
-  }, { onConflict: 'patient_id,vaccine,dose_label', ignoreDuplicates: true })
-  if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'immunization', 'patient', patientId, { vaccine: parsed.data.vaccine, dose: parsed.data.dose_label })
-  return { success: true }
-}
-
 // ---- Paediatric OPD template ----
 
 
@@ -106,7 +58,7 @@ export interface PaediatricAssessment {
   history: GrowthPoint[]
   visitMeasurement: GrowthPoint | null
   curves: Record<'wfa' | 'lhfa' | 'hcfa', Array<{ day: number; sd: Record<string, number> }>> | null
-  immunizations: ImmunizationStatusItem[]
+  vaccination: Vaccination
 }
 
 const dayDiff = (from: string, to: string) =>
@@ -115,11 +67,11 @@ const dayDiff = (from: string, to: string) =>
 /** Everything the paediatric consultation section needs, computed on the server (WHO tables stay server-side). */
 export async function getPaediatricAssessment(patientId: string, visitId?: string | null): Promise<PaediatricAssessment> {
   const supabase = await createClient()
-  const [{ data: patient }, { data: profile }, { data: rows }, immunizations, visitRes] = await Promise.all([
+  const [{ data: patient }, { data: profile }, { data: rows }, vaccination, visitRes] = await Promise.all([
     supabase.from('patients').select('dob, gender').eq('id', patientId).single(),
     supabase.from('pediatric_profiles').select('*').eq('patient_id', patientId).maybeSingle(),
     supabase.from('pediatric_growth').select('*').eq('patient_id', patientId).order('recorded_at'),
-    getImmunizationStatus(patientId),
+    getVaccination(patientId),
     visitId ? supabase.from('visits').select('visit_date').eq('id', visitId).maybeSingle() : Promise.resolve({ data: null }),
   ])
   const dob = (patient?.dob as string | null) ?? null
@@ -142,7 +94,7 @@ export async function getPaediatricAssessment(patientId: string, visitId?: strin
     history,
     visitMeasurement: visitId ? history.find((h) => h.visit_id === visitId) ?? null : null,
     curves: sex ? { wfa: sdCurves('wfa', sex), lhfa: sdCurves('lhfa', sex), hcfa: sdCurves('hcfa', sex) } : null,
-    immunizations,
+    vaccination,
   }
 }
 
@@ -215,32 +167,3 @@ export async function savePediatricProfile(patientId: string, input: Partial<Omi
  * 'earlier' = the child already had them elsewhere and the date isn't known, so
  * the scheduled due date is stored with a note saying so.
  */
-export async function recordImmunizations(
-  patientId: string,
-  doses: Array<{ vaccine: string; dose_label: string }>,
-  mode: 'today' | 'earlier',
-): Promise<SimpleResult> {
-  await requireWriteAccess()
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'opd:vitals')
-  if (!doses.length) return { success: true }
-  const supabase = await createClient()
-  const status = await getImmunizationStatus(patientId)
-  const byKey = new Map(status.map((s) => [`${s.vaccine}|${s.dose_label}`, s]))
-  const rows = []
-  for (const d of doses) {
-    const s = byKey.get(`${d.vaccine}|${d.dose_label}`)
-    if (!s) return { success: false, error: `${d.vaccine} ${d.dose_label} is not on the schedule` }
-    rows.push({
-      tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id,
-      vaccine: d.vaccine, dose_label: d.dose_label,
-      given_date: mode === 'today' ? istToday() : s.due_date,
-      notes: mode === 'earlier' ? 'Given earlier — exact date not recorded' : null,
-    })
-  }
-  const { error } = await supabase.from('patient_immunizations')
-    .upsert(rows, { onConflict: 'patient_id,vaccine,dose_label', ignoreDuplicates: true })
-  if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'immunization', 'patient', patientId, { count: rows.length, mode })
-  return { success: true }
-}

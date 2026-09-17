@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireModule, requireWriteAccess } from '@/lib/server-utils'
@@ -57,8 +58,9 @@ export async function setAdvancePercentage(percent: number): Promise<SimpleResul
   if (percent < 0 || percent > 100)
     return { success: false, error: 'Percentage must be between 0 and 100' }
 
-  const supabase = await createClient()
-  const { error } = await supabase
+  // tenants has no tenant-side UPDATE policy — write the caller's own row with the
+  // service client after the permission check (same as tenantSettings / tenantProfile).
+  const { error } = await createServiceClient()
     .from('tenants')
     .update({ advance_percentage: percent })
     .eq('id', actor.tenant_id)

@@ -177,11 +177,14 @@ const ageText = (days: number | null) => {
 /** Growth (WHO), vaccinations due and milestone concerns for a paediatric visit. */
 function PaediatricBlock({ a, notes }: { a: PaediatricAssessment; notes: PaediatricVisitData | null }) {
   const m = a.visitMeasurement
-  const due = a.immunizations.filter((v) => v.status === 'overdue' || v.status === 'due')
-  const next = a.immunizations.find((v) => v.status === 'upcoming')
+  const vx = a.vaccination
+  const givenToday = vx.doses.filter((d) => d.given?.date_known && d.given.given_date === vx.today)
+  const due = vx.doses.filter((d) => d.canGiveToday)
+  const waiting = vx.doses.filter((d) => d.state === 'waiting')
+  const next = vx.doses.find((d) => d.state === 'upcoming')
   const notYet = notes ? MILESTONES.flatMap((cp) => cp.items.filter((i) => notes.milestones[i.key] === 'not_yet').map((i) => `${i.text} (${cp.label})`)) : []
   const fmt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  if (!m && !due.length && !next && !notYet.length && !notes?.feeding_notes && !notes?.development_notes) return null
+  if (!m && !givenToday.length && !due.length && !next && !notYet.length && !notes?.feeding_notes && !notes?.development_notes) return null
   return (
     <View wrap={false}>
       <SectionTitle>Growth &amp; development</SectionTitle>
@@ -204,23 +207,23 @@ function PaediatricBlock({ a, notes }: { a: PaediatricAssessment; notes: Paediat
         />
       ) : null}
       {m?.muac ? <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 3, color: m.muac.severity === 'normal' ? C.text : C.danger }}>{m.muac.status}</Text> : null}
-      {due.length ? (
-        <View style={{ paddingHorizontal: 6, paddingTop: 4 }}>
-          <Text style={{ fontSize: 9, fontWeight: 700, color: C.danger }}>Vaccines due</Text>
-          {[...new Set(due.map((v) => v.due_date))].map((d) => {
-            const items = due.filter((v) => v.due_date === d)
-            return (
-              <Text key={d} style={{ fontSize: 8.5, color: C.text }}>
-                <Text style={{ fontWeight: 600, color: items[0].status === 'overdue' ? C.danger : '#B45309' }}>
-                  {items[0].status === 'overdue' ? 'Overdue since' : 'Due'} {fmt(d)}:{' '}
-                </Text>
-                {items.map((v) => `${v.vaccine} ${v.dose_label}`).join(', ')}
-              </Text>
-            )
-          })}
-        </View>
+      {givenToday.length ? (
+        <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 4, color: C.ok }}>
+          <Text style={{ fontWeight: 700 }}>Vaccines given today: </Text>{givenToday.map((d) => d.label).join(', ')}
+        </Text>
       ) : null}
-      {next ? <Text style={[s.small, { paddingHorizontal: 6, paddingTop: 2 }]}>Next vaccine: {next.vaccine} {next.dose_label} on {fmt(next.due_date)}</Text> : null}
+      {due.length ? (
+        <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 3, color: C.text }}>
+          <Text style={{ fontWeight: 700, color: C.danger }}>Still due: </Text>
+          {due.map((d) => `${d.label}${d.state === 'overdue' ? ` (overdue since ${fmt(d.dueDate)})` : ''}`).join('; ')}
+        </Text>
+      ) : null}
+      {waiting.length ? (
+        <Text style={[s.small, { paddingHorizontal: 6, paddingTop: 2 }]}>
+          After the earlier dose: {waiting.map((d) => `${d.label}${d.earliestDate ? ` from ${fmt(d.earliestDate)}` : ''}`).join('; ')}
+        </Text>
+      ) : null}
+      {next ? <Text style={[s.small, { paddingHorizontal: 6, paddingTop: 2 }]}>Next vaccine: {next.label} on {fmt(next.earliestDate && next.earliestDate > next.dueDate ? next.earliestDate : next.dueDate)}</Text> : null}
       {notYet.length ? (
         <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 4, color: '#B45309' }}>
           <Text style={{ fontWeight: 700 }}>Milestones not yet seen: </Text>{notYet.join('; ')}

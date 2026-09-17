@@ -146,12 +146,6 @@ export const GrowthSchema = z.object({
   muac_cm:      z.number().positive().nullable().optional(),
   notes:        z.string().nullable().optional(),
 })
-export const ImmunizationRecordSchema = z.object({
-  vaccine:    z.string().min(1),
-  dose_label: z.string().min(1),
-  given_date: z.string().nullable().optional(),
-  notes:      z.string().nullable().optional(),
-})
 
 export const PatientHistorySchema = z.object({
   past_medical:   z.string().nullable().optional(),

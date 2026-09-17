@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { AlertTriangle, CheckCircle, ClipboardList, HeartPulse, Pencil, Save, Stethoscope } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { saveClinicalData } from '@/app/actions/opd'
 import {
   clearAncCareItem, createAnc, getObgynContext, markAncCareItem, saveVisitAncCheck, setAncStatus, updateAnc,
@@ -186,6 +187,7 @@ function AntenatalPanel({ ctx, notes, setNotes, disabled, patientId, visitId, is
 }) {
   const preg = ctx.pregnancy
   const [editing, setEditing] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
   const gaDays = preg ? gaOn(preg.edd, ctx.visitDate) : null
 
   const va = ctx.visitAnc
@@ -237,7 +239,8 @@ function AntenatalPanel({ ctx, notes, setNotes, disabled, patientId, visitId, is
   const previous = ctx.ancVisits.filter((v) => v.visit_id !== visitId).slice(0, 6)
 
   function closeRecord() {
-    if (!preg || !window.confirm('Close this pregnancy record (miscarriage, termination or care moved elsewhere)? Deliveries are recorded at admission.')) return
+    setConfirmClose(false)
+    if (!preg) return
     startTransition(async () => {
       const res = await setAncStatus(preg.id, 'closed')
       if (!res.success) { setError(res.error); return }
@@ -284,7 +287,7 @@ function AntenatalPanel({ ctx, notes, setNotes, disabled, patientId, visitId, is
               style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
               <Pencil className="w-3 h-3" /> Edit dates &amp; history
             </button>
-            <button onClick={closeRecord} disabled={isPending} className="px-2.5 py-1 rounded-lg text-xs font-medium"
+            <button onClick={() => setConfirmClose(true)} disabled={isPending} className="px-2.5 py-1 rounded-lg text-xs font-medium"
               style={{ background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
               Close record
             </button>
@@ -388,6 +391,16 @@ function AntenatalPanel({ ctx, notes, setNotes, disabled, patientId, visitId, is
 
       <CareSchedule ctx={ctx} gaDays={gaDays} disabled={disabled || !active} isPending={isPending}
         startTransition={startTransition} setError={setError} refresh={refresh} />
+
+      <ConfirmDialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        onConfirm={closeRecord}
+        loading={isPending}
+        title="Close pregnancy record?"
+        description="Use this for a miscarriage, termination or when care moves elsewhere. Deliveries are recorded on the admission's Labour & Delivery tab."
+        confirmLabel="Close record"
+      />
 
       <Field label="Complaints & advice">
         <textarea rows={3} value={notes.complaints} disabled={disabled}

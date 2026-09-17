@@ -246,11 +246,6 @@ export interface GrowthRecord {
   notes: string | null
 }
 
-export type ImmunizationState = 'given' | 'due' | 'overdue' | 'upcoming'
-export interface ImmunizationStatusItem {
-  vaccine: string; dose_label: string; due_date: string
-  given_date: string | null; status: ImmunizationState
-}
 
 export interface AncRecord {
   id: string; patient_id: string; lmp: string | null; edd: string | null

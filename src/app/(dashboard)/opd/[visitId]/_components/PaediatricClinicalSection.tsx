@@ -1,11 +1,12 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { Baby, CheckCircle, LineChart, Save, Syringe, Pencil } from 'lucide-react'
+import { Baby, CheckCircle, LineChart, Save, Pencil } from 'lucide-react'
+import VaccinationPanel from '@/components/ui/VaccinationPanel'
 import GlassCard from '@/components/ui/GlassCard'
 import { saveClinicalData } from '@/app/actions/opd'
 import {
-  getPaediatricAssessment, recordImmunizations, savePediatricProfile, saveVisitGrowth,
+  getPaediatricAssessment, savePediatricProfile, saveVisitGrowth,
   type GrowthPoint, type PaediatricAssessment,
 } from '@/app/actions/pediatrics'
 import { MILESTONE_SOURCE, milestonesForAge } from '@/lib/growth/milestones'
@@ -38,15 +39,6 @@ export function formatAge(days: number | null): string {
   if (months < 24) return `${months} month${months === 1 ? '' : 's'}`
   const y = Math.floor(months / 12), mo = months % 12
   return `${y} y${mo ? ` ${mo} m` : ''}`
-}
-
-/** Immunisation-schedule wording: "At birth", "6 weeks", "9 months", "16 months", "5 years". */
-function scheduleAgeLabel(days: number): string {
-  if (days <= 0) return 'At birth'
-  if (days < 120 && days % 7 === 0) return `${days / 7} weeks`
-  const months = Math.round(days / 30.4375)
-  if (months < 24) return `${months} months`
-  return `${Math.round(days / 365.25)} years`
 }
 
 const num = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -88,27 +80,6 @@ export default function PaediatricClinicalSection({ visitId, patientId, initialA
   }
   const { current, next } = milestonesForAge(ageMonths ?? -1)
   const notYetDue = current ? current.items.filter((i) => notes.milestones[i.key] === 'not_yet').length : 0
-
-  // ── Vaccinations ────────────────────────────────────────────────────────────
-  const pendingVaccines = a.immunizations.filter((v) => v.status === 'overdue' || v.status === 'due')
-  const upcoming = a.immunizations.filter((v) => v.status === 'upcoming').slice(0, 3)
-  const [givingKey, setGivingKey] = useState<string | null>(null)
-  const [showAllVaccines, setShowAllVaccines] = useState(false)
-  // Doses due on the same date are given together (e.g. the 6-week visit) — group them.
-  const vaccineGroups = useMemo(() => {
-    const groups = new Map<string, typeof pendingVaccines>()
-    for (const v of pendingVaccines) groups.set(v.due_date, [...(groups.get(v.due_date) ?? []), v])
-    return [...groups.entries()].map(([due, items]) => ({ due, items, overdue: items[0].status === 'overdue' }))
-  }, [pendingVaccines])
-  function recordDoses(key: string, doses: Array<{ vaccine: string; dose_label: string }>, mode: 'today' | 'earlier') {
-    setError(''); setGivingKey(key)
-    startTransition(async () => {
-      const res = await recordImmunizations(patientId, doses, mode)
-      setGivingKey(null)
-      if (!res.success) { setError(res.error); return }
-      await refresh()
-    })
-  }
 
   return (
     <GlassCard className="p-4 sm:p-5">
@@ -198,80 +169,11 @@ export default function PaediatricClinicalSection({ visitId, patientId, initialA
         <BirthHistory patientId={patientId} profile={a.profile} disabled={disabled} onSaved={refresh} />
       </section>
 
-      {/* Vaccinations */}
-      {a.dob && (
-        <section className="mt-5">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#64748B' }}>
-            <Syringe className="w-3.5 h-3.5" /> Vaccinations
-          </p>
-          {pendingVaccines.length === 0 ? (
-            <p className="text-sm" style={{ color: '#15803D' }}>No vaccines due or overdue.</p>
-          ) : (
-            <>
-              <ul className="space-y-2">
-                {(showAllVaccines ? vaccineGroups : vaccineGroups.slice(0, 3)).map((g) => {
-                  const ageLabel = a.dob ? scheduleAgeLabel(Math.round((new Date(g.due).getTime() - new Date(a.dob).getTime()) / 86400000)) : ''
-                  const doses = g.items.map((v) => ({ vaccine: v.vaccine, dose_label: v.dose_label }))
-                  return (
-                    <li key={g.due} className="px-3 py-2.5 rounded-xl"
-                      style={{ background: g.overdue ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${g.overdue ? '#FECACA' : '#FDE68A'}` }}>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{ageLabel}</span>
-                        <span className="text-xs" style={{ color: g.overdue ? '#B91C1C' : '#B45309' }}>
-                          {g.overdue ? 'Overdue since' : 'Due'} {new Date(g.due).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                        {!disabled && (
-                          <span className="ml-auto flex gap-1.5">
-                            <button onClick={() => recordDoses(`${g.due}|earlier`, doses, 'earlier')} disabled={isPending}
-                              title="Already given elsewhere — records them without today's date"
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium"
-                              style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                              {givingKey === `${g.due}|earlier` ? 'Saving…' : 'Given earlier'}
-                            </button>
-                            <button onClick={() => recordDoses(`${g.due}|today`, doses, 'today')} disabled={isPending}
-                              className="px-2.5 py-1 rounded-lg text-xs font-semibold"
-                              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                              {givingKey === `${g.due}|today` ? 'Saving…' : g.items.length > 1 ? 'All given today' : 'Given today'}
-                            </button>
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {g.items.map((v) => {
-                          const k = `${v.vaccine}|${v.dose_label}`
-                          return (
-                            <span key={k} className="inline-flex items-center gap-1 text-xs pl-2 pr-1 py-0.5 rounded-md" style={{ background: '#fff', border: '1px solid #E2E8F0', color: '#334155' }}>
-                              {v.vaccine} {v.dose_label}
-                              {!disabled && g.items.length > 1 && (
-                                <button onClick={() => recordDoses(k, [{ vaccine: v.vaccine, dose_label: v.dose_label }], 'today')} disabled={isPending}
-                                  title={`Only ${v.vaccine} ${v.dose_label} given today`} aria-label={`Only ${v.vaccine} ${v.dose_label} given today`}
-                                  className="px-1 rounded text-[11px] font-semibold" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                  {givingKey === k ? '…' : '✓ today'}
-                                </button>
-                              )}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-              {vaccineGroups.length > 3 && (
-                <button onClick={() => setShowAllVaccines((s) => !s)} className="text-xs font-medium mt-2"
-                  style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  {showAllVaccines ? 'Show fewer' : `Show ${vaccineGroups.length - 3} more due date${vaccineGroups.length - 3 > 1 ? 's' : ''}`}
-                </button>
-              )}
-            </>
-          )}
-          {upcoming.length > 0 && (
-            <p className="text-xs mt-2" style={{ color: '#64748B' }}>
-              Next: {upcoming.map((v) => `${v.vaccine} ${v.dose_label} (${new Date(v.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})`).join(' · ')}
-            </p>
-          )}
-        </section>
-      )}
+      {/* Vaccinations — one row and one action per vaccine */}
+      <section className="mt-5">
+        <VaccinationPanel patientId={patientId} visitId={visitId} initial={a.vaccination} canWrite={!disabled}
+          onChanged={(vaccination) => setA((prev) => ({ ...prev, vaccination }))} />
+      </section>
 
       {/* Milestones + notes */}
       <section className="mt-5 space-y-3">
