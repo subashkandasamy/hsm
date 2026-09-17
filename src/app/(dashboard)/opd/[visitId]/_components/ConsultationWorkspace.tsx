@@ -512,10 +512,11 @@ export default function ConsultationWorkspace({
             <HistoryProblemsPanel patientId={patient.id} canWrite={!isClosed && isDoctor} />
           )}
 
-          {/* General + systemic examination (auto-BMI from vitals). Hidden for
+          {/* General + systemic examination (auto-BMI from vitals). Collapsed for
               specialty templates that have their own exam (dental/ophthalmology). */}
-          {isDoctor && clinicalTemplate !== 'dental' && clinicalTemplate !== 'ophthalmology' && (
+          {isDoctor && (
             <ExaminationPanel
+              collapsible={clinicalTemplate === 'dental' || clinicalTemplate === 'ophthalmology'}
               visitId={visit.id}
               initialExam={(visit.clinical_data as Record<string, unknown> | null)?.general_exam as Record<string, unknown> | null}
               weight={vitals.weight}

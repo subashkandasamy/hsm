@@ -31,7 +31,9 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
   const hospital = profile?.name || 'Hospital'
   const ref = shortRef('OP', visit.id)
   const v = visit.vitals ?? {}
-  const eye = template === 'ophthalmology' && visit.clinical_data ? (visit.clinical_data as unknown as EyeExamData) : null
+  const cd = visit.clinical_data as Record<string, unknown> | null
+  // clinical_data can hold only the general examination — show the eye block only when eye findings exist.
+  const eye = template === 'ophthalmology' && cd && (cd.visualAcuity || cd.iop || cd.refraction || cd.notes) ? (cd as unknown as EyeExamData) : null
   const hasConsult = !!(visit.complaint || visit.diagnosis || visit.icd_code)
 
   return (
@@ -87,6 +89,8 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
           ) : null}
         </View>
       ) : null}
+
+      <ExaminationBlock exam={(visit.clinical_data as { general_exam?: GeneralExam } | null)?.general_exam ?? null} />
 
       {eye ? (
         <View wrap={false}>
@@ -319,6 +323,31 @@ function ObgynBlock({ ctx, notes }: { ctx: ObgynContext; notes: ObgynVisitData |
       ))}
       <AlertList items={alerts} />
       {notes.notes ? <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 4 }}><Text style={{ fontWeight: 700 }}>Notes: </Text>{notes.notes}</Text> : null}
+    </View>
+  )
+}
+
+interface GeneralExam { signs?: Record<string, boolean>; general?: string; systems?: Record<string, string>; bmi?: string | null }
+const EXAM_SIGNS: Record<string, string> = { pallor: 'Pallor', icterus: 'Icterus', cyanosis: 'Cyanosis', clubbing: 'Clubbing', oedema: 'Oedema', lymphadenopathy: 'Lymphadenopathy' }
+const EXAM_SYSTEMS: Array<[string, string]> = [['cvs', 'CVS'], ['rs', 'RS'], ['pa', 'P/A'], ['cns', 'CNS'], ['other', 'Local']]
+
+/** General and systemic examination — printed only when something was recorded. */
+function ExaminationBlock({ exam }: { exam: GeneralExam | null }) {
+  if (!exam) return null
+  const present = Object.entries(exam.signs ?? {}).filter(([, on]) => on).map(([k]) => EXAM_SIGNS[k] ?? k)
+  const general = exam.general?.trim()
+  const systems = EXAM_SYSTEMS.map(([k, l]) => [l, exam.systems?.[k]?.trim()] as const).filter(([, t]) => t)
+  if (!present.length && !general && !systems.length) return null
+  return (
+    <View wrap={false}>
+      <SectionTitle>Examination</SectionTitle>
+      {present.length || exam.bmi ? (
+        <FactRow items={[['Signs present', present.length ? present.join(', ') : null], ['BMI', exam.bmi ?? null]]} />
+      ) : null}
+      {general ? <Text style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 3 }}><Text style={{ fontWeight: 700 }}>General: </Text>{general}</Text> : null}
+      {systems.map(([l, t]) => (
+        <Text key={l} style={{ fontSize: 9, paddingHorizontal: 6, paddingTop: 2 }}><Text style={{ fontWeight: 700 }}>{l}: </Text>{t}</Text>
+      ))}
     </View>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Activity, Check } from 'lucide-react'
+import { Activity, Check, Plus } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveExamination } from '@/app/actions/opd'
@@ -37,9 +37,11 @@ interface Props {
   weight: string
   height: string
   canWrite: boolean
+  /** Start collapsed (specialties that rarely need a systemic exam) unless something is recorded. */
+  collapsible?: boolean
 }
 
-export default function ExaminationPanel({ visitId, initialExam, weight, height, canWrite }: Props) {
+export default function ExaminationPanel({ visitId, initialExam, weight, height, canWrite, collapsible = false }: Props) {
   const init = (initialExam ?? {}) as Record<string, unknown>
   const [signs, setSigns] = useState<Record<string, boolean>>((init.signs as Record<string, boolean>) ?? {})
   const [general, setGeneral] = useState<string>((init.general as string) ?? '')
@@ -48,12 +50,26 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
   const [saved, setSaved] = useState(false)
 
   const bmi = bmiInfo(weight, height)
+  const hasFindings = Object.values(signs).some(Boolean) || general.trim() !== '' || Object.values(sys).some((t) => t?.trim())
+  const [expanded, setExpanded] = useState(!collapsible || hasFindings)
 
   async function save() {
     setSaving(true); setSaved(false)
     const res = await saveExamination(visitId, { signs, general, systems: sys, bmi: bmi?.bmi ?? null })
     setSaving(false)
     if (res.success) { setSaved(true); setTimeout(() => setSaved(false), 1800) }
+  }
+
+  if (!expanded) {
+    if (!canWrite) return null
+    return (
+      <button type="button" onClick={() => setExpanded(true)}
+        className="w-full flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-medium"
+        style={{ background: 'rgba(255,255,255,0.6)', border: '1px dashed #CBD5E1', color: '#0D9488', cursor: 'pointer' }}>
+        <Plus className="w-4 h-4" /> Add general examination
+        <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>· pallor, icterus, CVS, RS, abdomen, CNS</span>
+      </button>
+    )
   }
 
   return (

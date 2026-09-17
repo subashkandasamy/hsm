@@ -40,7 +40,16 @@ function strToNum(v: string): number | null {
 }
 
 export default function EyeClinicalSection({ visitId, initialData, disabled }: Props) {
-  const [data, setData] = useState<EyeExamData>(initialData ?? EMPTY_EYE_DATA)
+  // The visit's clinical_data may hold only the general examination — fill in missing eye fields.
+  const [data, setData] = useState<EyeExamData>(() => ({
+    visualAcuity: { ...EMPTY_EYE_DATA.visualAcuity, ...initialData?.visualAcuity },
+    iop: { ...EMPTY_EYE_DATA.iop, ...initialData?.iop },
+    refraction: {
+      od: { ...EMPTY_EYE_DATA.refraction.od, ...initialData?.refraction?.od },
+      os: { ...EMPTY_EYE_DATA.refraction.os, ...initialData?.refraction?.os },
+    },
+    notes: initialData?.notes ?? '',
+  }))
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
