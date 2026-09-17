@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -32,6 +32,8 @@ import CriticalCarePanel from './CriticalCarePanel'
 import NursingDocsPanel from './NursingDocsPanel'
 import FollowUpCard from '@/app/(dashboard)/opd/[visitId]/_components/FollowUpCard'
 import NursingPanel from './NursingPanel'
+import LabourDeliveryPanel from './LabourDeliveryPanel'
+import type { LabourContext } from '@/app/actions/labour'
 
 import type {
   Admission, IpdProgressNote, Vitals,
@@ -62,6 +64,7 @@ interface Props {
   otDoctors: Pick<Profile, 'id' | 'full_name' | 'role'>[]
   otTariffs: ProcedureTariff[]
   initialOtSchedules: OtSchedule[]
+  labourContext?: LabourContext | null
 }
 
 const OT_STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -81,7 +84,7 @@ function fmtDateShort(iso: string) {
 export default function AdmissionDetail({
   admission, initialNotes, availableWards,
   nurses, today, depositStatus, todayAssignments,
-  otDoctors, otTariffs, initialOtSchedules,
+  otDoctors, otTariffs, initialOtSchedules, labourContext = null,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -93,7 +96,7 @@ export default function AdmissionDetail({
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing' | 'critical'>('clinical')
+  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
 
   // Progress note form
   const [note, setNote] = useState('')
@@ -468,6 +471,7 @@ export default function AdmissionDetail({
           { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
           { key: 'critical',   label: 'Critical Care', Icon: Activity },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
+          ...(labourContext?.eligible ? [{ key: 'labour', label: 'Labour & Delivery', Icon: Baby }] as const : []),
         ] as const).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0"
@@ -706,6 +710,11 @@ export default function AdmissionDetail({
           canOrder={!!canWrite && !isClosed}
           canGive={!!canNursing && !isClosed}
         />
+      )}
+
+      {/* ── Labour & Delivery tab ── */}
+      {activeTab === 'labour' && labourContext && (
+        <LabourDeliveryPanel admissionId={adm.id} initial={labourContext} canWrite={!!canWrite} canNurse={!!canNursing} />
       )}
 
       {/* ── Critical Care tab ── */}

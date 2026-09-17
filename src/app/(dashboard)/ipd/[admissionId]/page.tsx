@@ -6,6 +6,7 @@ import { getAdmissionDepositStatus } from '@/app/actions/admissionBilling'
 import { listNurses, listAssignments } from '@/app/actions/nurseAssignment'
 import { listDoctors, listAdmissionSchedules } from '@/app/actions/ot'
 import { listProcedureTariffs } from '@/app/actions/tariffs'
+import { getLabourContext } from '@/app/actions/labour'
 import AdmissionDetail from './_components/AdmissionDetail'
 import { istToday } from '@/lib/istDate'
 
@@ -15,7 +16,7 @@ export default async function AdmissionDetailPage({ params }: Props) {
   const { admissionId } = await params
   const today = istToday()
 
-  const [admission, notes, board, nurses, depositStatus, todayAssignments, otDoctors, otTariffs, otSchedules] = await Promise.all([
+  const [admission, notes, board, nurses, depositStatus, todayAssignments, otDoctors, otTariffs, otSchedules, labourContext] = await Promise.all([
     getAdmission(admissionId),
     getAdmissionNotes(admissionId),
     getWardBoard(),
@@ -25,6 +26,7 @@ export default async function AdmissionDetailPage({ params }: Props) {
     listDoctors(),
     listProcedureTariffs(),
     listAdmissionSchedules(admissionId),
+    getLabourContext(admissionId).catch((e) => { console.error('[AdmissionDetailPage] labour context failed:', e); return null }),
   ])
 
   if (!admission) notFound()
@@ -51,6 +53,7 @@ export default async function AdmissionDetailPage({ params }: Props) {
       otDoctors={otDoctors}
       otTariffs={otTariffs}
       initialOtSchedules={otSchedules}
+      labourContext={labourContext}
     />
   )
 }
