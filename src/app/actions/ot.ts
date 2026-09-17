@@ -7,6 +7,8 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schemas'
 import type { OtRoom, OtSchedule, OtConsumable, OtTeamMember, Profile } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
+import { removeOrderFromBills } from '@/lib/billing/orderBilling'
+import { istToday } from '@/lib/istDate'
 import { revalidatePath } from 'next/cache'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -125,25 +127,8 @@ export async function scheduleSurgery(
     return { success: false, error: error.message }
   }
 
-  // Auto-generate an OT bill when surgery is linked to an IPD admission
-  const admissionId = (input.admission_id as string | null) ?? null
-  if (admissionId && parsed.data.price_snapshot > 0) {
-    const billingDate = parsed.data.scheduled_start.split('T')[0]
-    await autoIpdBill(supabase, actor.id, {
-      tenantId:    actor.tenant_id,
-      admissionId,
-      patientId:   parsed.data.patient_id,
-      billingDate,
-      billSource:  'ot',
-      lineItems: [{
-        source:      'ot',
-        ref_id:      id,
-        description: parsed.data.procedure_name,
-        qty:         1,
-        unit_price:  parsed.data.price_snapshot,
-      }],
-    })
-  }
+  // The surgery is billed when it is marked completed (setOtStatus), not when it
+  // is scheduled — a scheduled surgery can still be cancelled or moved.
 
   await logAudit(actor.id, 'create', 'ot_schedule', id, {
     patient_id: parsed.data.patient_id, procedure: parsed.data.procedure_name,
@@ -181,10 +166,26 @@ export async function cancelSurgery(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:schedule')
   const supabase = await createClient()
-  const { error } = await supabase.from('ot_schedules')
-    .update({ status: 'cancelled' }).eq('id', id).in('status', ['scheduled'])
+  const { data: cancelled, error } = await supabase.from('ot_schedules')
+    .update({ status: 'cancelled' }).eq('id', id).in('status', ['scheduled']).select('id')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'cancel', 'ot_schedule', id)
+  if (!cancelled?.length) return { success: false, error: 'Only a scheduled surgery can be cancelled.' }
+
+  // Surgeries scheduled before billing moved to completion may already be on a
+  // bill — take just this surgery's line off (other charges on the bill stay).
+  const billing = await removeOrderFromBills(supabase, 'ot', id)
+  await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).eq('id', id)
+
+  // Consumables requested from pharmacy for this surgery and not yet dispatched are
+  // no longer needed. Dispatched ones were issued and stay billed via pharmacy.
+  const { data: consumables } = await supabase
+    .from('ot_consumables').select('pharmacy_request_id').eq('ot_schedule_id', id).not('pharmacy_request_id', 'is', null)
+  const requestIds = (consumables ?? []).map((c) => c.pharmacy_request_id as string)
+  if (requestIds.length) {
+    await supabase.from('ipd_pharmacy_requests').update({ status: 'cancelled' }).in('id', requestIds).eq('status', 'pending')
+  }
+
+  await logAudit(actor.id, 'cancel', 'ot_schedule', id, { billing })
   revalidatePath('/ot')
   return { success: true }
 }
@@ -197,11 +198,50 @@ export async function setOtStatus(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ot:record')
   const supabase = await createClient()
-  const { error } = await supabase.from('ot_schedules').update({ status }).eq('id', id)
+  // Forward-only: scheduled → in progress → completed. A cancelled or completed
+  // surgery can't be moved back (that would allow billing it twice).
+  const from = status === 'in_progress' ? ['scheduled'] : ['scheduled', 'in_progress']
+  const { data: updated, error } = await supabase.from('ot_schedules')
+    .update({ status }).eq('id', id).in('status', from)
+    .select('id, admission_id, patient_id, procedure_name, price_snapshot')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, `status_${status}`, 'ot_schedule', id)
+  const row = updated?.[0]
+  if (!row) return { success: false, error: 'This surgery is no longer in a state that allows that change.' }
+
+  let billId: string | null = null
+  if (status === 'completed') billId = await billCompletedSurgery(supabase, actor, row)
+
+  await logAudit(actor.id, `status_${status}`, 'ot_schedule', id, billId ? { bill_id: billId } : undefined)
   revalidatePath('/ot')
   return { success: true }
+}
+
+/**
+ * Bills a completed surgery onto the admission's OT bill for today (IST).
+ * The schedule is claimed first (unbilled → billed) so two clicks can't bill it
+ * twice; if billing doesn't happen (no IPD in the plan, zero price, error) the
+ * claim is released and the charge stays available in the Bill Builder.
+ */
+async function billCompletedSurgery(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  actor: { id: string; tenant_id: string },
+  row: { id: string; admission_id: string | null; patient_id: string; procedure_name: string; price_snapshot: number },
+): Promise<string | null> {
+  if (!row.admission_id || !(Number(row.price_snapshot) > 0)) return null
+  const { data: claimed } = await supabase.from('ot_schedules')
+    .update({ billing_status: 'billed' }).eq('id', row.id).eq('billing_status', 'unbilled').select('id')
+  if (!claimed?.length) return null
+
+  const billId = await autoIpdBill(supabase, actor.id, {
+    tenantId:    actor.tenant_id,
+    admissionId: row.admission_id,
+    patientId:   row.patient_id,
+    billingDate: istToday(),
+    billSource:  'ot',
+    lineItems: [{ source: 'ot', ref_id: row.id, description: row.procedure_name, qty: 1, unit_price: Number(row.price_snapshot) }],
+  })
+  if (!billId) await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).eq('id', row.id)
+  return billId
 }
 
 export async function saveOtNotes(id: string, notes: string): Promise<SimpleResult> {

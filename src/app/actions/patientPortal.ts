@@ -1,5 +1,6 @@
 'use server'
 
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendPatientPasswordEmail } from '@/lib/email'
 import {
@@ -639,21 +640,12 @@ export async function bookPatientAppointment(
   // the fee is collected at the counter; a no-show auto-cancels this bill.
   const fee = await resolvePortalConsultFee(svc, owner.tenantId, doctorId)
   if (fee > 0) {
-    const { data: billNoData } = await svc.rpc('get_next_bill_no', { p_tenant_id: owner.tenantId })
-    if (billNoData) {
-      const billId = crypto.randomUUID()
-      const { error: billErr } = await svc.from('bills').insert({
-        id: billId, tenant_id: owner.tenantId, patient_id: patientId, appointment_id: apptId,
-        bill_no: billNoData as string, subtotal: fee, discount: 0, tax: 0, total: fee, paid: 0, status: 'unpaid',
-      })
-      if (!billErr) {
-        await svc.from('bill_items').insert({
-          id: crypto.randomUUID(), tenant_id: owner.tenantId, bill_id: billId,
-          source: 'consultation', ref_id: apptId, description: 'Consultation fee',
-          qty: 1, unit_price: fee, amount: fee,
-        })
-      }
-    }
+    const bill = await createServiceBill(svc, {
+      tenantId: owner.tenantId, patientId, actorId: null, appointmentId: apptId,
+      billSource: 'consultation',
+      lines: [{ source: 'consultation', ref_id: apptId, description: 'Consultation fee', qty: 1, unit_price: fee }],
+    })
+    if ('error' in bill) console.error('[portal booking] consultation bill failed:', bill.error)
   }
   return { success: true, token }
 }

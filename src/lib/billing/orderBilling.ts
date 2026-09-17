@@ -15,7 +15,7 @@ export interface OrderBillOutcome {
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
 /**
- * Takes a cancelled lab/radiology order off its bill(s) without touching
+ * Takes a cancelled lab/radiology order or OT surgery off its bill(s) without touching
  * anything else on them.
  *
  * Orders don't always own their bill: IPD orders are pooled onto one bill per
@@ -31,7 +31,7 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
  */
 export async function removeOrderFromBills(
   supabase: SupabaseClient,
-  source: 'lab' | 'radiology',
+  source: 'lab' | 'radiology' | 'ot',
   refId: string,
 ): Promise<OrderBillOutcome> {
   const out: OrderBillOutcome = { cancelledBills: [], trimmedBills: [], refundNeeded: [], advanceReleased: 0 }

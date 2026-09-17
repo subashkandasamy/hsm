@@ -234,6 +234,29 @@ export async function admitPatient(
     await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }
 
+  // Admitted from ER: the ER consultation and any ER orders were billed against the
+  // ER visit. Link those bills to this admission so they are on the IPD final bill,
+  // count in the discharge balance check and can use the admission's advance.
+  if (emergency_case_id) {
+    const { data: erCase } = await supabase
+      .from('emergency_cases').select('patient_id, arrived_at').eq('id', emergency_case_id).maybeSingle()
+    if (erCase && erCase.patient_id === patient_id) {
+      const { data: erVisits } = await supabase
+        .from('visits').select('id')
+        .eq('patient_id', patient_id).eq('type', 'emergency')
+        // The ER visit is created after arrival; a small margin covers clock skew.
+        .gte('created_at', new Date(new Date(erCase.arrived_at as string).getTime() - 5 * 60_000).toISOString())
+      const erVisitIds = (erVisits ?? []).map((v) => v.id as string)
+      if (erVisitIds.length) {
+        await supabase.from('bills')
+          .update({ admission_id: admissionId })
+          .in('visit_id', erVisitIds)
+          .is('admission_id', null)
+          .neq('status', 'cancelled')
+      }
+    }
+  }
+
   // Direct ICU admission: if admitted to an ICU bed, flag critical care + open
   // the ICU episode automatically.
   if (bed_id && await bedIsIcu(supabase, bed_id)) {

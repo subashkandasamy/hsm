@@ -17,7 +17,7 @@ export interface IpdBillLineItem {
 }
 
 /** Builds a GST-stamped bill_items row from a line item. */
-function stampItem(
+export function stampBillItem(
   i: IpdBillLineItem,
   ctx: { tenantId: string; billId: string; cfg: GstConfig },
 ) {
@@ -102,7 +102,7 @@ export async function autoIpdBill(
     const newItems = lineItems.filter((i) => !i.ref_id || !alreadyBilledRefs.has(i.ref_id))
     if (!newItems.length) return billId
 
-    const itemsToInsert = newItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
+    const itemsToInsert = newItems.map((i) => stampBillItem(i, { tenantId, billId, cfg }))
     const { error: insertErr } = await supabase.from('bill_items').insert(itemsToInsert)
     if (insertErr) {
       console.error('[autoIpdBill] appending lines failed', { billSource, billingDate, admissionId, error: insertErr.message })
@@ -144,7 +144,7 @@ export async function autoIpdBill(
     }
 
     const { error: itemErr } = await supabase.from('bill_items').insert(
-      lineItems.map((i) => stampItem(i, { tenantId, billId, cfg }))
+      lineItems.map((i) => stampBillItem(i, { tenantId, billId, cfg }))
     )
     if (itemErr) {
       console.error('[autoIpdBill] bill line insert failed', { billSource, billingDate, admissionId, error: itemErr.message })

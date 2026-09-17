@@ -208,7 +208,7 @@ export async function getUnbilledCharges(params: {
   {
     let q = supabase
       .from('ot_schedules')
-      .select('id, procedure_name, price_snapshot, consumables:ot_consumables(id, description, qty, unit_price)')
+      .select('id, procedure_name, price_snapshot, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id)')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
       .eq('status', 'completed')
@@ -225,7 +225,11 @@ export async function getUnbilledCharges(params: {
         unit_price: s.price_snapshot as number,
         amount: s.price_snapshot as number,
       })
-      for (const c of (s.consumables ?? []) as Array<{ id: string; description: string; qty: number; unit_price: number }>) {
+      // Consumables requested through pharmacy are priced and billed when pharmacy
+      // dispatches them (as IPD pharmacy lines) — listing them here too showed ₹0
+      // lines and risked billing them twice.
+      for (const c of (s.consumables ?? []) as Array<{ id: string; description: string; qty: number; unit_price: number; pharmacy_request_id: string | null }>) {
+        if (c.pharmacy_request_id || !(Number(c.unit_price) > 0)) continue
         lines.push({
           source: 'ot_consumable',
           ref_id: c.id,

@@ -134,7 +134,7 @@ export default function ScheduleModal({ open, onClose, onSuccess, doctors, tarif
               Procedure fee: <strong>₹{selectedTariff.default_price.toLocaleString('en-IN')}</strong>
             </p>
             <p className="text-xs mt-1" style={{ color: '#B45309' }}>
-              A bill will be generated at the time of surgery.
+              The surgery is added to the patient's bill when it is marked completed.
             </p>
           </div>
         )}

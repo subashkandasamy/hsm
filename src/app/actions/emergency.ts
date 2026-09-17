@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { EmergencyRegisterSchema, ConsultationSchema } from '@/lib/schemas'
 import { resolveConsultationFee } from '@/app/actions/appointments'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import type { EmergencyCase, TriageLevel } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -160,6 +161,9 @@ export async function getOrCreateEmergencyVisit(
 
   if (existing?.id) return { success: true, visitId: existing.id }
 
+  // Opening an existing visit is a read; creating a visit + bill is a write.
+  await requireWriteAccess()
+
   // Use the assigned doctor (attended_by) — falls back to whoever clicked Consult
   const doctorId = ec.attended_by ?? actor.id
 
@@ -175,40 +179,15 @@ export async function getOrCreateEmergencyVisit(
   })
   if (error) return { success: false, error: error.message }
 
-  // Auto-generate consultation bill — same logic as appointment booking
+  // Consultation bill for the ER visit — standard bill rules (IST date, GST, reconcile).
   const consultFee = await resolveConsultationFee(supabase, doctorId)
   if (consultFee > 0) {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-    if (billNoData) {
-      const billId = crypto.randomUUID()
-      const { error: billErr } = await supabase.from('bills').insert({
-        id:         billId,
-        tenant_id:  actor.tenant_id,
-        patient_id: ec.patient_id,
-        visit_id:   visitId,
-        bill_no:    billNoData as string,
-        subtotal:   consultFee,
-        discount:   0,
-        tax:        0,
-        total:      consultFee,
-        paid:       0,
-        status:     'unpaid',
-        created_by: actor.id,
-      })
-      if (!billErr) {
-        await supabase.from('bill_items').insert({
-          id:         crypto.randomUUID(),
-          tenant_id:  actor.tenant_id,
-          bill_id:    billId,
-          source:     'consultation',
-          ref_id:     visitId,
-          description: 'Emergency consultation fee',
-          qty:        1,
-          unit_price: consultFee,
-          amount:     consultFee,
-        })
-      }
-    }
+    const bill = await createServiceBill(supabase, {
+      tenantId: actor.tenant_id, patientId: ec.patient_id as string, actorId: actor.id, visitId,
+      billSource: 'consultation',
+      lines: [{ source: 'consultation', ref_id: visitId, description: 'Emergency consultation fee', qty: 1, unit_price: consultFee }],
+    })
+    if ('error' in bill) console.error('[getOrCreateEmergencyVisit] consultation bill failed:', bill.error)
   }
 
   await logAudit(actor.id, 'visit', 'emergency_case', caseId, { visit_id: visitId })

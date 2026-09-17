@@ -9,6 +9,7 @@ import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientL
 import type { Appointment } from '@/lib/types'
 import { refundCancelledConsultation, type RefundOutcome } from '@/lib/billing/refundConsultation'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { istToday, istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -101,39 +102,12 @@ export async function bookAppointment(
   // Auto-generate consultation bill at booking time (Phase 15)
   const consultFee = await resolveConsultationFee(supabase, doctor_id)
   if (consultFee > 0) {
-    const { data: billNoData } = await supabase.rpc('get_next_bill_no')
-    if (billNoData) {
-      const billId = crypto.randomUUID()
-      const { error: billErr } = await supabase.from('bills').insert({
-        id: billId,
-        tenant_id: actor.tenant_id,
-        patient_id,
-        appointment_id: id,
-        bill_no: billNoData as string,
-        subtotal: consultFee,
-        discount: 0,
-        tax: 0,
-        total: consultFee,
-        paid: 0,
-        status: 'unpaid',
-        created_by: actor.id,
-      })
-      if (billErr) {
-        console.error('[bookAppointment] bill insert failed:', billErr.message)
-      } else {
-        await supabase.from('bill_items').insert({
-          id: crypto.randomUUID(),
-          tenant_id: actor.tenant_id,
-          bill_id: billId,
-          source: 'consultation',
-          ref_id: id,
-          description: 'Consultation fee',
-          qty: 1,
-          unit_price: consultFee,
-          amount: consultFee,
-        })
-      }
-    }
+    const bill = await createServiceBill(supabase, {
+      tenantId: actor.tenant_id, patientId: patient_id, actorId: actor.id, appointmentId: id,
+      billSource: 'consultation',
+      lines: [{ source: 'consultation', ref_id: id, description: 'Consultation fee', qty: 1, unit_price: consultFee }],
+    })
+    if ('error' in bill) console.error('[bookAppointment] consultation bill failed:', bill.error)
   }
 
   await logAudit(actor.id, 'create', 'appointment', id, {
