@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ClipboardList, Plus, Check, X } from 'lucide-react'
+import { ClipboardList, Plus, Check, X, ChevronDown, ChevronRight } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
@@ -32,6 +32,7 @@ interface Props {
 }
 
 export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
+  const [expanded, setExpanded] = useState(false)
   const [hist, setHist] = useState<Record<string, string>>({})
   const [savedHist, setSavedHist] = useState(false)
   const [savingHist, setSavingHist] = useState(false)
@@ -70,11 +71,25 @@ export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
   }
   async function remove(id: string) { await deleteProblem(id); loadProblems() }
 
+  // Collapsed by default — the header says what is already on record.
+  const openProblems = problems.filter((p) => p.status !== 'resolved').length
+  const filled = HISTORY_FIELDS.filter((f) => hist[f.key]?.trim()).map((f) => f.label)
+  const summary = [
+    openProblems ? `${openProblems} active / chronic problem${openProblems === 1 ? '' : 's'}` : problems.length ? 'Problems resolved' : null,
+    filled.length ? `${filled.join(', ')} recorded` : null,
+  ].filter(Boolean).join(' · ') || 'Nothing recorded yet'
+
   return (
     <GlassCard className="p-5">
-      <h3 className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: '#0F172A' }}>
-        <ClipboardList className="w-4 h-4" style={{ color: '#0D9488' }} /> History & Problem List
-      </h3>
+      <button type="button" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}
+        className={`w-full flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 text-left ${expanded ? 'mb-4' : ''}`}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <ClipboardList className="w-4 h-4 shrink-0" style={{ color: '#0D9488' }} />
+        <span className="text-sm font-semibold shrink-0" style={{ color: '#0F172A' }}>History &amp; Problem List</span>
+        {!expanded && <span className="text-xs order-last basis-full pl-6 sm:order-none sm:basis-auto sm:pl-0 sm:truncate" style={{ color: openProblems ? '#B45309' : '#94A3B8' }}><span className="hidden sm:inline">· </span>{summary}</span>}
+        <span className="ml-auto shrink-0" style={{ color: '#94A3B8' }}>{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</span>
+      </button>
+      {expanded && (<>
 
       {/* Problem list */}
       <div className="mb-4">
@@ -155,6 +170,7 @@ export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
           </button>
         </div>
       )}
+      </>)}
     </GlassCard>
   )
 }

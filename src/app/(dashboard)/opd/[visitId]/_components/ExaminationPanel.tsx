@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Activity, Check, Plus } from 'lucide-react'
+import { Activity, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveExamination } from '@/app/actions/opd'
@@ -37,11 +37,9 @@ interface Props {
   weight: string
   height: string
   canWrite: boolean
-  /** Start collapsed (specialties that rarely need a systemic exam) unless something is recorded. */
-  collapsible?: boolean
 }
 
-export default function ExaminationPanel({ visitId, initialExam, weight, height, canWrite, collapsible = false }: Props) {
+export default function ExaminationPanel({ visitId, initialExam, weight, height, canWrite }: Props) {
   const init = (initialExam ?? {}) as Record<string, unknown>
   const [signs, setSigns] = useState<Record<string, boolean>>((init.signs as Record<string, boolean>) ?? {})
   const [general, setGeneral] = useState<string>((init.general as string) ?? '')
@@ -50,8 +48,15 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
   const [saved, setSaved] = useState(false)
 
   const bmi = bmiInfo(weight, height)
-  const hasFindings = Object.values(signs).some(Boolean) || general.trim() !== '' || Object.values(sys).some((t) => t?.trim())
-  const [expanded, setExpanded] = useState(!collapsible || hasFindings)
+  // Collapsed by default on every template — the header summarises what is recorded.
+  const [expanded, setExpanded] = useState(false)
+  const present = SIGNS.filter((s) => signs[s]).map((s) => SIGN_LABELS[s])
+  const written = SYSTEMS.filter((f) => sys[f.key]?.trim()).map((f) => f.label)
+  const summary = [
+    present.length ? `${present.join(', ')} present` : null,
+    general.trim() ? 'General' : null,
+    written.length ? `${written.join(', ')} written` : null,
+  ].filter(Boolean).join(' · ') || 'Not examined yet'
 
   async function save() {
     setSaving(true); setSaved(false)
@@ -60,30 +65,24 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
     if (res.success) { setSaved(true); setTimeout(() => setSaved(false), 1800) }
   }
 
-  if (!expanded) {
-    if (!canWrite) return null
-    return (
-      <button type="button" onClick={() => setExpanded(true)}
-        className="w-full flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-medium"
-        style={{ background: 'rgba(255,255,255,0.6)', border: '1px dashed #CBD5E1', color: '#0D9488', cursor: 'pointer' }}>
-        <Plus className="w-4 h-4" /> Add general examination
-        <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>· pallor, icterus, CVS, RS, abdomen, CNS</span>
-      </button>
-    )
-  }
-
   return (
     <GlassCard className="p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#0F172A' }}>
-          <Activity className="w-4 h-4" style={{ color: '#0D9488' }} /> Examination
-        </h3>
-        {bmi && (
-          <span className="text-xs px-2.5 py-1 rounded-lg font-semibold" style={{ background: `${bmi.color}14`, color: bmi.color }}>
-            BMI {bmi.bmi} · {bmi.label}
-          </span>
-        )}
-      </div>
+      <button type="button" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}
+        className={`w-full flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 text-left ${expanded ? 'mb-3' : ''}`}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <Activity className="w-4 h-4 shrink-0" style={{ color: '#0D9488' }} />
+        <span className="text-sm font-semibold shrink-0" style={{ color: '#0F172A' }}>Examination</span>
+        {!expanded && <span className="text-xs order-last basis-full pl-6 sm:order-none sm:basis-auto sm:pl-0 sm:truncate" style={{ color: present.length ? '#DC2626' : '#94A3B8' }}><span className="hidden sm:inline">· </span>{summary}</span>}
+        <span className="ml-auto flex items-center gap-2 shrink-0">
+          {bmi && (
+            <span className="text-xs px-2.5 py-1 rounded-lg font-semibold" style={{ background: `${bmi.color}14`, color: bmi.color }}>
+              BMI {bmi.bmi} · {bmi.label}
+            </span>
+          )}
+          <span style={{ color: '#94A3B8' }}>{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</span>
+        </span>
+      </button>
+      {expanded && (<>
 
       {/* General signs */}
       <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#64748B' }}>General</p>
@@ -131,6 +130,7 @@ export default function ExaminationPanel({ visitId, initialExam, weight, height,
           </button>
         </div>
       )}
+      </>)}
     </GlassCard>
   )
 }
