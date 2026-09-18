@@ -257,18 +257,27 @@ function StockRow({ s, canManage, isPending, run }: {
           </div>
           {results.length > 0 && (
             <ul className="mt-1 rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', background: '#fff' }}>
-              {results.map((d) => (
-                <li key={d.id}>
-                  <button type="button" disabled={isPending}
-                    onClick={() => { setAdding(false); run(() => addVaccineProduct(s.vaccine, d.id, !!d.is_global)) }}
-                    className="w-full text-left px-3 py-2 text-sm" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0F172A' }}>
-                    {d.name}{d.strength ? ` ${d.strength}` : ''}{d.form ? ` (${d.form})` : ''}
-                    <span className="block text-xs" style={{ color: '#94A3B8' }}>
-                      {(d.brand_aliases ?? []).slice(0, 3).join(', ') || d.generic_name || ''}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {results.map((d) => {
+                // The brand and strength lead — that is what the pharmacy shelf says.
+                const q = query.trim().toLowerCase()
+                const aliases = d.brand_aliases ?? []
+                const match = (q ? aliases.find((b) => b.toLowerCase().includes(q)) : null) ?? aliases[0] ?? null
+                const others = aliases.filter((b) => b !== match).slice(0, 2)
+                return (
+                  <li key={d.id}>
+                    <button type="button" disabled={isPending}
+                      onClick={() => { setAdding(false); run(() => addVaccineProduct(s.vaccine, d.id, !!d.is_global)) }}
+                      className="w-full text-left px-3 py-2 text-sm" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0F172A' }}>
+                      <span className="font-medium">{match ?? d.name}</span>
+                      {d.strength ? <span style={{ color: '#475569' }}> · {d.strength}</span> : null}
+                      {d.form ? <span style={{ color: '#94A3B8' }}> ({d.form})</span> : null}
+                      <span className="block text-xs" style={{ color: '#94A3B8' }}>
+                        {[d.generic_name ?? d.name, others.length ? `also: ${others.join(', ')}` : null].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
