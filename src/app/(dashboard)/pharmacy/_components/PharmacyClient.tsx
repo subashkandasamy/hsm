@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import SetupNudge from '@/components/ui/SetupNudge'
 import {
@@ -30,7 +31,6 @@ import { hasPermission } from '@/lib/rbac'
 import Select from '@/components/ui/Select'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
-import AddBatchModal from './AddBatchModal'
 import SaleCartBuilder from './SaleCartBuilder'
 
 type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts'
@@ -68,7 +68,6 @@ export default function PharmacyClient({
   const [alerts, setAlerts]   = useState(initialAlerts)
   const [loading, setLoading] = useState(false)
   const [dispenseRx, setDispenseRx] = useState<PrescriptionWithVisit | null>(null)
-  const [showAddBatch, setShowAddBatch] = useState(false)
 
   // Packing state (session)
   const [skippedRxIds, setSkippedRxIds]   = useState<Set<string>>(new Set())
@@ -197,13 +196,11 @@ export default function PharmacyClient({
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
             {canManage && (
-              <button onClick={() => setShowAddBatch(true)}
+              <Link href="/pharmacy/receive"
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#0F766E' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '#0D9488' }}>
-                <Plus className="w-4 h-4" /> Add Batch
-              </button>
+                style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                <Plus className="w-4 h-4" /> Receive stock
+              </Link>
             )}
           </div>
         }
@@ -304,14 +301,6 @@ export default function PharmacyClient({
         />
       )}
 
-      {showAddBatch && (
-        <AddBatchModal
-          open={showAddBatch}
-          canManage={canManage}
-          onClose={() => setShowAddBatch(false)}
-          onSuccess={() => { setShowAddBatch(false); refresh() }}
-        />
-      )}
     </div>
   )
 }

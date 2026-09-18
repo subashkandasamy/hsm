@@ -105,6 +105,114 @@ export async function addBatch(
   return { success: true, batch: batch as DrugBatch }
 }
 
+export interface StockReceiptLine {
+  drug_master_id?: string | null
+  drug_id?: string | null
+  brand_name?: string | null
+  manufacturer?: string | null
+  batch_no: string
+  /** 'YYYY-MM-DD' — the UI sends the last day of the printed MM/YY. */
+  expiry: string
+  qty_available: number
+  free_qty?: number
+  purchase_price?: number | null
+  mrp: number
+  pack_size?: number | null
+  pack_unit?: string | null
+  mfg_date?: string | null
+  hsn_code?: string | null
+  gst_rate?: number | null
+  reorder_level?: number
+  storage_location?: string | null
+}
+
+export interface StockReceiptHeader {
+  supplier_name?: string | null
+  invoice_no?: string | null
+  invoice_date?: string | null
+  invoice_total?: number | null
+  opening_stock?: boolean
+  notes?: string | null
+}
+
+/**
+ * Receives a whole purchase invoice: the receipt and every batch, or nothing
+ * (receive_stock_v1, migration 0162). A line whose drug + batch + expiry already
+ * exists adds to that batch instead of creating a duplicate.
+ */
+export async function receiveStock(
+  header: StockReceiptHeader,
+  lines: StockReceiptLine[],
+): Promise<{ success: true; created: number; merged: number; units: number; receiptId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+
+  if (!lines.length) return { success: false, error: 'Add at least one medicine' }
+  const today = istToday()
+  for (const l of lines) {
+    if (!l.drug_master_id && !l.drug_id) return { success: false, error: 'Every line needs a medicine' }
+    if (!l.batch_no?.trim()) return { success: false, error: 'Every line needs a batch number' }
+    if (!l.expiry || l.expiry <= today) return { success: false, error: `Batch ${l.batch_no}: the expiry has passed` }
+    if (!Number.isFinite(l.qty_available) || l.qty_available + (l.free_qty ?? 0) <= 0) return { success: false, error: `Batch ${l.batch_no}: enter a quantity` }
+    if (!Number.isFinite(l.mrp) || l.mrp <= 0) return { success: false, error: `Batch ${l.batch_no}: enter the MRP` }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('receive_stock_v1', { p_header: header, p_lines: lines })
+  if (error) return { success: false, error: error.message }
+  const r = data as { receipt_id: string; created: number; merged: number; units: number }
+  await logAudit(actor.id, 'receive_stock', 'pharmacy', r.receipt_id, {
+    supplier: header.supplier_name ?? null, invoice: header.invoice_no ?? null,
+    lines: lines.length, created: r.created, merged: r.merged, units: r.units,
+  })
+  return { success: true, created: r.created, merged: r.merged, units: r.units, receiptId: r.receipt_id }
+}
+
+export interface StockReceiptSummary {
+  id: string; supplier_name: string | null; invoice_no: string | null; invoice_date: string | null
+  invoice_total: number | null; opening_stock: boolean; created_at: string; lines: number; units: number
+}
+
+/** Recent purchases, for "what did we receive lately" and repeating an order. */
+export async function listStockReceipts(limit = 10): Promise<StockReceiptSummary[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('stock_receipts')
+    .select('id, supplier_name, invoice_no, invoice_date, invoice_total, opening_stock, created_at, batches:drug_batches(qty_available)')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+    const batches = (r.batches as Array<{ qty_available: number }> | null) ?? []
+    return {
+      id: r.id as string,
+      supplier_name: (r.supplier_name as string | null) ?? null,
+      invoice_no: (r.invoice_no as string | null) ?? null,
+      invoice_date: (r.invoice_date as string | null) ?? null,
+      invoice_total: (r.invoice_total as number | null) ?? null,
+      opening_stock: !!r.opening_stock,
+      created_at: r.created_at as string,
+      lines: batches.length,
+      units: batches.reduce((n, b) => n + (b.qty_available ?? 0), 0),
+    }
+  })
+}
+
+/** The last batch received for a medicine — "same as last time" when receiving again. */
+export async function lastBatchFor(drugRef: { id: string; isGlobal: boolean }): Promise<DrugBatch | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data } = await supabase.from('drug_batches').select('*')
+    .eq(drugRef.isGlobal ? 'drug_master_id' : 'drug_id', drugRef.id)
+    .order('purchase_date', { ascending: false, nullsFirst: false })
+    .order('expiry', { ascending: false })
+    .limit(1)
+  return (data?.[0] as DrugBatch | undefined) ?? null
+}
+
 // Returns unified drug list: global drug_master + this tenant's custom drugs.
 // drug_master drugs have is_global=true; tenant drugs have is_global=false.
 export async function listDrugs(): Promise<Drug[]> {
