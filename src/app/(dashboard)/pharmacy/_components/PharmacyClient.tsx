@@ -895,31 +895,126 @@ function OpdDispatchHistory({ history }: { history: DispatchedPatientHistory[] }
 
 type BatchDraft = { batch_no: string; expiry: string; qty_available: string; mrp: string; purchase_price: string; storage_location: string }
 
+type StockFilter = 'all' | 'low' | 'expiring' | 'out' | 'vaccines'
+type StockSort = 'name' | 'qty' | 'expiry' | 'value'
+
+/** A batch this close to expiry should be used, returned or written off. */
+const EXPIRING_DAYS = 90
+
+function daysUntil(date: string): number {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.round((new Date(date + 'T00:00:00').getTime() - today.getTime()) / 86_400_000)
+}
+
+/** "18 days" / "3 months" — how long a batch has left, in words a shelf uses. */
+function expiryIn(days: number): string {
+  if (days < 0) return 'expired'
+  if (days === 0) return 'today'
+  if (days < 45) return `${days} day${days === 1 ? '' : 's'}`
+  const months = Math.round(days / 30)
+  if (months < 18) return `${months} month${months === 1 ? '' : 's'}`
+  return `${Math.round(days / 365)} years`
+}
+
+/** What one medicine looks like on the shelf, worked out once per render. */
+type StockRow = {
+  drug: DrugWithStock
+  title: string
+  subtitle: string
+  low: boolean
+  out: boolean
+  value: number
+  soonestDays: number | null
+  expiring: boolean
+  expiringBatches: number
+}
+
+function buildRow(d: DrugWithStock): StockRow {
+  const brand = (d.stocked_brands ?? [])[0]
+  const title = brand ?? d.name
+  const subtitleParts = [brand ? d.name : d.generic_name, d.strength].filter(Boolean)
+  const soonest = d.batches.length
+    ? d.batches.reduce((a, b) => (a.expiry <= b.expiry ? a : b)).expiry
+    : null
+  const soonestDays = soonest ? daysUntil(soonest) : null
+  return {
+    drug: d,
+    title,
+    subtitle: subtitleParts.join(' · '),
+    low: d.total_qty > 0 && d.total_qty <= (d.reorder_level ?? 0),
+    out: d.total_qty <= 0,
+    value: d.batches.reduce((s, b) => s + b.qty_available * (b.mrp ?? 0), 0),
+    soonestDays,
+    expiring: soonestDays !== null && soonestDays <= EXPIRING_DAYS,
+    expiringBatches: d.batches.filter(b => daysUntil(b.expiry) <= EXPIRING_DAYS).length,
+  }
+}
+
 function StockView({ stock, canManage, onRefresh }: {
   stock: DrugWithStock[]; canManage: boolean; onRefresh: () => void
 }) {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<StockFilter>('all')
+  const [sort, setSort] = useState<StockSort>('name')
+  const [openId, setOpenId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [reorderDraft, setReorderDraft] = useState('')
   const [batchDrafts, setBatchDrafts] = useState<Record<string, BatchDraft>>({})
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
 
-  const filtered = query.trim()
-    ? stock.filter((d) => {
-        const q = query.toLowerCase()
+  const rows = stock.map(buildRow)
+
+  const q = query.trim().toLowerCase()
+  const searched = q
+    ? rows.filter((r) => {
+        const d = r.drug
         return (
           d.name.toLowerCase().includes(q) ||
           (d.generic_name ?? '').toLowerCase().includes(q) ||
           (d.form ?? '').toLowerCase().includes(q) ||
           (d.strength ?? '').toLowerCase().includes(q) ||
-          (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
+          (d.stocked_brands ?? []).some(b => b.toLowerCase().includes(q)) ||
+          (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q)) ||
+          d.batches.some(b =>
+            b.batch_no.toLowerCase().includes(q) ||
+            (b.storage_location ?? '').toLowerCase().includes(q))
         )
       })
-    : stock
+    : rows
+
+  const counts = {
+    all: searched.length,
+    low: searched.filter(r => r.low).length,
+    expiring: searched.filter(r => r.expiring).length,
+    out: searched.filter(r => r.out).length,
+    vaccines: searched.filter(r => r.drug.is_vaccine).length,
+  }
+
+  const filtered = searched.filter((r) =>
+    filter === 'low' ? r.low
+    : filter === 'expiring' ? r.expiring
+    : filter === 'out' ? r.out
+    : filter === 'vaccines' ? !!r.drug.is_vaccine
+    : true)
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === 'qty') return a.drug.total_qty - b.drug.total_qty || a.title.localeCompare(b.title)
+    if (sort === 'value') return b.value - a.value || a.title.localeCompare(b.title)
+    if (sort === 'expiry') {
+      if (a.soonestDays === null) return b.soonestDays === null ? a.title.localeCompare(b.title) : 1
+      if (b.soonestDays === null) return -1
+      return a.soonestDays - b.soonestDays || a.title.localeCompare(b.title)
+    }
+    return a.title.localeCompare(b.title)
+  })
+
+  const totalUnits = sorted.reduce((s, r) => s + r.drug.total_qty, 0)
+  const totalValue = sorted.reduce((s, r) => s + r.value, 0)
 
   function openEdit(drug: DrugWithStock) {
     setEditId(drug.id)
+    setOpenId(drug.id)
     setReorderDraft(String(drug.reorder_level ?? 0))
     const drafts: Record<string, BatchDraft> = {}
     drug.batches.forEach(b => {
@@ -975,168 +1070,251 @@ function StockView({ stock, canManage, onRefresh }: {
   const inp = 'px-2 py-1.5 rounded-lg text-xs border w-full'
   const bdr = { borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }
 
+  const chips: Array<{ key: StockFilter; label: string; count: number; tone: string }> = [
+    { key: 'all',      label: 'All',           count: counts.all,      tone: '#0D9488' },
+    { key: 'low',      label: 'Running low',   count: counts.low,      tone: '#DC2626' },
+    { key: 'expiring', label: 'Expiring soon', count: counts.expiring, tone: '#D97706' },
+    { key: 'out',      label: 'Out of stock',  count: counts.out,      tone: '#64748B' },
+    { key: 'vaccines', label: 'Vaccines',      count: counts.vaccines, tone: '#7C3AED' },
+  ]
+
+  const emptyTitle = q ? 'Nothing matched' : filter === 'all' ? 'No medicines yet' : 'Nothing here'
+  const emptyDesc =
+    q ? `No medicine, brand, batch or rack matches "${query}"`
+    : filter === 'low' ? 'Every medicine is above its reorder level.'
+    : filter === 'expiring' ? `No batch expires within ${EXPIRING_DAYS} days.`
+    : filter === 'out' ? 'Nothing has run out.'
+    : filter === 'vaccines' ? 'No vaccine is linked to a stocked product yet.'
+    : 'Receive a purchase invoice to fill the shelf.'
+
   return (
     <div className="space-y-3">
-      {/* Search bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
-        <input type="text" placeholder="Search by drug name, generic, form or strength…"
-          value={query} onChange={(e) => setQuery(e.target.value)}
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm"
-          style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '44px' }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
-        {query && (
-          <button type="button" onClick={() => setQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 0 }}>
-            <X className="w-4 h-4" />
-          </button>
-        )}
+      {/* Search + sort */}
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1" style={{ minWidth: 220 }}>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
+          <input type="text" placeholder="Search brand, salt, batch number or rack…"
+            value={query} onChange={(e) => setQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm"
+            style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none', minHeight: '44px' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+          {query && (
+            <button type="button" onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 0 }}>
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div style={{ width: 176 }}>
+          <Select value={sort} onChange={(e) => setSort(e.target.value as StockSort)}>
+            <option value="name">Name A–Z</option>
+            <option value="qty">Least stock first</option>
+            <option value="expiry">Expiring first</option>
+            <option value="value">Highest value</option>
+          </Select>
+        </div>
       </div>
 
-      {filtered.length === 0 && (
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        {chips.map((c) => {
+          const on = filter === c.key
+          const dim = c.count === 0 && !on
+          return (
+            <button key={c.key} type="button" onClick={() => setFilter(c.key)}
+              className="px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5"
+              style={{
+                background: on ? c.tone : '#fff',
+                color: on ? '#fff' : dim ? '#94A3B8' : c.tone,
+                border: `1px solid ${on ? c.tone : '#E2E8F0'}`,
+                cursor: 'pointer', minHeight: 34,
+              }}>
+              {c.label}
+              <span className="px-1.5 rounded-full" style={{ background: on ? 'rgba(255,255,255,0.25)' : '#F1F5F9', color: on ? '#fff' : '#64748B' }}>{c.count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {sorted.length > 0 && (
+        <p className="text-xs" style={{ color: '#64748B' }}>
+          {sorted.length} medicine{sorted.length === 1 ? '' : 's'} · {totalUnits} units · <Money amount={totalValue} /> at MRP
+        </p>
+      )}
+
+      {sorted.length === 0 && (
         <GlassCard className="p-6">
-          <EmptyState
-            title={query ? 'No drugs matched' : 'No drugs in stock'}
-            description={query ? `No results for "${query}"` : 'Add drug batches to see stock here.'} />
+          <EmptyState title={emptyTitle} description={emptyDesc} />
         </GlassCard>
       )}
 
-      {filtered.map((drug) => {
-        const isLow = drug.total_qty <= (drug.reorder_level ?? 0)
-        const primaryBrand = (drug.brand_aliases ?? [])[0]
-        const displayName = primaryBrand ?? drug.name
-        const genericLabel = primaryBrand ? drug.name : drug.generic_name
+      {sorted.map(({ drug, title, subtitle, low, out, value, soonestDays, expiringBatches }) => {
         const isEditing = editId === drug.id
+        const isOpen = openId === drug.id || isEditing
+        const unit = (drug.form ?? drug.unit ?? 'units').toLowerCase()
 
         return (
-          <GlassCard key={drug.id} className="p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold" style={{ color: '#0F172A' }}>{displayName}</p>
-                  {genericLabel && <span className="text-xs" style={{ color: '#64748B' }}>({genericLabel})</span>}
-                  {drug.form && <span className="text-xs px-2 py-0.5 rounded-lg capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{drug.form}</span>}
-                  {drug.strength && <span className="text-xs" style={{ color: '#64748B' }}>{drug.strength}</span>}
-                  {isLow && (
-                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"
-                      style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                      <AlertTriangle className="w-3 h-3" /> Low Stock
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm mt-1">
-                  <span className="font-bold" style={{ color: isLow ? '#DC2626' : '#0D9488' }}>{drug.total_qty}</span>
-                  <span className="ml-1 text-xs" style={{ color: '#64748B' }}>{(drug.form ?? drug.unit ?? 'units').toLowerCase()} available</span>
-                  {(drug.reorder_level ?? 0) > 0 && !isEditing && (
-                    <span className="ml-2 text-xs" style={{ color: '#94A3B8' }}>Reorder at {drug.reorder_level}</span>
-                  )}
-                </p>
-
-                {/* ── View mode: batch chips ── */}
-                {!isEditing && drug.batches.length > 0 && (
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    {drug.batches.map((b) => (
-                      <span key={b.id} className="text-xs px-2 py-0.5 rounded-lg"
-                        style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
-                        {b.batch_no} · exp <DateText date={b.expiry} /> · {b.qty_available} · <Money amount={b.mrp} />
-                        {b.storage_location && (
-                          <span className="ml-1.5 font-medium" style={{ color: '#7C3AED' }}>
-                            📍 {b.storage_location}
-                          </span>
-                        )}
+          <GlassCard key={drug.id} className="p-3">
+            <div className="flex items-start gap-2">
+              {/* Header — tap anywhere to see the batches */}
+              <button type="button" onClick={() => { if (!isEditing) setOpenId(isOpen ? null : drug.id) }}
+                className="flex-1 min-w-0 flex items-start gap-2 text-left"
+                style={{ background: 'none', border: 'none', padding: 0, cursor: isEditing ? 'default' : 'pointer' }}>
+                <span className="mt-0.5 flex-shrink-0" style={{ color: '#94A3B8' }}>
+                  {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm" style={{ color: '#0F172A' }}>{title}</span>
+                    {drug.form && <span className="text-xs px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{drug.form}</span>}
+                    {drug.is_vaccine && <span className="text-xs px-1.5 py-0.5 rounded-md font-semibold" style={{ background: '#F5F3FF', color: '#7C3AED' }}>Vaccine</span>}
+                    {out && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F1F5F9', color: '#64748B' }}>Out of stock</span>}
+                    {low && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                        <AlertTriangle className="w-3 h-3" /> Running low
                       </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* ── Edit mode ── */}
-                {isEditing && (
-                  <div className="mt-3 space-y-3">
-                    {/* Reorder level */}
-                    <div className="flex items-center gap-3">
-                      <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Reorder level</label>
-                      <input type="number" min={0} step={1} value={reorderDraft}
-                        onChange={e => setReorderDraft(e.target.value)}
-                        className={inp} style={{ ...bdr, maxWidth: 100 }} />
-                    </div>
-
-                    {/* Batch rows — card layout on mobile, grid on desktop */}
-                    {drug.batches.length > 0 && (
-                      <div className="space-y-2">
-                        {drug.batches.map((b, i) => {
-                          const d = batchDrafts[b.id] ?? { batch_no: b.batch_no, expiry: b.expiry, qty_available: String(b.qty_available), mrp: String(b.mrp), purchase_price: '', storage_location: '' }
-                          return (
-                            <div key={b.id} className="rounded-xl p-3 space-y-2"
-                              style={{ border: '1px solid #E2E8F0', background: i % 2 === 0 ? '#FAFCFF' : '#fff' }}>
-                              <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                                <div>
-                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Batch No.</p>
-                                  <input value={d.batch_no} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], batch_no: e.target.value } }))}
-                                    className={inp} style={bdr} />
-                                </div>
-                                <div>
-                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Expiry</p>
-                                  <input type="date" value={d.expiry} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], expiry: e.target.value } }))}
-                                    className={inp} style={bdr} />
-                                </div>
-                              </div>
-                              <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-                                <div>
-                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Qty</p>
-                                  <input type="number" min={0} step={1} value={d.qty_available} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], qty_available: e.target.value } }))}
-                                    className={inp} style={bdr} />
-                                </div>
-                                <div>
-                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>MRP (₹)</p>
-                                  <input type="number" min={0} step="0.01" value={d.mrp} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], mrp: e.target.value } }))}
-                                    className={inp} style={bdr} />
-                                </div>
-                                <div>
-                                  <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Cost (₹)</p>
-                                  <input type="number" min={0} step="0.01" value={d.purchase_price} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], purchase_price: e.target.value } }))}
-                                    placeholder="opt." className={inp} style={{ ...bdr, color: '#94A3B8' }} />
-                                </div>
-                              </div>
-                              <div>
-                                <p className="text-xs font-medium mb-1" style={{ color: '#7C3AED' }}>📍 Location</p>
-                                <input value={d.storage_location} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], storage_location: e.target.value } }))}
-                                  placeholder="e.g. Rack A / Shelf 2 / Bin 3" className={inp} style={{ ...bdr, color: '#7C3AED' }} />
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
                     )}
+                    {soonestDays !== null && soonestDays <= EXPIRING_DAYS && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#FEF3C7', color: '#B45309' }}>
+                        {expiringBatches === drug.batches.length
+                          ? `expires in ${expiryIn(soonestDays)}`
+                          : `${expiringBatches} of ${drug.batches.length} batches expiring`}
+                      </span>
+                    )}
+                  </span>
+                  {subtitle && <span className="block text-xs mt-0.5" style={{ color: '#64748B' }}>{subtitle}</span>}
+                </span>
+                <span className="text-right flex-shrink-0 pl-2">
+                  <span className="block text-sm font-bold" style={{ color: out ? '#64748B' : low ? '#DC2626' : '#0D9488' }}>
+                    {drug.total_qty} <span className="text-xs font-normal" style={{ color: '#64748B' }}>{unit}</span>
+                  </span>
+                  <span className="block text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                    {(drug.reorder_level ?? 0) > 0 ? <>reorder at {drug.reorder_level}</> : <Money amount={value} />}
+                  </span>
+                </span>
+              </button>
 
-                    {saveErr && <p className="text-xs" style={{ color: '#DC2626' }}>{saveErr}</p>}
-
-                    <div className="flex gap-2">
-                      <button onClick={() => saveEdit(drug)} disabled={saving}
-                        className="px-4 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: saving ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
-                        {saving ? 'Saving…' : 'Save Changes'}
-                      </button>
-                      <button onClick={() => setEditId(null)} disabled={saving}
-                        className="px-3 py-1.5 rounded-lg text-xs"
-                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Edit button */}
               {canManage && !isEditing && (
-                <button onClick={() => openEdit(drug)}
+                <button onClick={() => openEdit(drug)} title="Edit stock"
                   className="p-1.5 rounded-lg flex-shrink-0"
                   style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
+
+            {/* ── Batches ── */}
+            {isOpen && !isEditing && (
+              <div className="mt-3 pl-6 space-y-1.5">
+                {drug.batches.length === 0 && (
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>
+                    Nothing on the shelf — everything received has been used or has expired.
+                  </p>
+                )}
+                {drug.batches.map((b) => {
+                  const dl = daysUntil(b.expiry)
+                  const soon = dl <= EXPIRING_DAYS
+                  return (
+                    <div key={b.id} className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs rounded-lg px-2.5 py-1.5"
+                      style={{ background: soon ? '#FFFBEB' : '#F8FAFC', border: `1px solid ${soon ? '#FDE68A' : '#E2E8F0'}` }}>
+                      <span className="font-mono font-medium" style={{ color: '#0F172A' }}>{b.batch_no}</span>
+                      <span style={{ color: soon ? '#B45309' : '#64748B' }}>exp <DateText date={b.expiry} /> · {expiryIn(dl)}</span>
+                      <span className="font-semibold" style={{ color: '#0D9488' }}>{b.qty_available} {unit}</span>
+                      <span style={{ color: '#64748B' }}><Money amount={b.mrp} /> each</span>
+                      {b.storage_location && <span style={{ color: '#7C3AED' }}>📍 {b.storage_location}</span>}
+                      {b.supplier_name && <span style={{ color: '#94A3B8' }}>{b.supplier_name}</span>}
+                    </div>
+                  )
+                })}
+                {canManage && (
+                  <Link href={`/pharmacy/receive?q=${encodeURIComponent(title)}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold mt-0.5"
+                    style={{ color: '#0D9488', textDecoration: 'none' }}>
+                    <Plus className="w-3 h-3" /> Receive more
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {/* ── Edit mode ── */}
+            {isEditing && (
+              <div className="mt-3 pl-6 space-y-3">
+                {/* Reorder level */}
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Reorder level</label>
+                  <input type="number" min={0} step={1} value={reorderDraft}
+                    onChange={e => setReorderDraft(e.target.value)}
+                    className={inp} style={{ ...bdr, maxWidth: 100 }} />
+                  <span className="text-xs" style={{ color: '#94A3B8' }}>warn below this many {unit}</span>
+                </div>
+
+                {/* Batch rows — card layout on mobile, grid on desktop */}
+                {drug.batches.length > 0 && (
+                  <div className="space-y-2">
+                    {drug.batches.map((b, i) => {
+                      const d = batchDrafts[b.id] ?? { batch_no: b.batch_no, expiry: b.expiry, qty_available: String(b.qty_available), mrp: String(b.mrp), purchase_price: '', storage_location: '' }
+                      return (
+                        <div key={b.id} className="rounded-xl p-3 space-y-2"
+                          style={{ border: '1px solid #E2E8F0', background: i % 2 === 0 ? '#FAFCFF' : '#fff' }}>
+                          <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                            <div>
+                              <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Batch No.</p>
+                              <input value={d.batch_no} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], batch_no: e.target.value } }))}
+                                className={inp} style={bdr} />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Expiry</p>
+                              <input type="date" value={d.expiry} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], expiry: e.target.value } }))}
+                                className={inp} style={bdr} />
+                            </div>
+                          </div>
+                          <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+                            <div>
+                              <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Qty</p>
+                              <input type="number" min={0} step={1} value={d.qty_available} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], qty_available: e.target.value } }))}
+                                className={inp} style={bdr} />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>MRP (₹)</p>
+                              <input type="number" min={0} step="0.01" value={d.mrp} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], mrp: e.target.value } }))}
+                                className={inp} style={bdr} />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium mb-1" style={{ color: '#94A3B8' }}>Cost (₹)</p>
+                              <input type="number" min={0} step="0.01" value={d.purchase_price} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], purchase_price: e.target.value } }))}
+                                placeholder="opt." className={inp} style={{ ...bdr, color: '#94A3B8' }} />
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium mb-1" style={{ color: '#7C3AED' }}>📍 Location</p>
+                            <input value={d.storage_location} onChange={e => setBatchDrafts(p => ({ ...p, [b.id]: { ...p[b.id], storage_location: e.target.value } }))}
+                              placeholder="e.g. Rack A / Shelf 2 / Bin 3" className={inp} style={{ ...bdr, color: '#7C3AED' }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {saveErr && <p className="text-xs" style={{ color: '#DC2626' }}>{saveErr}</p>}
+
+                <div className="flex gap-2">
+                  <button onClick={() => saveEdit(drug)} disabled={saving}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{ background: saving ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button onClick={() => setEditId(null)} disabled={saving}
+                    className="px-3 py-1.5 rounded-lg text-xs"
+                    style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
         )
       })}
@@ -1147,8 +1325,10 @@ function StockView({ stock, canManage, onRefresh }: {
 // ---- Alerts View ----
 
 function DrugMeta({ d }: { d: DrugWithStock }) {
-  const primaryBrand = d.brand_data?.[0]
-  const displayName  = (d.brand_aliases ?? [])[0] ?? d.name
+  const stocked      = (d.stocked_brands ?? [])[0]
+  // Pack and HSN must belong to the brand on the shelf — never another brand's.
+  const primaryBrand = stocked ? d.brand_data?.find(b => b.brand_name === stocked) : d.brand_data?.[0]
+  const displayName  = stocked ?? d.name
   return (
     <div className="flex-1 min-w-0">
       <div className="flex items-center gap-2 flex-wrap">

@@ -423,7 +423,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
   // All batches for this tenant (all expiry/qty states — to show full inventory)
   const { data: allBatches } = await supabase
     .from('drug_batches')
-    .select('id, drug_id, drug_master_id, batch_no, expiry, qty_available, purchase_price, mrp, reorder_level, storage_location')
+    .select('id, drug_id, drug_master_id, batch_no, expiry, qty_available, purchase_price, mrp, reorder_level, storage_location, brand_name, supplier_name, purchase_date')
     .order('expiry', { ascending: true })
 
   if (!allBatches?.length) return []
@@ -464,9 +464,25 @@ export async function getStock(): Promise<DrugWithStock[]> {
     for (const d of (tDrugs ?? [])) { const r = d as unknown as TRow; tenantMap.set(r.id, r) }
   }
 
+  // Medicines this hospital uses as vaccines, so the stock list can single them out.
+  const { data: vaxLinks } = await supabase.from('vaccine_products').select('drug_master_id, drug_id')
+  const vaccineKeys = new Set((vaxLinks ?? []).map(v => (v.drug_master_id ?? v.drug_id) as string).filter(Boolean))
+
   // Group active batches by drug reference key
   const activeBatchesByKey = new Map<string, DrugBatch[]>()
   const reorderByKey = new Map<string, number>()
+  /** Brands actually received, newest purchase first — what the shelf really holds. */
+  const stockedBrandsByKey = new Map<string, string[]>()
+  const byNewestPurchase = [...allBatches].sort((a, b) =>
+    String(b.purchase_date ?? '').localeCompare(String(a.purchase_date ?? '')))
+  for (const b of byNewestPurchase) {
+    const key = (b.drug_master_id ?? b.drug_id) as string
+    const brand = (b.brand_name as string | null)?.trim()
+    if (!key || !brand) continue
+    const list = stockedBrandsByKey.get(key) ?? []
+    if (!list.includes(brand)) list.push(brand)
+    stockedBrandsByKey.set(key, list)
+  }
 
   for (const b of allBatches) {
     const key = (b.drug_master_id ?? b.drug_id) as string
@@ -512,6 +528,8 @@ export async function getStock(): Promise<DrugWithStock[]> {
         is_global: isMaster,
         brand_aliases,
         brand_data,
+        stocked_brands: stockedBrandsByKey.get(key) ?? [],
+        is_vaccine: vaccineKeys.has(key),
         total_qty,
         batches,
       }
