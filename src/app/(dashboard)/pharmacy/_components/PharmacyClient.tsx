@@ -19,6 +19,8 @@ import {
   updateBatch, updateDrugReorderLevel,
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
+import VaccinesView from './VaccinesView'
+import type { VaccineOrder, VaccineSupply } from '@/app/actions/vaccination'
 import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
 import { listDispatchedHistory } from '@/app/actions/pharmacy'
@@ -31,7 +33,7 @@ import DispenseModal from './DispenseModal'
 import AddBatchModal from './AddBatchModal'
 import SaleCartBuilder from './SaleCartBuilder'
 
-type TabKey = 'cart' | 'queue' | 'ipd' | 'stock' | 'alerts'
+type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts'
 type BillInfo = { billId: string; billNo: string; status: string }
 
 interface Props {
@@ -44,12 +46,14 @@ interface Props {
   initialAwaitingDispatch: AwaitingDispatchPatient[]
   initialIpdRequests: IpdPharmacyRequest[]
   initialOpdHistory: DispatchedPatientHistory[]
+  initialVaccineOrders: VaccineOrder[]
+  initialVaccineStock: VaccineSupply[]
 }
 
 export default function PharmacyClient({
   initialPending, initialStock, initialAlerts,
   initialReadySales, initialFulfilledSales, allPatients, initialAwaitingDispatch,
-  initialIpdRequests, initialOpdHistory,
+  initialIpdRequests, initialOpdHistory, initialVaccineOrders, initialVaccineStock,
 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
@@ -215,6 +219,9 @@ export default function PharmacyClient({
             { key: 'cart' as TabKey,   label: 'Sale Cart',   shortLabel: 'Cart',    count: initialReadySales.length },
             { key: 'queue' as TabKey,  label: 'Dispense',    shortLabel: 'Dispense', count: pending.length },
             { key: 'ipd' as TabKey,    label: 'IPD Ward',    shortLabel: 'IPD',     count: ipdPendingCount, urgent: ipdPendingCount > 0 },
+            ...(initialVaccineStock.some((v) => v.productId || v.free_supply) || initialVaccineOrders.length
+              ? [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: initialVaccineOrders.filter((o) => o.fulfilment === 'pending').length, urgent: initialVaccineOrders.some((o) => o.fulfilment === 'pending' && (!o.bill || o.bill.paid < o.bill.total)) }]
+              : [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: 0 }]),
             { key: 'stock' as TabKey,  label: 'Stock',       shortLabel: 'Stock',   count: stock.length },
             { key: 'alerts' as TabKey, label: 'Alerts',      shortLabel: 'Alerts',  count: alertCount, urgent: alertCount > 0 },
           ]).map(({ key, label, shortLabel, count, urgent }) => (
@@ -272,6 +279,9 @@ export default function PharmacyClient({
           dispensingId={dispensingIpdId}
           onDispense={handleIpdDispense}
         />
+      )}
+      {tab === 'vaccines' && (
+        <VaccinesView initialOrders={initialVaccineOrders} initialStock={initialVaccineStock} canDispense={canDispense} canManage={canManage} />
       )}
       {tab === 'stock' && <StockView stock={stock} canManage={canManage} onRefresh={refresh} />}
       {tab === 'alerts' && <AlertsView alerts={alerts} />}

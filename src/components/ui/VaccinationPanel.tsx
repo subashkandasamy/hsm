@@ -41,6 +41,7 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
   const [v, setV] = useState(initial)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [open, setOpen] = useState<{ key: string; mode: 'earlier' | 'decline' } | null>(null)
   const [form, setForm] = useState({ date: '', reason: DECLINE_REASONS[0], other: '' })
   const [showHistory, setShowHistory] = useState(initial.needsHistoryCheck)
@@ -49,11 +50,13 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
   const [confirm, setConfirm] = useState<{ kind: 'limit' | 'undo'; dose: DoseStatus } | null>(null)
 
   const refresh = async () => { const next = await getVaccination(patientId); setV(next); onChanged?.(next) }
-  const run = (fn: () => Promise<{ success: boolean; error?: string }>, after?: () => void) => {
-    setError('')
+  const run = (fn: () => Promise<{ success: boolean; error?: string; warning?: string; billNo?: string; amount?: number }>, after?: () => void) => {
+    setError(''); setNotice('')
     startTransition(async () => {
       const res = await fn()
       if (!res.success) { setError(res.error ?? 'Could not save'); return }
+      if (res.warning) setNotice(res.warning)
+      else if (res.billNo) setNotice(`Charged ₹${res.amount} on bill ${res.billNo} — collect at the pharmacy counter.`)
       await refresh(); after?.()
     })
   }
@@ -102,6 +105,14 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
               {actions !== 'missed' && d.lastDate && ` · give by ${fmt(d.lastDate)}`}
             </p>
             {actions === 'now' && d.note && /missed|catch-up/i.test(d.note) && <p className="text-xs" style={{ color: '#92400E' }}>{d.note}</p>}
+            {actions === 'now' && (() => {
+              const sup = v.supply?.[d.vaccine]
+              if (!sup) return null
+              if (sup.free_supply) return <p className="text-xs" style={{ color: '#15803D' }}>Government supply — no charge</p>
+              if (!sup.productId) return <p className="text-xs" style={{ color: '#94A3B8' }}>No pharmacy product linked — record only, nothing charged</p>
+              if (sup.inStock <= 0) return <p className="text-xs" style={{ color: '#B45309' }}>No stock of {sup.productName} — record only, nothing charged</p>
+              return <p className="text-xs" style={{ color: '#475569' }}>In stock: {sup.inStock} · ₹{sup.price} · {sup.productName}</p>
+            })()}
             {d.deferral && <p className="text-xs" style={{ color: '#64748B' }}>Not given on {fmt(d.deferral.deferred_on)}: {d.deferral.reason}</p>}
           </div>
           {canWrite && (
@@ -160,12 +171,15 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
         )}
       </div>
       {error && <p className="text-xs px-3 py-2 rounded-xl" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{error}</p>}
+      {notice && <p className="text-xs px-3 py-2 rounded-xl" style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>{notice}</p>}
 
       {givenTodayDoses.length > 0 && (
         <ul className="flex flex-wrap gap-1.5">
           {givenTodayDoses.map((d) => (
             <li key={d.key} className="inline-flex items-center gap-1.5 text-xs pl-2 pr-1 py-0.5 rounded-md" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534' }}>
               <CheckCircle className="w-3 h-3" /> {d.label} given today
+              {d.given!.fulfilment === 'pending' && <span style={{ color: '#B45309' }}>· ₹{d.given!.charge_amount} {d.given!.bill && d.given!.bill.paid >= d.given!.bill.total ? 'paid, at pharmacy' : 'to collect'}</span>}
+              {d.given!.fulfilment === 'dispensed' && <span style={{ color: '#15803D' }}>· ₹{d.given!.charge_amount} paid{d.given!.batch_no ? ` · batch ${d.given!.batch_no}` : ''}</span>}
               {canWrite && <button type="button" onClick={() => run(() => undoVaccine(d.given!.id))} disabled={isPending} className="px-1 font-semibold" style={{ color: '#64748B', background: 'none', border: 'none', cursor: 'pointer' }}>Undo</button>}
             </li>
           ))}
@@ -215,7 +229,10 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
               {groups.given.map((d) => (
                 <li key={d.key} className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
                   <CheckCircle className="w-3.5 h-3.5 shrink-0" style={{ color: '#15803D' }} />
-                  <span className="flex-1">{d.label} — {d.given!.date_known ? fmt(d.given!.given_date) : 'given earlier, date not known'}</span>
+                  <span className="flex-1">
+                    {d.label} — {d.given!.date_known ? fmt(d.given!.given_date) : 'given earlier, date not known'}
+                    {d.given!.batch_no ? <span style={{ color: '#64748B' }}> · batch {d.given!.batch_no}{d.given!.expiry_date ? `, expiry ${fmt(d.given!.expiry_date)}` : ''}</span> : null}
+                  </span>
                   {canWrite && <button type="button" onClick={() => setConfirm({ kind: 'undo', dose: d })} disabled={isPending} style={{ color: '#64748B', background: 'none', border: 'none', cursor: 'pointer' }}>Undo</button>}
                 </li>
               ))}

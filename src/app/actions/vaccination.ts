@@ -5,13 +5,30 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { istToday } from '@/lib/istDate'
+import { istAddDays as istAddDaysLocal, istToday } from '@/lib/istDate'
+import { createServiceBill } from '@/lib/billing/serviceBill'
 import { dosesDueByNow, vaccinationStatus, type Deferral, type DoseStatus, type GivenDose, type ScheduleRow } from '@/lib/immunization/schedule'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
+/** What the pharmacy holds for a vaccine, and how it is supplied. */
+export interface VaccineSupply {
+  vaccine: string
+  /** Government (UIP) stock — recorded with no charge and no pharmacy step. */
+  free_supply: boolean
+  productId: string | null
+  productIsGlobal: boolean
+  productName: string | null
+  /** Doses in stock (non-expired batches of the mapped product). */
+  inStock: number
+  earliestExpiry: string | null
+  /** Price of the next dose out (MRP of the first-expiry batch). */
+  price: number | null
+}
+
 export interface Vaccination {
+  supply: Record<string, VaccineSupply>
   dob: string | null
   ageDays: number | null
   today: string
@@ -31,24 +48,78 @@ async function load(supabase: SupabaseClient, patientId: string): Promise<Vaccin
   const [{ data: patient }, { data: schedule }, { data: given }, { data: deferrals }, { data: profile }] = await Promise.all([
     supabase.from('patients').select('dob, tenant_id').eq('id', patientId).single(),
     supabase.from('immunization_schedule').select('vaccine, dose_label, due_age_days, min_age_days, max_age_days, prev_vaccine, prev_dose_label, min_interval_days, note, sort_order').order('sort_order'),
-    supabase.from('patient_immunizations').select('id, vaccine, dose_label, given_date, date_known, visit_id').eq('patient_id', patientId),
+    supabase.from('patient_immunizations')
+      .select('id, vaccine, dose_label, given_date, date_known, visit_id, fulfilment, charge_amount, batch_no, expiry_date, bill:bills(bill_no, status, paid, total)')
+      .eq('patient_id', patientId),
     supabase.from('patient_immunization_deferrals').select('vaccine, dose_label, reason, deferred_on').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(100),
     supabase.from('pediatric_profiles').select('vaccine_history_reviewed_at').eq('patient_id', patientId).maybeSingle(),
   ])
   const dob = (patient?.dob as string | null)?.slice(0, 10) ?? null
   const tenantId = (patient?.tenant_id as string | null) ?? null
+  const supply = await loadSupply(supabase, [...new Set((schedule ?? []).map((r) => r.vaccine as string))], today)
   const { data: tenant } = tenantId ? await supabase.from('tenants').select('vaccine_daily_warn_limit').eq('id', tenantId).maybeSingle() : { data: null }
   const givenRows = (given ?? []) as unknown as GivenDose[]
   const doses = dob
     ? vaccinationStatus({ dob, today, schedule: (schedule ?? []) as unknown as ScheduleRow[], given: givenRows, deferrals: (deferrals ?? []) as unknown as Deferral[] })
     : []
   return {
-    tenantId, dob, today, doses,
+    tenantId, dob, today, doses, supply,
     ageDays: dob ? dayDiff(dob, today) : null,
     givenToday: givenRows.filter((g) => g.date_known && g.given_date === today).length,
     dailyWarnLimit: (tenant?.vaccine_daily_warn_limit as number | null) ?? null,
     needsHistoryCheck: !!dob && dayDiff(dob, today) > 0 && givenRows.length === 0 && !profile?.vaccine_history_reviewed_at,
   }
+}
+
+
+/** Vaccine → pharmacy product, free-supply flag and current stock (first-expiry batch price). */
+async function loadSupply(supabase: SupabaseClient, vaccines: string[], today: string): Promise<Record<string, VaccineSupply>> {
+  const out: Record<string, VaccineSupply> = {}
+  for (const v of vaccines) out[v] = { vaccine: v, free_supply: false, productId: null, productIsGlobal: false, productName: null, inStock: 0, earliestExpiry: null, price: null }
+
+  const { data: products } = await supabase.from('vaccine_products').select('vaccine, drug_master_id, drug_id, free_supply')
+  const masterIds: string[] = []
+  const tenantIds: string[] = []
+  for (const p of products ?? []) {
+    const row = out[p.vaccine as string]
+    if (!row) continue
+    row.free_supply = !!p.free_supply
+    row.productId = (p.drug_master_id as string | null) ?? (p.drug_id as string | null)
+    row.productIsGlobal = !!p.drug_master_id
+    if (p.drug_master_id) masterIds.push(p.drug_master_id as string)
+    if (p.drug_id) tenantIds.push(p.drug_id as string)
+  }
+  if (!masterIds.length && !tenantIds.length) return out
+
+  const [{ data: masters }, { data: drugs }, { data: batches }] = await Promise.all([
+    masterIds.length ? supabase.from('drug_master').select('id, name, strength').in('id', masterIds) : Promise.resolve({ data: [] }),
+    tenantIds.length ? supabase.from('drugs').select('id, name, strength').in('id', tenantIds) : Promise.resolve({ data: [] }),
+    supabase.from('drug_batches').select('id, drug_master_id, drug_id, batch_no, expiry, qty_available, mrp, gst_rate, hsn_code')
+      .gt('expiry', today).gt('qty_available', 0).order('expiry'),
+  ])
+  const nameOf = new Map<string, string>()
+  for (const m of [...(masters ?? []), ...(drugs ?? [])]) nameOf.set(m.id as string, `${m.name}${m.strength ? ` ${m.strength}` : ''}`)
+
+  for (const row of Object.values(out)) {
+    if (!row.productId) continue
+    row.productName = nameOf.get(row.productId) ?? null
+    const mine = (batches ?? []).filter((b) => (row.productIsGlobal ? b.drug_master_id : b.drug_id) === row.productId)
+    row.inStock = mine.reduce((n, b) => n + (b.qty_available as number), 0)
+    if (mine.length) {
+      row.earliestExpiry = mine[0].expiry as string
+      row.price = mine[0].mrp as number
+    }
+  }
+  return out
+}
+
+/** First-expiry batch of a vaccine's product with stock left. */
+async function fefoBatch(supabase: SupabaseClient, productId: string, isGlobal: boolean, today: string) {
+  const { data } = await supabase.from('drug_batches')
+    .select('id, batch_no, expiry, qty_available, mrp, gst_rate, hsn_code')
+    .eq(isGlobal ? 'drug_master_id' : 'drug_id', productId)
+    .gt('expiry', today).gt('qty_available', 0).order('expiry').limit(1)
+  return data?.[0] ?? null
 }
 
 export async function getVaccination(patientId: string): Promise<Vaccination> {
@@ -70,7 +141,8 @@ function findDose(v: Vaccination, vaccine: string, dose: string) {
 }
 
 /** Records one vaccine as given today. */
-export async function giveVaccineToday(patientId: string, vaccine: string, doseLabel: string, visitId?: string | null): Promise<SimpleResult> {
+export async function giveVaccineToday(patientId: string, vaccine: string, doseLabel: string, visitId?: string | null):
+  Promise<{ success: true; warning?: string; billNo?: string; amount?: number } | { success: false; error: string }> {
   const actor = await guard()
   const supabase = await createClient()
   const v = await load(supabase, patientId)
@@ -82,13 +154,39 @@ export async function giveVaccineToday(patientId: string, vaccine: string, doseL
     const from = d.earliestDate ? ` (from ${new Date(`${d.earliestDate}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })})` : ''
     return { success: false, error: `${d.label} cannot be given today — ${d.reason}${from}` }
   }
+  const supply = v.supply[vaccine]
+  const id = crypto.randomUUID()
   const { error } = await supabase.from('patient_immunizations').insert({
-    tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id, vaccine, dose_label: doseLabel,
+    id, tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id, vaccine, dose_label: doseLabel,
     given_date: v.today, date_known: true, visit_id: visitId ?? null,
   })
   if (error) return { success: false, error: error.code === '23505' ? `${d.label} is already recorded` : error.message }
   await logAudit(actor.id, 'immunization', 'patient', patientId, { vaccine, dose: doseLabel, visit_id: visitId ?? null })
-  return { success: true }
+
+  // Government supply: nothing to charge and nothing to take out of pharmacy stock.
+  if (!supply || supply.free_supply) return { success: true }
+  if (!supply.productId) {
+    return { success: true, warning: `${d.label} is recorded. Link a pharmacy product to this vaccine to charge it and take it out of stock.` }
+  }
+  const batch = await fefoBatch(supabase, supply.productId, supply.productIsGlobal, v.today)
+  if (!batch) {
+    return { success: true, warning: `${d.label} is recorded, but there is no stock of ${supply.productName ?? 'the vaccine'} — nothing was charged.` }
+  }
+  const bill = await createServiceBill(supabase, {
+    tenantId: actor.tenant_id, patientId, actorId: actor.id, billSource: 'vaccine', visitId: visitId ?? null,
+    lines: [{
+      source: 'vaccine', ref_id: id, description: `${d.label} — ${supply.productName ?? vaccine}`,
+      qty: 1, unit_price: batch.mrp as number,
+      gst_rate: (batch.gst_rate as number | null) ?? null, hsn_sac: (batch.hsn_code as string | null) ?? null,
+    }],
+  })
+  if ('error' in bill) {
+    return { success: true, warning: `${d.label} is recorded, but the charge could not be raised: ${bill.error}` }
+  }
+  await supabase.from('patient_immunizations')
+    .update({ fulfilment: 'pending', bill_id: bill.billId, charge_amount: batch.mrp as number })
+    .eq('id', id)
+  return { success: true, billNo: bill.billNo, amount: batch.mrp as number }
 }
 
 async function insertEarlier(supabase: SupabaseClient, actor: { id: string; tenant_id: string }, v: Vaccination, patientId: string, d: DoseStatus, date: string | null) {
@@ -142,6 +240,20 @@ export async function declineVaccine(patientId: string, vaccine: string, doseLab
 export async function undoVaccine(immunizationId: string): Promise<SimpleResult> {
   const actor = await guard()
   const supabase = await createClient()
+  // A dose already paid for / taken out of stock can't just disappear — the bill
+  // has to be cancelled or credit-noted in Billing first.
+  const { data: row } = await supabase.from('patient_immunizations')
+    .select('fulfilment, bill_id, bill:bills(bill_no, status, paid)').eq('id', immunizationId).maybeSingle()
+  if (row?.fulfilment === 'dispensed') {
+    return { success: false, error: 'This vaccine was dispensed from pharmacy stock — cancel or credit-note the bill in Billing first.' }
+  }
+  const bill = row?.bill as unknown as { bill_no: string; status: string; paid: number } | null
+  if (bill && (bill.paid > 0 || bill.status === 'paid')) {
+    return { success: false, error: `Bill ${bill.bill_no} is already paid — refund or credit-note it in Billing first.` }
+  }
+  if (row?.bill_id && bill && bill.status !== 'cancelled') {
+    await supabase.from('bills').update({ status: 'cancelled' }).eq('id', row.bill_id)
+  }
   const { data, error } = await supabase.from('patient_immunizations').delete().eq('id', immunizationId)
     .select('patient_id, vaccine, dose_label, given_date')
   if (error) return { success: false, error: error.message }
@@ -197,4 +309,158 @@ export async function getVaccineDailyWarnLimit(): Promise<number | null> {
   const supabase = await createClient()
   const { data } = await supabase.from('tenants').select('vaccine_daily_warn_limit').eq('id', actor.tenant_id).maybeSingle()
   return (data?.vaccine_daily_warn_limit as number | null) ?? null
+}
+
+// ── Pharmacy: vaccine stock, orders and dispensing ───────────────────────────
+
+export interface VaccineOrder {
+  id: string
+  patient: { id: string; full_name: string; uhid: string; dob: string | null }
+  vaccine: string
+  dose_label: string
+  given_date: string
+  fulfilment: 'pending' | 'dispensed'
+  charge_amount: number | null
+  bill: { id: string; bill_no: string; status: string; paid: number; total: number } | null
+  batch_no: string | null
+  expiry_date: string | null
+  productName: string | null
+  inStock: number
+}
+
+/** Vaccines given today (and any still waiting) for the pharmacy's Vaccines tab. */
+export async function listVaccineOrders(): Promise<VaccineOrder[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const since = istAddDaysLocal(istToday(), -7)
+  const { data } = await supabase.from('patient_immunizations')
+    .select('id, vaccine, dose_label, given_date, fulfilment, charge_amount, batch_no, expiry_date, patient:patients(id, full_name, uhid, dob), bill:bills(id, bill_no, status, paid, total)')
+    .in('fulfilment', ['pending', 'dispensed'])
+    .gte('given_date', since)
+    .order('given_date', { ascending: false })
+  const rows = (data ?? []) as unknown as Array<Record<string, unknown>>
+  const supply = await loadSupply(supabase, [...new Set(rows.map((r) => r.vaccine as string))], istToday())
+  return rows.map((r) => ({
+    id: r.id as string,
+    patient: r.patient as VaccineOrder['patient'],
+    vaccine: r.vaccine as string,
+    dose_label: r.dose_label as string,
+    given_date: r.given_date as string,
+    fulfilment: r.fulfilment as 'pending' | 'dispensed',
+    charge_amount: (r.charge_amount as number | null) ?? null,
+    bill: (r.bill as VaccineOrder['bill']) ?? null,
+    batch_no: (r.batch_no as string | null) ?? null,
+    expiry_date: (r.expiry_date as string | null) ?? null,
+    productName: supply[r.vaccine as string]?.productName ?? null,
+    inStock: supply[r.vaccine as string]?.inStock ?? 0,
+  }))
+}
+
+/** Hands the vial over: only once the bill is paid. Takes it out of stock (first expiry first). */
+export async function dispenseVaccine(immunizationId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:dispense')
+  const supabase = await createClient()
+  const { data: row } = await supabase.from('patient_immunizations')
+    .select('id, patient_id, vaccine, dose_label, fulfilment, bill:bills(bill_no, status, paid, total)')
+    .eq('id', immunizationId).maybeSingle()
+  if (!row) return { success: false, error: 'Vaccine record not found' }
+  if (row.fulfilment === 'dispensed') return { success: false, error: 'Already dispensed' }
+  if (row.fulfilment !== 'pending') return { success: false, error: 'Nothing to dispense for this vaccine' }
+  const bill = row.bill as unknown as { bill_no: string; status: string; paid: number; total: number } | null
+  if (!bill) return { success: false, error: 'No bill for this vaccine' }
+  if (bill.status === 'cancelled') return { success: false, error: `Bill ${bill.bill_no} is cancelled` }
+  if (bill.paid < bill.total) {
+    return { success: false, error: `Bill ${bill.bill_no} is not paid yet — collect ₹${(bill.total - bill.paid).toFixed(2)} first.` }
+  }
+
+  const today = istToday()
+  const supply = await loadSupply(supabase, [row.vaccine as string], today)
+  const s = supply[row.vaccine as string]
+  if (!s?.productId) return { success: false, error: 'No pharmacy product is linked to this vaccine' }
+  const batch = await fefoBatch(supabase, s.productId, s.productIsGlobal, today)
+  if (!batch) return { success: false, error: `No stock of ${s.productName ?? row.vaccine} — add stock first.` }
+
+  const dispenseId = crypto.randomUUID()
+  const { data: result, error: rpcErr } = await supabase.rpc('dispense_drug', {
+    p_dispense_id: dispenseId,
+    p_patient_id: row.patient_id,
+    p_prescription_id: null,
+    p_drug_id: s.productIsGlobal ? null : s.productId,
+    p_drug_master_id: s.productIsGlobal ? s.productId : null,
+    p_batch_id: batch.id,
+    p_qty: 1,
+    p_price_snapshot: batch.mrp,
+    p_dispensed_by: actor.id,
+  })
+  if (rpcErr) return { success: false, error: rpcErr.message }
+  const r = result as { ok: boolean; error?: string }
+  if (!r.ok) return { success: false, error: r.error ?? 'Could not take the vaccine out of stock' }
+
+  // Already billed with the vaccination — keep the pharmacy bill builder off it.
+  await supabase.from('dispenses').update({ billing_status: 'billed' }).eq('id', dispenseId)
+  const { error } = await supabase.from('patient_immunizations').update({
+    fulfilment: 'dispensed', dispense_id: dispenseId, drug_batch_id: batch.id,
+    batch_no: batch.batch_no, expiry_date: batch.expiry,
+  }).eq('id', immunizationId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'vaccine_dispense', 'patient', row.patient_id as string, { vaccine: row.vaccine, dose: row.dose_label, batch: batch.batch_no })
+  return { success: true }
+}
+
+/** Cancels the pharmacy order for a recorded vaccine (unpaid only); the dose stays recorded. */
+export async function cancelVaccineOrder(immunizationId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data: row } = await supabase.from('patient_immunizations')
+    .select('id, patient_id, vaccine, fulfilment, bill_id, bill:bills(bill_no, status, paid)').eq('id', immunizationId).maybeSingle()
+  if (!row) return { success: false, error: 'Vaccine record not found' }
+  if (row.fulfilment !== 'pending') return { success: false, error: 'Only a waiting order can be cancelled' }
+  const bill = row.bill as unknown as { bill_no: string; status: string; paid: number } | null
+  if (bill && bill.paid > 0) return { success: false, error: `Bill ${bill.bill_no} is already paid — refund or credit-note it in Billing.` }
+  if (row.bill_id) await supabase.from('bills').update({ status: 'cancelled' }).eq('id', row.bill_id)
+  const { error } = await supabase.from('patient_immunizations')
+    .update({ fulfilment: 'cancelled', bill_id: null, charge_amount: null }).eq('id', immunizationId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'vaccine_order_cancel', 'patient', row.patient_id as string, { vaccine: row.vaccine })
+  return { success: true }
+}
+
+/** The Vaccines tab's stock list: one row per vaccine of the schedule. */
+export async function listVaccineStock(): Promise<VaccineSupply[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data: schedule } = await supabase.from('immunization_schedule').select('vaccine, sort_order').order('sort_order')
+  const vaccines: string[] = []
+  for (const r of schedule ?? []) if (!vaccines.includes(r.vaccine as string)) vaccines.push(r.vaccine as string)
+  const supply = await loadSupply(supabase, vaccines, istToday())
+  return vaccines.map((v) => supply[v])
+}
+
+/** Links a vaccine to a pharmacy product, or marks it as government (free) supply. */
+export async function setVaccineProduct(
+  vaccine: string,
+  input: { productId?: string | null; productIsGlobal?: boolean; freeSupply?: boolean },
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  const supabase = await createClient()
+  const { count } = await supabase.from('immunization_schedule').select('vaccine', { count: 'exact', head: true }).eq('vaccine', vaccine)
+  if (!count) return { success: false, error: 'Unknown vaccine' }
+  const { error } = await supabase.from('vaccine_products').upsert({
+    tenant_id: actor.tenant_id, vaccine,
+    drug_master_id: input.productId && input.productIsGlobal ? input.productId : null,
+    drug_id: input.productId && !input.productIsGlobal ? input.productId : null,
+    free_supply: !!input.freeSupply,
+    updated_by: actor.id, updated_at: new Date().toISOString(),
+  }, { onConflict: 'tenant_id,vaccine' })
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'vaccine_product', 'tenant', actor.tenant_id, { vaccine, ...input })
+  return { success: true }
 }

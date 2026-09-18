@@ -9,10 +9,11 @@ import {
 import { listPharmacySales } from '@/app/actions/pharmacySale'
 import { listPatients } from '@/app/actions/patients'
 import { listIpdPharmacyRequests } from '@/app/actions/ipdTreatment'
+import { listVaccineOrders, listVaccineStock } from '@/app/actions/vaccination'
 import PharmacyClient from './_components/PharmacyClient'
 
 export default async function PharmacyPage() {
-  const [pending, stock, alerts, readySales, fulfilledSales, patients, awaitingDispatch, ipdRequests, opdHistory] = await Promise.all([
+  const [pending, stock, alerts, readySales, fulfilledSales, patients, awaitingDispatch, ipdRequests, opdHistory, vaccineOrders, vaccineStock] = await Promise.all([
     listPendingPrescriptions(),
     getStock(),
     getAlerts(),
@@ -22,6 +23,8 @@ export default async function PharmacyPage() {
     listPackedAwaitingDispatch(),
     listIpdPharmacyRequests(),
     listDispatchedHistory(),
+    listVaccineOrders().catch(() => []),
+    listVaccineStock().catch(() => []),
   ])
 
   return (
@@ -35,6 +38,8 @@ export default async function PharmacyPage() {
       initialAwaitingDispatch={awaitingDispatch}
       initialIpdRequests={ipdRequests}
       initialOpdHistory={opdHistory}
+      initialVaccineOrders={vaccineOrders}
+      initialVaccineStock={vaccineStock}
     />
   )
 }

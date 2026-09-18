@@ -23,6 +23,7 @@ export function gstForSource(
     case 'pharmacy':
     case 'ipd_pharmacy':
     case 'pharmacy_sale_item':
+    case 'vaccine':
       return { rate: cfg.pharmacyRate, inclusive: true }
     case 'ot_consumable':
       return { rate: 12, inclusive: false }

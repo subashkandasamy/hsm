@@ -630,7 +630,7 @@ export interface BloodInventoryCell {
 
 export type BillStatus = 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled'
 export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'insurance' | 'advance'
-export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'icu'
+export type BillItemSource = 'consultation' | 'bed' | 'lab' | 'radiology' | 'pharmacy' | 'ipd_pharmacy' | 'pharmacy_sale_item' | 'ot' | 'ot_consumable' | 'blood' | 'dental' | 'manual' | 'nursing' | 'nursing_morning' | 'nursing_night' | 'icu' | 'vaccine'
 
 export interface Tariff { id: string; key: string; label: string | null; amount: number }
 

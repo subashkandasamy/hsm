@@ -25,6 +25,12 @@ export interface GivenDose {
   given_date: string
   date_known: boolean
   visit_id: string | null
+  /** Pharmacy side: not_required (free / given elsewhere), pending, dispensed, cancelled. */
+  fulfilment?: 'not_required' | 'pending' | 'dispensed' | 'cancelled'
+  charge_amount?: number | null
+  batch_no?: string | null
+  expiry_date?: string | null
+  bill?: { bill_no: string; status: string; paid: number; total: number } | null
 }
 
 export interface Deferral { vaccine: string; dose_label: string; reason: string; deferred_on: string }

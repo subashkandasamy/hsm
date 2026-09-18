@@ -4,7 +4,7 @@ import { reconcileBill } from '@/lib/billing/reconcile'
 import { stampBillItem, type IpdBillLineItem } from '@/lib/ipdBilling'
 import { istToday } from '@/lib/istDate'
 
-export type ServiceBillSource = 'consultation' | 'lab' | 'radiology' | 'ot' | 'blood' | 'manual'
+export type ServiceBillSource = 'consultation' | 'lab' | 'radiology' | 'ot' | 'blood' | 'manual' | 'vaccine'
 
 /**
  * Raises a standalone bill for a service (e.g. a consultation fee at booking or
