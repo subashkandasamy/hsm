@@ -11,6 +11,7 @@ import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
+import { parseScan, type ScannedCode } from '@/lib/pharmacy/scan'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -281,6 +282,137 @@ export async function lastSupplier(): Promise<string | null> {
     .select('supplier_name').not('supplier_name', 'is', null)
     .order('created_at', { ascending: false }).limit(1)
   return (data?.[0]?.supplier_name as string | null) ?? null
+}
+
+// ---- Scanned packs ----------------------------------------------------------
+
+/** A medicine as the counter needs it after a scan. */
+export interface ScannedProduct {
+  id: string
+  isGlobal: boolean
+  name: string
+  brandName: string | null
+  form: string | null
+  strength: string | null
+  /** Units in date and on the shelf — 0 means there is nothing to sell. */
+  available: number
+}
+
+export type CodeLookup =
+  | { status: 'unreadable' }
+  | { status: 'known'; product: ScannedProduct; scanned: ScannedCode }
+  | { status: 'unknown'; scanned: ScannedCode }
+
+/** Loads a medicine and its sellable quantity, for either catalogue. */
+async function scannedProduct(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ref: { masterId: string | null; drugId: string | null },
+  brandName: string | null,
+): Promise<ScannedProduct | null> {
+  const id = ref.masterId ?? ref.drugId
+  if (!id) return null
+  const { data: row } = ref.masterId
+    ? await supabase.from('drug_master').select('id, name, form, strength').eq('id', ref.masterId).maybeSingle()
+    : await supabase.from('drugs').select('id, name, form, strength').eq('id', ref.drugId!).maybeSingle()
+  if (!row) return null
+
+  const column = ref.masterId ? 'drug_master_id' : 'drug_id'
+  const { data: batches } = await supabase.from('drug_batches')
+    .select('qty_available').eq(column, id).gt('expiry', istToday()).gt('qty_available', 0)
+
+  return {
+    id: row.id as string,
+    isGlobal: !!ref.masterId,
+    name: row.name as string,
+    brandName,
+    form: (row.form as string | null) ?? null,
+    strength: (row.strength as string | null) ?? null,
+    available: (batches ?? []).reduce((sum, b) => sum + ((b.qty_available as number) ?? 0), 0),
+  }
+}
+
+/**
+ * Says what a scanned pack is.
+ *
+ * A code the counter has been taught before comes back as a medicine. Anything
+ * else comes back as 'unknown' with whatever the code itself carried, so the
+ * screen can offer to learn it.
+ */
+export async function resolveProductCode(rawCode: string): Promise<CodeLookup> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+
+  const scanned = parseScan(rawCode)
+  if (!scanned) return { status: 'unreadable' }
+
+  const supabase = await createClient()
+  const { data: known } = await supabase.from('product_codes')
+    .select('id, drug_master_id, drug_id, brand_name, times_used')
+    .eq('code', scanned.key).maybeSingle()
+
+  if (!known) return { status: 'unknown', scanned }
+
+  const product = await scannedProduct(
+    supabase,
+    { masterId: (known.drug_master_id as string | null) ?? null, drugId: (known.drug_id as string | null) ?? null },
+    (known.brand_name as string | null) ?? null,
+  )
+  // The medicine behind a taught code was removed — treat the code as unknown
+  // again rather than failing the scan.
+  if (!product) return { status: 'unknown', scanned }
+
+  await supabase.from('product_codes')
+    .update({ times_used: ((known.times_used as number) ?? 0) + 1, last_used_at: new Date().toISOString() })
+    .eq('id', known.id as string)
+
+  return { status: 'known', product, scanned }
+}
+
+/**
+ * Teaches the counter what a code is. The first person to scan an unknown pack
+ * says once what it is; everyone after that just scans.
+ */
+export async function rememberProductCode(
+  rawCode: string,
+  ref: { id: string; isGlobal: boolean },
+  brandName: string | null,
+  options?: { replace?: boolean },
+): Promise<{ success: true; product: ScannedProduct } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:sale')
+
+  const scanned = parseScan(rawCode)
+  if (!scanned) return { success: false, error: 'That code could not be read' }
+
+  const supabase = await createClient()
+  const row = {
+    tenant_id: actor.tenant_id,
+    code: scanned.key,
+    kind: scanned.kind,
+    drug_master_id: ref.isGlobal ? ref.id : null,
+    drug_id: ref.isGlobal ? null : ref.id,
+    brand_name: brandName,
+    created_by: actor.id,
+  }
+
+  const { error } = options?.replace
+    ? await supabase.from('product_codes').upsert(row, { onConflict: 'tenant_id,code' })
+    : await supabase.from('product_codes').insert(row)
+
+  if (error) {
+    // Two counters taught the same pack at once — the first one stands.
+    if (error.code === '23505') return { success: false, error: 'That code was just taught to another medicine — scan it again to see' }
+    return { success: false, error: error.message }
+  }
+
+  const product = await scannedProduct(supabase, { masterId: row.drug_master_id, drugId: row.drug_id }, brandName)
+  if (!product) return { success: false, error: 'That medicine could not be loaded' }
+
+  await logAudit(actor.id, options?.replace ? 'product_code_replace' : 'product_code_teach', 'pharmacy', ref.id, {
+    code: scanned.key, kind: scanned.kind, brand: brandName,
+  })
+  return { success: true, product }
 }
 
 /** One invoice line paired with what the catalogue thinks it is. */

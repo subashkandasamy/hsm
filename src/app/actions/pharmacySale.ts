@@ -74,7 +74,11 @@ export async function addSaleItem(params: {
     .order('expiry', { ascending: true })
     .limit(1)
 
-  const unitPrice = (batches?.[0]?.mrp as number) ?? 0
+  // No batch in date means there is nothing to sell. Without this the line was
+  // added at ₹0 and the patient was billed nothing for it.
+  if (!batches?.length) return { success: false, error: 'That medicine has no stock in date — nothing to sell' }
+  const unitPrice = (batches[0].mrp as number) ?? 0
+  if (unitPrice <= 0) return { success: false, error: 'That batch has no MRP set — fix it in Stock before selling' }
 
   const id = crypto.randomUUID()
   const { error } = await supabase.from('pharmacy_sale_items').insert({

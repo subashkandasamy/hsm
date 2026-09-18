@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   ShoppingCart, Plus, Minus, Trash2, CheckCircle2,
   Search, Package, User2, CreditCard, Truck, Loader2, X, AlertCircle,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, ScanBarcode,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Money from '@/components/ui/Money'
@@ -12,7 +12,8 @@ import {
   startPharmacySale, addSaleItem, updateSaleItemQty, removeSaleItem,
   finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
 } from '@/app/actions/pharmacySale'
-import { checkBillStatus } from '@/app/actions/pharmacy'
+import { checkBillStatus, resolveProductCode, rememberProductCode, type ScannedProduct } from '@/app/actions/pharmacy'
+import { useScanListener } from '@/lib/hooks/useScanListener'
 import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
 
 interface Props {
@@ -35,6 +36,16 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
   // drugId → brand/display name chosen by the pharmacist — persists through finalize so
   // the fulfillment queue also shows the brand label in the same session
   const [displayNameMap, setDisplayNameMap] = useState<Map<string, string>>(new Map())
+
+  // Scanning
+  const [scanMsg, setScanMsg] = useState<{ id: number; tone: 'ok' | 'warn'; text: string } | null>(null)
+  const [scanBusy, setScanBusy] = useState(false)
+  /** An unrecognised pack, waiting for someone to say what it is. */
+  const [teach, setTeach] = useState<{ code: string; query: string } | null>(null)
+  const [typedCode, setTypedCode] = useState('')
+  /** Latches one scan at a time: two fast scans must not both add a new line. */
+  const scanBusyRef = useRef(false)
+  const flashSeq = useRef(0)
 
   // Fulfillment queue state
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
@@ -79,6 +90,17 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     ).slice(0, 8)
   }, [patientQuery, allPatients, selectedPatient])
 
+  const teachMatches = useMemo(() => {
+    const q = (teach?.query ?? '').trim().toLowerCase()
+    if (q.length < 2) return []
+    return drugs.filter((d) =>
+      d.name.toLowerCase().includes(q) ||
+      (d.generic_name ?? '').toLowerCase().includes(q) ||
+      (d.stocked_brands ?? []).some(b => b.toLowerCase().includes(q)) ||
+      (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
+    ).slice(0, 8)
+  }, [teach, drugs])
+
   const filteredDrugs = useMemo(() => {
     const q = drugQuery.toLowerCase()
     return drugs.filter((d) =>
@@ -105,6 +127,73 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     const updated = await getPharmacySale(activeSale.id)
     setActiveSale(updated); setSelectedDrugId(''); setDrugQuery(''); setAddQty(1); setCartPending(false)
   }
+
+  /** Puts a scanned medicine in the cart, or adds one to the line already there. */
+  async function addScanned(product: ScannedProduct, sale: PharmacySale) {
+    if (product.available <= 0) {
+      flashScan('warn', `${product.brandName ?? product.name} has no stock in date`)
+      return
+    }
+    const label = product.brandName ?? product.name
+    setDisplayNameMap((prev) => new Map([...prev, [product.id, label]]))
+
+    // Read the cart as it stands now: scans can arrive faster than state settles.
+    const current = await getPharmacySale(sale.id)
+    const existing = (current?.items ?? []).find((i) => (i.drug_id ?? i.drug_master_id) === product.id)
+    const res = existing
+      ? await updateSaleItemQty(existing.id, existing.qty + 1)
+      : await addSaleItem({ saleId: sale.id, drugId: product.id, qty: 1 })
+    if (!res.success) { flashScan('warn', res.error); return }
+
+    setActiveSale(await getPharmacySale(sale.id))
+    flashScan('ok', `${label}${product.strength ? ` ${product.strength}` : ''} added`)
+  }
+
+  function flashScan(tone: 'ok' | 'warn', text: string) {
+    // Identified, not compared by text: scanning the same pack twice shows the
+    // same words, and the older timer must not clear the newer message.
+    const id = ++flashSeq.current
+    setScanMsg({ id, tone, text })
+    setTimeout(() => setScanMsg((m) => (m?.id === id ? null : m)), 3500)
+  }
+
+  /** Every scan arrives here, whether from the hardware scanner or typed in. */
+  async function handleScan(code: string) {
+    if (scanBusyRef.current) return
+    const sale = activeSale
+    if (!sale) { flashScan('warn', 'Choose a patient and start a cart first'); return }
+    scanBusyRef.current = true
+    setScanBusy(true)
+    setTeach(null)
+    try {
+      const found = await resolveProductCode(code)
+      if (found.status === 'unreadable') { flashScan('warn', 'That code could not be read'); return }
+      if (found.status === 'known') { await addScanned(found.product, sale); return }
+      // Never seen before: ask once what it is.
+      setTeach({ code: found.scanned.raw, query: '' })
+      flashScan('warn', 'New pack — tell the counter what this is, once')
+    } finally {
+      scanBusyRef.current = false
+      setScanBusy(false)
+      setTypedCode('')
+    }
+  }
+
+  /** Remembers the pack against the medicine just picked, then bills it. */
+  async function teachAs(drugId: string, isGlobal: boolean, brand: string | null) {
+    const sale = activeSale
+    if (!teach || !sale) return
+    setScanBusy(true)
+    const res = await rememberProductCode(teach.code, { id: drugId, isGlobal }, brand)
+    setScanBusy(false)
+    if (!res.success) { flashScan('warn', res.error); return }
+    setTeach(null)
+    await addScanned(res.product, sale)
+  }
+
+  // A hardware scanner types very fast and presses Enter — catch that anywhere on
+  // the page, except while the cursor is in a text box.
+  useScanListener((code) => { void handleScan(code) }, true)
 
   async function changeQty(itemId: string, qty: number) {
     if (qty < 1 || !activeSale) return
@@ -299,7 +388,82 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                 {/* Add medicine */}
                 <div className="rounded-xl p-3 space-y-2"
                   style={{ background: 'rgba(13,148,136,0.03)', border: '1px solid rgba(13,148,136,0.15)' }}>
-                  <p className="text-xs font-semibold" style={{ color: '#0D9488' }}>ADD MEDICINE</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs font-semibold" style={{ color: '#0D9488' }}>ADD MEDICINE</p>
+                    {scanMsg && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={scanMsg.tone === 'ok'
+                          ? { background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }
+                          : { background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                        {scanMsg.text}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Scan a pack — a hardware scanner works without clicking here first */}
+                  <div className="flex items-center gap-2 px-2.5 rounded-lg"
+                    style={{ border: '1px dashed #CBD5E1', background: '#fff', minHeight: '38px' }}>
+                    {scanBusy
+                      ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#0D9488' }} />
+                      : <ScanBarcode className="w-4 h-4 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+                    <input
+                      value={typedCode}
+                      onChange={(e) => setTypedCode(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && typedCode.trim()) { e.preventDefault(); void handleScan(typedCode.trim()) } }}
+                      placeholder="Scan the pack, or type its code"
+                      className="flex-1 text-sm py-2"
+                      style={{ border: 'none', outline: 'none', color: '#0F172A', background: 'transparent' }} />
+                  </div>
+
+                  {/* An unknown pack: taught once, then it always scans */}
+                  {teach && (
+                    <div className="rounded-lg p-2.5 space-y-2"
+                      style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold" style={{ color: '#92400E' }}>Which medicine is this?</p>
+                          <p className="text-xs font-mono truncate" style={{ color: '#B45309' }}>{teach.code}</p>
+                        </div>
+                        <button onClick={() => setTeach(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B45309' }}>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <input
+                        autoFocus
+                        value={teach.query}
+                        onChange={(e) => setTeach((t) => (t ? { ...t, query: e.target.value } : t))}
+                        placeholder="Search what you stock…"
+                        className="w-full px-3 py-2 rounded-lg text-sm"
+                        style={{ border: '1px solid #FDE68A', color: '#0F172A', background: '#fff', outline: 'none' }} />
+                      {teach.query.trim().length >= 2 && (
+                        <ul className="rounded-lg overflow-hidden" style={{ background: '#fff', border: '1px solid #FDE68A', maxHeight: 180, overflowY: 'auto' }}>
+                          {teachMatches.length === 0 && (
+                            <li className="px-3 py-2 text-xs" style={{ color: '#94A3B8' }}>Nothing in stock matches that.</li>
+                          )}
+                          {teachMatches.map((d) => {
+                            const q = teach.query.toLowerCase()
+                            const brand = (d.stocked_brands ?? []).find(b => b.toLowerCase().includes(q))
+                              ?? (d.stocked_brands ?? [])[0] ?? null
+                            return (
+                              <li key={d.id}>
+                                <button type="button" onClick={() => void teachAs(d.id, !!d.is_global, brand)}
+                                  disabled={scanBusy}
+                                  className="w-full text-left px-3 py-2 text-sm"
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                                  <span className="font-medium" style={{ color: '#0F172A' }}>{brand ?? d.name}</span>
+                                  {d.strength && <span className="ml-1 text-xs" style={{ color: '#94A3B8' }}>{d.strength}</span>}
+                                  <span className="block text-xs" style={{ color: '#94A3B8' }}>
+                                    {brand ? `${d.name} · ` : ''}{d.total_qty} in stock
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                      <p className="text-xs" style={{ color: '#B45309' }}>Told once — this pack scans straight into the bill from now on.</p>
+                    </div>
+                  )}
                   <div className="relative">
                     <input type="text" placeholder="Search drug by name…"
                       value={drugQuery}
