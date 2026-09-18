@@ -6,6 +6,7 @@ import { RefreshCw, Building2, Landmark, Search, ChevronRight, Tag, FileStack, L
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
+import { claimHeadline } from '@/lib/insurance/claimAmount'
 import Money from '@/components/ui/Money'
 import EmptyState from '@/components/ui/EmptyState'
 import { listClaims } from '@/app/actions/insurance'
@@ -37,6 +38,7 @@ const STATUS_LABEL: Record<InsuranceClaimStatus, string> = {
   rejected:              'Rejected',
   settled:               'Settled',
 }
+
 
 type Tab = 'in_progress' | 'approved' | 'rejected' | 'settled' | 'history'
 
@@ -299,9 +301,14 @@ export default function InsuranceClient({ initialClaims, receivables, initialTpa
                     <StatusBadge status={STATUS_MAP[card.latest.status]} label={STATUS_LABEL[card.latest.status]} />
                   </div>
                   <div className="space-y-1 text-xs" style={{ color: '#64748B' }}>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-baseline gap-2">
                       <span>{card.latest.admission_id ? 'IPD' : card.latest.visit_id ? 'OPD' : 'Bill'}</span>
-                      <Money amount={card.latest.claim_amount ?? card.latest.estimated_amount ?? 0} className="font-semibold" />
+                      <span className="text-right">
+                        <Money amount={claimHeadline(card.latest).amount} className="font-semibold" />
+                        {claimHeadline(card.latest).note && (
+                          <span className="block" style={{ color: '#B45309' }}>{claimHeadline(card.latest).note}</span>
+                        )}
+                      </span>
                     </div>
                     <p style={{ color: '#CBD5E1' }}>{card.latest.policy?.provider} · {card.latest.policy?.policy_no}</p>
                   </div>

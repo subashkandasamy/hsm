@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronRight, BedDouble, Stethoscope, RotateCcw } from 'luci
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
+import { claimHeadline } from '@/lib/insurance/claimAmount'
 import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
@@ -83,9 +84,14 @@ export default function InsurancePatientClient({ patient, initialEncounters }: P
 
                 {latest ? (
                   <div className="space-y-1 text-xs" style={{ color: '#64748B' }}>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-baseline gap-2">
                       <span>{latest.policy?.provider ?? '—'}</span>
-                      <Money amount={latest.claim_amount ?? latest.estimated_amount ?? 0} className="font-semibold" />
+                      <span className="text-right">
+                        <Money amount={claimHeadline(latest).amount} className="font-semibold" />
+                        {claimHeadline(latest).note && (
+                          <span className="block" style={{ color: '#B45309' }}>{claimHeadline(latest).note}</span>
+                        )}
+                      </span>
                     </div>
                   </div>
                 ) : (
