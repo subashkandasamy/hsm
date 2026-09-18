@@ -2,11 +2,12 @@
 
 import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Plus, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Loader2, Plus, ScanBarcode, Search, Trash2, X } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
-import { lastBatchFor, receiveStock, type PrefillLine, type StockReceiptHeader, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
+import { lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
+import { useScanListener } from '@/lib/hooks/useScanListener'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
 import ImportInvoicePanel, { type ImportedLine } from './ImportInvoicePanel'
@@ -31,6 +32,10 @@ interface Line {
   storage: string
   reorder: string
   showMore: boolean
+  /** A scanned pack the counter has not been taught yet — remembered once the
+   *  medicine on this line is picked. */
+  scanCode?: string
+  scanNote?: string
   /** The medicine name as an imported invoice spelt it, when it came from a file. */
   rawName?: string
   /** The catalogue match was a guess — worth a glance before saving. */
@@ -63,6 +68,9 @@ export function expiryToDate(mmyy: string): string | null {
   const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
   return last
 }
+/** '2028-09-30' → '09/28', the form's own way of writing an expiry. */
+const isoToMmYy = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(2, 4)}`
+
 const monthsUntil = (iso: string) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.now()) / (30.44 * 86400000))
 
 interface Props {
@@ -88,6 +96,13 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
     if (initialDrug) return [applyDrug(l, initialDrug, null)]
     return [l]
   })
+
+  const [scanMsg, setScanMsg] = useState<{ id: number; tone: 'ok' | 'warn'; text: string } | null>(null)
+  const [scanBusy, setScanBusy] = useState(false)
+  const scanBusyRef = useRef(false)
+  const flashSeq = useRef(0)
+  const scanBoxRef = useRef<HTMLInputElement>(null)
+  const [typedCode, setTypedCode] = useState('')
 
   const [importing, setImporting] = useState(false)
   const [imported, setImported] = useState<{ total: number; unmatched: number; unsure: number } | null>(null)
@@ -134,6 +149,91 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
     })
     setImporting(false)
   }
+
+  function flashScan(tone: 'ok' | 'warn', text: string) {
+    const id = ++flashSeq.current
+    setScanMsg({ id, tone, text })
+    setTimeout(() => setScanMsg((m) => (m?.id === id ? null : m)), 4000)
+  }
+
+  /**
+   * A scanned pack goes onto the first line still empty, or onto a new one.
+   * Receiving is the best moment to learn a code: the box is in your hand and
+   * you are about to say what it is anyway.
+   */
+  async function handleScan(code: string) {
+    if (scanBusyRef.current) return
+    scanBusyRef.current = true
+    setScanBusy(true)
+    try {
+      const found = await resolveProductCode(code)
+      if (found.status === 'unreadable') { flashScan('warn', 'That code could not be read'); return }
+
+      // Where to put it: the first untouched row, else a fresh one.
+      let key = lines.find((l) => !l.drug && !l.batch && !l.packs && !l.scanCode)?.key
+      if (!key) {
+        const fresh = newLine()
+        key = fresh.key
+        setLines((ls) => [...ls, fresh])
+      }
+
+      const g = found.scanned
+      const fromCode: Partial<Line> = {
+        ...(g.batch ? { batch: g.batch } : {}),
+        ...(g.expiry ? { expiry: isoToMmYy(g.expiry) } : {}),
+      }
+
+      if (found.status === 'unknown') {
+        set(key, { ...fromCode, scanCode: g.raw })
+        flashScan('warn', g.batch || g.expiry
+          ? 'New pack — batch and expiry read from the code. Pick the medicine and it will be remembered.'
+          : 'New pack — pick the medicine and this code will be remembered.')
+        return
+      }
+
+      const p = found.product
+      // What the last purchase of this medicine knew — pack, rate, HSN, GST — and
+      // where it was never bought before, what the catalogue says about the brand.
+      const last = await lastBatchFor({ id: p.id, isGlobal: p.isGlobal })
+      const b = p.brand
+      set(key, {
+        drug: { id: p.id, name: p.name, generic_name: null, form: p.form, strength: p.strength, unit: null, is_active: true, is_global: p.isGlobal },
+        brandName: p.brandName,
+        packSize: String(last?.pack_size ?? b?.pack_size ?? 1),
+        packUnit: last?.pack_unit ?? b?.pack_unit ?? 'strip',
+        hsn: last?.hsn_code ?? b?.hsn_code ?? '30049099',
+        gst: String(last?.gst_rate ?? b?.gst_rate ?? 12),
+        manufacturer: last?.manufacturer ?? b?.manufacturer ?? '',
+        ...(last ? {
+          mrp: last.mrp != null ? String(last.mrp) : '',
+          rate: last.purchase_price != null ? String(last.purchase_price) : '',
+          storage: last.storage_location ?? '',
+        } : {}),
+        ...fromCode,
+      })
+      flashScan('ok', `${p.brandName ?? p.name}${g.batch ? ` · batch ${g.batch}` : ''}${g.expiry ? ` · exp ${isoToMmYy(g.expiry)}` : ''}`)
+    } finally {
+      scanBusyRef.current = false
+      setScanBusy(false)
+      setTypedCode('')
+      scanBoxRef.current?.focus()
+    }
+  }
+
+  /** Called when a line with a pending scan finally gets its medicine. */
+  async function teachPendingCode(l: Line, drugId: string, isGlobal: boolean, brand: string | null) {
+    if (!l.scanCode) return
+    const res = await rememberProductCode(l.scanCode, { id: drugId, isGlobal }, brand)
+    if (res.success) {
+      set(l.key, { scanCode: undefined, scanNote: 'pack remembered' })
+      flashScan('ok', `${brand ?? 'That pack'} will scan straight in from now on`)
+    } else {
+      set(l.key, { scanCode: undefined })
+      flashScan('warn', res.error)
+    }
+  }
+
+  useScanListener((code) => { void handleScan(code) }, true)
 
   const totals = useMemo(() => {
     let cost = 0, units = 0, filled = 0
@@ -286,11 +386,37 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         </p>
       )}
 
+      {/* Scan a pack straight onto a line */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <div className="flex items-center gap-2 px-2.5 rounded-xl flex-1" style={{ border: '1px dashed #CBD5E1', background: '#fff', minHeight: '40px', minWidth: 260 }}>
+          {scanBusy
+            ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#0D9488' }} />
+            : <ScanBarcode className="w-4 h-4 flex-shrink-0" style={{ color: '#94A3B8' }} />}
+          <input
+            ref={scanBoxRef}
+            value={typedCode}
+            onChange={(e) => setTypedCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && typedCode.trim()) { e.preventDefault(); void handleScan(typedCode.trim()) } }}
+            placeholder="Scan each pack as you unpack the box — click here first, then keep scanning"
+            className="flex-1 text-sm py-2"
+            style={{ border: 'none', outline: 'none', color: '#0F172A', background: 'transparent' }} />
+        </div>
+        {scanMsg && (
+          <span className="text-xs px-2.5 py-1.5 rounded-lg font-medium"
+            style={scanMsg.tone === 'ok'
+              ? { background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }
+              : { background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            {scanMsg.text}
+          </span>
+        )}
+      </div>
+
       {/* Lines */}
       <div className="space-y-2">
         {lines.map((l, i) => (
           <LineRow key={l.key} line={l} index={i} set={set} remove={() => removeLine(l.key)}
-            onAddLine={addLine} isLast={i === lines.length - 1} />
+            onAddLine={addLine} isLast={i === lines.length - 1}
+            onPicked={(drugId, isGlobal, brand) => void teachPendingCode(l, drugId, isGlobal, brand)} />
         ))}
       </div>
 
@@ -367,9 +493,10 @@ function applyDrug(l: Line, d: Drug, brand: string | null): Line {
   }
 }
 
-function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
+function LineRow({ line: l, index, set, remove, onAddLine, isLast, onPicked }: {
   line: Line; index: number; set: (key: string, patch: Partial<Line>) => void
   remove: () => void; onAddLine: () => void; isLast: boolean
+  onPicked?: (drugId: string, isGlobal: boolean, brand: string | null) => void
 }) {
   // An imported line starts with the invoice's own wording in the box, so picking
   // the medicine is a glance and a click rather than retyping it.
@@ -390,6 +517,8 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
     // so it outranks the catalogue's default for that brand.
     if (l.rawName && l.packSize) next.packSize = l.packSize
     set(l.key, next)
+    // A pack scanned a moment ago now has a name: remember it for next time.
+    if (l.scanCode) onPicked?.(d.id, !!d.is_global, next.brandName ?? brand)
     setOpen(false); setQuery('')
     setTimeout(() => batchRef.current?.focus(), 30)
   }
@@ -427,6 +556,10 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
                     <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-md font-medium align-middle"
                       style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>check</span>
                   )}
+                  {l.scanNote && (
+                    <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-md font-medium align-middle"
+                      style={{ background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }}>{l.scanNote}</span>
+                  )}
                 </p>
                 {l.rawName && (
                   <p className="text-xs truncate" style={{ color: '#CBD5E1' }}>invoice: {l.rawName}</p>
@@ -441,7 +574,12 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-1.5 px-2 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff', minHeight: '38px' }}>
+              {l.scanCode && (
+                <p className="text-xs mb-1 font-mono truncate" style={{ color: '#B45309' }}>
+                  scanned {l.scanCode} — which medicine?
+                </p>
+              )}
+              <div className="flex items-center gap-1.5 px-2 rounded-lg" style={{ border: `1px solid ${l.scanCode ? '#FDE68A' : '#E2E8F0'}`, background: '#fff', minHeight: '38px' }}>
                 <Search className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                 <input
                   autoFocus={isLast && index > 0}

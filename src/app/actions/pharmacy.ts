@@ -296,6 +296,8 @@ export interface ScannedProduct {
   strength: string | null
   /** Units in date and on the shelf — 0 means there is nothing to sell. */
   available: number
+  /** What the catalogue knows about this brand's pack, for a first purchase. */
+  brand: { pack_size: number | null; pack_unit: string | null; hsn_code: string | null; gst_rate: number | null; manufacturer: string | null } | null
 }
 
 export type CodeLookup =
@@ -320,6 +322,14 @@ async function scannedProduct(
   const { data: batches } = await supabase.from('drug_batches')
     .select('qty_available').eq(column, id).gt('expiry', istToday()).gt('qty_available', 0)
 
+  // The pack the catalogue describes for this brand — what a first purchase of it
+  // should start from, exactly as picking it by hand would.
+  const { data: brandRow } = ref.masterId && brandName
+    ? await supabase.from('drug_brands')
+        .select('pack_size, pack_unit, hsn_code, gst_rate, manufacturer')
+        .eq('drug_master_id', ref.masterId).eq('brand_name', brandName).maybeSingle()
+    : { data: null }
+
   return {
     id: row.id as string,
     isGlobal: !!ref.masterId,
@@ -328,6 +338,15 @@ async function scannedProduct(
     form: (row.form as string | null) ?? null,
     strength: (row.strength as string | null) ?? null,
     available: (batches ?? []).reduce((sum, b) => sum + ((b.qty_available as number) ?? 0), 0),
+    brand: brandRow
+      ? {
+          pack_size: (brandRow.pack_size as number | null) ?? null,
+          pack_unit: (brandRow.pack_unit as string | null) ?? null,
+          hsn_code: (brandRow.hsn_code as string | null) ?? null,
+          gst_rate: (brandRow.gst_rate as number | null) ?? null,
+          manufacturer: (brandRow.manufacturer as string | null) ?? null,
+        }
+      : null,
   }
 }
 
