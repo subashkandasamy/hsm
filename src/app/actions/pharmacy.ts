@@ -284,6 +284,57 @@ export async function lastSupplier(): Promise<string | null> {
   return (data?.[0]?.supplier_name as string | null) ?? null
 }
 
+// ---- Our own labels ---------------------------------------------------------
+
+/** No 0/O, 1/I/L or U: a code read off a shelf must not be guessable wrongly. */
+const LABEL_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+function mintLabelCode(): string {
+  let out = 'UY'
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  for (const b of bytes) out += LABEL_ALPHABET[b % LABEL_ALPHABET.length]
+  return out
+}
+
+/**
+ * Gives every one of these batches a code of its own, printed on the label we
+ * stick to the box. Batches that already have one keep it, so reprinting a lost
+ * label produces the same barcode.
+ */
+export async function ensureBatchLabels(batchIds: string[]): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  if (!batchIds.length) return { success: false, error: 'Nothing to label' }
+
+  const supabase = await createClient()
+  const { data: rows } = await supabase.from('drug_batches').select('id, label_code').in('id', batchIds.slice(0, 200))
+  const missing = (rows ?? []).filter((r) => !r.label_code).map((r) => r.id as string)
+
+  for (const id of missing) {
+    // A clash is vanishingly unlikely, but a label that means two boxes never ships.
+    let done = false
+    for (let attempt = 0; attempt < 5 && !done; attempt++) {
+      const { error } = await supabase.from('drug_batches').update({ label_code: mintLabelCode() }).eq('id', id)
+      if (!error) done = true
+      else if (error.code !== '23505') return { success: false, error: error.message }
+    }
+    if (!done) return { success: false, error: 'Could not allocate a label code — try again' }
+  }
+  return { success: true, count: (rows ?? []).length }
+}
+
+/** The batches that came in on one purchase, ready to be labelled. */
+export async function ensureReceiptLabels(receiptId: string): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data } = await supabase.from('drug_batches').select('id').eq('receipt_id', receiptId)
+  const ids = (data ?? []).map((r) => r.id as string)
+  if (!ids.length) return { success: false, error: 'That purchase added nothing new to label' }
+  return ensureBatchLabels(ids)
+}
+
 // ---- Scanned packs ----------------------------------------------------------
 
 /** A medicine as the counter needs it after a scan. */
@@ -300,9 +351,22 @@ export interface ScannedProduct {
   brand: { pack_size: number | null; pack_unit: string | null; hsn_code: string | null; gst_rate: number | null; manufacturer: string | null } | null
 }
 
+/** The exact box a label of ours points at. */
+export interface ScannedBatch {
+  id: string
+  batchNo: string
+  /** 'YYYY-MM-DD' */
+  expiry: string
+  mrp: number
+  available: number
+  /** False when another batch of the same medicine expires sooner. */
+  isEarliestExpiring: boolean
+  expired: boolean
+}
+
 export type CodeLookup =
   | { status: 'unreadable' }
-  | { status: 'known'; product: ScannedProduct; scanned: ScannedCode }
+  | { status: 'known'; product: ScannedProduct; batch?: ScannedBatch; scanned: ScannedCode }
   | { status: 'unknown'; scanned: ScannedCode }
 
 /** Loads a medicine and its sellable quantity, for either catalogue. */
@@ -365,6 +429,13 @@ export async function resolveProductCode(rawCode: string): Promise<CodeLookup> {
   if (!scanned) return { status: 'unreadable' }
 
   const supabase = await createClient()
+
+  // Our own label names one box, not just the product.
+  if (/^UY[0-9A-Z]{8}$/.test(scanned.key)) {
+    const found = await resolveOwnLabel(supabase, scanned.key)
+    if (found) return { status: 'known', product: found.product, batch: found.batch, scanned }
+  }
+
   const { data: known } = await supabase.from('product_codes')
     .select('id, drug_master_id, drug_id, brand_name, times_used')
     .eq('code', scanned.key).maybeSingle()
@@ -385,6 +456,46 @@ export async function resolveProductCode(rawCode: string): Promise<CodeLookup> {
     .eq('id', known.id as string)
 
   return { status: 'known', product, scanned }
+}
+
+/** Reads one of our printed stock labels back into a medicine and its box. */
+async function resolveOwnLabel(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  code: string,
+): Promise<{ product: ScannedProduct; batch: ScannedBatch } | null> {
+  const { data: b } = await supabase.from('drug_batches')
+    .select('id, batch_no, expiry, mrp, qty_available, brand_name, drug_master_id, drug_id')
+    .eq('label_code', code).maybeSingle()
+  if (!b) return null
+
+  const product = await scannedProduct(
+    supabase,
+    { masterId: (b.drug_master_id as string | null) ?? null, drugId: (b.drug_id as string | null) ?? null },
+    (b.brand_name as string | null) ?? null,
+  )
+  if (!product) return null
+
+  const today = istToday()
+  const expiry = b.expiry as string
+  // Is anything of the same medicine going out of date sooner? If so the counter
+  // should be told, because that is the box that ought to leave first.
+  const column = b.drug_master_id ? 'drug_master_id' : 'drug_id'
+  const { data: earlier } = await supabase.from('drug_batches')
+    .select('id').eq(column, (b.drug_master_id ?? b.drug_id) as string)
+    .gt('expiry', today).lt('expiry', expiry).gt('qty_available', 0).limit(1)
+
+  return {
+    product,
+    batch: {
+      id: b.id as string,
+      batchNo: b.batch_no as string,
+      expiry,
+      mrp: Number(b.mrp ?? 0),
+      available: (b.qty_available as number) ?? 0,
+      isEarliestExpiring: !(earlier ?? []).length,
+      expired: expiry <= today,
+    },
+  }
 }
 
 /**

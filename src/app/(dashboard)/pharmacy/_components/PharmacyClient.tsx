@@ -6,7 +6,7 @@ import SetupNudge from '@/components/ui/SetupNudge'
 import {
   Plus, RefreshCw, AlertTriangle, Package,
   CheckCircle2, Circle, User2, ChevronDown, ChevronRight,
-  X, Loader2, Truck, CreditCard, Search, BedDouble, Check, Pencil,
+  X, Loader2, Truck, CreditCard, Search, BedDouble, Check, Pencil, Printer,
 } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -17,7 +17,7 @@ import {
   listPendingPrescriptions, getStock, getAlerts,
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
   dispense as dispenseDrug, listPackedAwaitingDispatch,
-  updateBatch, updateDrugReorderLevel,
+  updateBatch, updateDrugReorderLevel, ensureBatchLabels,
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import VaccinesView from './VaccinesView'
@@ -1230,11 +1230,26 @@ function StockView({ stock, canManage, onRefresh }: {
                   )
                 })}
                 {canManage && (
-                  <Link href={`/pharmacy/receive?q=${encodeURIComponent(title)}`}
-                    className="inline-flex items-center gap-1 text-xs font-semibold mt-0.5"
-                    style={{ color: '#0D9488', textDecoration: 'none' }}>
-                    <Plus className="w-3 h-3" /> Receive more
-                  </Link>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    <Link href={`/pharmacy/receive?q=${encodeURIComponent(title)}`}
+                      className="inline-flex items-center gap-1 text-xs font-semibold"
+                      style={{ color: '#0D9488', textDecoration: 'none' }}>
+                      <Plus className="w-3 h-3" /> Receive more
+                    </Link>
+                    {drug.batches.length > 0 && (
+                      <button
+                        onClick={async () => {
+                          const ids = drug.batches.map((b) => b.id)
+                          const res = await ensureBatchLabels(ids)
+                          if (!res.success) return
+                          window.open(`/print/batch-labels/pdf?ids=${ids.join(',')}`, '_blank')
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7C3AED', padding: 0 }}>
+                        <Printer className="w-3 h-3" /> Print shelf labels
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

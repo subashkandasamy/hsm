@@ -42,12 +42,14 @@ export async function addSaleItem(params: {
   prescriptionId?: string | null
   drugId: string
   qty: number
+  /** The exact box, when a label of ours was scanned. */
+  batchId?: string | null
 }): Promise<{ success: true; itemId: string } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
 
-  const { saleId, prescriptionId, drugId, qty } = params
+  const { saleId, prescriptionId, drugId, qty, batchId } = params
   if (qty <= 0) return { success: false, error: 'Quantity must be at least 1' }
 
   const supabase = await createClient()
@@ -63,20 +65,25 @@ export async function addSaleItem(params: {
     .from('drugs').select('id').eq('id', drugId).maybeSingle()
   const isMasterDrug = !tenantDrug
 
-  // Snapshot current MRP from the earliest non-expired batch (works for both sources)
+  // The price comes from the box being sold: the scanned one, else the earliest
+  // to expire.
   const today = istToday()
-  const { data: batches } = await supabase
-    .from('drug_batches')
-    .select('mrp')
-    .or(`drug_id.eq.${drugId},drug_master_id.eq.${drugId}`)
-    .gt('expiry', today)
-    .gt('qty_available', 0)
-    .order('expiry', { ascending: true })
-    .limit(1)
+  const { data: batches } = batchId
+    ? await supabase.from('drug_batches').select('mrp').eq('id', batchId).gt('expiry', today).gt('qty_available', 0).limit(1)
+    : await supabase
+        .from('drug_batches')
+        .select('mrp')
+        .or(`drug_id.eq.${drugId},drug_master_id.eq.${drugId}`)
+        .gt('expiry', today)
+        .gt('qty_available', 0)
+        .order('expiry', { ascending: true })
+        .limit(1)
 
   // No batch in date means there is nothing to sell. Without this the line was
   // added at ₹0 and the patient was billed nothing for it.
-  if (!batches?.length) return { success: false, error: 'That medicine has no stock in date — nothing to sell' }
+  if (!batches?.length) {
+    return { success: false, error: batchId ? 'That box is empty or out of date' : 'That medicine has no stock in date — nothing to sell' }
+  }
   const unitPrice = (batches[0].mrp as number) ?? 0
   if (unitPrice <= 0) return { success: false, error: 'That batch has no MRP set — fix it in Stock before selling' }
 
@@ -88,6 +95,7 @@ export async function addSaleItem(params: {
     prescription_id: prescriptionId ?? null,
     drug_id:        isMasterDrug ? null : drugId,
     drug_master_id: isMasterDrug ? drugId : null,
+    drug_batch_id:  batchId ?? null,
     qty,
     unit_price: unitPrice,
     amount: qty * unitPrice,
@@ -322,21 +330,29 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
 
   const items = (sale.items ?? []) as Array<{
     drug_id: string | null; drug_master_id: string | null; prescription_id: string | null; qty: number; unit_price: number
+    drug_batch_id: string | null
   }>
 
   const today = istToday()
 
-  // FEFO dispense: for each item, pick earliest non-expired batch and call dispense_drug RPC
+  // The box that was scanned onto the line leaves the shelf. Where none was
+  // scanned — or it has since been emptied — the earliest to expire goes first.
   for (const item of items) {
     const drugRef = item.drug_id ?? item.drug_master_id ?? ''
-    const { data: batches } = await supabase
-      .from('drug_batches')
-      .select('id, mrp, expiry, qty_available')
-      .or(`drug_id.eq.${drugRef},drug_master_id.eq.${drugRef}`)
-      .gt('expiry', today)
-      .gte('qty_available', item.qty)
-      .order('expiry', { ascending: true })
-      .limit(1)
+    const scanned = item.drug_batch_id
+      ? await supabase.from('drug_batches').select('id, mrp, expiry, qty_available')
+          .eq('id', item.drug_batch_id).gt('expiry', today).gte('qty_available', item.qty).limit(1)
+      : null
+    const { data: batches } = scanned?.data?.length
+      ? scanned
+      : await supabase
+          .from('drug_batches')
+          .select('id, mrp, expiry, qty_available')
+          .or(`drug_id.eq.${drugRef},drug_master_id.eq.${drugRef}`)
+          .gt('expiry', today)
+          .gte('qty_available', item.qty)
+          .order('expiry', { ascending: true })
+          .limit(1)
 
     if (!batches?.length) {
       return {

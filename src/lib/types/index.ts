@@ -1454,6 +1454,8 @@ export interface PharmacySaleItem {
   prescription_id: string | null
   drug_id: string | null
   drug_master_id: string | null
+  /** Set when one of our stock labels was scanned — that exact box leaves. */
+  drug_batch_id?: string | null
   qty: number
   unit_price: number
   amount: number

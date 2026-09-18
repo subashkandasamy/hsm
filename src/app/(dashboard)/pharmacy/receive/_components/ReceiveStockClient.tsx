@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Loader2, Plus, ScanBarco
 import GlassCard from '@/components/ui/GlassCard'
 import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
-import { lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
+import { ensureReceiptLabels, lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
 import { useScanListener } from '@/lib/hooks/useScanListener'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
@@ -85,7 +85,8 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
-  const [done, setDone] = useState<{ created: number; merged: number; units: number } | null>(null)
+  const [done, setDone] = useState<{ created: number; merged: number; units: number; receiptId: string } | null>(null)
+  const [labelling, setLabelling] = useState(false)
 
   const [header, setHeader] = useState({
     supplier: lastSupplier ?? '', invoiceNo: '', invoiceDate: istToday(), invoiceTotal: '', opening: false,
@@ -288,7 +289,7 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         opening_stock: header.opening,
       }, payload)
       if (!res.success) { setError(res.error); return }
-      setDone({ created: res.created, merged: res.merged, units: res.units })
+      setDone({ created: res.created, merged: res.merged, units: res.units, receiptId: res.receiptId })
       setLines([newLine()])
       setHeader((h) => ({ ...h, invoiceNo: '', invoiceTotal: '' }))
     })
@@ -318,7 +319,24 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
             Received {done.units} units · {done.created} new batch{done.created === 1 ? '' : 'es'}
             {done.merged ? ` · ${done.merged} added to an existing batch` : ''}
           </span>
-          <button onClick={() => { setDone(null); router.push('/pharmacy') }} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold" style={btn(true)}>
+          {done.created > 0 && (
+            <button
+              disabled={labelling}
+              onClick={async () => {
+                // Codes are minted first, then the sheet is opened — a label must
+                // never print a barcode the database does not know.
+                setLabelling(true)
+                const res = await ensureReceiptLabels(done.receiptId)
+                setLabelling(false)
+                if (!res.success) { setError(res.error); return }
+                window.open(`/print/batch-labels/pdf?receipt=${done.receiptId}&copies=packs`, '_blank')
+              }}
+              className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={btn(true)}>
+              {labelling ? 'Preparing…' : 'Print shelf labels'}
+            </button>
+          )}
+          <button onClick={() => { setDone(null); router.push('/pharmacy') }} className={done.created > 0 ? 'px-3 py-1.5 rounded-lg text-xs font-medium' : 'ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold'} style={done.created > 0 ? btn() : btn(true)}>
             Go to stock
           </button>
           <button onClick={() => setDone(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={btn()}>Receive another invoice</button>

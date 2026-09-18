@@ -12,7 +12,7 @@ import {
   startPharmacySale, addSaleItem, updateSaleItemQty, removeSaleItem,
   finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
 } from '@/app/actions/pharmacySale'
-import { checkBillStatus, resolveProductCode, rememberProductCode, type ScannedProduct } from '@/app/actions/pharmacy'
+import { checkBillStatus, resolveProductCode, rememberProductCode, type ScannedBatch, type ScannedProduct } from '@/app/actions/pharmacy'
 import { useScanListener } from '@/lib/hooks/useScanListener'
 import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
 
@@ -129,24 +129,40 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
   }
 
   /** Puts a scanned medicine in the cart, or adds one to the line already there. */
-  async function addScanned(product: ScannedProduct, sale: PharmacySale) {
-    if (product.available <= 0) {
-      flashScan('warn', `${product.brandName ?? product.name} has no stock in date`)
+  async function addScanned(product: ScannedProduct, sale: PharmacySale, batch?: ScannedBatch) {
+    const label = product.brandName ?? product.name
+    if (batch?.expired) {
+      flashScan('warn', `${label} batch ${batch.batchNo} has expired — do not sell it`)
       return
     }
-    const label = product.brandName ?? product.name
+    if (batch && batch.available <= 0) {
+      flashScan('warn', `That box of ${label} (batch ${batch.batchNo}) is empty`)
+      return
+    }
+    if (!batch && product.available <= 0) {
+      flashScan('warn', `${label} has no stock in date`)
+      return
+    }
     setDisplayNameMap((prev) => new Map([...prev, [product.id, label]]))
 
     // Read the cart as it stands now: scans can arrive faster than state settles.
     const current = await getPharmacySale(sale.id)
-    const existing = (current?.items ?? []).find((i) => (i.drug_id ?? i.drug_master_id) === product.id)
+    // A different box of the same medicine is its own line — two batches must not
+    // be merged, or the wrong one would come off the shelf.
+    const existing = (current?.items ?? []).find((i) =>
+      (i.drug_id ?? i.drug_master_id) === product.id && (i.drug_batch_id ?? null) === (batch?.id ?? null))
     const res = existing
       ? await updateSaleItemQty(existing.id, existing.qty + 1)
-      : await addSaleItem({ saleId: sale.id, drugId: product.id, qty: 1 })
+      : await addSaleItem({ saleId: sale.id, drugId: product.id, qty: 1, batchId: batch?.id ?? null })
     if (!res.success) { flashScan('warn', res.error); return }
 
     setActiveSale(await getPharmacySale(sale.id))
-    flashScan('ok', `${label}${product.strength ? ` ${product.strength}` : ''} added`)
+    const what = `${label}${product.strength ? ` ${product.strength}` : ''}`
+    if (batch && !batch.isEarliestExpiring) {
+      flashScan('warn', `${what} added — but another box expires sooner, sell that one first`)
+    } else {
+      flashScan('ok', batch ? `${what} · batch ${batch.batchNo} added` : `${what} added`)
+    }
   }
 
   function flashScan(tone: 'ok' | 'warn', text: string) {
@@ -168,7 +184,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     try {
       const found = await resolveProductCode(code)
       if (found.status === 'unreadable') { flashScan('warn', 'That code could not be read'); return }
-      if (found.status === 'known') { await addScanned(found.product, sale); return }
+      if (found.status === 'known') { await addScanned(found.product, sale, found.batch); return }
       // Never seen before: ask once what it is.
       setTeach({ code: found.scanned.raw, query: '' })
       flashScan('warn', 'New pack — tell the counter what this is, once')
@@ -527,7 +543,12 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                     {activeSale.items?.map((item) => {
                       const refId = item.drug_id ?? item.drug_master_id ?? ''
                       const stockDrug = drugs.find(d => d.id === refId)
-                      const location = stockDrug?.batches?.find(b => b.qty_available > 0)?.storage_location ?? null
+                      // When a label was scanned, the line means that exact box —
+                      // so it must show that box's shelf, not the first one found.
+                      const scannedBatch = item.drug_batch_id
+                        ? stockDrug?.batches?.find(b => b.id === item.drug_batch_id)
+                        : null
+                      const location = (scannedBatch ?? stockDrug?.batches?.find(b => b.qty_available > 0))?.storage_location ?? null
                       return (
                       <div key={item.id} className="px-3 py-2.5 rounded-xl space-y-2"
                         style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
@@ -537,7 +558,10 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                             <p className="text-sm font-semibold" style={{ color: '#0F172A', wordBreak: 'break-word' }}>
                               {displayNameMap.get(item.drug_id ?? item.drug_master_id ?? '') ?? (item.drug ?? item.master)?.name ?? 'Drug'}
                             </p>
-                            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>₹{item.unit_price}/unit</p>
+                            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                              ₹{item.unit_price}/unit
+                              {scannedBatch && <span style={{ color: '#7C3AED' }}> · batch {scannedBatch.batch_no}</span>}
+                            </p>
                           </div>
                           <Money amount={item.amount} className="text-sm font-semibold flex-shrink-0"
                             style={{ color: '#0F172A' }} />
