@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { headers } from 'next/headers'
 import { planHasModule, type PlanKey, type TenantStatus } from '@/lib/plans'
 import { createClient } from './supabase/server'
@@ -42,7 +43,9 @@ export async function requireModule(moduleKey: string): Promise<void> {
   }
 }
 
-export async function getActorProfile(): Promise<{ id: string; role: Role; tenant_id: string }> {
+// Cached for the request: several actions (and every permission check) ask for
+// the actor, and each lookup was its own round trip to the database.
+const actorProfile = cache(async (): Promise<{ id: string; role: Role; tenant_id: string }> => {
   const supabase = await createClient()
   const user = await getCachedUser()
   if (!user) throw new Error('UNAUTHENTICATED')
@@ -55,4 +58,8 @@ export async function getActorProfile(): Promise<{ id: string; role: Role; tenan
 
   if (!profile) throw new Error('PROFILE_NOT_FOUND')
   return profile as { id: string; role: Role; tenant_id: string }
+})
+
+export async function getActorProfile(): Promise<{ id: string; role: Role; tenant_id: string }> {
+  return actorProfile()
 }
