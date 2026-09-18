@@ -175,54 +175,82 @@ export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
     hsn_code: string | null; gst_rate: number | null; pack_size: number | null; pack_unit: string | null
   }
   const brandCols = 'drug_master_id, brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit'
+  const molCols = 'id, name, generic_name, form, strength, unit'
+  // Two waves of queries, with small row caps: the brand table has ~240k rows and
+  // every extra row costs a row-security check plus transfer.
+  const BRAND_HITS = 40
 
-  const [{ data: nameHits }, { data: brandHits }] = await Promise.all([
-    supabase.from('drug_master').select('id').eq('is_active', true)
-      .or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit),
-    supabase.from('drug_brands').select(brandCols).ilike('brand_name', pat).limit(200),
+  // What starts with the typed text is fetched separately: the database returns
+  // "contains" matches alphabetically, so "Paracetamol" itself can fall outside
+  // the first rows while long combination names get in.
+  const prefix = `${cleaned}*`
+  const [{ data: namePrefix }, { data: nameHits }, { data: brandPrefix }, { data: brandHits }, { data: tenantDrugs }] = await Promise.all([
+    supabase.from('drug_master').select(molCols).eq('is_active', true)
+      .or(`name.ilike.${prefix},generic_name.ilike.${prefix}`).order('name').limit(limit),
+    supabase.from('drug_master').select(molCols).eq('is_active', true)
+      .or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit * 2),
+    supabase.from('drug_brands').select('drug_master_id, brand_name').ilike('brand_name', prefix).limit(BRAND_HITS),
+    supabase.from('drug_brands').select('drug_master_id, brand_name').ilike('brand_name', pat).limit(BRAND_HITS),
+    supabase.from('drugs').select('id, name, generic_name, form, strength, unit, reorder_level')
+      .eq('is_active', true).or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit),
   ])
 
-  // Molecule ids: name/generic matches first, then brand matches — deduped, capped.
+  type MolRow = { id: string; name: string; generic_name: string | null; form: string | null; strength: string | null; unit: string | null }
+  const molMap = new Map<string, MolRow>()
   const ordered: string[] = []
-  for (const id of [
-    ...((nameHits ?? []).map(r => r.id as string)),
-    ...((brandHits ?? []).map(r => (r as BrandDetail).drug_master_id).filter(Boolean)),
-  ]) if (id && !ordered.includes(id)) ordered.push(id)
-  const ids = ordered.slice(0, limit)
+  const allBrandHits = [...(brandPrefix ?? []), ...(brandHits ?? [])]
+  for (const m of [...((namePrefix ?? []) as MolRow[]), ...((nameHits ?? []) as MolRow[])]) {
+    if (molMap.has(m.id)) continue
+    molMap.set(m.id, m); ordered.push(m.id)
+  }
+  for (const b of allBrandHits) {
+    const id = b.drug_master_id as string | null
+    if (id && !ordered.includes(id)) ordered.push(id)
+  }
+  const ids = ordered.slice(0, limit * 3)
+  const missing = ids.filter((id) => !molMap.has(id))
 
-  const globals: Drug[] = []
-  if (ids.length) {
-    const [{ data: mols }, { data: sample }] = await Promise.all([
-      supabase.from('drug_master').select('id, name, generic_name, form, strength, unit').in('id', ids),
-      supabase.from('drug_brands').select(brandCols).in('drug_master_id', ids).limit(300),
-    ])
-    const byMol = new Map<string, BrandDetail[]>()
-    for (const b of [...((sample ?? []) as BrandDetail[]), ...((brandHits ?? []) as BrandDetail[])]) {
-      if (!b.drug_master_id) continue
-      const arr = byMol.get(b.drug_master_id) ?? []
-      if (!arr.some(x => x.brand_name === b.brand_name)) arr.push(b)
-      byMol.set(b.drug_master_id, arr)
-    }
-    const molMap = new Map((mols ?? []).map(m => [m.id as string, m]))
-    for (const id of ids) {
-      const m = molMap.get(id); if (!m) continue
-      const brands = byMol.get(id) ?? []
-      globals.push({
-        id, name: m.name as string,
-        generic_name: (m.generic_name as string | null) ?? null,
-        form: (m.form as string | null) ?? null,
-        strength: (m.strength as string | null) ?? null,
-        unit: (m.unit as string | null) ?? null,
-        is_active: true, is_global: true,
-        brand_aliases: brands.map(b => b.brand_name),
-        brand_data: brands,
-      })
+  const [{ data: extraMols }, { data: brandRows }] = await Promise.all([
+    missing.length ? supabase.from('drug_master').select(molCols).in('id', missing) : Promise.resolve({ data: [] }),
+    ids.length ? supabase.from('drug_brands').select(brandCols).in('drug_master_id', ids).limit(ids.length * 4) : Promise.resolve({ data: [] }),
+  ])
+  for (const m of (extraMols ?? []) as MolRow[]) molMap.set(m.id, m)
+
+  const byMol = new Map<string, BrandDetail[]>()
+  for (const b of (brandRows ?? []) as BrandDetail[]) {
+    if (!b.drug_master_id) continue
+    const arr = byMol.get(b.drug_master_id) ?? []
+    if (!arr.some((x) => x.brand_name === b.brand_name)) arr.push(b)
+    byMol.set(b.drug_master_id, arr)
+  }
+  // Keep the brand the search matched, even if it was not in the sample above.
+  for (const b of allBrandHits) {
+    const id = b.drug_master_id as string | null
+    if (!id || !ids.includes(id)) continue
+    const arr = byMol.get(id) ?? []
+    if (!arr.some((x) => x.brand_name === b.brand_name)) {
+      arr.unshift({ drug_master_id: id, brand_name: b.brand_name as string, manufacturer: null, hsn_code: null, gst_rate: null, pack_size: null, pack_unit: null })
+      byMol.set(id, arr)
     }
   }
 
-  const { data: tenantDrugs } = await supabase.from('drugs')
-    .select('id, name, generic_name, form, strength, unit, reorder_level, is_active')
-    .eq('is_active', true).or(`name.ilike.${pat},generic_name.ilike.${pat}`).order('name').limit(limit)
+  const globals: Drug[] = []
+  for (const id of ids) {
+    const m = molMap.get(id)
+    if (!m) continue
+    const brands = byMol.get(id) ?? []
+    globals.push({
+      id, name: m.name,
+      generic_name: m.generic_name ?? null,
+      form: m.form ?? null,
+      strength: m.strength ?? null,
+      unit: m.unit ?? null,
+      is_active: true, is_global: true,
+      brand_aliases: brands.map((b) => b.brand_name),
+      brand_data: brands,
+    })
+  }
+
   const tenant: Drug[] = (tenantDrugs ?? []).map(d => ({
     id: d.id as string, name: d.name as string,
     generic_name: (d.generic_name as string | null) ?? null,
@@ -231,7 +259,32 @@ export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
     is_active: true, is_global: false,
   }))
 
-  return [...tenant, ...globals].slice(0, limit)
+  // Rank what the user most likely meant: a name or brand that starts with what
+  // they typed beats a match buried inside a longer name ("Dolo 650" before "Pindolol").
+  const q = cleaned.toLowerCase()
+  const word = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+  const rank = (d: Drug) => {
+    const name = d.name.toLowerCase()
+    const generic = (d.generic_name ?? '').toLowerCase()
+    const brands = (d.brand_aliases ?? []).map((b) => b.toLowerCase())
+    const hitBrands = brands.filter((b) => b.startsWith(q))
+    // "Dolo 500" (the word ends there) beats "Dologel" (the word continues).
+    const wordBrands = hitBrands.filter((b) => !/[a-z]/.test(b.slice(q.length, q.length + 1)))
+    // Shortest matching brand wins a tie: "Dolo 500" over "Doloforce -DT Tablet".
+    const brandLen = hitBrands.length ? Math.min(...hitBrands.map((b) => b.length)) : Infinity
+    if (name === q || brands.includes(q)) return { s: 0, brandLen }
+    if (name.startsWith(q) || generic.startsWith(q)) return { s: 1, brandLen }
+    if (wordBrands.length) return { s: 2, brandLen: Math.min(...wordBrands.map((b) => b.length)) }
+    if (hitBrands.length) return { s: 3, brandLen }
+    if (brands.some((b) => word.test(b))) return { s: 4, brandLen }
+    if (word.test(name) || word.test(generic)) return { s: 5, brandLen }
+    return { s: 6, brandLen }
+  }
+  const ranked = [...tenant, ...globals]
+    .map((d, i) => ({ d, ...rank(d), i }))
+    .sort((a, b) => a.s - b.s || a.brandLen - b.brandLen || a.d.name.length - b.d.name.length || a.i - b.i)
+    .map((x) => x.d)
+  return ranked.slice(0, limit)
 }
 
 // ---- Stock ----
