@@ -200,6 +200,88 @@ export async function listStockReceipts(limit = 10): Promise<StockReceiptSummary
   })
 }
 
+export interface PrefillLine {
+  drugMasterId: string | null
+  drugId: string | null
+  name: string
+  strength: string | null
+  form: string | null
+  unit: string | null
+  brandName: string | null
+  manufacturer: string | null
+  packSize: number | null
+  packUnit: string | null
+  hsn: string | null
+  gst: number | null
+  mrp: number | null
+  rate: number | null
+  reorderLevel: number
+  inStock: number
+  /** Packs to buy to get back above the reorder level — a starting point, editable. */
+  suggestedPacks: number | null
+}
+
+/**
+ * Medicines at or below their reorder level, with last-purchase details, so a
+ * purchase can start from what is actually low instead of a blank screen.
+ */
+export async function lowStockPrefill(): Promise<PrefillLine[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const stock = await getStock()
+  const low = stock.filter((d) => d.total_qty <= (d.reorder_level ?? 0) && (d.reorder_level ?? 0) > 0)
+  if (!low.length) return []
+
+  // getStock trims batch columns, so read the full last batch of each medicine:
+  // its pack, price, HSN and GST are what the new purchase should start from.
+  const supabase = await createClient()
+  const masterIds = low.filter((d) => d.is_global).map((d) => d.id)
+  const tenantIds = low.filter((d) => !d.is_global).map((d) => d.id)
+  const { data: batchRows } = await supabase.from('drug_batches')
+    .select('drug_master_id, drug_id, brand_name, manufacturer, pack_size, pack_unit, hsn_code, gst_rate, mrp, purchase_price, purchase_date, expiry')
+    .or([
+      masterIds.length ? `drug_master_id.in.(${masterIds.join(',')})` : null,
+      tenantIds.length ? `drug_id.in.(${tenantIds.join(',')})` : null,
+    ].filter(Boolean).join(','))
+    .order('purchase_date', { ascending: false, nullsFirst: false })
+    .order('expiry', { ascending: false })
+  const lastByDrug = new Map<string, NonNullable<typeof batchRows>[number]>()
+  for (const b of batchRows ?? []) {
+    const key = (b.drug_master_id as string | null) ?? (b.drug_id as string)
+    if (key && !lastByDrug.has(key)) lastByDrug.set(key, b)
+  }
+
+  return low.map((d) => {
+    const last = lastByDrug.get(d.id)
+    const packSize = last?.pack_size ?? null
+    const shortfall = Math.max((d.reorder_level ?? 0) - d.total_qty, 0)
+    return {
+      drugMasterId: d.is_global ? d.id : null,
+      drugId: d.is_global ? null : d.id,
+      name: d.name, strength: d.strength, form: d.form, unit: d.unit,
+      brandName: last?.brand_name ?? d.brand_aliases?.[0] ?? null,
+      manufacturer: last?.manufacturer ?? null,
+      packSize, packUnit: last?.pack_unit ?? null,
+      hsn: last?.hsn_code ?? null, gst: last?.gst_rate ?? null,
+      mrp: last?.mrp ?? null, rate: last?.purchase_price ?? null,
+      reorderLevel: d.reorder_level ?? 0,
+      inStock: d.total_qty,
+      suggestedPacks: packSize && packSize > 0 ? Math.max(1, Math.ceil(shortfall / packSize)) : null,
+    }
+  })
+}
+
+/** The supplier on the last receipt — most purchases come from the same distributor. */
+export async function lastSupplier(): Promise<string | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+  const { data } = await supabase.from('stock_receipts')
+    .select('supplier_name').not('supplier_name', 'is', null)
+    .order('created_at', { ascending: false }).limit(1)
+  return (data?.[0]?.supplier_name as string | null) ?? null
+}
+
 /** The last batch received for a medicine — "same as last time" when receiving again. */
 export async function lastBatchFor(drugRef: { id: string; isGlobal: boolean }): Promise<DrugBatch | null> {
   const actor = await getActorProfile()

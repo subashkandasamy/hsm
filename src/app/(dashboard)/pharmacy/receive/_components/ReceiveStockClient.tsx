@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowLeft, Check, Copy, Plus, Search, Trash2, X } from '
 import GlassCard from '@/components/ui/GlassCard'
 import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
-import { lastBatchFor, receiveStock, type StockReceiptLine } from '@/app/actions/pharmacy'
+import { lastBatchFor, receiveStock, type PrefillLine, type StockReceiptHeader, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
 
@@ -60,16 +60,25 @@ export function expiryToDate(mmyy: string): string | null {
 }
 const monthsUntil = (iso: string) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.now()) / (30.44 * 86400000))
 
-export default function ReceiveStockClient({ initialDrug }: { initialDrug: Drug | null }) {
+interface Props {
+  initialDrug: Drug | null
+  /** Rows pre-filled from what is below the reorder level. */
+  prefill: PrefillLine[]
+  lastSupplier: string | null
+  recent: StockReceiptSummary[]
+}
+
+export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier, recent }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [done, setDone] = useState<{ created: number; merged: number; units: number } | null>(null)
 
   const [header, setHeader] = useState({
-    supplier: '', invoiceNo: '', invoiceDate: istToday(), invoiceTotal: '', opening: false,
+    supplier: lastSupplier ?? '', invoiceNo: '', invoiceDate: istToday(), invoiceTotal: '', opening: false,
   })
   const [lines, setLines] = useState<Line[]>(() => {
+    if (prefill.length) return prefill.map(fromPrefill)
     const l = newLine()
     if (initialDrug) return [applyDrug(l, initialDrug, null)]
     return [l]
@@ -164,6 +173,12 @@ export default function ReceiveStockClient({ initialDrug }: { initialDrug: Drug 
         </div>
       )}
 
+      {prefill.length > 0 && (
+        <p className="mb-3 text-sm px-3 py-2 rounded-xl" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+          {prefill.length} medicine{prefill.length === 1 ? ' is' : 's are'} at or below the reorder level. Quantities are a suggestion — change them, and remove anything you are not buying.
+        </p>
+      )}
+
       {/* Invoice header — typed once */}
       <GlassCard className="p-4 mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -189,6 +204,17 @@ export default function ReceiveStockClient({ initialDrug }: { initialDrug: Drug 
           Opening stock (no purchase invoice)
         </label>
       </GlassCard>
+
+      {recent.length > 0 && (
+        <p className="mb-3 text-xs" style={{ color: '#64748B' }}>
+          <span className="font-medium" style={{ color: '#334155' }}>Recent: </span>
+          {recent.slice(0, 3).map((r) => {
+            // A receipt whose lines went into batches that already existed has no batches of its own.
+            const what = r.units ? `${r.units} units` : 'added to existing batches'
+            return `${r.supplier_name ?? 'Opening stock'}${r.invoice_no ? ` · ${r.invoice_no}` : ''} · ${what}`
+          }).join('   |   ')}
+        </p>
+      )}
 
       {/* Lines */}
       <div className="space-y-2">
@@ -223,6 +249,27 @@ export default function ReceiveStockClient({ initialDrug }: { initialDrug: Drug 
       </GlassCard>
     </div>
   )
+}
+
+/** A low-stock medicine as a ready row: everything but batch and expiry filled in. */
+function fromPrefill(p: PrefillLine): Line {
+  return {
+    ...newLine(),
+    drug: {
+      id: (p.drugMasterId ?? p.drugId)!, name: p.name, generic_name: null, form: p.form,
+      strength: p.strength, unit: p.unit, is_active: true, is_global: !!p.drugMasterId,
+    },
+    brandName: p.brandName,
+    packSize: p.packSize != null ? String(p.packSize) : '1',
+    packUnit: p.packUnit ?? 'strip',
+    packs: p.suggestedPacks != null ? String(p.suggestedPacks) : '',
+    rate: p.rate != null ? String(p.rate) : '',
+    mrp: p.mrp != null ? String(p.mrp) : '',
+    hsn: p.hsn ?? '30049099',
+    gst: p.gst != null ? String(p.gst) : '12',
+    manufacturer: p.manufacturer ?? '',
+    reorder: String(p.reorderLevel),
+  }
 }
 
 const label = (l: Line) => l.brandName || l.drug?.name || 'This line'

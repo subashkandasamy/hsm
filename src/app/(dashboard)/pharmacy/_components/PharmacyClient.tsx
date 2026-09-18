@@ -1220,6 +1220,13 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
       )}
       {alerts.lowStock.length > 0 && (
         <section>
+          <div className="flex justify-end mb-2">
+            <Link href="/pharmacy/receive?low=1"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: '#0D9488', color: '#fff' }}>
+              <Plus className="w-3.5 h-3.5" /> Order what&apos;s low
+            </Link>
+          </div>
           <h3 className="text-sm font-semibold mb-3" style={{ color: '#B45309' }}>
             Low Stock ({alerts.lowStock.length} drugs)
           </h3>
