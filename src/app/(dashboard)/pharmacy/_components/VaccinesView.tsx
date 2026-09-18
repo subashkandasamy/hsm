@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { AlertTriangle, CheckCircle, Link2, Search, Syringe, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Link2, Plus, Search, Syringe, X } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import EmptyState from '@/components/ui/EmptyState'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import {
-  cancelVaccineOrder, dispenseVaccine, listVaccineOrders, listVaccineStock, setVaccineProduct,
+  addVaccineProduct, cancelVaccineOrder, dispenseVaccine, listVaccineOrders, listVaccineStock,
+  removeVaccineProduct, setVaccineFreeSupply,
   type VaccineOrder, type VaccineSupply,
 } from '@/app/actions/vaccination'
 
@@ -31,6 +32,7 @@ export default function VaccinesView({ initialOrders, initialStock, canDispense,
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [cancelling, setCancelling] = useState<VaccineOrder | null>(null)
+  const [showUnset, setShowUnset] = useState(false)
 
   const refresh = async () => {
     const [o, s] = await Promise.all([listVaccineOrders(), listVaccineStock()])
@@ -50,7 +52,9 @@ export default function VaccinesView({ initialOrders, initialStock, canDispense,
     dispensed: orders.filter((o) => o.fulfilment === 'dispensed'),
   }), [orders])
   const unpaid = toDispense.filter((o) => !o.bill || o.bill.paid < o.bill.total)
-  const lowOrExpiring = stock.filter((s) => s.productId && !s.free_supply && (s.inStock <= 0 || isSoon(s.earliestExpiry)))
+  const configured = stock.filter((s) => s.products.length > 0 || s.free_supply)
+  const unset = stock.filter((s) => s.products.length === 0 && !s.free_supply)
+  const lowOrExpiring = configured.filter((s) => !s.free_supply && (s.inStock <= 0 || s.products.some((p) => isSoon(p.earliestExpiry))))
 
   return (
     <div className="space-y-4">
@@ -131,21 +135,37 @@ export default function VaccinesView({ initialOrders, initialStock, canDispense,
         )}
       </GlassCard>
 
-      {/* Stock + product map */}
+      {/* Stock + brands per vaccine */}
       <GlassCard className="p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>Vaccine stock</h3>
         <p className="text-xs mb-3" style={{ color: '#64748B' }}>
-          Link each vaccine of the national schedule to the pharmacy product you stock. Government (free) vaccines are recorded in the consultation without a charge or a pharmacy step.
+          A vaccine can have more than one brand (for example a painful and a painless one). The brand that expires first is used next, and the doctor can pick another at the consultation.
         </p>
         {lowOrExpiring.length > 0 && (
           <p className="text-xs px-3 py-2 rounded-xl mb-3" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
             <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-            {lowOrExpiring.map((s) => `${s.vaccine}: ${s.inStock <= 0 ? 'out of stock' : `expires ${fmt(s.earliestExpiry)}`}`).join(' · ')}
+            {lowOrExpiring.map((s) => `${s.vaccine}: ${s.inStock <= 0 ? 'out of stock' : `expires ${fmt(s.products.map((p) => p.earliestExpiry).filter(Boolean).sort()[0] ?? null)}`}`).join(' · ')}
           </p>
         )}
+
         <div className="space-y-1.5">
-          {stock.map((s) => <StockRow key={s.vaccine} s={s} canManage={canManage} isPending={isPending} run={run} />)}
+          {configured.map((s) => <StockRow key={s.vaccine} s={s} canManage={canManage} isPending={isPending} run={run} />)}
         </div>
+        {configured.length === 0 && <p className="text-sm" style={{ color: '#94A3B8' }}>No vaccine is set up yet — link a pharmacy product below.</p>}
+
+        {unset.length > 0 && (
+          <div className="mt-3">
+            <button type="button" onClick={() => setShowUnset((u) => !u)} className="flex items-center gap-1 text-xs font-medium" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>
+              {showUnset ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              Not set up yet ({unset.length})
+            </button>
+            {showUnset && (
+              <div className="space-y-1.5 mt-2">
+                {unset.map((s) => <StockRow key={s.vaccine} s={s} canManage={canManage} isPending={isPending} run={run} />)}
+              </div>
+            )}
+          </div>
+        )}
       </GlassCard>
 
       {stock.length === 0 && <EmptyState title="No vaccines" description="The immunisation schedule has no vaccines yet." />}
@@ -172,55 +192,80 @@ function StockRow({ s, canManage, isPending, run }: {
   s: VaccineSupply; canManage: boolean; isPending: boolean
   run: (fn: () => Promise<{ success: boolean; error?: string }>) => void
 }) {
-  const [linking, setLinking] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
   const results = useDrugSearch(query, 8)
 
   return (
-    <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm font-semibold min-w-[140px]" style={{ color: '#0F172A' }}>{s.vaccine}</span>
-        {s.free_supply ? (
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#DCFCE7', color: '#15803D' }}>Government supply — free</span>
-        ) : s.productId ? (
-          <span className="text-xs" style={{ color: '#475569' }}>
-            {s.productName} · <strong style={{ color: s.inStock > 0 ? '#0F172A' : '#B91C1C' }}>{s.inStock} in stock</strong>
-            {s.earliestExpiry ? ` · first expiry ${fmt(s.earliestExpiry)}` : ''}{s.price != null ? ` · ${money(s.price)}` : ''}
-          </span>
-        ) : (
-          <span className="text-xs" style={{ color: '#94A3B8' }}>Not linked to a pharmacy product</span>
-        )}
+    <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="min-w-[150px]">
+          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{s.vaccine}</p>
+          {s.free_supply
+            ? <span className="text-xs" style={{ color: '#15803D' }}>Government supply — free</span>
+            : s.products.length
+              ? <span className="text-xs" style={{ color: s.inStock > 0 ? '#64748B' : '#B91C1C' }}>{s.inStock} dose{s.inStock === 1 ? '' : 's'} in stock</span>
+              : <span className="text-xs" style={{ color: '#94A3B8' }}>No brand linked</span>}
+        </div>
+
+        <div className="flex-1 flex flex-wrap gap-1.5 min-w-[220px]">
+          {s.products.map((p) => (
+            <span key={p.linkId} className="inline-flex items-start gap-2 text-xs pl-2.5 pr-1 py-1.5 rounded-lg"
+              style={{ background: '#fff', border: `1px solid ${p.inStock > 0 ? '#CCFBF1' : '#FECACA'}`, color: '#0F172A' }}>
+              <span>
+                <span className="font-medium block">{p.name}</span>
+                <span style={{ color: '#64748B' }}>
+                  <span style={{ color: p.inStock > 0 ? '#0D9488' : '#B91C1C', fontWeight: 600 }}>
+                    {p.inStock > 0 ? `${p.inStock} in stock` : 'out of stock'}
+                  </span>
+                  {p.price != null ? ` · ${money(p.price)}` : ''}
+                  {p.earliestExpiry ? ` · expires ${fmt(p.earliestExpiry)}` : ''}
+                </span>
+              </span>
+              {canManage && (
+                <button type="button" disabled={isPending} onClick={() => run(() => removeVaccineProduct(p.linkId))}
+                  title={`Unlink ${p.name}`} aria-label={`Unlink ${p.name}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#CBD5E1' }}>
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+
         {canManage && (
-          <span className="ml-auto flex gap-1.5">
-            <button type="button" onClick={() => { setLinking((l) => !l); setQuery('') }}
+          <span className="flex gap-1.5">
+            <button type="button" onClick={() => { setAdding((a) => !a); setQuery('') }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={btn()}>
-              <Link2 className="w-3 h-3" /> {s.productId ? 'Change product' : 'Link product'}
+              {s.products.length ? <><Plus className="w-3 h-3" /> Add brand</> : <><Link2 className="w-3 h-3" /> Link brand</>}
             </button>
-            <button type="button" disabled={isPending}
-              onClick={() => run(() => setVaccineProduct(s.vaccine, { productId: s.productId, productIsGlobal: s.productIsGlobal, freeSupply: !s.free_supply }))}
+            <button type="button" disabled={isPending} onClick={() => run(() => setVaccineFreeSupply(s.vaccine, !s.free_supply))}
               className="px-2.5 py-1 rounded-lg text-xs font-medium" style={btn()}>
-              {s.free_supply ? 'Charge for this' : 'Mark government (free)'}
+              {s.free_supply ? 'Charge for this' : 'Government (free)'}
             </button>
           </span>
         )}
       </div>
-      {linking && canManage && (
+
+      {adding && canManage && (
         <div className="mt-2">
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background: '#fff', border: '1px solid #E2E8F0' }}>
             <Search className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search the pharmacy for ${s.vaccine}…`}
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search the pharmacy for ${s.vaccine} (brand or generic)…`}
               className="flex-1 text-sm" style={{ border: 'none', outline: 'none', color: '#0F172A' }} />
-            <button type="button" onClick={() => setLinking(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={() => setAdding(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X className="w-3.5 h-3.5" /></button>
           </div>
           {results.length > 0 && (
             <ul className="mt-1 rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', background: '#fff' }}>
               {results.map((d) => (
                 <li key={d.id}>
                   <button type="button" disabled={isPending}
-                    onClick={() => { setLinking(false); run(() => setVaccineProduct(s.vaccine, { productId: d.id, productIsGlobal: !!d.is_global, freeSupply: false })) }}
+                    onClick={() => { setAdding(false); run(() => addVaccineProduct(s.vaccine, d.id, !!d.is_global)) }}
                     className="w-full text-left px-3 py-2 text-sm" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0F172A' }}>
                     {d.name}{d.strength ? ` ${d.strength}` : ''}{d.form ? ` (${d.form})` : ''}
-                    <span className="block text-xs" style={{ color: '#94A3B8' }}>{d.generic_name ?? ''}</span>
+                    <span className="block text-xs" style={{ color: '#94A3B8' }}>
+                      {(d.brand_aliases ?? []).slice(0, 3).join(', ') || d.generic_name || ''}
+                    </span>
                   </button>
                 </li>
               ))}

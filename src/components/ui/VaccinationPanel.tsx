@@ -48,15 +48,17 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
   const [showGiven, setShowGiven] = useState(false)
   const [showMissed, setShowMissed] = useState(false)
   const [confirm, setConfirm] = useState<{ kind: 'limit' | 'undo'; dose: DoseStatus } | null>(null)
+  /** Brand chosen per dose when the pharmacy stocks more than one. */
+  const [brand, setBrand] = useState<Record<string, string>>({})
 
   const refresh = async () => { const next = await getVaccination(patientId); setV(next); onChanged?.(next) }
-  const run = (fn: () => Promise<{ success: boolean; error?: string; warning?: string; billNo?: string; amount?: number }>, after?: () => void) => {
+  const run = (fn: () => Promise<{ success: boolean; error?: string; warning?: string; billNo?: string; amount?: number; product?: string }>, after?: () => void) => {
     setError(''); setNotice('')
     startTransition(async () => {
       const res = await fn()
       if (!res.success) { setError(res.error ?? 'Could not save'); return }
       if (res.warning) setNotice(res.warning)
-      else if (res.billNo) setNotice(`Charged ₹${res.amount} on bill ${res.billNo} — collect at the pharmacy counter.`)
+      else if (res.billNo) setNotice(`${res.product ? `${res.product}: ` : ''}charged ₹${res.amount} on bill ${res.billNo} — collect at the pharmacy counter.`)
       await refresh(); after?.()
     })
   }
@@ -76,7 +78,7 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
 
   function give(d: DoseStatus, confirmed = false) {
     if (!confirmed && v.dailyWarnLimit != null && v.givenToday >= v.dailyWarnLimit) { setConfirm({ kind: 'limit', dose: d }); return }
-    run(() => giveVaccineToday(patientId, d.vaccine, d.dose_label, visitId))
+    run(() => giveVaccineToday(patientId, d.vaccine, d.dose_label, visitId, brand[d.key] ?? null))
   }
 
   if (showHistory && canWrite) {
@@ -87,6 +89,7 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
 
   const renderRow = (d: DoseStatus, actions: 'now' | 'waiting' | 'missed') => {
     const isOpen = open?.key === d.key
+    const disabledRow = !canWrite
     return (
       <li key={d.key} className="px-3 py-2.5 rounded-xl" style={{
         background: actions === 'missed' ? '#F8FAFC' : d.state === 'overdue' ? '#FEF2F2' : actions === 'waiting' ? '#F8FAFC' : '#FFFBEB',
@@ -109,9 +112,33 @@ export default function VaccinationPanel({ patientId, visitId = null, initial, c
               const sup = v.supply?.[d.vaccine]
               if (!sup) return null
               if (sup.free_supply) return <p className="text-xs" style={{ color: '#15803D' }}>Government supply — no charge</p>
-              if (!sup.productId) return <p className="text-xs" style={{ color: '#94A3B8' }}>No pharmacy product linked — record only, nothing charged</p>
-              if (sup.inStock <= 0) return <p className="text-xs" style={{ color: '#B45309' }}>No stock of {sup.productName} — record only, nothing charged</p>
-              return <p className="text-xs" style={{ color: '#475569' }}>In stock: {sup.inStock} · ₹{sup.price} · {sup.productName}</p>
+              if (!sup.products.length) return <p className="text-xs" style={{ color: '#94A3B8' }}>No pharmacy brand linked — record only, nothing charged</p>
+              if (sup.inStock <= 0) return <p className="text-xs" style={{ color: '#B45309' }}>No stock of {sup.products.map((p) => p.name).join(', ')} — record only, nothing charged</p>
+              const inStock = sup.products.filter((p) => p.inStock > 0)
+              if (inStock.length === 1) {
+                return <p className="text-xs" style={{ color: '#475569' }}>{inStock[0].name} · {inStock[0].inStock} in stock · ₹{inStock[0].price}</p>
+              }
+              // More than one brand in stock (e.g. painful and painless) — the clinic chooses.
+              const chosen = brand[d.key] ?? sup.next?.productId ?? inStock[0].productId
+              return (
+                <span className="flex items-center gap-1.5 flex-wrap mt-1">
+                  <span className="text-xs" style={{ color: '#475569' }}>Brand:</span>
+                  {inStock.map((p) => (
+                    <button key={p.productId} type="button" disabled={disabledRow}
+                      onClick={() => setBrand((b) => ({ ...b, [d.key]: p.productId }))}
+                      aria-pressed={chosen === p.productId}
+                      className="px-2 py-0.5 rounded-md text-xs font-medium"
+                      style={{
+                        border: '1px solid', cursor: disabledRow ? 'default' : 'pointer',
+                        borderColor: chosen === p.productId ? '#0D9488' : '#E2E8F0',
+                        background: chosen === p.productId ? '#F0FDFA' : '#fff',
+                        color: chosen === p.productId ? '#0F766E' : '#64748B',
+                      }}>
+                      {p.name} · ₹{p.price}
+                    </button>
+                  ))}
+                </span>
+              )
             })()}
             {d.deferral && <p className="text-xs" style={{ color: '#64748B' }}>Not given on {fmt(d.deferral.deferred_on)}: {d.deferral.reason}</p>}
           </div>

@@ -219,7 +219,7 @@ export default function PharmacyClient({
             { key: 'cart' as TabKey,   label: 'Sale Cart',   shortLabel: 'Cart',    count: initialReadySales.length },
             { key: 'queue' as TabKey,  label: 'Dispense',    shortLabel: 'Dispense', count: pending.length },
             { key: 'ipd' as TabKey,    label: 'IPD Ward',    shortLabel: 'IPD',     count: ipdPendingCount, urgent: ipdPendingCount > 0 },
-            ...(initialVaccineStock.some((v) => v.productId || v.free_supply) || initialVaccineOrders.length
+            ...(initialVaccineStock.some((v) => v.products.length > 0 || v.free_supply) || initialVaccineOrders.length
               ? [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: initialVaccineOrders.filter((o) => o.fulfilment === 'pending').length, urgent: initialVaccineOrders.some((o) => o.fulfilment === 'pending' && (!o.bill || o.bill.paid < o.bill.total)) }]
               : [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: 0 }]),
             { key: 'stock' as TabKey,  label: 'Stock',       shortLabel: 'Stock',   count: stock.length },

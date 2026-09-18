@@ -12,19 +12,27 @@ import { dosesDueByNow, vaccinationStatus, type Deferral, type DoseStatus, type 
 type SimpleResult = { success: true } | { success: false; error: string }
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
+/** One pharmacy product (brand) stocked for a vaccine. */
+export interface VaccineProduct {
+  linkId: string
+  productId: string
+  isGlobal: boolean
+  name: string
+  inStock: number
+  earliestExpiry: string | null
+  price: number | null
+}
+
 /** What the pharmacy holds for a vaccine, and how it is supplied. */
 export interface VaccineSupply {
   vaccine: string
   /** Government (UIP) stock — recorded with no charge and no pharmacy step. */
   free_supply: boolean
-  productId: string | null
-  productIsGlobal: boolean
-  productName: string | null
-  /** Doses in stock (non-expired batches of the mapped product). */
+  products: VaccineProduct[]
+  /** Doses in stock across all linked brands. */
   inStock: number
-  earliestExpiry: string | null
-  /** Price of the next dose out (MRP of the first-expiry batch). */
-  price: number | null
+  /** The brand that would be used next (first to expire). */
+  next: VaccineProduct | null
 }
 
 export interface Vaccination {
@@ -72,43 +80,53 @@ async function load(supabase: SupabaseClient, patientId: string): Promise<Vaccin
 }
 
 
-/** Vaccine → pharmacy product, free-supply flag and current stock (first-expiry batch price). */
+/** Vaccine → its linked pharmacy products, stock per brand and the free-supply flag. */
 async function loadSupply(supabase: SupabaseClient, vaccines: string[], today: string): Promise<Record<string, VaccineSupply>> {
   const out: Record<string, VaccineSupply> = {}
-  for (const v of vaccines) out[v] = { vaccine: v, free_supply: false, productId: null, productIsGlobal: false, productName: null, inStock: 0, earliestExpiry: null, price: null }
+  for (const v of vaccines) out[v] = { vaccine: v, free_supply: false, products: [], inStock: 0, next: null }
 
-  const { data: products } = await supabase.from('vaccine_products').select('vaccine, drug_master_id, drug_id, free_supply')
-  const masterIds: string[] = []
-  const tenantIds: string[] = []
-  for (const p of products ?? []) {
-    const row = out[p.vaccine as string]
-    if (!row) continue
-    row.free_supply = !!p.free_supply
-    row.productId = (p.drug_master_id as string | null) ?? (p.drug_id as string | null)
-    row.productIsGlobal = !!p.drug_master_id
-    if (p.drug_master_id) masterIds.push(p.drug_master_id as string)
-    if (p.drug_id) tenantIds.push(p.drug_id as string)
+  const [{ data: settings }, { data: links }] = await Promise.all([
+    supabase.from('vaccine_settings').select('vaccine, free_supply'),
+    supabase.from('vaccine_products').select('id, vaccine, drug_master_id, drug_id'),
+  ])
+  for (const st of settings ?? []) {
+    const row = out[st.vaccine as string]
+    if (row) row.free_supply = !!st.free_supply
   }
-  if (!masterIds.length && !tenantIds.length) return out
+  const mine = (links ?? []).filter((l) => out[l.vaccine as string])
+  if (!mine.length) return out
 
+  const masterIds = mine.filter((l) => l.drug_master_id).map((l) => l.drug_master_id as string)
+  const tenantIds = mine.filter((l) => l.drug_id).map((l) => l.drug_id as string)
   const [{ data: masters }, { data: drugs }, { data: batches }] = await Promise.all([
     masterIds.length ? supabase.from('drug_master').select('id, name, strength').in('id', masterIds) : Promise.resolve({ data: [] }),
     tenantIds.length ? supabase.from('drugs').select('id, name, strength').in('id', tenantIds) : Promise.resolve({ data: [] }),
-    supabase.from('drug_batches').select('id, drug_master_id, drug_id, batch_no, expiry, qty_available, mrp, gst_rate, hsn_code')
+    supabase.from('drug_batches').select('drug_master_id, drug_id, expiry, qty_available, mrp')
       .gt('expiry', today).gt('qty_available', 0).order('expiry'),
   ])
   const nameOf = new Map<string, string>()
   for (const m of [...(masters ?? []), ...(drugs ?? [])]) nameOf.set(m.id as string, `${m.name}${m.strength ? ` ${m.strength}` : ''}`)
 
-  for (const row of Object.values(out)) {
-    if (!row.productId) continue
-    row.productName = nameOf.get(row.productId) ?? null
-    const mine = (batches ?? []).filter((b) => (row.productIsGlobal ? b.drug_master_id : b.drug_id) === row.productId)
-    row.inStock = mine.reduce((n, b) => n + (b.qty_available as number), 0)
-    if (mine.length) {
-      row.earliestExpiry = mine[0].expiry as string
-      row.price = mine[0].mrp as number
+  for (const l of mine) {
+    const row = out[l.vaccine as string]
+    const isGlobal = !!l.drug_master_id
+    const productId = (l.drug_master_id as string | null) ?? (l.drug_id as string)
+    const mineBatches = (batches ?? []).filter((b) => (isGlobal ? b.drug_master_id : b.drug_id) === productId)
+    const p: VaccineProduct = {
+      linkId: l.id as string, productId, isGlobal,
+      name: nameOf.get(productId) ?? 'Unknown product',
+      inStock: mineBatches.reduce((n, b) => n + (b.qty_available as number), 0),
+      earliestExpiry: (mineBatches[0]?.expiry as string | undefined) ?? null,
+      price: (mineBatches[0]?.mrp as number | undefined) ?? null,
     }
+    row.products.push(p)
+  }
+  for (const row of Object.values(out)) {
+    row.products.sort((a, b) => a.name.localeCompare(b.name))
+    row.inStock = row.products.reduce((n, p) => n + p.inStock, 0)
+    // First to expire across the brands in stock is what goes out next.
+    row.next = row.products.filter((p) => p.inStock > 0)
+      .sort((a, b) => (a.earliestExpiry ?? '9999').localeCompare(b.earliestExpiry ?? '9999'))[0] ?? null
   }
   return out
 }
@@ -141,8 +159,8 @@ function findDose(v: Vaccination, vaccine: string, dose: string) {
 }
 
 /** Records one vaccine as given today. */
-export async function giveVaccineToday(patientId: string, vaccine: string, doseLabel: string, visitId?: string | null):
-  Promise<{ success: true; warning?: string; billNo?: string; amount?: number } | { success: false; error: string }> {
+export async function giveVaccineToday(patientId: string, vaccine: string, doseLabel: string, visitId?: string | null, productId?: string | null):
+  Promise<{ success: true; warning?: string; billNo?: string; amount?: number; product?: string } | { success: false; error: string }> {
   const actor = await guard()
   const supabase = await createClient()
   const v = await load(supabase, patientId)
@@ -156,26 +174,34 @@ export async function giveVaccineToday(patientId: string, vaccine: string, doseL
   }
   const supply = v.supply[vaccine]
   const id = crypto.randomUUID()
+  // Which brand: the one the clinic chose for this child, else the first to expire.
+  const product = productId ? supply?.products.find((p) => p.productId === productId) ?? null : supply?.next ?? null
   const { error } = await supabase.from('patient_immunizations').insert({
     id, tenant_id: actor.tenant_id, patient_id: patientId, given_by: actor.id, vaccine, dose_label: doseLabel,
     given_date: v.today, date_known: true, visit_id: visitId ?? null,
+    product_drug_master_id: product?.isGlobal ? product.productId : null,
+    product_drug_id: product && !product.isGlobal ? product.productId : null,
+    product_name: product?.name ?? null,
   })
   if (error) return { success: false, error: error.code === '23505' ? `${d.label} is already recorded` : error.message }
-  await logAudit(actor.id, 'immunization', 'patient', patientId, { vaccine, dose: doseLabel, visit_id: visitId ?? null })
+  await logAudit(actor.id, 'immunization', 'patient', patientId, { vaccine, dose: doseLabel, visit_id: visitId ?? null, product: product?.name ?? null })
 
   // Government supply: nothing to charge and nothing to take out of pharmacy stock.
   if (!supply || supply.free_supply) return { success: true }
-  if (!supply.productId) {
+  if (!supply.products.length) {
     return { success: true, warning: `${d.label} is recorded. Link a pharmacy product to this vaccine to charge it and take it out of stock.` }
   }
-  const batch = await fefoBatch(supabase, supply.productId, supply.productIsGlobal, v.today)
+  if (!product) {
+    return { success: true, warning: `${d.label} is recorded, but no linked brand has stock — nothing was charged.` }
+  }
+  const batch = await fefoBatch(supabase, product.productId, product.isGlobal, v.today)
   if (!batch) {
-    return { success: true, warning: `${d.label} is recorded, but there is no stock of ${supply.productName ?? 'the vaccine'} — nothing was charged.` }
+    return { success: true, warning: `${d.label} is recorded, but there is no stock of ${product.name} — nothing was charged.` }
   }
   const bill = await createServiceBill(supabase, {
     tenantId: actor.tenant_id, patientId, actorId: actor.id, billSource: 'vaccine', visitId: visitId ?? null,
     lines: [{
-      source: 'vaccine', ref_id: id, description: `${d.label} — ${supply.productName ?? vaccine}`,
+      source: 'vaccine', ref_id: id, description: `${d.label} — ${product.name}`,
       qty: 1, unit_price: batch.mrp as number,
       gst_rate: (batch.gst_rate as number | null) ?? null, hsn_sac: (batch.hsn_code as string | null) ?? null,
     }],
@@ -186,7 +212,7 @@ export async function giveVaccineToday(patientId: string, vaccine: string, doseL
   await supabase.from('patient_immunizations')
     .update({ fulfilment: 'pending', bill_id: bill.billId, charge_amount: batch.mrp as number })
     .eq('id', id)
-  return { success: true, billNo: bill.billNo, amount: batch.mrp as number }
+  return { success: true, billNo: bill.billNo, amount: batch.mrp as number, product: product.name }
 }
 
 async function insertEarlier(supabase: SupabaseClient, actor: { id: string; tenant_id: string }, v: Vaccination, patientId: string, d: DoseStatus, date: string | null) {
@@ -335,7 +361,7 @@ export async function listVaccineOrders(): Promise<VaccineOrder[]> {
   const supabase = await createClient()
   const since = istAddDaysLocal(istToday(), -7)
   const { data } = await supabase.from('patient_immunizations')
-    .select('id, vaccine, dose_label, given_date, fulfilment, charge_amount, batch_no, expiry_date, patient:patients(id, full_name, uhid, dob), bill:bills(id, bill_no, status, paid, total)')
+    .select('id, vaccine, dose_label, given_date, fulfilment, charge_amount, batch_no, expiry_date, product_name, patient:patients(id, full_name, uhid, dob), bill:bills(id, bill_no, status, paid, total)')
     .in('fulfilment', ['pending', 'dispensed'])
     .gte('given_date', since)
     .order('given_date', { ascending: false })
@@ -352,7 +378,7 @@ export async function listVaccineOrders(): Promise<VaccineOrder[]> {
     bill: (r.bill as VaccineOrder['bill']) ?? null,
     batch_no: (r.batch_no as string | null) ?? null,
     expiry_date: (r.expiry_date as string | null) ?? null,
-    productName: supply[r.vaccine as string]?.productName ?? null,
+    productName: (r.product_name as string | null) ?? supply[r.vaccine as string]?.next?.name ?? null,
     inStock: supply[r.vaccine as string]?.inStock ?? 0,
   }))
 }
@@ -364,7 +390,7 @@ export async function dispenseVaccine(immunizationId: string): Promise<SimpleRes
   await requirePermission(actor.role, 'pharmacy:dispense')
   const supabase = await createClient()
   const { data: row } = await supabase.from('patient_immunizations')
-    .select('id, patient_id, vaccine, dose_label, fulfilment, bill:bills(bill_no, status, paid, total)')
+    .select('id, patient_id, vaccine, dose_label, fulfilment, product_drug_master_id, product_drug_id, product_name, bill:bills(bill_no, status, paid, total)')
     .eq('id', immunizationId).maybeSingle()
   if (!row) return { success: false, error: 'Vaccine record not found' }
   if (row.fulfilment === 'dispensed') return { success: false, error: 'Already dispensed' }
@@ -377,19 +403,26 @@ export async function dispenseVaccine(immunizationId: string): Promise<SimpleRes
   }
 
   const today = istToday()
-  const supply = await loadSupply(supabase, [row.vaccine as string], today)
-  const s = supply[row.vaccine as string]
-  if (!s?.productId) return { success: false, error: 'No pharmacy product is linked to this vaccine' }
-  const batch = await fefoBatch(supabase, s.productId, s.productIsGlobal, today)
-  if (!batch) return { success: false, error: `No stock of ${s.productName ?? row.vaccine} — add stock first.` }
+  // The brand the parents were charged for; fall back to the first to expire.
+  let productId = (row.product_drug_master_id as string | null) ?? (row.product_drug_id as string | null)
+  let isGlobal = !!row.product_drug_master_id
+  let productName = (row.product_name as string | null) ?? null
+  if (!productId) {
+    const supply = await loadSupply(supabase, [row.vaccine as string], today)
+    const next = supply[row.vaccine as string]?.next
+    if (!next) return { success: false, error: 'No pharmacy product with stock is linked to this vaccine' }
+    productId = next.productId; isGlobal = next.isGlobal; productName = next.name
+  }
+  const batch = await fefoBatch(supabase, productId, isGlobal, today)
+  if (!batch) return { success: false, error: `No stock of ${productName ?? row.vaccine} — add stock first.` }
 
   const dispenseId = crypto.randomUUID()
   const { data: result, error: rpcErr } = await supabase.rpc('dispense_drug', {
     p_dispense_id: dispenseId,
     p_patient_id: row.patient_id,
     p_prescription_id: null,
-    p_drug_id: s.productIsGlobal ? null : s.productId,
-    p_drug_master_id: s.productIsGlobal ? s.productId : null,
+    p_drug_id: isGlobal ? null : productId,
+    p_drug_master_id: isGlobal ? productId : null,
     p_batch_id: batch.id,
     p_qty: 1,
     p_price_snapshot: batch.mrp,
@@ -442,25 +475,49 @@ export async function listVaccineStock(): Promise<VaccineSupply[]> {
   return vaccines.map((v) => supply[v])
 }
 
-/** Links a vaccine to a pharmacy product, or marks it as government (free) supply. */
-export async function setVaccineProduct(
-  vaccine: string,
-  input: { productId?: string | null; productIsGlobal?: boolean; freeSupply?: boolean },
-): Promise<SimpleResult> {
+/** Adds a pharmacy product (brand) to a vaccine — a vaccine can have several. */
+export async function addVaccineProduct(vaccine: string, productId: string, isGlobal: boolean): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:manage')
   const supabase = await createClient()
   const { count } = await supabase.from('immunization_schedule').select('vaccine', { count: 'exact', head: true }).eq('vaccine', vaccine)
   if (!count) return { success: false, error: 'Unknown vaccine' }
-  const { error } = await supabase.from('vaccine_products').upsert({
+  const { error } = await supabase.from('vaccine_products').insert({
     tenant_id: actor.tenant_id, vaccine,
-    drug_master_id: input.productId && input.productIsGlobal ? input.productId : null,
-    drug_id: input.productId && !input.productIsGlobal ? input.productId : null,
-    free_supply: !!input.freeSupply,
-    updated_by: actor.id, updated_at: new Date().toISOString(),
+    drug_master_id: isGlobal ? productId : null,
+    drug_id: isGlobal ? null : productId,
+    updated_by: actor.id,
+  })
+  if (error) return { success: false, error: error.code === '23505' ? 'That product is already linked to this vaccine' : error.message }
+  await logAudit(actor.id, 'vaccine_product_add', 'tenant', actor.tenant_id, { vaccine, productId })
+  return { success: true }
+}
+
+export async function removeVaccineProduct(linkId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('vaccine_products').delete().eq('id', linkId).select('vaccine')
+  if (error) return { success: false, error: error.message }
+  if (!data?.length) return { success: false, error: 'Link not found' }
+  await logAudit(actor.id, 'vaccine_product_remove', 'tenant', actor.tenant_id, { vaccine: data[0].vaccine })
+  return { success: true }
+}
+
+/** Government (free) supply: recorded in the consultation with no charge and no pharmacy step. */
+export async function setVaccineFreeSupply(vaccine: string, freeSupply: boolean): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+  const supabase = await createClient()
+  const { count } = await supabase.from('immunization_schedule').select('vaccine', { count: 'exact', head: true }).eq('vaccine', vaccine)
+  if (!count) return { success: false, error: 'Unknown vaccine' }
+  const { error } = await supabase.from('vaccine_settings').upsert({
+    tenant_id: actor.tenant_id, vaccine, free_supply: freeSupply, updated_by: actor.id, updated_at: new Date().toISOString(),
   }, { onConflict: 'tenant_id,vaccine' })
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'vaccine_product', 'tenant', actor.tenant_id, { vaccine, ...input })
+  await logAudit(actor.id, 'vaccine_free_supply', 'tenant', actor.tenant_id, { vaccine, freeSupply })
   return { success: true }
 }
