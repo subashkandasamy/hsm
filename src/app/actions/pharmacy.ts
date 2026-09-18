@@ -10,6 +10,7 @@ import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/li
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
+import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -280,6 +281,83 @@ export async function lastSupplier(): Promise<string | null> {
     .select('supplier_name').not('supplier_name', 'is', null)
     .order('created_at', { ascending: false }).limit(1)
   return (data?.[0]?.supplier_name as string | null) ?? null
+}
+
+/** One invoice line paired with what the catalogue thinks it is. */
+export interface NameMatch {
+  /** The medicine name exactly as the file spells it. */
+  raw: string
+  drug: Drug | null
+  brand: string | null
+  /** 'sure' when the brand matched outright, 'likely' when it only starts with it. */
+  confidence: 'sure' | 'likely' | 'none'
+  /** Other candidates, so a wrong guess is one click from right. */
+  options: Drug[]
+}
+
+/**
+ * Matches the medicine names on a distributor's invoice to the catalogue.
+ *
+ * Invoice lines read "DOLO 650 TAB 15'S" where the catalogue holds "Paracetamol"
+ * with a brand "Dolo 650", so each name is stripped of pack and form words before
+ * it is searched. Names are searched together rather than one round trip each.
+ */
+export async function matchInvoiceNames(names: string[]): Promise<NameMatch[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  if (!names.length) return []
+
+  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 200)
+  const found = new Map<string, NameMatch>()
+
+  // A handful at a time: enough to hide the network, not enough to flood the pool.
+  for (let i = 0; i < unique.length; i += 8) {
+    const slice = unique.slice(i, i + 8)
+    const results = await Promise.all(slice.map(async (raw) => {
+      const cleaned = cleanDrugName(raw)
+      let hits = cleaned.length >= 2 ? await searchDrugs(cleaned, 6) : []
+      // "Augmentin 625 Duo" finds nothing whole; its first words do.
+      if (!hits.length) {
+        const words = cleaned.split(' ').filter(Boolean)
+        for (const attempt of [words.slice(0, 2).join(' '), words[0]]) {
+          if (!attempt || attempt.length < 2) continue
+          hits = await searchDrugs(attempt, 6)
+          if (hits.length) break
+        }
+      }
+      return { raw, cleaned, hits }
+    }))
+    for (const { raw, cleaned, hits } of results) found.set(raw, scoreMatch(raw, cleaned, hits))
+  }
+
+  return names.map((n) => found.get(n.trim()) ?? { raw: n, drug: null, brand: null, confidence: 'none', options: [] })
+}
+
+/** Picks the brand an invoice line means, and says how sure that is. */
+function scoreMatch(raw: string, cleaned: string, hits: Drug[]): NameMatch {
+  if (!hits.length) return { raw, drug: null, brand: null, confidence: 'none', options: [] }
+
+  let best: { drug: Drug; brand: string | null; score: number } | null = null
+  for (const d of hits) {
+    for (const brand of d.brand_aliases ?? []) {
+      const b = brand.toLowerCase()
+      const score = b === cleaned ? 100
+        : cleaned.startsWith(b) || b.startsWith(cleaned) ? 80
+        : cleaned.includes(b) && b.length >= 4 ? 65
+        : 0
+      if (score && (!best || score > best.score)) best = { drug: d, brand, score }
+    }
+    const name = d.name.toLowerCase()
+    const nameScore = name === cleaned ? 90 : cleaned.startsWith(name) ? 70 : 0
+    if (nameScore && (!best || nameScore > best.score)) best = { drug: d, brand: null, score: nameScore }
+  }
+
+  if (!best || best.score < 65) return { raw, drug: null, brand: null, confidence: 'none', options: hits }
+  return {
+    raw, drug: best.drug, brand: best.brand,
+    confidence: best.score >= 90 ? 'sure' : 'likely',
+    options: hits.filter((d) => d.id !== best!.drug.id),
+  }
 }
 
 /** The last batch received for a medicine — "same as last time" when receiving again. */

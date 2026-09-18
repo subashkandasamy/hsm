@@ -2,13 +2,14 @@
 
 import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { AlertTriangle, ArrowLeft, Check, Copy, Plus, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Plus, Search, Trash2, X } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import { lastBatchFor, receiveStock, type PrefillLine, type StockReceiptHeader, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
+import ImportInvoicePanel, { type ImportedLine } from './ImportInvoicePanel'
 
 /** A row being typed. Everything except batch / expiry / qty / rate comes from the master. */
 interface Line {
@@ -30,6 +31,10 @@ interface Line {
   storage: string
   reorder: string
   showMore: boolean
+  /** The medicine name as an imported invoice spelt it, when it came from a file. */
+  rawName?: string
+  /** The catalogue match was a guess — worth a glance before saving. */
+  needsCheck?: boolean
 }
 
 let seq = 0
@@ -84,9 +89,51 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
     return [l]
   })
 
+  const [importing, setImporting] = useState(false)
+  const [imported, setImported] = useState<{ total: number; unmatched: number; unsure: number } | null>(null)
+
   const set = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   const addLine = () => setLines((ls) => [...ls, newLine()])
   const removeLine = (key: string) => setLines((ls) => (ls.length === 1 ? [newLine()] : ls.filter((l) => l.key !== key)))
+
+  /** Turns a read invoice into rows of this form, matched where the catalogue was sure. */
+  function loadImported(rows: ImportedLine[]) {
+    const next = rows.map(({ row, match }) => {
+      let l: Line = {
+        ...newLine(),
+        batch: row.batch,
+        expiry: row.expiry,
+        packs: row.packs,
+        free: row.free,
+        rate: row.rate,
+        mrp: row.mrp,
+        packSize: row.packSize,
+        hsn: row.hsn,
+        gst: row.gst,
+        manufacturer: row.manufacturer,
+        rawName: row.name,
+      }
+      if (match.drug) {
+        l = applyDrug(l, match.drug, match.brand)
+        // What the invoice itself says wins over the catalogue's defaults.
+        if (row.packSize) l.packSize = row.packSize
+        if (row.hsn) l.hsn = row.hsn
+        if (row.gst) l.gst = row.gst
+        if (row.manufacturer) l.manufacturer = row.manufacturer
+        l.needsCheck = match.confidence !== 'sure'
+      }
+      return l
+    })
+    // Keep anything already typed in; drop the untouched blank row.
+    const kept = lines.filter((l) => l.drug || l.batch || l.packs)
+    setLines([...kept, ...next])
+    setImported({
+      total: next.length,
+      unmatched: next.filter((l) => !l.drug).length,
+      unsure: next.filter((l) => l.needsCheck).length,
+    })
+    setImporting(false)
+  }
 
   const totals = useMemo(() => {
     let cost = 0, units = 0, filled = 0
@@ -153,9 +200,14 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         title="Receive stock"
         subtitle="One invoice at a time. Pick the medicine and the rest fills in from the catalogue — type only batch, expiry, quantity and rate."
         action={
-          <button onClick={() => router.push('/pharmacy')} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium" style={btn()}>
-            <ArrowLeft className="w-4 h-4" /> Back to pharmacy
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setImporting(true); setImported(null) }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium" style={btn()}>
+              <FileUp className="w-4 h-4" /> Import invoice
+            </button>
+            <button onClick={() => router.push('/pharmacy')} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium" style={btn()}>
+              <ArrowLeft className="w-4 h-4" /> Back to pharmacy
+            </button>
+          </div>
         }
       />
 
@@ -176,6 +228,24 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
       {prefill.length > 0 && (
         <p className="mb-3 text-sm px-3 py-2 rounded-xl" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
           {prefill.length} medicine{prefill.length === 1 ? ' is' : 's are'} at or below the reorder level. Quantities are a suggestion — change them, and remove anything you are not buying.
+        </p>
+      )}
+
+      {importing && <ImportInvoicePanel onLoad={loadImported} onClose={() => setImporting(false)} />}
+
+      {imported && (
+        <p className="mb-3 text-sm px-3 py-2 rounded-xl flex items-center gap-2 flex-wrap"
+          style={imported.unmatched || imported.unsure
+            ? { background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
+            : { background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }}>
+          <span>
+            {imported.total} line{imported.total === 1 ? '' : 's'} read from the invoice
+            {imported.unmatched ? ` · ${imported.unmatched} need the medicine picked` : ''}
+            {imported.unsure ? ` · ${imported.unsure} to check` : ''}
+            {!imported.unmatched && !imported.unsure ? ' · all matched' : ''}
+          </span>
+          <button onClick={() => setImported(null)} className="ml-auto text-xs underline"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>dismiss</button>
         </p>
       )}
 
@@ -301,7 +371,9 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
   line: Line; index: number; set: (key: string, patch: Partial<Line>) => void
   remove: () => void; onAddLine: () => void; isLast: boolean
 }) {
-  const [query, setQuery] = useState('')
+  // An imported line starts with the invoice's own wording in the box, so picking
+  // the medicine is a glance and a click rather than retyping it.
+  const [query, setQuery] = useState(l.drug ? '' : (l.rawName ?? ''))
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const results = useDrugSearch(query, 8)
@@ -313,7 +385,11 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
   const margin = rate != null && mrp != null && rate > 0 && l.packSize ? ((mrp * Number(l.packSize) - rate) / rate) * 100 : null
 
   function pick(d: Drug, brand: string | null) {
-    set(l.key, applyDrug(l, d, brand))
+    const next = applyDrug(l, d, brand)
+    // On an imported line the invoice's own pack size is what actually arrived,
+    // so it outranks the catalogue's default for that brand.
+    if (l.rawName && l.packSize) next.packSize = l.packSize
+    set(l.key, next)
     setOpen(false); setQuery('')
     setTimeout(() => batchRef.current?.focus(), 30)
   }
@@ -347,7 +423,14 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
                 <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
                   {l.brandName ?? l.drug.name}
                   {l.drug.strength ? <span style={{ color: '#475569' }}> · {l.drug.strength}</span> : null}
+                  {l.needsCheck && (
+                    <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-md font-medium align-middle"
+                      style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>check</span>
+                  )}
                 </p>
+                {l.rawName && (
+                  <p className="text-xs truncate" style={{ color: '#CBD5E1' }}>invoice: {l.rawName}</p>
+                )}
                 <p className="text-xs" style={{ color: '#94A3B8' }}>
                   {l.drug.name}{l.packSize ? ` · pack ${l.packSize} ${l.packUnit}` : ''}{l.hsn ? ` · HSN ${l.hsn}` : ''}{l.gst ? ` · GST ${l.gst}%` : ''}
                 </p>
@@ -364,6 +447,7 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast }: {
                   autoFocus={isLast && index > 0}
                   value={query}
                   onChange={(e) => { setQuery(e.target.value); setOpen(e.target.value.trim().length >= 2); setActive(0) }}
+                  onFocus={() => { if (query.trim().length >= 2) setOpen(true) }}
                   onKeyDown={(e) => {
                     if (!open || !results.length) return
                     if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)) }
