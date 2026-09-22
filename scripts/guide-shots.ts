@@ -138,6 +138,19 @@ export const SHOTS: Shot[] = [
   { name: 'ward-board',   path: '/wards',        selector: 'main', wait: 2500 },
   { name: 'ipd-list',     path: '/ipd',          selector: 'main', wait: 2500 },
   { name: 'opd-queue',    path: '/opd',          selector: 'main', wait: 2500 },
-  { name: 'lab-orders',   path: '/lab',          selector: 'main', wait: 2500 },
+  { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
+  {
+    name: 'lab-reported',
+    path: '/lab',
+    steps: [{ clickText: 'Reported' }, { wait: 1500 }],
+    selector: 'main', wait: 2500,
+  },
+  { name: 'radiology-worklist', path: '/radiology', selector: 'main', wait: 3000 },
+  {
+    name: 'radiology-reported',
+    path: '/radiology',
+    steps: [{ clickText: 'Reported' }, { wait: 1500 }],
+    selector: 'main', wait: 3000,
+  },
   { name: 'billing',      path: '/billing',      selector: 'main', wait: 2500 },
 ]

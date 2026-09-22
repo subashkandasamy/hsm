@@ -253,6 +253,17 @@ async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string;
     unit, price, ref_low: lo, ref_high: hi, category: 'General', is_active: true,
   }))
   ok(`${rows.length} lab tests`, (await db.from('lab_tests_catalog').insert(rows)).error)
+
+  const scans = [
+    ['Chest X-Ray (PA view)', 'X-Ray', 'Chest',   450],
+    ['X-Ray Knee (AP/Lat)',   'X-Ray', 'Knee',    500],
+    ['Ultrasound Abdomen',    'Ultrasound', 'Abdomen', 1200],
+    ['Obstetric Ultrasound',  'Ultrasound', 'Pelvis',  1400],
+    ['CT Brain (plain)',      'CT', 'Brain',      3500],
+  ].map(([name, modality, body_part, price]) => ({
+    id: uuid(), tenant_id: tenantId, name, modality, body_part, price, is_active: true,
+  }))
+  ok(`${scans.length} radiology studies`, (await db.from('radiology_catalog').insert(scans)).error)
   return rows.map((r) => ({ id: r.id, name: r.name, price: r.price }))
 }
 
@@ -440,6 +451,29 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
     notes: 'Well. Continue iron and calcium.', recorded_by: doctorId(s, 'Lakshmi Iyer'),
   })).error)
 
+  // Imaging: one reported with findings, one still waiting.
+  const { data: scans } = await db.from('radiology_catalog').select('id, name, price').eq('tenant_id', tenantId)
+  const scan = (n: string) => (scans ?? []).find((x) => (x.name as string).startsWith(n))!
+  if (scans?.length) {
+    ok('2 radiology orders', (await db.from('radiology_orders').insert([
+      {
+        id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Saraswathi'),
+        test_id: scan('Chest X-Ray').id, price_snapshot: scan('Chest X-Ray').price,
+        ordered_by: doctorId(s, 'Arun Prakash'), status: 'reported', billing_status: 'billed',
+        ordered_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+        reported_at: new Date(Date.now() - 86400000 * 1.8).toISOString(),
+        priority: 'urgent',
+        report: 'Right lower zone consolidation with air bronchograms. Cardiac silhouette normal. No pleural effusion. Findings consistent with lobar pneumonia.',
+      },
+      {
+        id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Lakshmi'),
+        test_id: scan('Obstetric Ultrasound').id, price_snapshot: scan('Obstetric Ultrasound').price,
+        ordered_by: doctorId(s, 'Lakshmi Iyer'), status: 'ordered', billing_status: 'unbilled',
+        ordered_at: new Date().toISOString(), priority: 'routine',
+      },
+    ])).error)
+  }
+
   // A lab order with results, and one still waiting.
   const murugan = patientId(s, 'Murugan')
   const pick = (n: string) => tests.find((t) => t.name.startsWith(n))!
@@ -457,7 +491,7 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
     { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('Serum Creatinine').id,
       price_snapshot: pick('Serum Creatinine').price, result_value: 1.1, unit: 'mg/dL', flag: 'normal' },
     { id: uuid(), tenant_id: tenantId, lab_order_id: pending, test_id: pick('Complete Blood Count').id,
-      price_snapshot: pick('Complete Blood Count').price, flag: 'normal' },
+      price_snapshot: pick('Complete Blood Count').price, flag: 'pending' },
   ])).error)
 }
 
@@ -572,16 +606,6 @@ async function completeSetup(tenantId: string, s: Seeded): Promise<void> {
   }))
   ok(`${tariffs.length} tariffs`, (await db.from('procedure_tariffs').insert(tariffs)).error)
 
-  const scans = [
-    ['Chest X-Ray (PA view)', 'X-Ray', 'Chest',   450],
-    ['X-Ray Knee (AP/Lat)',   'X-Ray', 'Knee',    500],
-    ['Ultrasound Abdomen',    'Ultrasound', 'Abdomen', 1200],
-    ['Obstetric Ultrasound',  'Ultrasound', 'Pelvis',  1400],
-    ['CT Brain (plain)',      'CT', 'Brain',      3500],
-  ].map(([name, modality, body_part, price]) => ({
-    id: uuid(), tenant_id: tenantId, name, modality, body_part, price, is_active: true,
-  }))
-  ok(`${scans.length} radiology studies`, (await db.from('radiology_catalog').insert(scans)).error)
 }
 
 // ── 10. Today ────────────────────────────────────────────────────────────────

@@ -1408,7 +1408,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Order to scan to report — modality worklist, structured reporting and templates on one patient record.',
     metaTitle: 'Radiology Information System (RIS) Software India',
     description:
-      'Radiology information system (RIS) software for Indian hospitals — order to scan to verified report, modality worklist, reporting templates and billing.',
+      'Radiology information system (RIS) software for Indian hospitals — order to scan to report, a worklist by stage, and charges that reach the patient bill.',
     keywords: [
       'radiology information system',
       'ris software',
@@ -1420,9 +1420,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     primaryKeyword: 'radiology information system',
     h1: 'Radiology information system (RIS) software',
     subhead:
-      'A radiology department’s job is to turn an order into a verified report without anything getting lost in between. Uyirly’s RIS runs that whole path — order, modality worklist, scan, structured report — on the same patient record and billing as the rest of the hospital, so a scan ordered in a consultation comes back as a report the doctor can actually see.',
+      'A radiology department’s job is to turn an order into a report without anything getting lost in between. Uyirly runs that whole path — order, worklist, scan, report — on the same patient record and billing as the rest of the hospital, so a scan ordered in a consultation comes back as a report the doctor can actually see.',
     heroBullets: [
-      'Order → worklist → scan → verified report in one flow',
+      'Order → worklist → scan → report in one flow',
       'Modality worklist so technicians know what’s pending',
       'Reporting templates for faster, consistent reports',
       'Billing and patient record shared with the hospital',
@@ -1447,7 +1447,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Structured reporting with templates',
         body:
-          'Radiology reports are faster and more consistent when the radiologist starts from a template rather than a blank page. Uyirly supports reporting templates per study type, so a chest X-ray or an ultrasound report follows the same structure every time, and the verified report is formatted into a clean PDF ready to hand to the patient or attach to their record.',
+          'A radiology order carries the study, the priority and who asked for it, and moves through the worklist as the scan is performed and reported. The report is written against the order, so it sits on the same patient record as their consultation and lab results rather than in a separate folder, and prints on the hospital letterhead.',
       },
       {
         h2: 'Connected to the rest of the hospital',
@@ -1466,7 +1466,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         steps: [
           { title: 'Order', body: 'The doctor orders the scan from a consultation; it appears on the radiology worklist.' },
           { title: 'Scan', body: 'The technician performs the study and marks it done — the worklist status updates live.' },
-          { title: 'Report', body: 'The radiologist writes the report from a template for that study type.' },
+          { title: 'Report', body: 'The radiologist writes the report against the order, and it lands on the patient record.' },
           { title: 'Verify', body: 'The report is checked and signed off before release.' },
           { title: 'Deliver', body: 'The letterhead PDF reaches the doctor and patient, and the charge is already on the bill.' },
         ],
@@ -1478,8 +1478,8 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         a: 'A RIS (radiology information system) manages the workflow and reports — orders, worklist, reporting, billing — while a PACS stores and displays the actual images. They complement each other. Uyirly provides the RIS workflow and reporting on one shared patient record.',
       },
       {
-        q: 'Does it handle reporting templates?',
-        a: 'Yes. Radiologists can report from templates per study type, so reports are faster and consistent, and the verified report is formatted into a clean PDF for the patient or their record.',
+        q: 'How is a radiology report written and shared?',
+        a: 'The radiologist writes the report against the order itself, so it is attached to the patient rather than filed separately. It joins the same history as their consultation and lab results, and prints on the hospital letterhead for the patient or a referring doctor.',
       },
       {
         q: 'Can radiology share the same patient record as the rest of the hospital?',
