@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
@@ -6,19 +7,19 @@ import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 export const faqs = [
   {
     q: 'Who is responsible for making the nurse duty roster in a hospital?',
-    a: 'In most hospitals, rostering is decentralized to each ward or unit’s nurse in-charge (also called the ward manager or charge nurse), not a single central scheduler. A hospital with 1,000 nurses across 30 wards typically has around 30 in-charges, each rostering their own 20–40 nurses — which keeps the problem small and local instead of one impossible global puzzle.',
+    a: 'In most hospitals rostering is decentralised to each unit’s nurse in-charge, not a single central scheduler. A hospital with 1,000 nurses across 30 wards has around 30 in-charges, each rostering their own 20–40 nurses — which keeps the problem small and local instead of one impossible global puzzle.',
   },
   {
     q: 'How many nurses should be on duty per shift?',
-    a: 'It depends on the ward type and how many beds are occupied. NABH-recommended ratios range from 1 nurse per 6 patients in a general ward to 1:1 in ICU. Required headcount = occupied beds ÷ ratio, rounded up. Our nurse-to-patient ratio guide has the full ward-by-ward table.',
+    a: 'It depends on the unit and on how many beds are actually occupied. Required headcount = occupied beds ÷ the nurse-to-patient ratio, rounded up, with a floor so a near-empty ward is never left unstaffed. NABH-informed ratios run from about 1:6 in a general ward to 1:1 in intensive care.',
   },
   {
     q: 'Can nurse rostering be automated?',
-    a: 'Partially, and that’s usually enough. Copy-forward (repeat last week) and cyclic patterns (a fixed rotation like 7 days morning, 2 off, 7 evening) handle most of the routine scheduling. Coverage auto-fill then checks each shift against the required ratio and fills any gaps from available staff. Full constraint-solver optimization exists but is overkill for hospitals under a few hundred beds.',
+    a: 'Partly, and that is usually enough. Copying last week forward, stamping a cyclic pattern, and filling the remaining gaps against the coverage ratio handle most routine scheduling. Full constraint-solver optimisation exists but is overkill for hospitals under a few hundred beds.',
   },
   {
     q: 'What happens to the roster when a nurse takes leave?',
-    a: 'Planned leave should be requested and approved in advance so the roster generator excludes that nurse automatically and flags the resulting gap for the in-charge to fill. Same-day sick leave is different — it shows up as an attendance gap on the day itself, and the in-charge needs a quick way to see who else is available to step in.',
+    a: 'Approved leave should be excluded automatically — the generator must not schedule someone who is already off, and the resulting gap should be flagged. Same-day sick leave is a different problem: nothing can plan for it, so what matters is how quickly the in-charge can see who else is free.',
   },
 ]
 
@@ -26,150 +27,174 @@ export default function Guide() {
   return (
     <>
       <p>
-        Ask any nurse in-charge at a busy hospital how the duty roster gets made, and you will rarely hear
-        &ldquo;software does it.&rdquo; More often it is a WhatsApp group, a printed sheet on the ward notice board, and a
-        lot of memory. That works when a ward has 15 nurses. It stops working somewhere between 40 and 100 &mdash;
-        and by the time a hospital has 100+ nurses across multiple wards, rostering by memory becomes a genuine
-        patient-safety risk, not just an inconvenience.
-      </p>
-      <p>
-        This guide walks through how nurse duty rosters actually get built at scale: who is responsible for
-        them, how many nurses a shift really needs, what can be automated, and what happens the moment someone
-        calls in sick.
+        Ask a nurse in-charge how the duty roster gets made and you will rarely hear &ldquo;software does
+        it&rdquo;. More often it is a WhatsApp group, a sheet on the notice board, and a lot of memory. That
+        works for fifteen nurses. Somewhere past forty it stops, and past a hundred it becomes a
+        patient-safety problem rather than an inconvenience.
       </p>
 
-      <h2>Who builds the roster &mdash; and why it isn&apos;t one person</h2>
+      <h2>The roster is not one big problem</h2>
       <p>
-        The biggest misconception about rostering 1,000 nurses is that someone has to schedule 1,000 nurses.
-        In practice, no one does. Rostering is <strong>decentralized to each ward or unit</strong>. Every ward has a
-        nurse in-charge (sometimes called a charge nurse or ward manager) who is responsible only for their own
-        unit &mdash; typically 20 to 40 nurses.
+        The common mistake is to imagine that rostering a thousand nurses means scheduling a thousand nurses.
+        Nobody does that. Rostering is owned per unit, by someone who knows that team.
       </p>
       <StatGrid stats={[
         { value: '1,000', label: 'nurses in a large hospital' },
-        { value: '~30', label: 'wards, each with its own in-charge' },
+        { value: '~30', label: 'units, each with its own in-charge' },
         { value: '20–40', label: 'nurses per in-charge to roster' },
       ]} />
       <p>
-        That reframes the problem entirely. Instead of one impossible 1,000-person puzzle, you have thirty
-        small, manageable ones &mdash; each owned by someone who actually knows their team&apos;s skills, preferences
-        and constraints. Software should mirror this structure: a ward-scoped roster that an in-charge can
-        build and publish for their own unit, not a single global grid that only an administrator can touch.
+        Software should mirror that, and Uyirly does: the roster is scoped to a{' '}
+        <strong>nursing unit</strong> — a block, floor and wing — and a nurse named as that unit&apos;s
+        in-charge can build, publish and approve leave for it without being an administrator of the whole
+        hospital.
       </p>
 
-      <h2>How often is a roster actually made?</h2>
+      <h2>Step 1 — The week grid</h2>
+      <Screenshot
+        src="/guides/nurse-roster.png" width={2560} height={990}
+        alt="Nurse roster week grid for unit A · 1 · East, 21 to 27 September, with two nurses down the side and each day a dropdown showing Night or Morning, a tick on covered days and 2 short on the uncovered Sunday"
+        caption="One unit, one week. Each cell is a shift; each column says whether that day is covered."
+      />
       <p>
-        Rosters are typically built and published <strong>one to four weeks in advance</strong>, not day by day.
-        The daily work is different &mdash; it is attendance and gap-filling, not scheduling from scratch. A
-        well-run ward publishes next week&apos;s roster by Thursday or Friday, so nurses know their shifts ahead of
-        time and can plan their lives around them.
+        Nurses down the side, days across the top, a shift in each cell. Two things in this picture are worth
+        pointing at:
+      </p>
+      <ul>
+        <li>
+          <strong>The unit selector.</strong> The grid is always one unit at a time, because that is the
+          scope a person can actually hold in their head.
+        </li>
+        <li>
+          <strong>The header under each day.</strong> A tick means the day meets its required staffing;{' '}
+          <em>2 short</em> means it does not. That number is computed, not typed — more on it below.
+        </li>
+      </ul>
+      <p>
+        A nurse can hold only <strong>one shift per day</strong> across the whole hospital, which the
+        database enforces rather than trusting the grid. You cannot accidentally roster the same person into
+        two units on the same morning.
       </p>
 
-      <h2>How rostering can be automated (without a PhD in optimization)</h2>
-      <p>
-        Hospitals don&apos;t need a constraint-solving algorithm to get real time savings. Three simple techniques
-        cover almost every situation:
-      </p>
+      <h2>Step 2 — Not building it from scratch</h2>
       <WorkflowDiagram
-        title="How a week's roster gets built"
+        title="How a week actually gets built"
         steps={[
-          { label: 'Copy last week', sublabel: 'Clone the previous roster as a draft' },
-          { label: 'Apply a pattern', sublabel: 'Stamp a rotation template for cyclic teams' },
-          { label: 'Auto-fill gaps', sublabel: 'Fill shortfalls to meet coverage ratios' },
-          { label: 'Publish', sublabel: 'In-charge reviews and locks it in' },
+          { label: 'Copy last week', sublabel: 'Most nurses repeat' },
+          { label: 'Apply a pattern', sublabel: 'For cyclic teams' },
+          { label: 'Auto-fill', sublabel: 'Close the ratio gaps' },
+          { label: 'Publish', sublabel: 'Drafts become the rota' },
         ]}
       />
       <ul>
-        <li><strong>Copy-forward</strong> &mdash; clone last week&apos;s roster as this week&apos;s starting draft. This alone covers the majority of edits, since most nurses work a fairly stable pattern week to week.</li>
-        <li><strong>Cyclic patterns</strong> &mdash; define a rotation once (for example, 7 days morning, 2 off, 7 days evening, 2 off, 7 days night, 3 off) and let the system stamp it across the weeks for any nurse assigned to that pattern.</li>
-        <li><strong>Coverage auto-fill</strong> &mdash; calculate how many nurses each shift needs (see the next section), compare that to who is already scheduled, and automatically assign available nurses to close any gap &mdash; ranked fairly by who has worked the fewest shifts that week.</li>
+        <li>
+          <strong>Copy last week</strong> clones the previous week into the empty slots. It leaves anything
+          already filled alone, so it is safe to press on a half-built week.
+        </li>
+        <li>
+          <strong>Patterns</strong> stamp a repeating rotation — say seven mornings, two off, seven nights,
+          three off — across the weeks for the nurses assigned to it, anchored to a start date so the cycle
+          stays in phase from one month to the next.
+        </li>
+        <li>
+          <strong>Auto-fill</strong> works out what each shift needs, counts who is already on, and assigns
+          the shortfall from available nurses — picking the nurse with the fewest shifts so far, so the
+          machine does not quietly overwork whoever happens to sort first.
+        </li>
       </ul>
-      <CalloutBox tone="tip" title="You don't need full optimization">
-        Full constraint-solver scheduling (the kind airlines use for crew rostering) is real, but it is
-        overkill for hospitals under a few hundred beds. Copy-forward plus patterns plus coverage auto-fill
-        gets you most of the benefit with none of the complexity.
+      <CalloutBox tone="tip" title="All three skip anyone on approved leave">
+        Whichever route builds the week, a nurse with approved leave covering that date is never staged into
+        it. That is the difference between leave being recorded and leave being <em>respected</em> — and the
+        thing to test in a demo rather than take on faith.
       </CalloutBox>
-
-      <h2>How many nurses does a shift actually need?</h2>
       <p>
-        This is where most rosters go wrong &mdash; not from lack of effort, but from lack of a clear number to
-        aim for. The required headcount for a shift is a simple calculation:
+        Everything built this way lands as a <strong>draft</strong>, shown dashed on the grid. Publishing is a
+        separate, deliberate act, because a roster staff can see is a promise and a half-finished one causes
+        more trouble than no roster at all.
       </p>
-      <blockquote>required nurses = occupied beds in the ward &divide; nurse-to-patient ratio (rounded up)</blockquote>
+
+      <h2>Step 3 — How &ldquo;2 short&rdquo; is calculated</h2>
+      <Screenshot
+        src="/guides/roster-coverage.png" width={2560} height={1980}
+        alt="Shifts and coverage settings showing morning, evening and night shift types with their hours, a coverage ratios card, and a unit in-charges card"
+        caption="Shift types, the ratio each unit runs at, and who is allowed to roster it."
+      />
       <p>
-        The ratio itself depends on the ward type. A general ward in India typically runs at 1 nurse per 6
-        patients under NABH norms, while an ICU runs at 1:1. We cover the full ward-by-ward table, including
-        HDU, OT, labour room and paediatrics, in our{' '}
+        Required staff for a shift is <strong>occupied beds ÷ ratio, rounded up</strong>, with a minimum so a
+        quiet ward is never left empty. Both the ratio and the minimum are set per unit and per shift,
+        because an intensive care unit at 1:2 and a general ward at 1:6 are not the same question. Units with
+        nothing set fall back to 1:6.
+      </p>
+      <p>
+        The bed count is live — it is the patients actually admitted into that unit&apos;s rooms right now, not
+        the ward&apos;s capacity. A ward that is half empty does not demand a full complement, and one that
+        has filled up says so on the roster before the shift starts rather than after.
+      </p>
+      <p>
+        Note the shift types in the screenshot: this hospital runs two twelve-hour shifts, so <em>evening</em>
+        is switched off and does not count towards coverage. Turning a shift off is how a ward says which
+        pattern it runs, rather than showing a permanent shortfall for a shift nobody works.
+      </p>
+      <p>
+        For the ward-by-ward ratio table and the NABH context behind it, see our{' '}
         <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio guide</Link>.
       </p>
-      <p>
-        A 30-bed general ward with 24 patients admitted at a 1:6 ratio needs 4 nurses that shift. A 10-bed ICU
-        at 1:1 needs 10. Once a hospital&apos;s software knows the ratio per ward and the live bed count, it can
-        show a simple &ldquo;3 of 4 nurses rostered&rdquo; badge on every shift &mdash; instead of an in-charge discovering
-        the shortfall only when the ward is already short-staffed.
-      </p>
 
-      <h2>What happens when a nurse takes leave</h2>
-      <p>There are two very different situations here, and a roster system needs to handle both:</p>
-      <h3>Planned leave</h3>
+      <h2>Step 4 — Leave</h2>
+      <Screenshot
+        src="/guides/roster-leave.png" width={2560} height={856}
+        alt="Leave requests list showing an approved annual leave for one nurse and a pending casual leave for another with approve and reject buttons"
+        caption="Requested ahead, approved or rejected by the in-charge, and then honoured by the roster."
+      />
       <p>
-        A nurse requests leave in advance, an in-charge (or admin) approves it, and the roster generator
-        automatically excludes that nurse from any shift falling inside the approved dates. If that exclusion
-        drops a shift below its required headcount, the gap should be flagged clearly &mdash; not discovered on
-        the day itself.
+        Planned leave is requested with a type and a date range and approved by the in-charge or an admin.
+        From that moment it is a fact the roster respects: the generator will not place that nurse on those
+        days, and the shortfall shows up in the week header where someone can still do something about it.
       </p>
-      <h3>Same-day sick leave</h3>
       <p>
-        This is the harder, higher-stakes case. A nurse who was scheduled doesn&apos;t show up. The system needs
-        to surface, immediately, who else is available &mdash; off-duty-but-present staff, on-call nurses, or a
-        float pool &mdash; ranked by current workload, so the in-charge can fill the hole in one or two taps
-        rather than making phone calls down a list.
+        Same-day sickness is the harder case, and no scheduler can plan for it. What helps is speed — seeing
+        immediately who else is free. That is exactly what the nurse picker does when a patient is assigned
+        (below).
       </p>
 
       <h2>From roster to patient assignment</h2>
       <p>
-        The roster answers &ldquo;who is on duty.&rdquo; A separate, related question is &ldquo;which patients does each
-        nurse actually care for.&rdquo; That assignment should always be <strong>roster-aware</strong>: when a nurse
-        is picked for a patient, the list should default to nurses already rostered to that ward and shift,
-        show how many patients they already hold against their capacity, and warn &mdash; without blocking &mdash;
-        when a nurse is stretched past the ward&apos;s ratio. A patient can never be refused care for being
-        short-staffed; the software&apos;s job is to make the overload visible so help gets pulled in.
+        The roster answers &ldquo;who is on duty&rdquo;. A separate question is &ldquo;who is looking after
+        this patient&rdquo;, and the assignment is roster-aware: the picker lists nurses{' '}
+        <strong>rostered to that unit and shift first</strong>, then everyone else, with anyone on approved
+        leave sorted to the bottom and marked. Each nurse shows how many patients they already hold against
+        the unit&apos;s ratio, so an overloaded nurse is visible before another patient is added.
       </p>
       <p>
-        For the admission and bed-allocation side of this workflow, see our{' '}
-        <Link href="/guides/ipd-admission-bed-management-guide">IPD admission &amp; bed management guide</Link>,
-        and for how nursing charges connect to attendance and HR records, see{' '}
-        <Link href="/guides/hospital-staff-attendance-hr-guide">staff attendance &amp; HR basics for hospitals</Link>.
+        It warns rather than blocks. A patient can never be refused care because the ward is short — the job
+        of the software is to make the overload visible so help gets pulled in.
+      </p>
+      <p>
+        For the admission and bed side of this, see the{' '}
+        <Link href="/guides/ipd-admission-bed-management-guide">IPD admission and bed management guide</Link>;
+        for attendance on the day, see{' '}
+        <Link href="/guides/hospital-staff-attendance-hr-guide">staff attendance</Link>.
       </p>
 
-      <h2>Bringing it together</h2>
-      <p>
-        None of this requires solving rostering as a single hard problem. It requires solving six small ones
-        &mdash; who owns the roster, how far ahead it&apos;s published, what each shift actually needs, how leave
-        gets excluded automatically, how a same-day gap gets found fast, and how assignment reflects all of
-        it &mdash; and none of the six is difficult on its own. The hospitals that struggle with rostering are
-        almost always missing one of these pieces entirely, not doing all six badly.
-      </p>
-      <h2>How Uyirly builds the nurse roster</h2>
-      <p>
-        <Link href="/hospital-management-software">Uyirly</Link> builds ward rosters on a simple week grid:
-        assign nurses to shifts per ward, apply a repeating shift pattern, and see each day&apos;s coverage against
-        the ward&apos;s required staffing &mdash; so an understaffed shift is flagged before it happens, not discovered
-        on the day. When the roster is ready you publish it, and the staff see their duty.
-      </p>
+      <h2>What Uyirly does</h2>
       <ul>
-        <li>A week grid of nurses and shifts per ward.</li>
-        <li>Repeating shift patterns applied in one click.</li>
-        <li>Per-day coverage and shortfall flagged against the required ratio.</li>
-        <li>Publish the roster so staff know their shifts.</li>
+        <li>A week grid per nursing unit, built and published by that unit&apos;s in-charge.</li>
+        <li>One shift per nurse per day, enforced in the database rather than by convention.</li>
+        <li>Copy last week, cyclic patterns anchored to a start date, and ratio-driven auto-fill.</li>
+        <li>Auto-fill that spreads work by who has the fewest shifts so far.</li>
+        <li>Approved leave excluded from every generation route.</li>
+        <li>Per-day shortfall from live occupied beds against a per-unit, per-shift ratio and minimum.</li>
+        <li>Shift types a ward can switch off when it does not run them.</li>
+        <li>Drafts until published, so staff never read a half-built rota.</li>
+        <li>A roster-aware nurse picker showing load against capacity at patient assignment.</li>
       </ul>
 
       <h2>Getting started</h2>
       <p>
-        Rostering is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
-        software</Link>. See our <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio
-        guide</Link> for the NABH context, or <Link href="/signup">start a 30-day free trial</Link> with no
-        credit card.
+        Rostering is part of Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital management software</Link>. See the{' '}
+        <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio guide</Link> for the NABH
+        context, or <Link href="/signup">start a 30-day free trial</Link> with no credit card.
       </p>
     </>
   )

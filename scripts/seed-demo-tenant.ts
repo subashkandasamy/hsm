@@ -1033,6 +1033,16 @@ async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<vo
       id: uuid(), tenant_id: tenantId, nursing_unit_id: units[0].id, profile_id: nurses[0].id,
     })
     ok('an ICU coverage ratio and a unit in-charge', null)
+
+    // One approved leave and one waiting on the in-charge — an approved one is
+    // what the roster generator has to route around.
+    ok('2 leave requests', (await db.from('leave_requests').insert([
+      { id: uuid(), tenant_id: tenantId, profile_id: nurses[1].id, leave_type: 'annual',
+        start_date: day(12), end_date: day(16), reason: 'Family wedding in Madurai',
+        status: 'approved', reviewed_by: s.staff[0].id, reviewed_at: new Date().toISOString() },
+      { id: uuid(), tenant_id: tenantId, profile_id: nurses[0].id, leave_type: 'casual',
+        start_date: day(23), end_date: day(23), reason: 'Personal', status: 'pending' },
+    ])).error)
   }
 
   const present = s.staff.filter((x) => ['nurse', 'pharmacist', 'receptionist', 'lab_tech'].includes(x.role))

@@ -1,10 +1,12 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
+import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 
 export const faqs = [
   {
     q: 'What is a UHID in a hospital?',
-    a: 'UHID stands for Unique Health Identification number (also written Unique Health ID). It is a single identifier a hospital assigns to a patient the first time they register, and then uses across every visit and department from then on — OPD, IPD, lab, pharmacy, billing — instead of creating a new record each time the patient comes back. One patient, one UHID, one growing history.',
+    a: 'UHID stands for Unique Health Identification number. It is a single identifier a hospital assigns to a patient the first time they register, and then uses across every visit and department from then on — OPD, IPD, lab, pharmacy, billing — instead of creating a new record each time the patient comes back. One patient, one UHID, one growing history.',
   },
   {
     q: 'What is the full form of UHID?',
@@ -12,15 +14,15 @@ export const faqs = [
   },
   {
     q: 'What is a UHID number or UHID card?',
-    a: 'The UHID number is the actual identifier (for example UH-2026-000123 or a numeric string) printed on the patient\'s registration slip or ID card. Many hospitals print it on a UHID card the patient carries, so on the next visit the front desk can pull up the existing record instantly instead of registering them afresh.',
+    a: 'The UHID number is the identifier printed on the patient\'s registration slip or ID card — for example DEMO-UH-2026-00004, where the prefix is the hospital\'s own code and the number runs in sequence. Printing it on a card the patient carries means the front desk can pull up the existing record on the next visit instead of registering them again.',
   },
   {
     q: 'Is UHID the same as ABHA?',
-    a: 'They are related but not identical. UHID is a hospital\'s own internal patient identifier. ABHA (Ayushman Bharat Health Account) is India\'s national health ID, meant to work across different hospitals and providers. A hospital system can link a patient\'s internal UHID to their national ABHA ID so the two point to the same person.',
+    a: 'No. UHID is a hospital\'s own internal patient identifier, issued and used by that hospital. ABHA (Ayushman Bharat Health Account) is India\'s national health ID, meant to work across providers. A hospital can hold both, but they are different numbers doing different jobs.',
   },
   {
     q: 'What counts as an EMR?',
-    a: 'An Electronic Medical Record (EMR) covers a patient\'s clinical history at one hospital — diagnoses, prescriptions, allergies, vitals, lab and radiology results — organized under their UHID so any department can see relevant history instead of asking the patient to repeat it.',
+    a: 'An Electronic Medical Record covers a patient\'s clinical history at one hospital — consultations, diagnoses, prescriptions, allergies, vitals, lab and radiology results, admissions and bills — organised under their UHID so any department can see the relevant history instead of asking the patient to repeat it.',
   },
 ]
 
@@ -28,85 +30,150 @@ export default function Guide() {
   return (
     <>
       <p>
-        Ask a patient to repeat their medical history at every department they visit, and you&apos;ve already lost
-        the main benefit of digitizing a hospital. A Unique Health ID (UHID) and the electronic medical record
-        built under it exist so that doesn&apos;t happen &mdash; one identity, one growing history, visible to
-        whichever department needs it.
+        Ask a patient to repeat their history at every department they visit and you have already lost the
+        main benefit of digitising a hospital. A Unique Health ID and the record built under it exist so that
+        does not happen: one identity, one growing history, visible to whichever department needs it.
       </p>
-
-      <h2>What is a UHID? (meaning and full form)</h2>
       <p>
-        <strong>UHID</strong> stands for <strong>Unique Health Identification number</strong> &mdash; a single ID a
-        hospital gives a patient the very first time they register. From then on, every OPD visit, admission, lab
-        test, prescription and bill is filed under that one number, so the patient&apos;s whole history lives in one
-        place. It&apos;s usually printed on the registration slip or a <strong>UHID card</strong> the patient carries
-        (something like <em>UH-2026-000123</em>), which lets the front desk find the existing record in seconds on
-        the next visit rather than starting a fresh one. In short: the UHID is the thread the entire patient
-        record hangs on.
+        This guide walks through how a patient record is created, what accumulates on it, and the two places
+        where hospitals most often lose the thread.
       </p>
 
-      <h2>Why UHID has to come first</h2>
+      <h2>What a UHID is</h2>
       <p>
-        Every other module &mdash; OPD, IPD, pharmacy, billing &mdash; depends on reliably finding the same patient
-        record across visits. If registration creates a fresh record every time (because staff couldn&apos;t search
-        by phone number, name, or an existing ID), a patient ends up with three or four fragmented histories
-        instead of one. This is why UHID discipline at registration is worth getting right before digitizing
-        anything else &mdash; see our{' '}
-        <Link href="/guides/hospital-digitization-workflow-guide">hospital digitization workflow guide</Link>.
+        <strong>UHID</strong> stands for <strong>Unique Health Identification number</strong> — a single ID a
+        hospital issues the first time a patient registers. Every OPD visit, admission, test, prescription
+        and bill from then on is filed under that number. In Uyirly it looks like{' '}
+        <em>DEMO-UH-2026-00004</em>: the hospital&apos;s own code, the year, and a serial that runs in order.
+      </p>
+      <p>
+        It is worth being clear that a UHID is <strong>not</strong> an ABHA number. The UHID is internal —
+        this hospital&apos;s own identifier for this patient. ABHA is India&apos;s national health account,
+        meant to travel between providers; what that national layer asks of hospital software is a separate
+        subject, covered in our{' '}
+        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM and ABHA guide</Link>. Everything below
+        is about the hospital&apos;s own record, which is what actually runs the day.
       </p>
 
-      <h2>What an EMR actually holds</h2>
+      <h2>Step 1 — Registering once</h2>
+      <Screenshot
+        src="/guides/patient-register.png" width={1324} height={1624}
+        alt="Patient registration form with full name, phone, date of birth, age, gender, blood group, Aadhaar and address"
+        caption="The UHID is issued here, and never typed by anyone."
+      />
+      <p>
+        Registration asks for the things the rest of the system depends on. Gender and age are required, not
+        as form-filling but because they decide which clinical form opens later — paediatric growth charts,
+        the antenatal record, a paediatric dose check. Most walk-ins give an age rather than a birthday, so
+        either satisfies it; enter the age and the date of birth is worked back from it and marked as an
+        estimate, so nobody later mistakes it for a real birthday.
+      </p>
+      <p>
+        The step that decides whether any of this works is the one before: <strong>searching</strong>. A
+        returning patient found by phone number or name keeps one record. A returning patient registered
+        again — because search was slow, or the spelling differed — now has two histories, and every
+        department downstream inherits the split.
+      </p>
+
+      <h2>Step 2 — Finding them again</h2>
+      <Screenshot
+        src="/guides/patients.png" width={2560} height={1814}
+        alt="Patient list showing UHID, name, age and gender, phone number, last visit and outstanding balance for each patient"
+        caption="The register, searchable by name, phone or UHID."
+      />
+      <p>
+        The list carries what reception actually needs to identify someone at a counter — name, age, gender,
+        phone — and what accounts needs before the next visit starts: whether anything is still outstanding.
+      </p>
+
+      <h2>Step 3 — What accumulates</h2>
+      <Screenshot
+        src="/guides/patient-profile.png" width={2560} height={1336}
+        alt="A patient record showing UHID, age, gender, phone and outstanding balance, with tabs for timeline, encounters, bills, allergies, documents and info, and a clinical timeline listing a radiology study and an admission"
+        caption="One record. The timeline fills itself in as the hospital runs."
+      />
+      <p>
+        Nobody maintains this. The X-ray appears on the timeline because radiology reported it; the admission
+        appears because a bed was assigned. The tabs split the same record by what you came looking for:
+      </p>
       <ul>
-        <li>Diagnoses and consultation notes across every OPD visit and admission.</li>
-        <li>Prescriptions and medication history.</li>
-        <li>Allergies &mdash; visible immediately to any doctor or nurse, not buried in a note.</li>
-        <li>Lab and radiology results, linked back to the order that produced them.</li>
-        <li>Vitals recorded over time.</li>
+        <li><strong>Timeline</strong> — everything clinical in date order, across departments.</li>
+        <li><strong>Encounters</strong> — the OPD visits and admissions themselves, each opening the full consultation.</li>
+        <li><strong>Bills</strong> — every bill raised, and what is still owed.</li>
+        <li><strong>Allergies</strong> — recorded once, used everywhere (below).</li>
+        <li><strong>Documents</strong> — scans, consents, referral letters, insurance papers.</li>
+        <li><strong>Info</strong> — the demographics, and the Aadhaar number if one was given.</li>
       </ul>
-      <CalloutBox tone="warning" title="Allergies need to be impossible to miss">
-        An allergy recorded once should surface as a visible banner wherever a doctor prescribes or a nurse
-        administers medication &mdash; not something staff have to remember to scroll down and check.
+      <p>
+        The header carries the two things staff need before they do anything else: what the patient owes, and
+        what they are allergic to.
+      </p>
+
+      <h2>Step 4 — Allergies, and why they belong here</h2>
+      <Screenshot
+        src="/guides/patient-allergies.png" width={2560} height={1588}
+        alt="Patient record with a red severe allergy banner across the top reading Penicillin, a severe allergy chip in the header, and the allergies tab listing penicillin with its reaction and severity"
+        caption="A severe allergy is a banner across the record, not a line to scroll to."
+      />
+      <p>
+        An allergy is recorded as an <strong>allergen, a reaction and a severity</strong> rather than a
+        sentence, and that structure is what lets it do something. A severe one becomes a red banner across
+        the whole record and a chip beside the patient&apos;s name.
+      </p>
+      <CalloutBox tone="warning" title="The part that matters is at prescribing time">
+        A banner helps someone who is looking at the record. The real check happens when a doctor types a
+        drug name into a prescription: the system matches it against the patient&apos;s allergies{' '}
+        <em>by drug class</em>, so a recorded penicillin allergy warns on amoxicillin and ampicillin too, not
+        only on the word &ldquo;penicillin&rdquo;. It also flags interactions with the other drugs already on
+        that prescription. The warning does not block — the doctor decides — but it is raised where the
+        decision is made.
       </CalloutBox>
 
-      <h2>UHID vs. ABHA: internal ID vs. national ID</h2>
+      <h2>Where the record comes apart</h2>
+      <WorkflowDiagram
+        title="The two ways one patient becomes two"
+        steps={[
+          { label: 'Search is slow', sublabel: 'Staff register afresh instead' },
+          { label: 'Emergency arrival', sublabel: 'No time to look them up' },
+          { label: 'Two histories', sublabel: 'Neither one complete' },
+        ]}
+      />
       <p>
-        A hospital&apos;s UHID is internal &mdash; it identifies a patient within that hospital&apos;s own records.
-        India&apos;s ABHA (Ayushman Bharat Health Account) is a national health ID meant to work across different
-        hospitals and providers, part of the Ayushman Bharat Digital Mission (ABDM). A good system can hold both
-        and link them, so the internal UHID and the national ABHA number point to the same patient &mdash; what that
-        national layer means for hospital software specifically is covered in our{' '}
-        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM &amp; ABHA guide</Link>.
+        Both failures happen under time pressure, which is why neither is solved by telling staff to be more
+        careful. Search has to be fast enough to be worth using, and an{' '}
+        <Link href="/guides/emergency-triage-management-guide">emergency case</Link> has to be able to start
+        before the paperwork — attaching to the existing patient once there is a moment to check, rather than
+        creating a parallel record at the worst possible time.
       </p>
 
-      <h2>The registration-desk test</h2>
+      <h2>Access and the audit trail</h2>
       <p>
-        The clearest way to judge a patient-record system isn&apos;t reading its feature list &mdash; it&apos;s watching
-        a receptionist register a returning patient who doesn&apos;t remember their ID. If search by phone number or
-        name reliably finds the existing record, UHID discipline is working. If it doesn&apos;t, and a duplicate
-        record gets created &ldquo;just this once,&rdquo; that patient now has two fragmented histories, and every
-        department downstream inherits the confusion. For how this sits inside the wider system, see our{' '}
-        <Link href="/electronic-medical-records-software">electronic medical records software</Link> overview.
+        A record that everybody can open is a different risk from a paper file, because it leaves no trace.
+        Access is by role — reception sees demographics and bills, clinical staff see clinical history,
+        accounts sees money — and views and edits are logged, which is what turns &ldquo;who looked at this
+        record&rdquo; into a question with an answer. The wider obligations are covered in our{' '}
+        <Link href="/guides/hospital-software-data-security-dpdp">data security and DPDP guide</Link>.
       </p>
-      <h2>How Uyirly keeps the patient record</h2>
-      <p>
-        <Link href="/electronic-medical-records-software">Uyirly</Link> gives every patient one UHID and hangs
-        everything on it &mdash; each OPD and IPD visit, every lab result and scan, every prescription, document
-        and bill &mdash; on a single timeline. The record fills in as you run the hospital, so nobody keeps it up
-        to date by hand. Access is by staff role, and every view and edit is audit-logged.
-      </p>
+
+      <h2>What Uyirly does</h2>
       <ul>
-        <li>A single UHID that unifies a patient&apos;s whole history.</li>
-        <li>Consultations, vitals, labs, scans, prescriptions and bills on one timeline.</li>
-        <li>Role-based access for reception, doctors, lab, pharmacy and accounts.</li>
-        <li>ABDM/ABHA-ready, with data stored in India and every action audit-logged.</li>
+        <li>One UHID per patient, issued at registration in the hospital&apos;s own sequence.</li>
+        <li>Search by name, phone or UHID, so a returning patient is found rather than re-created.</li>
+        <li>Age accepted instead of a date of birth, with the derived date marked as an estimate.</li>
+        <li>A timeline that fills itself in from OPD, IPD, lab, radiology, pharmacy and billing.</li>
+        <li>Allergies as allergen, reaction and severity — a banner on the record and a class-aware warning at prescribing.</li>
+        <li>Drug interaction warnings against the rest of the same prescription.</li>
+        <li>Outstanding balance on the record, so nobody starts a visit unaware of it.</li>
+        <li>Role-based access, with views and edits audit-logged.</li>
       </ul>
 
       <h2>Getting started</h2>
       <p>
-        The EMR is the core of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
-        software</Link> &mdash; the same record every module reads and writes. See our{' '}
-        <Link href="/guides/abdm-abha-health-id-hospitals-guide">ABDM &amp; ABHA guide</Link>, or{' '}
-        <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+        The patient record is the core of Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital management software</Link> — the same record every
+        module reads and writes. See the{' '}
+        <Link href="/guides/opd-queue-token-management-guide">OPD guide</Link> for what a visit adds to it,
+        or <Link href="/signup">start a 30-day free trial</Link> — no credit card.
       </p>
     </>
   )

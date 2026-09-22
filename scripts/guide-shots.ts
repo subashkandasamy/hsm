@@ -153,11 +153,18 @@ export const SHOTS: Shot[] = [
     selector: 'main', wait: 4000,
   },
   { name: 'eye-exam',      path: '/opd/{eyeVisit}',    selector: 'div.glass-card', filterText: 'Eye Examination', wait: 4500 },
-  { name: 'dental-chart',  path: '/opd/{dentalVisit}', selector: 'div.glass-card', filterText: 'Dental', wait: 4500 },
+  { name: 'dental-chart',  path: '/opd/{dentalVisit}', selector: 'div.glass-card', filterText: 'Dental Chart', wait: 4500 },
+  { name: 'dental-treatments', path: '/opd/{dentalVisit}', selector: 'div.glass-card', filterText: 'Treatment History', wait: 4500 },
   {
     name: 'nurse-roster',
     path: '/scheduling',
     selector: 'main', wait: 4500,
+  },
+  {
+    name: 'roster-leave',
+    path: '/scheduling',
+    steps: [{ clickText: 'Leave' }, { wait: 1500 }],
+    selector: 'main', wait: 4000,
   },
   {
     name: 'roster-coverage',
