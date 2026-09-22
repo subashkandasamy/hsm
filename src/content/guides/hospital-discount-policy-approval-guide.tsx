@@ -1,8 +1,9 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
-import ScreenMock, { MockStat, MockTable } from '@/components/guides/diagrams/ScreenMock'
+import ScreenMock, { MockTable } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {
@@ -182,16 +183,11 @@ export default function Guide() {
         dedicated <strong>Discount Approvals</strong> queue for managers to approve or reject (with the
         self-approval and over-authority guards enforced).
       </p>
-      <ScreenMock title="Billing · Apply Discount" caption="Percent or amount, with a required reason — applied instantly within cap, or sent for approval.">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <MockStat label="Discount" value="20%" />
-          <MockStat label="Reason" value="Management" />
-          <MockStat label="Your cap" value="5%" color="#B45309" />
-        </div>
-        <div style={{ fontSize: 13, color: '#92400E', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '9px 12px' }}>
-          Above your 5% limit → sent to an administrator for approval.
-        </div>
-      </ScreenMock>
+      <Screenshot
+        src="/guides/discount-approvals.png" width={2560} height={556}
+        alt="Discount approvals screen showing a pending request with the patient, bill number, reason, who requested it, the percentage and amount, and Approve or Reject buttons"
+        caption="A discount above the requester’s limit, waiting on someone who can approve it — with the reason attached."
+      />
       <ScreenMock title="Billing · Discount Approvals" caption="Managers approve or reject over-limit discounts from one queue.">
         <MockTable
           head={['Patient · Bill', 'Discount', 'Reason', 'Action']}

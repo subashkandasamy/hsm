@@ -1,8 +1,9 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
-import ScreenMock, { MockStat, MockTable } from '@/components/guides/diagrams/ScreenMock'
+import { MockTable } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {
@@ -167,19 +168,11 @@ export default function Guide() {
         into the <Link href="/guides/hospital-cashier-day-book-shift-close-guide">Cash Book</Link> as cash-out,
         so shift reconciliation stays correct, and every refund is audit-logged.
       </p>
-      <ScreenMock title="Billing · Refund / Credit Note" caption="Refund against a paid bill — original stays immutable, a credit note records the money returned.">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <MockStat label="Refundable" value="₹5,000" />
-          <MockStat label="Refund amount" value="₹1,000" />
-          <MockStat label="Method" value="Cash" />
-        </div>
-        <MockTable
-          head={['Credit note', 'Reason', 'Amount']}
-          rows={[
-            ['CN-2026-00007', 'Cancelled test', { v: '− ₹1,000', color: '#B45309' }],
-          ]}
-        />
-      </ScreenMock>
+      <Screenshot
+        src="/guides/billing.png" width={2560} height={1706}
+        alt="Billing screen showing the day’s billed, collected and outstanding totals, with bills grouped by patient and their paid or due status"
+        caption="Collected and outstanding sit side by side, so a refund shows up as a reduction in what was actually collected."
+      />
       <CalloutBox tone="tip" title="Restrict, cap, and record">
         Keep refunds to billing managers, cap them at the amount actually paid, and require a reason on every
         one. You get clean books, a full audit trail, and cash that still reconciles &mdash; without ever

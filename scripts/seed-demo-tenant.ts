@@ -750,6 +750,73 @@ async function createIpdBilling(tenantId: string, s: Seeded): Promise<void> {
 }
 
 /**
+ * The money screens need something to show: an estimate given before admission,
+ * a discount waiting for approval, and an advance collected at the counter today.
+ */
+async function createFinance(tenantId: string, s: Seeded): Promise<void> {
+  const cashier = s.staff.find((x) => x.role === 'accountant')!.id
+  const admin = s.staff[0].id
+
+  // What a family is told a delivery will cost, before they agree to it.
+  const estId = uuid()
+  const items: Array<[string, string, number, number]> = [
+    ['Room', 'Private AC room — 3 days', 3, 4500],
+    ['Procedure', 'Normal Delivery — package', 1, 28000],
+    ['Investigations', 'Routine antenatal bloods and scan', 1, 2600],
+    ['Pharmacy', 'Medicines and consumables (estimated)', 1, 4500],
+    ['Nursing', 'Nursing charges — 3 days', 3, 400],
+  ]
+  const subtotal = items.reduce((sum, [, , qty, price]) => sum + qty * price, 0)
+  const { error: eErr } = await db.from('cost_estimates').insert({
+    id: estId, tenant_id: tenantId, estimate_no: 'UDH-EST-2026-0001',
+    patient_id: patientId(s, 'Lakshmi'), patient_name: 'Lakshmi Narayanan',
+    patient_phone: '+919999900002', room_type: 'Private AC', estimated_days: 3,
+    validity_date: day(30),
+    notes: 'Normal delivery. A caesarean, if needed, is quoted separately and would replace the procedure line.',
+    subtotal, total: subtotal, status: 'final', created_by: cashier,
+  })
+  if (eErr) { console.log(`  · estimate: ${eErr.message}`); return }
+  await db.from('cost_estimate_items').insert(items.map(([category, description, qty, unit_price]) => ({
+    id: uuid(), tenant_id: tenantId, estimate_id: estId,
+    category, description, qty, unit_price, amount: qty * unit_price,
+  })))
+  ok('a cost estimate before admission', null)
+
+  // Who may discount how much, and one request over the line waiting on a decision.
+  await db.from('discount_limits').upsert([
+    { tenant_id: tenantId, role: 'receptionist', max_percent: 0 },
+    { tenant_id: tenantId, role: 'accountant', max_percent: 10 },
+    { tenant_id: tenantId, role: 'admin', max_percent: 100 },
+  ], { onConflict: 'tenant_id,role' })
+
+  const { data: bill } = await db.from('bills')
+    .select('id, total').eq('tenant_id', tenantId).eq('status', 'unpaid').order('total', { ascending: false }).limit(1).maybeSingle()
+  if (bill) {
+    await db.from('discount_requests').insert({
+      id: uuid(), tenant_id: tenantId, bill_id: bill.id,
+      requested_by: cashier, requested_pct: 20,
+      requested_amount: Math.round((bill.total as number) * 0.2),
+      reason: 'Long-standing patient, family requesting concession on the room charge.',
+      status: 'pending',
+    })
+    ok('a discount request over the limit', null)
+  }
+
+  // An advance topped up at the counter this morning, so the day book shows one.
+  const { data: adm } = await db.from('admissions')
+    .select('id').eq('tenant_id', tenantId).eq('status', 'admitted').order('admitted_at').limit(1).maybeSingle()
+  if (adm) {
+    const at = new Date(); at.setHours(11, 20, 0, 0)
+    await db.from('admission_advances').insert({
+      id: uuid(), tenant_id: tenantId, admission_id: adm.id,
+      amount: 5000, method: 'cash', received_by: cashier, received_at: at.toISOString(),
+    })
+    ok('an advance collected today', null)
+  }
+  void admin
+}
+
+/**
  * The dashboard reads from materialized views, refreshed by pg_cron every five
  * minutes. A screenshot taken straight after seeding would otherwise show a
  * hospital with no beds and no footfall.
@@ -778,6 +845,7 @@ async function main() {
   await completeSetup(tenantId, seeded)
   await createToday(tenantId, seeded)
   await createIpdBilling(tenantId, seeded)
+  await createFinance(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`

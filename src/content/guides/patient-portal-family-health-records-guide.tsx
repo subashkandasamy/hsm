@@ -2,7 +2,7 @@ import Link from 'next/link'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
-import ScreenMock, { MockStat, MockTable } from '@/components/guides/diagrams/ScreenMock'
+import ScreenMock, { MockTable } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {

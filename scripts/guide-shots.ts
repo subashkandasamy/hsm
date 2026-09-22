@@ -152,5 +152,13 @@ export const SHOTS: Shot[] = [
     steps: [{ clickText: 'Reported' }, { wait: 1500 }],
     selector: 'main', wait: 3000,
   },
-  { name: 'billing',      path: '/billing',      selector: 'main', wait: 2500 },
+  { name: 'billing',          path: '/billing',                     selector: 'main', wait: 2500 },
+  { name: 'cash-book',        path: '/billing/cash-book',           selector: 'main', wait: 3000 },
+  { name: 'estimates',        path: '/billing/estimates',           selector: 'main', wait: 3000 },
+  {
+    name: 'estimate-detail',
+    path: '/billing/estimates/{estimate}',
+    selector: 'main', wait: 3000,
+  },
+  { name: 'discount-approvals', path: '/billing/discount-approvals', selector: 'main', wait: 3000 },
 ]

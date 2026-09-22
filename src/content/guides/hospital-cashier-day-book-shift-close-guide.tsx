@@ -1,8 +1,9 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
-import ScreenMock, { MockStat, MockTable } from '@/components/guides/diagrams/ScreenMock'
+import ScreenMock, { MockStat } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {
@@ -173,21 +174,11 @@ export default function Guide() {
         deposit and refund. It counts money the right way: advance <em>deposits</em> are in, advance
         <em> adjustments</em> are excluded, refunds are netted out.
       </p>
-      <ScreenMock title="Billing · Cash Book · Day Book" caption="A day's collections, grouped by method and cashier — advances counted once, refunds netted.">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <MockStat label="Cash" value="₹5,00,000" />
-          <MockStat label="Card" value="₹0" color="#6366F1" />
-          <MockStat label="UPI" value="₹0" color="#8B5CF6" />
-          <MockStat label="Net collected" value="₹5,00,000" color="#0F172A" />
-        </div>
-        <MockTable
-          head={['Time', 'Type', 'Method', 'Amount']}
-          rows={[
-            ['1:33 PM', 'Advance deposit', 'Cash', { v: '₹5,00,000', color: '#0F172A' }],
-            ['2:10 PM', 'Bill payment (advance)', '—', { v: 'not counted', color: '#94A3B8' }],
-          ]}
-        />
-      </ScreenMock>
+      <Screenshot
+        src="/guides/cash-book.png" width={2560} height={1430}
+        alt="Cash book day view showing totals by payment mode, refunds out and net collected, a breakdown by cashier, and each movement with its time, type, patient, reference and method"
+        caption="The day book: totals by mode, then by cashier, then every movement that made them up."
+      />
       <p>
         The <strong>My Shift</strong> tab shows a cashier their live <strong>expected cash</strong> since their
         last close, plus card/UPI/bank totals. They enter the counted cash, see the <strong>variance</strong>

@@ -1,9 +1,9 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
 import BillBreakdown from '@/components/guides/diagrams/BillBreakdown'
-import ScreenMock, { MockStat } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {
@@ -165,17 +165,11 @@ export default function Guide() {
         { value: 'Any line', label: 'Add lab / scan / pharmacy' },
         { value: '< 1 min', label: 'To a printable quotation' },
       ]} />
-      <ScreenMock title="Billing · New Cost Estimate" caption="Assemble an estimate from room rate, package tariff and expected lines — then print or share.">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <MockStat label="Patient" value="Ramesh K." />
-          <MockStat label="Room" value="Semi-private · 3 days" />
-          <MockStat label="Estimated total" value="₹86,000" color="#0F172A" />
-        </div>
-        <div style={{ fontSize: 13, color: '#64748B', border: '1px dashed #E2E8F0', borderRadius: 10, padding: '10px 12px' }}>
-          Room rent · Surgery package · Surgeon fees · Investigations · Pharmacy — each an editable line, pulled
-          from your tariffs.
-        </div>
-      </ScreenMock>
+      <Screenshot
+        src="/guides/estimate-detail.png" width={2560} height={1936}
+        alt="A cost estimate on the hospital letterhead, itemised by category with quantities, unit prices, an estimated total, the amount in words and a note that it is not a bill"
+        caption="The estimate a family is handed: itemised, valid until a date, and explicit that it is not a demand for payment."
+      />
       <p>
         The result prints as a clean, hospital-branded <strong>&ldquo;COST ESTIMATE&rdquo;</strong> document
         with your logo, a validity date, the itemised heads, the estimated total in words, and the disclaimer
