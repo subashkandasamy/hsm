@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
+    "seed:demo": "tsx scripts/seed-demo-tenant.ts",
     "verify:barcodes": "tsx scripts/verify-barcodes.ts && PRINTER_DPI=300 tsx scripts/verify-barcodes.ts"
   },
   "dependencies": {

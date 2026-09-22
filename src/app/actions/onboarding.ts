@@ -96,6 +96,14 @@ const DEPT_DISPLAY_TO_DB: Record<string, string> = {
   'Eye Care': 'Ophthalmology',
 }
 
+// Templates keyed by the name as it is stored, for the default department list.
+const DEPT_DB_TEMPLATE_MAP: Record<string, 'dental' | 'ophthalmology' | 'paediatrics' | 'obgyn' | 'general'> = {
+  'Paediatrics':   'paediatrics',
+  'Gynaecology':   'obgyn',
+  'Ophthalmology': 'ophthalmology',
+  'Dental':        'dental',
+}
+
 export async function signupHospital(input: Record<string, unknown>): Promise<SignupResult> {
   const parsed = SignupSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
@@ -154,7 +162,13 @@ export async function signupHospital(input: Record<string, unknown>): Promise<Si
           const template = DEPT_TEMPLATE_MAP[displayName] ?? 'general'
           return { name: dbName, clinical_template: template }
         })
-      : DEFAULT_DEPARTMENTS.map((name) => ({ name, clinical_template: 'general' }))
+      // A hospital that accepts the default department list must still get the
+      // specialty templates: without this, Paediatrics opened the general form
+      // (no growth charts) and Gynaecology had no antenatal care or labour ward.
+      : DEFAULT_DEPARTMENTS.map((name) => ({
+          name,
+          clinical_template: DEPT_DB_TEMPLATE_MAP[name] ?? 'general',
+        }))
 
   const deptRows = deptsToSeed.map((d) => ({
     id: crypto.randomUUID(),
