@@ -23,7 +23,7 @@ const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 export default function RegisterModal({ open, onClose, onSuccess }: Props) {
   const messagingEnabled = useMessagingEnabled()
   const [form, setForm] = useState({
-    full_name: '', dob: '', gender: '', phone: '', email: '',
+    full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
     address: '', blood_group: '', allergies: '',
     emergency_contact_name: '', emergency_contact_phone: '',
     notify_whatsapp_consent: false,
@@ -45,6 +45,20 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     setConfirmed(false)
   }
 
+  /** A date of birth gives an exact age; an age gives a date good to the year. */
+  function setDob(value: string) {
+    const years = value ? Math.floor((Date.now() - Date.parse(`${value}T00:00:00`)) / 31_557_600_000) : null
+    setForm((f) => ({ ...f, dob: value, age: years != null && years >= 0 ? String(years) : '' }))
+    setErrors((e) => { const n = { ...e }; delete n.age; return n })
+    setApiError(null); setDuplicate(null); setConfirmed(false)
+  }
+
+  function setAge(value: string) {
+    setForm((f) => ({ ...f, age: value, dob: '' }))
+    setErrors((e) => { const n = { ...e }; delete n.age; return n })
+    setApiError(null); setDuplicate(null); setConfirmed(false)
+  }
+
   function setConsent(field: 'notify_whatsapp_consent' | 'notify_sms_consent', value: boolean) {
     setForm((f) => ({ ...f, [field]: value }))
   }
@@ -63,14 +77,20 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
   async function handleSubmit(e: React.FormEvent, force = false) {
     e.preventDefault()
 
+    const genderErr = form.gender ? null : 'Select the gender'
+    const ageErr = form.dob || form.age.trim()
+      ? (!form.dob && !/^\d{1,3}$/.test(form.age.trim()) ? 'Enter the age in whole years' : null)
+      : 'Enter the date of birth, or the age in years'
     const phoneErr = validatePhone(form.phone)
     // Aadhaar mandatory unless the "no Aadhaar (emergency)" box is ticked.
     const aadhaarErr = form.no_aadhaar
       ? null
       : (!form.aadhaar_no ? 'Aadhaar is required (or tick "Register without Aadhaar")' : validateAadhaar(form.aadhaar_no))
-    if (phoneErr || aadhaarErr) {
+    if (genderErr || ageErr || phoneErr || aadhaarErr) {
       setErrors((prev) => ({
         ...prev,
+        ...(genderErr ? { gender: genderErr } : {}),
+        ...(ageErr ? { age: ageErr } : {}),
         ...(phoneErr ? { phone: phoneErr } : {}),
         ...(aadhaarErr ? { aadhaar_no: aadhaarErr } : {}),
       }))
@@ -84,6 +104,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       full_name: form.full_name,
       phone: `+91${form.phone}`,
       dob: form.dob || null,
+      age_years: !form.dob && form.age.trim() ? Number(form.age.trim()) : null,
       gender: form.gender || null,
       email: form.email || null,
       address: form.address || null,
@@ -112,7 +133,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
 
     onSuccess(result.patient)
     setForm({
-      full_name: '', dob: '', gender: '', phone: '', email: '',
+      full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
       address: '', blood_group: '', allergies: '',
       emergency_contact_name: '', emergency_contact_phone: '',
       notify_whatsapp_consent: false, notify_sms_consent: false,
@@ -193,11 +214,18 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
           </FormField>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <FormField label="Date of Birth" htmlFor="dob">
-            <Input id="dob" type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <FormField label="Date of Birth" htmlFor="dob"
+            hint={!form.dob && form.age.trim() ? 'kept as a year, from the age' : 'exact date, if known'}>
+            <Input id="dob" type="date" max={new Date().toISOString().slice(0, 10)}
+              value={form.dob} onChange={(e) => setDob(e.target.value)} />
           </FormField>
-          <FormField label="Gender" htmlFor="gender">
+          <FormField label="Age (years)" htmlFor="age" required error={errors.age}
+            hint={form.dob ? 'from the date of birth' : undefined}>
+            <Input id="age" type="number" inputMode="numeric" min={0} max={120} placeholder="e.g. 32"
+              value={form.age} onChange={(e) => setAge(e.target.value)} />
+          </FormField>
+          <FormField label="Gender" htmlFor="gender" required error={errors.gender}>
             <Select id="gender" value={form.gender} onChange={(e) => set('gender', e.target.value)}>
               <option value="">Select…</option>
               <option value="male">Male</option>

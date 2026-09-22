@@ -23,10 +23,15 @@ export const DepartmentSchema = z.object({
 })
 
 // ---- Patient ----
-export const PatientCreateSchema = z.object({
+const PatientFields = z.object({
   full_name: z.string().min(1, 'Full name is required').max(200),
+  // Gender and age are not optional details: they decide which clinical form
+  // opens, how a paediatric dose is checked and how a growth chart is read.
+  // Either an exact date of birth or an age in years satisfies the age rule.
   dob: z.string().nullable().optional(),
-  gender: z.enum(['male', 'female', 'other']).nullable().optional(),
+  age_years: z.coerce.number().int().min(0, 'Age cannot be negative').max(120, 'Enter an age up to 120').nullable().optional(),
+  dob_estimated: z.boolean().optional(),
+  gender: z.enum(['male', 'female', 'other'], { message: 'Select the gender' }),
   phone: z.string()
     .min(1, 'Phone number is required')
     .transform((v) => v.replace(/[\s\-().]/g, ''))
@@ -46,7 +51,18 @@ export const PatientCreateSchema = z.object({
   // Emergency / patient didn't carry Aadhaar — allowed only at the hospital.
   no_aadhaar: z.boolean().optional(),
 })
-export const PatientUpdateSchema = PatientCreateSchema.partial()
+
+/**
+ * Registering someone insists on gender and an age; editing them later does not
+ * have to restate either. The fields live on one object so the two schemas
+ * cannot drift — and the rule is added only to the create side, because
+ * `.partial()` refuses to run on a schema that already carries a refinement.
+ */
+export const PatientCreateSchema = PatientFields.refine((d) => !!d.dob || d.age_years != null, {
+  message: 'Enter the date of birth, or the age in years',
+  path: ['dob'],
+})
+export const PatientUpdateSchema = PatientFields.partial()
 
 // ---- Appointment ----
 export const AppointmentCreateSchema = z.object({

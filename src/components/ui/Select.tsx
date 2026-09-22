@@ -44,7 +44,7 @@ interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onC
   onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void
 }
 
-export default function Select({ value, onChange, children, hasError, required, disabled, style, className }: SelectProps) {
+export default function Select({ id, value, onChange, children, hasError, required, disabled, style, className }: SelectProps) {
   const [open, setOpen] = useState(false)
   const [dropRect, setDropRect] = useState<DropdownRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -116,11 +116,15 @@ export default function Select({ value, onChange, children, hasError, required, 
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      {/* Visible trigger */}
+      {/* Visible trigger. `id` is carried through so a FormField's htmlFor
+          reaches the control and clicking the label focuses it. */}
       <button
         ref={triggerRef}
+        id={id}
         type="button"
         disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={openDropdown}
         style={{
           width: '100%',

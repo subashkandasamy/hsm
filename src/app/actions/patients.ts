@@ -7,6 +7,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { PatientCreateSchema, PatientUpdateSchema } from '@/lib/schemas'
+import { istToday } from '@/lib/istDate'
 import type { Patient } from '@/lib/types'
 
 export type CreatePatientResult =
@@ -27,6 +28,16 @@ export async function createPatient(
   }
 
   const data = parsed.data
+
+  // An age given at the counter becomes a date of birth a year wide, flagged so
+  // nothing later reads it as an exact birthday.
+  let dob = data.dob || null
+  let dobEstimated = data.dob_estimated ?? false
+  if (!dob && data.age_years != null) {
+    const [y, m, d] = istToday().split('-').map(Number)
+    dob = `${y - data.age_years}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    dobEstimated = true
+  }
 
   // Aadhaar is mandatory unless the front desk explicitly registers without it
   // (emergency / patient didn't carry it).
@@ -55,8 +66,9 @@ export async function createPatient(
     uhid,
     tenant_id: actor.tenant_id,
     full_name: data.full_name,
-    dob: data.dob ?? null,
-    gender: data.gender ?? null,
+    dob,
+    dob_estimated: dobEstimated,
+    gender: data.gender,
     phone: data.phone,
     email: data.email || null,
     address: data.address || null,
