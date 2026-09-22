@@ -35,7 +35,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'what-is-hospital-management-system',
     title: 'What Is a Hospital Management System? Complete Guide',
-    description: 'A plain-English guide to what a Hospital Management System (HMS) is, its core modules, and how it connects OPD, IPD, pharmacy, lab and billing into one platform.',
+    metaTitle: 'What Is a Hospital Management System?',
+    description: 'A plain-English guide to what a Hospital Management System (HMS) is, its core modules, and how it links OPD, IPD, pharmacy, lab and billing.',
     primaryKeyword: 'hospital management system',
     keywords: ['hospital management system', 'what is HMS software', 'hospital information system', 'HMS modules', 'hospital software meaning'],
     tier: 'pillar',
@@ -47,7 +48,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-management-software-cost-india',
     title: 'Hospital Management Software Cost & Price in India (2026)',
-    description: 'What hospital management software costs in India by hospital size — small clinics to multi-specialty groups — the price drivers, cloud vs on-premise, and hidden fees to ask about.',
+    metaTitle: 'Hospital Management Software Price in India 2026',
+    description: 'What hospital management software costs in India by hospital size, the price drivers, cloud vs on-premise, and the hidden fees to ask about.',
     primaryKeyword: 'hospital management software price in india',
     keywords: ['hospital management software price in india', 'hospital management software cost in india', 'hms software cost india', 'management software cost in india', 'hospital software pricing per bed', 'cloud hospital software cost'],
     tier: 'pillar',
@@ -59,7 +61,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-digitization-workflow-guide',
     title: 'How to Digitize a Hospital: OPD to IPD to Billing Workflow',
-    description: 'How a patient journey — registration, OPD consultation, admission, nursing, pharmacy and final billing — flows through a digital hospital management system, step by step.',
+    metaTitle: 'How to Digitize a Hospital: OPD to Billing',
+    description: 'How a patient journey — registration, OPD, admission, nursing, pharmacy and final billing — flows through a hospital management system, step by step.',
     primaryKeyword: 'hospital digitization workflow',
     keywords: ['paperless hospital', 'hospital software workflow', 'OPD to IPD workflow', 'digitize hospital records'],
     tier: 'pillar',
@@ -71,7 +74,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-management-software-india',
     title: 'Choosing Hospital Management Software for Small & Mid-Size Hospitals in India',
-    description: 'A buyer’s checklist for small and mid-size Indian hospitals evaluating hospital management software — what to check before you sign a contract, beyond feature lists.',
+    metaTitle: 'Hospital Management Software in India: Buyer Guide',
+    description: 'A buyer’s checklist for small and mid-size Indian hospitals evaluating hospital management software — what to check before you sign.',
     primaryKeyword: 'hospital management software India',
     keywords: ['hospital management software India', 'best HMS for small hospital', 'HMS software for nursing home', 'clinic management software India'],
     tier: 'pillar',
@@ -85,7 +89,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'nurse-duty-roster-hospital-guide',
     title: 'How to Build a Nurse Duty Roster for a 100+ Bed Hospital',
-    description: 'How nurse duty rosters actually work at scale — who schedules them, cyclic patterns, coverage ratios, and what happens when a nurse takes leave — with a practical framework.',
+    metaTitle: 'Nurse Duty Roster for a 100+ Bed Hospital',
+    description: 'How nurse duty rosters work at scale — who schedules them, cyclic patterns, coverage ratios, and what happens when a nurse takes leave.',
     primaryKeyword: 'nurse duty roster hospital',
     keywords: ['nurse duty roster software', 'nurse scheduling software hospital', 'hospital shift roster', 'nurse rostering system India'],
     tier: 'module',
@@ -97,8 +102,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-staff-scheduling-software-guide',
     title: 'Hospital Staff Scheduling: Doctor Hours, Nurse Roster & Shifts',
-    metaTitle: 'Hospital Staff Scheduling Software: Rosters, Shifts & Ratios',
-    description: 'How hospital staff scheduling works — doctor OPD hours, nurse duty rosters by nursing unit, shift coverage, nurse-to-patient ratios, leave and attendance in one system.',
+    metaTitle: 'Hospital Staff Scheduling Software',
+    description: 'How hospital staff scheduling works — doctor OPD hours, nurse rosters by unit, shift coverage, nurse-to-patient ratios, leave and attendance.',
     primaryKeyword: 'hospital staff scheduling software',
     keywords: ['hospital staff scheduling software', 'nurse duty roster software', 'hospital shift roster', 'nurse to patient ratio software', 'doctor availability scheduling', 'nursing station management', 'duty roster software hospital'],
     tier: 'module',
@@ -110,8 +115,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-cost-estimate-quotation-guide',
     title: 'Pre-Admission Cost Estimates & Treatment Quotations',
-    metaTitle: 'Hospital Cost Estimate & Treatment Quotation Guide (India)',
-    description: 'How to give patients a clear, itemised cost estimate before admission or surgery — what it includes, how it differs from a bill, and how to build one in a minute from tariffs.',
+    metaTitle: 'Hospital Cost Estimate & Quotation Guide',
+    description: 'How to give patients a clear, itemised cost estimate before admission or surgery — what it includes, and how it differs from the final bill.',
     primaryKeyword: 'hospital cost estimate',
     keywords: ['hospital cost estimate', 'treatment cost estimate', 'surgery package quotation', 'hospital treatment quotation', 'pre-admission estimate', 'hospital estimate format'],
     tier: 'module',
@@ -123,8 +128,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-cashier-day-book-shift-close-guide',
     title: 'Cashier Day-Book & Shift-Close Reconciliation in Hospitals',
-    metaTitle: 'Hospital Cashier Day-Book & Cash Reconciliation Guide',
-    description: 'How hospital cash control works — the cashier day-book, shift-close reconciliation, cash variance, and why advance deposits must be counted once. With a worked example.',
+    metaTitle: 'Hospital Cashier Day-Book & Shift Close',
+    description: 'How hospital cash control works — the cashier day-book, shift-close reconciliation, cash variance, and why advances are counted once.',
     primaryKeyword: 'hospital cashier day book',
     keywords: ['hospital cashier day book', 'hospital cash collection register', 'cashier shift close', 'hospital cash reconciliation', 'daily collection report hospital'],
     tier: 'module',
@@ -136,8 +141,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-discount-policy-approval-guide',
     title: 'Hospital Discount Policy & Approval Controls',
-    metaTitle: 'Hospital Discount Policy, Limits & Approval Workflow',
-    description: 'How to control discounts in hospital billing — per-role limits, mandatory reasons, and an approval workflow for over-limit discounts — to stop silent revenue leakage.',
+    metaTitle: 'Hospital Discount Policy & Approval Limits',
+    description: 'How to control discounts in hospital billing — per-role limits, mandatory reasons and an approval workflow — to stop silent revenue leakage.',
     primaryKeyword: 'hospital discount policy',
     keywords: ['hospital discount policy', 'discount approval hospital billing', 'billing discount limits', 'hospital revenue leakage', 'discount control hospital software'],
     tier: 'module',
@@ -150,7 +155,7 @@ export const GUIDES: GuideMeta[] = [
     slug: 'hospital-refund-credit-note-guide',
     title: 'Refunds & Credit Notes in Hospital Billing',
     metaTitle: 'Hospital Refund & Credit Note Guide (Net Collected)',
-    description: 'How to refund a paid hospital bill the right way — with a credit note that keeps the original bill immutable, tracks net collected, and reconciles with the cash book.',
+    description: 'How to refund a paid hospital bill the right way — a credit note that keeps the original bill immutable and reconciles with the cash book.',
     primaryKeyword: 'hospital refund credit note',
     keywords: ['hospital refund credit note', 'hospital refund policy', 'credit note hospital billing', 'refund paid bill hospital', 'net collected hospital'],
     tier: 'module',
@@ -162,8 +167,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'patient-portal-family-health-records-guide',
     title: 'Patient Portal: Family Health Records & Online Booking',
-    metaTitle: 'Hospital Patient Portal: Family Accounts & Online Booking',
-    description: 'How a hospital patient portal works — one family login with multiple members, records and reports across hospitals, Aadhaar-linked identity, and self-service appointment booking.',
+    metaTitle: 'Hospital Patient Portal & Family Accounts',
+    description: 'How a hospital patient portal works — one family login with several members, records across hospitals, and self-service appointment booking.',
     primaryKeyword: 'hospital patient portal',
     keywords: ['hospital patient portal', 'patient app india', 'family health records app', 'book doctor appointment online', 'patient self registration hospital', 'view lab reports online'],
     tier: 'module',
@@ -176,7 +181,7 @@ export const GUIDES: GuideMeta[] = [
     slug: 'ophthalmology-emr-software-guide',
     title: 'Ophthalmology EMR Software: Eye Exams, Refraction & Rx',
     metaTitle: 'Ophthalmology EMR Software Guide (Eye Hospital)',
-    description: 'What ophthalmology EMR software must capture — per-eye vision, refraction, IOP and segment findings — and how it produces spectacle prescriptions and fits OPD, OT and billing.',
+    description: 'What ophthalmology EMR software must capture — per-eye vision, refraction, IOP and segment findings — and how it fits OPD, OT and billing.',
     primaryKeyword: 'ophthalmology emr software',
     keywords: ['ophthalmology emr software', 'eye hospital management software', 'ophthalmology software india', 'spectacle prescription software', 'eye clinic emr'],
     tier: 'module',
@@ -188,7 +193,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'ipd-billing-software-explained',
     title: 'IPD Billing Meaning: How Inpatient Billing Works (Sample Bill)',
-    description: 'What IPD billing means (In-Patient Department), how inpatient charges — bed rent, nursing, pharmacy, lab, OT — build into one combined hospital bill, with a worked example.',
+    metaTitle: 'IPD Billing Meaning & Sample Inpatient Bill',
+    description: 'What IPD billing means, and how inpatient charges — bed rent, nursing, pharmacy, lab and OT — build into one combined bill, with an example.',
     primaryKeyword: 'ipd billing meaning',
     keywords: ['ipd billing', 'ipd billing meaning', 'ipd billing full form', 'ipd charges in hospital', 'ip billing in hospital', 'inpatient billing software', 'hospital combined bill', 'ipd bill format'],
     tier: 'module',
@@ -200,6 +206,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-pharmacy-management-software-guide',
     title: 'Hospital Pharmacy Management: Stock, Dispensing & Billing Explained',
+    metaTitle: 'Hospital Pharmacy Management Software',
     description: 'How a hospital pharmacy module manages drug stock, batch and expiry tracking, dispensing against prescriptions, and billing — for both OPD sales and IPD wards.',
     primaryKeyword: 'hospital pharmacy management software',
     keywords: ['pharmacy management software hospital', 'drug inventory software', 'pharmacy dispensing software', 'IPD pharmacy billing'],
@@ -212,7 +219,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'opd-queue-token-management-guide',
     title: 'OPD Token System & Queue Management in Hospitals',
-    description: 'What an OPD token system is and how hospital queue management reduces waiting-room chaos — appointment slots, walk-in tokens, doctor-wise queues, and vitals before consultation.',
+    description: 'What an OPD token system is, and how queue management cuts waiting-room chaos — appointment slots, walk-in tokens and doctor-wise queues.',
     primaryKeyword: 'opd token system',
     keywords: ['opd token', 'opd token system', 'token system in hospitals', 'patient token system', 'hospital queue management', 'opd appointment software', 'outpatient management software'],
     tier: 'module',
@@ -224,6 +231,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'ipd-admission-bed-management-guide',
     title: 'IPD Admission, Bed Allotment & Ward Transfers Explained',
+    metaTitle: 'IPD Admission & Bed Management Explained',
     description: 'How inpatient admission works end to end — bed allotment, ward boards, transfers between wards, and discharge — in a hospital management system.',
     primaryKeyword: 'IPD bed management software',
     keywords: ['hospital bed management software', 'ward management software', 'patient admission software', 'ward board hospital'],
@@ -236,7 +244,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'lab-lis-workflow-guide',
     title: 'Hospital Lab (LIS) Workflow: Order to Report Explained',
-    description: 'How a Laboratory Information System (LIS) takes a test order from doctor to sample collection, processing and a verified report — and where it connects to billing.',
+    metaTitle: 'Hospital Lab (LIS) Workflow Explained',
+    description: 'How a Laboratory Information System takes a test order from doctor to sample collection, processing and a verified report.',
     primaryKeyword: 'hospital LIS software',
     keywords: ['laboratory information system', 'lab order management software', 'pathology lab software', 'LIS workflow hospital'],
     tier: 'module',
@@ -248,6 +257,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'radiology-ris-reporting-guide',
     title: 'Radiology Workflow: Order, Imaging & Reporting in a Hospital',
+    metaTitle: 'Radiology Workflow & Reporting (RIS)',
     description: 'How radiology orders move from request to imaging to a signed report in a hospital management system, and how it stays linked to the patient’s billing and EMR.',
     primaryKeyword: 'radiology management software hospital',
     keywords: ['RIS software hospital', 'radiology order management', 'radiology reporting software', 'hospital imaging workflow'],
@@ -260,6 +270,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'ot-scheduling-management-guide',
     title: 'Operation Theatre (OT) Scheduling & Consumables Management',
+    metaTitle: 'Operation Theatre (OT) Scheduling Software',
     description: 'How OT scheduling avoids room and surgeon double-booking, tracks the surgical team, and bills consumables accurately against a procedure.',
     primaryKeyword: 'OT scheduling software hospital',
     keywords: ['operation theatre management software', 'OT booking software', 'surgical scheduling software', 'OT consumables billing'],
@@ -272,6 +283,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'blood-bank-management-guide',
     title: 'Blood Bank Management & Cross-Matching in Hospital Software',
+    metaTitle: 'Blood Bank Management & Cross-Matching',
     description: 'How hospital software manages blood bank stock by group and component, cross-matching, issue-tracking, and safe traceability from donor to patient.',
     primaryKeyword: 'blood bank management software',
     keywords: ['blood bank software hospital', 'blood cross matching software', 'blood inventory management'],
@@ -296,7 +308,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'patient-records-emr-uhid-guide',
     title: 'What is UHID in a Hospital? UHID, EMR & Patient Records',
-    description: 'What UHID means in a hospital (Unique Health Identification number), its full form, the UHID card, how it differs from ABHA, and how EMR keeps one patient history across departments.',
+    metaTitle: 'What Is UHID in a Hospital? UHID & EMR',
+    description: 'What UHID means in a hospital, its full form, the UHID card, how it differs from ABHA, and how EMR keeps one history across departments.',
     primaryKeyword: 'what is uhid',
     keywords: ['uhid', 'what is uhid', 'uhid means in hospital', 'uhid full form', 'uhid number', 'uhid card', 'patient uhid', 'uhid vs abha', 'electronic medical records india', 'hospital emr software'],
     tier: 'module',
@@ -308,6 +321,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-inventory-purchase-order-guide',
     title: 'Hospital Inventory & Purchase Order Management Explained',
+    metaTitle: 'Hospital Inventory & Purchase Orders',
     description: 'How hospitals track consumables and drug stock across stores, raise purchase orders to suppliers, and avoid both stockouts and over-ordering.',
     primaryKeyword: 'hospital inventory management software',
     keywords: ['hospital purchase order software', 'medical inventory software', 'hospital stock management'],
@@ -320,6 +334,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'health-insurance-tpa-claims-guide',
     title: 'Health Insurance & TPA Claims Workflow for Hospitals',
+    metaTitle: 'Health Insurance & TPA Claims for Hospitals',
     description: 'How cashless and reimbursement insurance claims move through a hospital — pre-authorization, TPA approval, and final settlement against the patient’s bill.',
     primaryKeyword: 'hospital insurance TPA software',
     keywords: ['TPA claims software hospital', 'cashless insurance hospital software', 'health insurance claim processing hospital'],
@@ -358,7 +373,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'nurse-patient-ratio-india-nabh',
     title: 'Nurse-to-Patient Ratio in India (NABH): General Ward, ICU & More',
-    description: 'The NABH nurse-to-patient ratio for a general ward (1:6), ICU (1:1 / 1:2), HDU, emergency and OT — with the formula to calculate nurses required and the leave reserve.',
+    metaTitle: 'Nurse-to-Patient Ratio in India (NABH)',
+    description: 'The NABH nurse-to-patient ratio for general ward (1:6), ICU (1:1/1:2), HDU, emergency and OT — with the formula to calculate nurses needed.',
     primaryKeyword: 'nurse patient ratio India NABH',
     keywords: ['nurse patient ratio in india', 'nabh nurse patient ratio', 'general ward nurse patient ratio', 'nurse patient ratio in general ward', 'nurse patient ratio in icu', 'nurse to patient ratio', 'nurse patient ratio formula', 'nurse patient ratio as per nabh', 'ward nurse patient ratio', 'nursing manpower calculation hospital'],
     tier: 'concept',
@@ -370,6 +386,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'abdm-abha-health-id-hospitals-guide',
     title: 'ABDM & ABHA Health ID: What Indian Hospitals Must Know',
+    metaTitle: 'ABDM & ABHA Health ID for Hospitals',
     description: 'A practical explainer on India’s Ayushman Bharat Digital Mission (ABDM) and ABHA health ID — what it means for hospital software and patient records.',
     primaryKeyword: 'ABDM ABHA hospital software',
     keywords: ['ABHA health ID hospital', 'ABDM integration hospital software', 'Ayushman Bharat Digital Mission hospitals'],
@@ -382,7 +399,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-gst-billing-rules-india',
     title: 'GST on Hospital Bills in India: Room Rent, Services & Rules',
-    description: 'Is there GST on a hospital bill in India? What is exempt, the 5% GST on room rent above ₹5,000/day, whether hospitals need a GST number, and how billing software should handle it.',
+    metaTitle: 'GST on Hospital Bills in India: Rules',
+    description: 'Is there GST on a hospital bill in India? What is exempt, the 5% GST on room rent above ₹5,000/day, and how billing software should handle it.',
     primaryKeyword: 'GST on hospital bill India',
     keywords: ['gst on hospital bill', 'gst on hospital bill in india', 'gst on hospital room charges', 'gst on hospital services', 'do hospitals have gst number', 'hospital gst rate', 'gst on hospital bed charges', 'hospital room rent gst', 'hospital tax in india', 'healthcare gst exemption'],
     tier: 'concept',
@@ -406,6 +424,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-bill-format-ipd-opd-sample',
     title: 'Hospital Bill Format (OPD & IPD) With Sample Examples',
+    metaTitle: 'Hospital Bill Format (OPD & IPD) Samples',
     description: 'What an OPD bill format and an IPD bill format look like in India, with worked sample itemized bills and the fields every hospital bill must include.',
     primaryKeyword: 'opd bill format',
     keywords: ['opd bill format', 'ipd bill format', 'hospital bill format', 'hospital opd bill format', 'hospital ipd bill format', 'hospital itemized bill example', 'sample hospital bill india'],
@@ -418,7 +437,8 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'drug-schedule-h-h1-x-pharmacy-compliance',
     title: 'Schedule H, H1 & X Drugs: Meaning, Difference & Examples',
-    description: 'What Schedule H, H1 and X drugs mean, the difference between them, label warnings and examples — and what a hospital pharmacy’s dispensing records must capture for each.',
+    metaTitle: 'Schedule H, H1 & X Drugs: Meaning & Examples',
+    description: 'What Schedule H, H1 and X drugs mean, the difference between them, label warnings and examples — and what dispensing records must capture.',
     primaryKeyword: 'schedule h drug meaning',
     keywords: ['schedule h drug', 'schedule h drug meaning', 'what is schedule h drug', 'schedule h1 drug', 'difference between schedule h h1 and x drugs', 'schedule x drugs', 'schedule h medicine', 'h1 drugs', 'schedule h prescription drug', 'schedule h drugs list', 'pharmacy compliance india'],
     tier: 'concept',
@@ -432,6 +452,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'switching-from-spreadsheets-to-hms',
     title: 'Switching From Registers & Spreadsheets to Hospital Software',
+    metaTitle: 'Switching From Spreadsheets to Hospital Software',
     description: 'A realistic guide to moving a hospital off paper registers and Excel — what to migrate first, what to run in parallel, and how to avoid disrupting patient care.',
     primaryKeyword: 'switch from spreadsheets to hospital software',
     keywords: ['hospital software migration', 'move from Excel to HMS', 'digitize hospital records'],
@@ -444,6 +465,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-data-migration-guide',
     title: 'How to Migrate Hospital Data to a New HMS Without Losing Records',
+    metaTitle: 'Hospital Data Migration to a New HMS',
     description: 'A step-by-step approach to migrating patient, billing and inventory data into a new hospital management system safely, with a rollback plan.',
     primaryKeyword: 'hospital data migration HMS',
     keywords: ['migrate hospital records', 'HMS data migration checklist', 'switch hospital software provider'],
@@ -456,6 +478,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-software-data-security-dpdp',
     title: 'Data Security & Privacy in Hospital Software (DPDP Act Explained)',
+    metaTitle: 'Hospital Software Data Security & DPDP Act',
     description: 'What India’s DPDP Act means for hospital patient data, and the security practices a hospital management system should have in place.',
     primaryKeyword: 'DPDP Act hospital software',
     keywords: ['hospital data privacy India', 'DPDP Act patient data', 'hospital software security compliance'],
@@ -468,6 +491,7 @@ export const GUIDES: GuideMeta[] = [
   {
     slug: 'hospital-free-trial-setup-guide',
     title: 'Free Trial Setup: Get Your Hospital Live on Uyirly in a Day',
+    metaTitle: 'Hospital Software Free Trial Setup',
     description: 'What actually happens when you start a hospital management software free trial — setup steps, data you’ll need, and how fast a hospital can go live.',
     primaryKeyword: 'hospital software free trial setup',
     keywords: ['hospital software onboarding', 'set up hospital management system', 'HMS implementation time'],

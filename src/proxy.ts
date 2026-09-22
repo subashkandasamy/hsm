@@ -91,6 +91,10 @@ export async function proxy(request: NextRequest) {
     '/native-entry', '/find-hospital',
     // Public marketing / legal pages
     '/terms', '/privacy', '/security', '/guides', '/solutions', '/tools',
+    // Crawler files. The apex already serves these, but on bare localhost and on
+    // tenant subdomains they were redirected to /login — which makes a local
+    // check of the sitemap silently lie about what search engines will see.
+    '/sitemap.xml', '/robots.txt',
     // External-partner portal (self-authenticated via partner session cookie)
     '/partner',
     // Commercial solution landing pages (SEO)
