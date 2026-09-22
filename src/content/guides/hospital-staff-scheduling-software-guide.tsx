@@ -1,30 +1,29 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
-import StatGrid from '@/components/guides/diagrams/StatGrid'
 import RatioBarChart from '@/components/guides/diagrams/RatioBarChart'
-import ScreenMock, { MockStat, MockTable } from '@/components/guides/diagrams/ScreenMock'
 
 export const faqs = [
   {
     q: 'What is hospital staff scheduling software?',
-    a: 'Hospital staff scheduling software plans and publishes who works when — doctors\' OPD consulting hours, nurses\' shift rosters across wards, and duty coverage for each shift — in one place. A good system also enforces nurse-to-patient ratios, handles leave requests and approvals, and links to attendance so the published plan and the actual worked hours stay connected.',
+    a: 'It plans and publishes who works when — doctors\' OPD consulting hours and nurses\' shift rosters across wards — in one place, with the required nurse-to-patient ratio checked against the beds actually occupied, and leave handled where the roster can see it.',
   },
   {
     q: 'How is a nurse duty roster different from doctor scheduling?',
-    a: 'A nurse duty roster assigns nurses to shifts (morning / evening / night) in a specific ward or nursing unit for each day, and must meet a minimum nurse-to-patient ratio. Doctor scheduling is about publishing each doctor\'s weekly OPD consulting hours so patients can be booked into the right session — it is availability, not shift coverage.',
+    a: 'A nurse duty roster assigns nurses to shifts in a specific nursing unit for each day, and has to meet a minimum ratio. Doctor scheduling publishes each doctor\'s weekly consulting sessions — it is availability, not coverage, and nothing goes short if a doctor does not consult on a Thursday.',
   },
   {
     q: 'What is a nursing unit or nursing station?',
-    a: 'A nursing unit (or nursing station) is a group of rooms — often a block, floor and wing, e.g. "Block A, 1st floor, B wing" — staffed together from one central station. Rostering and nurse-to-patient ratios are applied per nursing unit rather than per individual room, which is how most real hospitals are actually organised.',
+    a: 'A group of rooms — usually a block, floor and wing — staffed together from one central station. Rostering and ratios apply per nursing unit rather than per room, which is how hospitals are actually organised: one team covers every occupied bed across the unit\'s rooms.',
   },
   {
-    q: 'How does scheduling software help with NABH nurse-to-patient ratios?',
-    a: 'It lets you set the required ratio per unit (for example 1:6 in a general ward, 1:1 in ICU), then flags a shift as under-staffed when the assigned nurses do not meet that ratio for the number of occupied beds — so the gap is visible before the shift starts, not after an incident.',
+    q: 'How does scheduling software help with nurse-to-patient ratios?',
+    a: 'It holds the required ratio per unit and per shift, then flags a shift as short when the rostered nurses do not meet it for the number of beds occupied — so the gap is visible before the shift starts rather than after an incident.',
   },
   {
     q: 'Can staff request leave inside the scheduling system?',
-    a: 'Yes. Staff raise a leave request, an authorised approver accepts or rejects it, and an approved leave removes that person from the roster for those dates so they are not scheduled by mistake — keeping the published roster and who is actually available in sync.',
+    a: 'Yes. Staff raise a request, an approver accepts or rejects it, and an approved leave makes that person unassignable for those dates — both when a roster is generated and when someone tries to place them by hand.',
   },
 ]
 
@@ -32,111 +31,82 @@ export default function Guide() {
   return (
     <>
       <p>
-        In a hospital, &ldquo;who is on duty right now?&rdquo; is not a trivial question. A single day involves
-        doctors running OPD sessions, nurses covering morning, evening and night shifts across several wards,
-        approved leave taking people out, and a legal obligation to keep enough nurses on the floor for the
-        number of patients admitted. Run on a paper roster or a WhatsApp group, this quietly breaks &mdash; a
-        shift goes uncovered, a doctor&rsquo;s clinic is double-booked, or a ward slips below its
-        nurse-to-patient ratio without anyone noticing until it matters.
+        &ldquo;Who is on duty right now?&rdquo; is not a trivial question in a hospital. A single day involves
+        doctors running OPD sessions, nurses covering shifts across several units, approved leave taking
+        people out, and an obligation to keep enough nurses on the floor for the patients admitted. Run on a
+        notice board and a WhatsApp group, this breaks quietly — a shift goes uncovered, or a ward slips
+        below its ratio, and nobody notices until it matters.
       </p>
       <p>
-        <strong>Hospital staff scheduling software</strong> puts all of this in one place: doctor OPD hours,
-        nurse duty rosters, per-unit coverage, leave, and attendance. This guide explains how hospital
-        scheduling actually works &mdash; doctors and nurses are scheduled very differently &mdash; and how a
-        modern system keeps the published plan honest.
+        Hospital scheduling is really two different jobs that get lumped together, and separating them is
+        most of the work.
       </p>
 
-      <h2>What &ldquo;staff scheduling&rdquo; covers in a hospital</h2>
-      <p>
-        Hospital scheduling is really three connected jobs, each with its own rhythm:
-      </p>
-      <ul>
-        <li><strong>Doctor availability (OPD hours)</strong> &mdash; the weekly consulting sessions each doctor
-          runs, so appointments and tokens can only be booked when the doctor is actually in.</li>
-        <li><strong>Nurse duty roster</strong> &mdash; which nurses cover which shift, in which ward or nursing
-          unit, every day.</li>
-        <li><strong>Coverage &amp; compliance</strong> &mdash; making sure each shift meets the required
-          nurse-to-patient ratio, and that leave and attendance are reflected so the roster is trustworthy.</li>
-      </ul>
-      <p>
-        Treating these as one &ldquo;scheduling&rdquo; problem is what causes chaos. The rest of this guide
-        takes them in turn.
-      </p>
-
-      <h2>Doctor OPD hours: scheduling availability, not shifts</h2>
-      <p>
-        A consultant does not work a &ldquo;shift&rdquo; the way a nurse does &mdash; they hold{' '}
-        <strong>OPD sessions</strong>: e.g. Dr. Aanya sees patients Mon/Wed/Fri, 10:00&ndash;13:00. Scheduling a
-        doctor means publishing those weekly windows so the front desk (and patients booking online) can only
-        place appointments inside them. In a token-based OPD &mdash; how most Indian hospitals run &mdash; this
-        also decides which day&rsquo;s queue a patient joins. If you want the deeper mechanics of tokens and
-        queues, see the{' '}
-        <Link href="/guides/opd-queue-token-management-guide">OPD token &amp; queue management guide</Link>.
-      </p>
-      <CalloutBox tone="info" title="Why doctor hours belong in scheduling, not just the calendar">
-        When a doctor&rsquo;s availability lives in the scheduling system, an unavailable day automatically
-        greys out for booking, follow-up recommendations respect it, and the OPD queue for that doctor only
-        forms on days they actually consult. Kept on paper, double-bookings and &ldquo;doctor on leave, patient
-        already here&rdquo; situations are inevitable.
-      </CalloutBox>
-
-      <h2>The nurse duty roster</h2>
-      <p>
-        Nursing is shift work. A duty roster assigns each nurse to a <strong>shift</strong> &mdash; typically
-        morning, evening and night &mdash; for a specific ward or nursing unit, for each date. Build it well and
-        every shift has known, adequate cover; build it badly and you get last-minute scrambles, unfair
-        distribution, and burnout. The mechanics of building a large roster (rotation, fairness, weekly
-        publishing) are covered in depth in{' '}
-        <Link href="/guides/nurse-duty-roster-hospital-guide">how to build a nurse duty roster</Link>; here we
-        focus on how it fits the wider scheduling picture.
-      </p>
-      <WorkflowDiagram
-        title="A day on the nursing roster"
-        steps={[
-          { label: 'Nursing unit', sublabel: 'Block / floor / wing' },
-          { label: 'Shift', sublabel: 'Morning / evening / night' },
-          { label: 'Assign nurses', sublabel: 'Against occupied beds' },
-          { label: 'Check ratio', sublabel: 'Meets required cover?' },
-          { label: 'Publish', sublabel: 'Roster visible to staff' },
-        ]}
+      <h2>Doctors are scheduled by availability</h2>
+      <Screenshot
+        src="/guides/doctor-hours.png" width={2560} height={2082}
+        alt="Doctor Hours tab with a doctor selected, listing OPD sessions Monday to Saturday from 09:00 AM to 01:00 PM labelled Morning OPD, each with a token cap of 20"
+        caption="A doctor's week: which days they consult, between which hours, and how many tokens a session takes."
       />
-
-      <h2>Nursing units: how real hospitals are organised</h2>
       <p>
-        Here is where paper rosters and simplistic software fall down. A ward is rarely a single room. In
-        practice a hospital is laid out as <strong>blocks, floors and wings</strong> &mdash; for example
-        &ldquo;Block A, 1st floor, B wing&rdquo; might hold ten mixed rooms, all staffed together from one{' '}
-        <strong>central nursing station</strong>. Rostering and ratios apply to that <strong>nursing
-        unit</strong>, not to each individual room.
+        A consultant does not work a shift the way a nurse does. They hold <strong>sessions</strong> — Monday
+        to Saturday, 9 to 1, twenty tokens. Recording that gives the hospital a published answer to
+        &ldquo;when is Dr Arun in&rdquo;, and gives the patient app a booking calendar: days a doctor does not
+        consult are simply not offered, and the token cap is what stops a session being oversold.
+      </p>
+      <CalloutBox tone="info" title="What doctor hours do and do not gate">
+        Be precise about this, because it is the sort of thing that gets overstated. In Uyirly these sessions
+        drive the <strong>patient app&apos;s</strong> booking calendar. The front desk booking an appointment
+        from inside the hospital is not restricted by them — reception can still book a patient onto a day
+        the doctor does not normally sit, which is deliberate, because a receptionist standing in front of a
+        patient often knows something the schedule does not. The published hours are the default; the desk
+        can override.
+      </CalloutBox>
+      <p>
+        For how those bookings become a queue, see the{' '}
+        <Link href="/guides/opd-queue-token-management-guide">OPD token and queue guide</Link>.
+      </p>
+
+      <h2>Nurses are scheduled by coverage</h2>
+      <Screenshot
+        src="/guides/nurse-roster.png" width={2560} height={990}
+        alt="Nurse roster week grid for one nursing unit with two nurses, each day showing a morning or night shift and a tick or a shortfall count in the day header"
+        caption="A week for one nursing unit, with each day's coverage stated in the header."
+      />
+      <p>
+        Nursing is shift work, and the question is not availability but <em>enough</em>. Each day&apos;s
+        header says whether the unit meets its required staffing, calculated rather than eyeballed.
       </p>
       <p>
-        Modelling this correctly matters because coverage is a property of the <em>unit</em>: you assign a set
-        of nurses to the station for a shift, and they cover every occupied bed across its rooms. A system that
-        only understands &ldquo;rooms&rdquo; forces you to fake this, and the ratio maths stops reflecting
-        reality.
+        The mechanics of building a large roster — copy-forward, cyclic patterns, ratio auto-fill, fairness,
+        publishing — are covered in{' '}
+        <Link href="/guides/nurse-duty-roster-hospital-guide">how to build a nurse duty roster</Link>. Here
+        the point is where it sits in the wider picture.
       </p>
-      <ScreenMock title="Scheduling · Nurse roster" caption="A nursing unit (block / floor / wing) rostered per shift, with live coverage against occupied beds.">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <MockStat label="Nursing unit" value="Block A · 1F · B wing" />
-          <MockStat label="Occupied beds" value="8 / 10" />
-          <MockStat label="Required ratio" value="1 : 6" />
-        </div>
-        <MockTable
-          head={['Shift', 'Nurses assigned', 'Cover']}
-          rows={[
-            ['Morning', 'Priya, Anjali', { v: 'OK', color: '#15803D' }],
-            ['Evening', 'Fatima', { v: 'OK', color: '#15803D' }],
-            ['Night', '—', { v: 'Under-staffed', color: '#B91C1C' }],
-          ]}
-        />
-      </ScreenMock>
 
-      <h2>Nurse-to-patient ratio &amp; NABH compliance</h2>
+      <h2>Nursing units: how hospitals are actually laid out</h2>
       <p>
-        The number of nurses a shift needs is not a matter of preference &mdash; NABH and good clinical
-        practice set expected <strong>nurse-to-patient ratios</strong> that vary by care level. Scheduling
-        software earns its keep by making the required ratio configurable per unit and then <em>flagging</em> a
-        shift that falls short for the beds actually occupied.
+        This is where simplistic software falls down. A ward is rarely one room. A hospital is laid out as{' '}
+        <strong>blocks, floors and wings</strong> — &ldquo;A · 1 · East&rdquo; might hold ten mixed rooms,
+        all staffed from one station. Rostering and ratios belong to that <strong>nursing unit</strong>, not
+        to each room.
+      </p>
+      <p>
+        Modelling it correctly matters because coverage is a property of the unit: a set of nurses staffs the
+        station for a shift and covers every occupied bed across its rooms. A system that only understands
+        rooms forces you to fake it, and the ratio arithmetic stops meaning anything.
+      </p>
+
+      <h2>Ratios, and what &ldquo;short&rdquo; means</h2>
+      <Screenshot
+        src="/guides/roster-coverage.png" width={2560} height={1980}
+        alt="Shifts and coverage settings with morning, evening and night shift types and their hours, a coverage ratios card showing one nurse per N patients per unit and shift, and a unit in-charges card"
+        caption="Shift types, per-unit ratios, and the nurses allowed to roster each unit."
+      />
+      <p>
+        Required nurses for a shift is <strong>occupied beds ÷ ratio, rounded up</strong>, never below a
+        per-unit minimum. Both are set per unit <em>and per shift</em>, because a night shift and a morning
+        shift in the same ward are not the same load.
       </p>
       <RatioBarChart
         title="Typical nurse-to-patient ratios by care level"
@@ -147,124 +117,85 @@ export default function Guide() {
         ]}
       />
       <p>
-        The full picture of ratios, care levels and what NABH expects is in the{' '}
-        <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio (NABH) guide</Link>. The
-        scheduling job is simply to hold the target per unit and surface the gap <em>before</em> the shift, so a
-        supervisor can pull in cover rather than discover the shortfall after an incident.
+        The care-level context is in the{' '}
+        <Link href="/guides/nurse-patient-ratio-india-nabh">nurse-to-patient ratio guide</Link>. The
+        scheduling job is narrower: hold the target per unit, compare it to the beds occupied right now, and
+        show the gap <em>before</em> the shift, while a supervisor can still pull someone in.
+      </p>
+      <p>
+        Note also who is allowed to do this. A nurse named as a unit&apos;s <strong>in-charge</strong> can
+        build, publish and approve leave for that unit without being an administrator of the hospital — which
+        is how rostering is delegated in practice.
       </p>
 
-      <h2>Leave requests &amp; approvals</h2>
-      <p>
-        A roster is only as trustworthy as the leave data behind it. If staff request leave in a separate book,
-        someone inevitably gets scheduled on a day they are off. Bringing leave into the same system closes the
-        loop:
-      </p>
+      <h2>Leave belongs in the same system</h2>
+      <Screenshot
+        src="/guides/roster-leave.png" width={2560} height={856}
+        alt="Leave requests list with an approved annual leave and a pending casual leave awaiting approval"
+        caption="Requested with a type and dates, approved by the in-charge, and then honoured by the roster."
+      />
       <WorkflowDiagram
         title="Leave that actually protects the roster"
         steps={[
-          { label: 'Request', sublabel: 'Staff apply for dates' },
-          { label: 'Approve / reject', sublabel: 'Authorised approver' },
-          { label: 'Roster blocks', sublabel: 'Person not schedulable' },
-          { label: 'Coverage recheck', sublabel: 'Gap flagged if any' },
+          { label: 'Request', sublabel: 'Type and dates' },
+          { label: 'Approve', sublabel: 'In-charge or admin' },
+          { label: 'Unassignable', sublabel: 'Generation and by hand' },
+          { label: 'Gap flagged', sublabel: 'In the week header' },
         ]}
       />
       <p>
-        Once leave is approved, that person should simply not be assignable for those dates &mdash; and if their
-        absence drops a shift below ratio, that shift should light up as needing cover. Leave, roster and ratio
-        are one connected system, not three.
+        Once leave is approved that person is not schedulable on those dates — not merely discouraged. The
+        automatic routes skip them, and so does a manual attempt to drop them into a cell. If their absence
+        takes a shift below its ratio, the day header says so.
       </p>
 
-      <h2>Attendance closes the loop</h2>
+      <h2>Attendance is a different record</h2>
       <p>
-        Scheduling says who <em>should</em> be on duty; attendance records who <em>actually</em> was. Keeping
-        them in the same platform means you can compare planned versus worked hours, spot no-shows, and feed
-        accurate hours into payroll and HR. The attendance side is covered in the{' '}
-        <Link href="/guides/hospital-staff-attendance-hr-guide">staff attendance &amp; HR guide</Link> &mdash;
-        for scheduling, the key point is that the roster is the plan and attendance is the truth, and a good
-        system holds both.
+        The roster is the plan; <Link href="/guides/hospital-staff-attendance-hr-guide">attendance</Link> is
+        what happened, marked per person per day. Both live in Uyirly, and both are worth keeping — but they
+        are separate records, and the system does not currently reconcile one against the other or compute
+        payroll hours from the difference. If a vendor tells you their scheduling module &ldquo;feeds
+        payroll&rdquo;, ask to see the payslip it produces.
       </p>
 
-      <h2>How far ahead to publish, and why cadence matters</h2>
+      <h2>Publish on a cadence</h2>
       <p>
-        A roster that appears the night before is almost as bad as no roster. Staff need enough notice to plan
-        childcare, travel and personal commitments, and supervisors need a window to fix gaps before they become
-        emergencies. Most well-run hospitals publish the nursing roster <strong>at least a week in advance</strong>,
-        in a fixed weekly cadence, so everyone knows exactly when the next roster drops.
-      </p>
-      <p>
-        A predictable cadence also makes leave manageable: if the roster for next week is built every Thursday,
-        leave requests for that week must land before Thursday, and the approver can see the coverage impact
-        while there is still time to arrange a swap. When rosters are published erratically, leave requests and
-        shift assignments collide constantly &mdash; the software should make the cadence effortless so it can
-        actually be kept. The same discipline applies to doctor OPD hours: publish changes ahead of time so
-        already-booked patients are never stranded by a session that quietly moved.
+        A roster that appears the night before is nearly as bad as none. Staff need notice to arrange
+        childcare and travel; supervisors need a window to fix gaps before they become emergencies. Most
+        well-run hospitals publish at least a week ahead on a fixed day, which also makes leave manageable:
+        if next week is built every Thursday, requests for it have to land before Thursday, and the approver
+        can see the coverage consequence while a swap is still possible.
       </p>
 
-      <h2>Common scheduling mistakes</h2>
+      <h2>Common mistakes</h2>
       <ul>
-        <li><strong>Rostering by room, not by unit</strong> &mdash; coverage and ratios only make sense at the
-          nursing-unit (block/floor/wing) level.</li>
-        <li><strong>Separating leave from the roster</strong> &mdash; guarantees someone is scheduled on an
-          approved day off.</li>
-        <li><strong>Treating doctor hours like nurse shifts</strong> &mdash; doctors need published OPD
-          availability that gates booking, not shift assignments.</li>
-        <li><strong>Checking ratios after the fact</strong> &mdash; the gap must be visible before the shift, or
-          it is just a report of a problem that already happened.</li>
-        <li><strong>No single source of truth</strong> &mdash; a roster on paper, leave in a book and hours in a
-          register can never agree.</li>
+        <li><strong>Rostering by room rather than by unit</strong> — coverage only makes sense at the station.</li>
+        <li><strong>Keeping leave somewhere else</strong> — guarantees someone gets scheduled on an approved day off.</li>
+        <li><strong>Treating doctor hours as shifts</strong> — doctors need published availability, not coverage targets.</li>
+        <li><strong>Checking ratios afterwards</strong> — then it is a report of a problem, not a chance to fix one.</li>
+        <li><strong>Publishing erratically</strong> — leave requests and assignments collide permanently.</li>
       </ul>
 
-      <h2>What Uyirly offers</h2>
-      <p>
-        Uyirly brings doctor availability, nurse rostering, nursing units, ratios, leave and attendance into a
-        single <strong>Scheduling</strong> module, so the plan on screen matches what happens on the floor.
-      </p>
-      <StatGrid stats={[
-        { value: '3 shifts', label: 'Morning / evening / night, configurable' },
-        { value: 'Per-unit', label: 'Block · floor · wing coverage' },
-        { value: 'Live', label: 'Ratio flagged vs occupied beds' },
-        { value: '1 place', label: 'Roster · leave · attendance' },
-      ]} />
-      <p>
-        <strong>Doctor OPD hours</strong> are set on the Scheduling page (the &ldquo;Doctor Hours&rdquo; tab) and
-        directly gate appointment booking &mdash; patients, and your own front desk, can only book a doctor on
-        days and sessions they actually consult. On a token-based OPD this also drives that day&rsquo;s queue.
-      </p>
-      <p>
-        <strong>Nurse rostering works at the nursing-unit level</strong> &mdash; you define units as block,
-        floor and wing with a central station, set the required nurse-to-patient ratio for each, and assign
-        nurses per shift. Uyirly shows live coverage against <em>occupied</em> beds and flags an under-staffed
-        shift before it starts.
-      </p>
-      <ScreenMock title="Scheduling · Doctor Hours" caption="Each doctor's weekly OPD sessions publish straight into appointment booking.">
-        <MockTable
-          head={['Doctor', 'Days', 'Session']}
-          rows={[
-            ['Dr. Aanya Sharma', 'Mon · Wed · Fri', '10:00 – 13:00'],
-            ['Dr. Rahul Nair', 'Tue · Thu', '17:00 – 20:00'],
-            ['Dr. Meera Iyer', 'Mon – Sat', '09:00 – 12:00'],
-          ]}
-        />
-      </ScreenMock>
-      <p>
-        <strong>Leave is built in.</strong> Staff raise a leave request, an approver accepts or rejects it, and
-        an approved leave removes that person from the roster for those dates &mdash; with coverage rechecked so
-        any resulting gap is visible. And because <strong>attendance</strong> lives in the same platform, the
-        published roster and the hours actually worked stay connected, ready for HR and payroll.
-      </p>
-      <CalloutBox tone="tip" title="Set it up once">
-        Model your wards as nursing units (block / floor / wing), set each unit&rsquo;s ratio, publish your
-        doctors&rsquo; OPD hours, and the day-to-day roster becomes a quick assign-and-check exercise &mdash;
-        with under-staffed shifts and leave conflicts surfaced for you, not left to spot by eye.
-      </CalloutBox>
+      <h2>What Uyirly does</h2>
+      <ul>
+        <li>Doctor OPD sessions per weekday, with hours, a label and a token cap.</li>
+        <li>Those sessions driving the patient app&apos;s booking calendar; the front desk can still override.</li>
+        <li>Nursing units modelled as block, floor and wing with a central station.</li>
+        <li>A week roster per unit, published by that unit&apos;s in-charge or an admin.</li>
+        <li>Required staffing from live occupied beds against a per-unit, per-shift ratio and minimum.</li>
+        <li>Shift types the hospital defines, and can switch off when it does not run them.</li>
+        <li>Leave requested, approved, and then enforced against both automatic and manual assignment.</li>
+        <li>Attendance marked per person per day in the same platform.</li>
+      </ul>
 
       <h2>Where scheduling fits</h2>
       <p>
-        Staff scheduling does not stand alone &mdash; it plugs into admissions (occupied beds drive nurse
-        requirements), OPD (doctor hours drive booking), and HR (attendance and leave). If you are digitising a
-        hospital end to end, scheduling is one piece of the wider workflow described in{' '}
-        <Link href="/guides/hospital-digitization-workflow-guide">how to digitize a hospital</Link>. Done right,
-        it turns &ldquo;who&rsquo;s on tonight?&rdquo; from an anxious phone call into a glance at one screen.
+        Scheduling plugs into admissions — occupied beds drive the nurse requirement, see the{' '}
+        <Link href="/guides/ipd-admission-bed-management-guide">IPD guide</Link> — and into OPD, where doctor
+        hours shape what patients can book. If you are digitising a hospital end to end, it is one piece of
+        the wider sequence in{' '}
+        <Link href="/guides/hospital-digitization-workflow-guide">how to digitise a hospital</Link>.{' '}
+        <Link href="/signup">Start a 30-day free trial</Link> — no credit card.
       </p>
     </>
   )
