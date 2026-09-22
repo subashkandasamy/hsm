@@ -12,6 +12,17 @@
  * seconds to load is a guide nobody reads.
  *
  * Needs the dev server running, and SUPABASE_SERVICE_ROLE_KEY for the sign-in.
+ *
+ * playwright-core is deliberately NOT in package.json. It is a 13 MB browser
+ * driver used only to take these screenshots, and declaring it would make every
+ * production build download it for a script that never runs there. Install it
+ * when you need it:
+ *
+ *   npm i --no-save playwright-core
+ *
+ * scripts/ is excluded from tsconfig.json for the same reason — the app's build
+ * should never type-check local tooling. Check it with `npm run typecheck:scripts`
+ * once playwright-core is installed.
  */
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
