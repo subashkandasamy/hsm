@@ -24,23 +24,36 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
   const [roomTypeId, setRoomTypeId] = useState(defaultTypeId)
   const [unitId, setUnitId] = useState('')
   const [deptId, setDeptId] = useState('')
+  const [floor, setFloor] = useState('')
+  const [block, setBlock] = useState('')
   const [isTemp, setIsTemp] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedType = roomTypes.find(r => r.id === roomTypeId) ?? null
 
+  /**
+   * A wing knows where it is, so picking one fills the location in — but it is
+   * only a starting point. A hospital with no wings set up must still be able to
+   * say which floor a room is on, which it could not before.
+   */
+  function pickUnit(id: string) {
+    setUnitId(id)
+    const unit = nursingUnits.find(u => u.id === id) ?? null
+    if (!unit) return
+    if (unit.floor) setFloor(unit.floor)
+    if (unit.block) setBlock(`${unit.block}${unit.wing ? ' · ' + unit.wing : ''}`)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null)
-    const unit = nursingUnits.find(u => u.id === unitId) ?? null
     const result = await createWard({
       name: name.trim(),
       room_type_id: roomTypeId || null,
       nursing_unit_id: unitId || null,
-      // room location is inherited from its nursing unit (wing)
-      floor: unit?.floor ?? null,
-      block: unit ? `${unit.block}${unit.wing ? ' · ' + unit.wing : ''}` : null,
+      floor: floor.trim() || null,
+      block: block.trim() || null,
       department_id: deptId || null,
       is_temp: isTemp,
     })
@@ -48,7 +61,7 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
     if (!result.success) { setError(result.error); return }
     onSuccess(result.ward)
     setName(''); setRoomTypeId(defaultTypeId); setUnitId('')
-    setDeptId(''); setIsTemp(false)
+    setDeptId(''); setIsTemp(false); setFloor(''); setBlock('')
   }
 
   return (
@@ -79,7 +92,7 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
 
         {/* Nursing unit (wing) — sets the room's location and who staffs it */}
         <FormField label="Nursing Unit (wing)" hint="Which wing/nursing station covers this room — used for nurse rostering">
-          <Select value={unitId} onChange={e => setUnitId(e.target.value)}>
+          <Select value={unitId} onChange={e => pickUnit(e.target.value)}>
             <option value="">— None —</option>
             {nursingUnits.filter(u => u.is_active).map(u => (
               <option key={u.id} value={u.id}>{nursingUnitLabel(u)}{u.station_name ? ` (${u.station_name})` : ''}</option>
@@ -89,6 +102,16 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
             <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>No nursing units yet — add them from the “Nursing Units” button.</p>
           )}
         </FormField>
+
+        {/* Where the room is. Filled in by the wing when there is one, typed when there is not. */}
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Floor" hint={unitId ? 'from the wing — editable' : undefined}>
+            <Input value={floor} onChange={e => setFloor(e.target.value)} placeholder="e.g. 1" />
+          </FormField>
+          <FormField label="Block / Wing" hint={unitId ? 'from the wing — editable' : undefined}>
+            <Input value={block} onChange={e => setBlock(e.target.value)} placeholder="e.g. Block B" />
+          </FormField>
+        </div>
 
         <FormField label="Department">
           <Select value={deptId} onChange={e => setDeptId(e.target.value)}>

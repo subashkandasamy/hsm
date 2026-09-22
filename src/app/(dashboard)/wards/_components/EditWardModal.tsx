@@ -21,6 +21,8 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
   const [name, setName]           = useState(ward.name)
   const [roomTypeId, setRoomTypeId] = useState(ward.room_type_id ?? '')
   const [unitId, setUnitId]       = useState(ward.nursing_unit_id ?? '')
+  const [floor, setFloor]         = useState(ward.floor ?? '')
+  const [block, setBlock]         = useState(ward.block ?? '')
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
@@ -28,25 +30,37 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
     if (open) {
       setName(ward.name); setRoomTypeId(ward.room_type_id ?? '')
       setUnitId(ward.nursing_unit_id ?? ''); setError(null)
+      setFloor(ward.floor ?? ''); setBlock(ward.block ?? '')
     }
   }, [open, ward])
+
+  /** Choosing a wing offers its location; anything already set is left alone. */
+  function pickUnit(id: string) {
+    setUnitId(id)
+    const unit = nursingUnits.find(u => u.id === id) ?? null
+    if (!unit) return
+    if (unit.floor) setFloor(unit.floor)
+    if (unit.block) setBlock(`${unit.block}${unit.wing ? ' · ' + unit.wing : ''}`)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) { setError('Ward name is required'); return }
     setLoading(true); setError(null)
-    const unit = nursingUnits.find(u => u.id === unitId) ?? null
-    const floor = unit?.floor ?? null
-    const block = unit ? `${unit.block}${unit.wing ? ' · ' + unit.wing : ''}` : null
+    // The location is what the form holds. It used to be re-derived from the
+    // nursing unit on every save, which quietly wiped the floor and block of any
+    // room that had no wing.
+    const nextFloor = floor.trim() || null
+    const nextBlock = block.trim() || null
     const result = await updateWardDetails(ward.id, {
       name: name.trim(),
       room_type_id: roomTypeId || null,
       nursing_unit_id: unitId || null,
-      floor, block,
+      floor: nextFloor, block: nextBlock,
     })
     setLoading(false)
     if (!result.success) { setError(result.error); return }
-    onSuccess({ name: name.trim(), room_type_id: roomTypeId || null, nursing_unit_id: unitId || null, floor, block })
+    onSuccess({ name: name.trim(), room_type_id: roomTypeId || null, nursing_unit_id: unitId || null, floor: nextFloor, block: nextBlock })
   }
 
   return (
@@ -68,13 +82,22 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
         </FormField>
 
         <FormField label="Nursing Unit (wing)" hint="Which wing/nursing station covers this room — used for nurse rostering">
-          <Select value={unitId} onChange={e => setUnitId(e.target.value)}>
+          <Select value={unitId} onChange={e => pickUnit(e.target.value)}>
             <option value="">— None —</option>
             {nursingUnits.filter(u => u.is_active || u.id === unitId).map(u => (
               <option key={u.id} value={u.id}>{nursingUnitLabel(u)}{u.station_name ? ` (${u.station_name})` : ''}</option>
             ))}
           </Select>
         </FormField>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Floor">
+            <Input value={floor} onChange={e => setFloor(e.target.value)} placeholder="e.g. 1" />
+          </FormField>
+          <FormField label="Block / Wing">
+            <Input value={block} onChange={e => setBlock(e.target.value)} placeholder="e.g. Block B" />
+          </FormField>
+        </div>
 
         {error && <div className="text-sm rounded-xl px-3 py-2"
           style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}
