@@ -36,6 +36,43 @@ const only = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 const shots = only.length ? SHOTS.filter((s) => only.some((o) => s.name.includes(o))) : SHOTS
 if (!shots.length) { console.error(`No shots match ${only.join(', ')}`); process.exit(1) }
 
+/**
+ * Paths like /opd/<visitId> point at rows whose ids change every time the demo
+ * is re-seeded, so the manifest writes {paedVisit} and this fills it in. A shot
+ * list full of hard-coded uuids would be stale the first time anyone re-seeded.
+ */
+async function resolvePlaceholders(): Promise<Record<string, string>> {
+  const svc = createClient(URL_, SVC, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { data: tenant } = await svc.from('tenants').select('id').eq('slug', 'demo').maybeSingle()
+  const t = tenant!.id as string
+
+  const patient = async (like: string) => {
+    const { data } = await svc.from('patients').select('id').eq('tenant_id', t).ilike('full_name', like).limit(1).maybeSingle()
+    return (data?.id as string) ?? ''
+  }
+  const visitOf = async (like: string) => {
+    const pid = await patient(like)
+    const { data } = await svc.from('visits').select('id').eq('tenant_id', t).eq('patient_id', pid)
+      .order('visit_date', { ascending: false }).limit(1).maybeSingle()
+    return (data?.id as string) ?? ''
+  }
+  const admissionIn = async (wardName: string) => {
+    const { data: ward } = await svc.from('wards').select('id').eq('tenant_id', t).eq('name', wardName).maybeSingle()
+    const { data } = await svc.from('admissions').select('id').eq('tenant_id', t).eq('ward_id', ward?.id ?? '')
+      .eq('status', 'admitted').limit(1).maybeSingle()
+    return (data?.id as string) ?? ''
+  }
+
+  return {
+    paedVisit: await visitOf('Aarav%'),
+    ancVisit: await visitOf('Lakshmi%'),
+    generalVisit: await visitOf('Murugan%'),
+    paedPatient: await patient('Aarav%'),
+    labourAdmission: await admissionIn('Labour Room 1'),
+    wardAdmission: await admissionIn('Female General Ward'),
+  }
+}
+
 async function signIn(): Promise<Array<{ name: string; value: string }>> {
   const svc = createClient(URL_, SVC, { auth: { autoRefreshToken: false, persistSession: false } })
   const { data: tenant } = await svc.from('tenants').select('id').eq('slug', 'demo').maybeSingle()
@@ -97,8 +134,13 @@ const HIDE_CHROME = `
   nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }
 `
 
-async function capture(page: Page, shot: Shot, raw: string): Promise<void> {
-  const res = await page.goto(`http://${HOST}${shot.path}`, { waitUntil: 'networkidle', timeout: 120_000 })
+async function capture(page: Page, shot: Shot, raw: string, vars: Record<string, string>): Promise<void> {
+  const path = shot.path.replace(/\{(\w+)\}/g, (_, k: string) => {
+    const v = vars[k]
+    if (!v) throw new Error(`nothing in the demo matches {${k}}`)
+    return v
+  })
+  const res = await page.goto(`http://${HOST}${path}`, { waitUntil: 'networkidle', timeout: 120_000 })
   if (res && res.status() !== 200) throw new Error(`HTTP ${res.status()}`)
   await page.waitForTimeout(shot.wait ?? 2000)
   if (!shot.chrome) { await page.addStyleTag({ content: HIDE_CHROME }); await page.waitForTimeout(250) }
@@ -107,7 +149,10 @@ async function capture(page: Page, shot: Shot, raw: string): Promise<void> {
   if (shot.steps?.length) await page.waitForTimeout(600)
 
   if (shot.selector) {
-    const el = page.locator(shot.selector).first()
+    // filterText picks the card by what it says, which survives a class change.
+    const el = shot.filterText
+      ? page.locator(shot.selector).filter({ hasText: shot.filterText }).last()
+      : page.locator(shot.selector).first()
     if (await el.count()) { await el.screenshot({ path: raw }); return }
     console.log('    (selector missed, whole page instead)')
   }
@@ -117,6 +162,7 @@ async function capture(page: Page, shot: Shot, raw: string): Promise<void> {
 async function main() {
   if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true })
   const jar = await signIn()
+  const vars = await resolvePlaceholders()
 
   const browser = await chromium.launch({ executablePath: CHROME, headless: true })
   let failed = 0
@@ -137,7 +183,7 @@ async function main() {
     const raw = `${OUT}/${shot.name}.raw.png`
     const final = `${OUT}/${shot.name}.png`
     try {
-      await capture(page, shot, raw)
+      await capture(page, shot, raw, vars)
       const meta = await sharp(raw).png({ compressionLevel: 9, palette: true }).toFile(final)
       const kb = Math.round(meta.size / 1024)
       console.log(`  ✓ ${shot.name.padEnd(28)} ${meta.width}×${meta.height}  ${kb} KB${errors.length ? `  (page errors: ${errors.length})` : ''}`)

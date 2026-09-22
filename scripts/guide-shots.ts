@@ -13,10 +13,16 @@
 export interface Shot {
   /** File name under public/guides, without the extension. */
   name: string
-  /** Path inside the app, on the demo tenant. */
+  /**
+   * Path inside the app, on the demo tenant. `{paedVisit}` and friends are
+   * filled in from the demo data at capture time, so re-seeding cannot stale
+   * the list — see resolvePlaceholders in the runner.
+   */
   path: string
   /** Capture just this element rather than the viewport. */
   selector?: string
+  /** Narrow `selector` to the one containing this text — e.g. a card by its heading. */
+  filterText?: string
   /** Steps to run before capturing — see the runner for what each does. */
   steps?: Step[]
   /** Viewport width; 1280 unless a screen needs more or is being shown on a phone. */
@@ -91,6 +97,25 @@ export const SHOTS: Shot[] = [
     selector: 'main',
     wait: 2500,
   },
+
+  // ── Paediatrics: growth, milestones, immunisation ──────────────────────────
+  { name: 'paed-assessment',   path: '/opd/{paedVisit}', selector: 'div.glass-card', filterText: 'Paediatric Assessment', wait: 4500 },
+  { name: 'paed-measurements', path: '/opd/{paedVisit}', selector: 'section', filterText: 'Measurements today', wait: 4500 },
+  { name: 'paed-growth-chart', path: '/opd/{paedVisit}', selector: 'section', filterText: 'WHO growth chart', wait: 5000 },
+  { name: 'paed-vaccinations', path: '/opd/{paedVisit}', selector: 'section', filterText: 'Vaccinations', wait: 4500 },
+  { name: 'paed-milestones',   path: '/opd/{paedVisit}', selector: 'section', filterText: 'Developmental milestones', wait: 4500 },
+
+  // ── Obstetrics: antenatal care and the labour ward ─────────────────────────
+  { name: 'anc-card',      path: '/opd/{ancVisit}', selector: 'div.glass-card', filterText: 'Obstetrics & Gynaecology', wait: 4500 },
+  { name: 'anc-check',     path: '/opd/{ancVisit}', selector: 'section', filterText: 'Antenatal check today', wait: 4500 },
+  { name: 'anc-schedule',  path: '/opd/{ancVisit}', selector: 'section', filterText: 'Care schedule', wait: 4500 },
+  {
+    name: 'labour-partograph',
+    path: '/ipd/{labourAdmission}',
+    steps: [{ clickText: 'Labour' }, { wait: 2000 }],
+    selector: 'main', wait: 4000,
+  },
+  { name: 'ipd-admission', path: '/ipd/{wardAdmission}', selector: 'main', wait: 4500 },
 
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
