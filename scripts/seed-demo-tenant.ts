@@ -675,6 +675,57 @@ async function createToday(tenantId: string, s: Seeded): Promise<void> {
 }
 
 /**
+ * A stay that has been running two days, billed the way the daily cron does it:
+ * a separate bill per source per day, so the admission carries several small
+ * bills rather than one running invoice — which is what the screens expect.
+ */
+async function createIpdBilling(tenantId: string, s: Seeded): Promise<void> {
+  const { data: adm } = await db.from('admissions')
+    .select('id, patient_id, ward:wards(name, daily_rate)')
+    .eq('tenant_id', tenantId).eq('status', 'admitted').order('admitted_at').limit(1).maybeSingle()
+  if (!adm) return
+  const ward = adm.ward as unknown as { name: string; daily_rate: number } | null
+  const cashier = s.staff.find((x) => x.role === 'accountant')!.id
+
+  const billNo = async () => {
+    const { data } = await db.rpc('get_next_bill_no', { p_tenant_id: tenantId })
+    return data as string
+  }
+
+  const add = async (source: string, date: string, lines: Array<[string, number, number]>) => {
+    const id = uuid()
+    const total = lines.reduce((sum, [, qty, price]) => sum + qty * price, 0)
+    await db.from('bills').insert({
+      id, tenant_id: tenantId, patient_id: adm.patient_id, admission_id: adm.id,
+      bill_no: await billNo(), bill_source: source, billing_date: date,
+      subtotal: total, discount: 0, tax: 0, total, paid: 0, status: 'unpaid',
+      created_by: cashier,
+    })
+    await db.from('bill_items').insert(lines.map(([description, qty, unit_price]) => ({
+      id: uuid(), tenant_id: tenantId, bill_id: id, source,
+      description, qty, unit_price, amount: qty * unit_price,
+      taxable_value: qty * unit_price, tax_amount: 0, gst_rate: 0,
+    })))
+  }
+
+  const rate = ward?.daily_rate ?? 1200
+  for (const offset of [-1, 0]) {
+    await add('bed', day(offset), [[`${ward?.name ?? 'Ward'} — Room Rent`, 1, rate]])
+    await add('nursing', day(offset), [['Nursing — Morning Shift', 1, 400], ['Nursing — Night Shift', 1, 400]])
+  }
+  await add('ipd_pharmacy', day(0), [['Mox 500 — 6 capsules', 6, 8.9], ['Pan 40 — 2 tablets', 2, 9.5]])
+  await add('lab', day(-1), [['Complete Blood Count (CBC)', 1, 350], ['Serum Creatinine', 1, 250]])
+
+  // An advance taken at admission, which discharge will settle against.
+  await db.from('admission_advances').insert({
+    id: uuid(), tenant_id: tenantId, admission_id: adm.id,
+    amount: 10000, method: 'upi', received_by: cashier,
+    received_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+  })
+  ok('IPD bills across two days, plus an advance', null)
+}
+
+/**
  * The dashboard reads from materialized views, refreshed by pg_cron every five
  * minutes. A screenshot taken straight after seeding would otherwise show a
  * hospital with no beds and no footfall.
@@ -702,6 +753,7 @@ async function main() {
   await createAdmissions(tenantId, seeded)
   await completeSetup(tenantId, seeded)
   await createToday(tenantId, seeded)
+  await createIpdBilling(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`

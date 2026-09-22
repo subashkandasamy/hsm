@@ -68,6 +68,7 @@ async function resolvePlaceholders(): Promise<Record<string, string>> {
     ancVisit: await visitOf('Lakshmi%'),
     generalVisit: await visitOf('Murugan%'),
     paedPatient: await patient('Aarav%'),
+    ipdPatient: await patient('Saraswathi%'),
     labourAdmission: await admissionIn('Labour Room 1'),
     wardAdmission: await admissionIn('Female General Ward'),
   }

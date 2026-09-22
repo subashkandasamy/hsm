@@ -127,6 +127,10 @@ export const SHOTS: Shot[] = [
     selector: 'form', wait: 2500,
   },
 
+  // ── Billing ────────────────────────────────────────────────────────────────
+  { name: 'billing-by-patient',  path: '/billing', selector: 'main', wait: 3000 },
+  { name: 'ipd-combined-bill',   path: '/billing/combined/patient/{ipdPatient}', selector: 'main', wait: 4000 },
+
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
   { name: 'patients',     path: '/patients',     selector: 'main', wait: 2500 },
