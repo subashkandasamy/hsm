@@ -202,7 +202,7 @@ async function createWards(tenantId: string, depts: Dept[]): Promise<void> {
  * Fictional people. The mobile numbers are a 99999 block chosen so they read as
  * real without being anyone's, and no Aadhaar is stored.
  */
-async function createPatients(tenantId: string, staff: Staff[]): Promise<void> {
+async function createPatients(tenantId: string, staff: Staff[]): Promise<Array<{ id: string; name: string }>> {
   const by = staff[0].id
   const spec: Array<{ name: string; dob: string; gender: string; phone: string; blood?: string; allergies?: string; est?: boolean }> = [
     { name: 'Anand Subramanian', dob: yearsAgo(46, '-02-18'), gender: 'male',   phone: '+919999900001', blood: 'O+' },
@@ -231,6 +231,442 @@ async function createPatients(tenantId: string, staff: Staff[]): Promise<void> {
     })
   }
   ok(`${rows.length} patients`, (await db.from('patients').insert(rows)).error)
+  return rows.map((r) => ({ id: r.id, name: r.full_name }))
+}
+
+// ── 5. Catalogues the hospital would have set up ─────────────────────────────
+
+/** A handful of common tests, priced — a fresh tenant starts with none. */
+async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string; name: string; price: number }>> {
+  const spec: Array<[string, string, string, string | null, number, number | null, number | null]> = [
+    ['Complete Blood Count (CBC)', 'CBC',  'Blood', 'g/dL',    350, 13, 17],
+    ['Haemoglobin',                'HB',   'Blood', 'g/dL',    120, 13, 17],
+    ['Random Blood Sugar',         'RBS',  'Blood', 'mg/dL',   100, 70, 140],
+    ['HbA1c',                      'HBA1C','Blood', '%',       550, 4,  5.7],
+    ['Serum Creatinine',           'CREA', 'Blood', 'mg/dL',   250, 0.6, 1.3],
+    ['Liver Function Test',        'LFT',  'Blood', 'U/L',     750, null, null],
+    ['Thyroid Profile (T3 T4 TSH)','THY',  'Blood', 'mIU/L',   650, 0.4, 4.0],
+    ['Urine Routine',              'URIN', 'Urine', null,      200, null, null],
+  ]
+  const rows = spec.map(([name, code, sample, unit, price, lo, hi]) => ({
+    id: uuid(), tenant_id: tenantId, name, code, sample_type: sample,
+    unit, price, ref_low: lo, ref_high: hi, category: 'General', is_active: true,
+  }))
+  ok(`${rows.length} lab tests`, (await db.from('lab_tests_catalog').insert(rows)).error)
+  return rows.map((r) => ({ id: r.id, name: r.name, price: r.price }))
+}
+
+// ── 6. Pharmacy stock ────────────────────────────────────────────────────────
+
+/**
+ * Real shelf conditions, not just "some stock": one medicine below its reorder
+ * level, one batch a few weeks from expiry, one sold out, and two vaccines set
+ * up for the immunisation screens.
+ */
+async function createStock(tenantId: string, staff: Staff[]): Promise<void> {
+  const pharmacist = staff.find((s) => s.role === 'pharmacist')!.id
+
+  const receipt = {
+    id: uuid(), tenant_id: tenantId,
+    supplier_name: 'Apex Pharma Distributors', invoice_no: 'APX/26-27/1184',
+    invoice_date: day(-9), invoice_total: 48250, opening_stock: false,
+    received_by: pharmacist,
+  }
+  ok('stock receipt', (await db.from('stock_receipts').insert(receipt)).error)
+
+  // name to search the shared catalogue with, brand, pack, rate, mrp, qty, reorder, expiry, rack
+  const spec: Array<[string, string, number, number, number, number, number, number, string]> = [
+    ['paracetamol',  'Dolo 650',      15,  31.5,  2.50, 450, 150, 400, 'Rack A · Shelf 1'],
+    ['amoxicillin',  'Mox 500',       10,  62.0,  8.90, 180,  60, 300, 'Rack A · Shelf 2'],
+    ['pantoprazole', 'Pan 40',        15, 118.0,  9.50,  45,  90, 320, 'Rack B · Shelf 1'],
+    ['cefixime',     'Taxim-O 200',   10, 148.0, 19.50,  90,  40, 260, 'Rack B · Shelf 2'],
+    ['metformin',    'Glycomet 500',  20,  38.0,  2.35, 600, 200, 500, 'Rack C · Shelf 1'],
+    ['amlodipine',   'Amlopres 5',    15,  42.0,  3.10, 300, 120, 450, 'Rack C · Shelf 2'],
+    ['azithromycin', 'Azithral 500',   5, 105.0, 24.00, 100,  30,  38, 'Rack B · Shelf 3'],
+    ['ondansetron',  'Emeset 4',      10,  46.0,  5.20,   0,  50, 280, 'Rack D · Shelf 1'],
+  ]
+
+  const batches: Record<string, unknown>[] = []
+  for (const [search, brand, pack, rate, mrp, qty, reorder, expiryDays, rack] of spec) {
+    const { data: master } = await db.from('drug_master')
+      .select('id, name').ilike('name', `${search}%`).eq('is_active', true).order('name').limit(1).maybeSingle()
+    if (!master) { console.log(`  · no catalogue match for ${search}, skipped`); continue }
+    batches.push({
+      id: uuid(), tenant_id: tenantId, drug_master_id: master.id,
+      batch_no: `${brand.split(' ')[0].toUpperCase().slice(0, 4)}${expiryDays}`,
+      expiry: day(expiryDays), qty_available: qty, free_qty: 0,
+      purchase_price: rate, mrp, reorder_level: reorder,
+      brand_name: brand, manufacturer: 'Demo Pharma Ltd',
+      pack_size: pack, pack_unit: 'strip', hsn_code: '30049099', gst_rate: 12,
+      supplier_name: receipt.supplier_name, supplier_invoice_no: receipt.invoice_no,
+      purchase_date: receipt.invoice_date, storage_location: rack, receipt_id: receipt.id,
+    })
+  }
+  ok(`${batches.length} medicine batches`, (await db.from('drug_batches').insert(batches)).error)
+
+  // Two vaccines the paediatric screens can actually give.
+  for (const [vaccine, search, brand, mrp] of [
+    ['Hepatitis B', 'hepatitis b', 'Engerix-B', 320],
+    ['Pentavalent (DPT-HepB-Hib)', 'pentavalent', 'Pentavac', 750],
+  ] as Array<[string, string, string, number]>) {
+    const { data: master } = await db.from('drug_master')
+      .select('id').ilike('name', `%${search}%`).eq('is_active', true).order('name').limit(1).maybeSingle()
+    if (!master) { console.log(`  · no catalogue match for ${vaccine}, skipped`); continue }
+    const { count } = await db.from('immunization_schedule')
+      .select('vaccine', { count: 'exact', head: true }).eq('vaccine', vaccine)
+    if (!count) { console.log(`  · ${vaccine} is not in the schedule, skipped`); continue }
+    await db.from('vaccine_products').insert({
+      id: uuid(), tenant_id: tenantId, vaccine, drug_master_id: master.id, updated_by: pharmacist,
+    })
+    await db.from('drug_batches').insert({
+      id: uuid(), tenant_id: tenantId, drug_master_id: master.id,
+      batch_no: `VAX${brand.slice(0, 4).toUpperCase()}1`, expiry: day(210),
+      qty_available: 24, mrp, purchase_price: mrp * 0.72, reorder_level: 10,
+      brand_name: brand, manufacturer: 'Demo Biologicals', pack_size: 1, pack_unit: 'vial',
+      hsn_code: '30022029', gst_rate: 5, storage_location: 'Vaccine Fridge · Tray 2',
+      supplier_name: receipt.supplier_name, purchase_date: receipt.invoice_date,
+    })
+    ok(`vaccine: ${vaccine}`, null)
+  }
+}
+
+// ── 7. OPD visits ────────────────────────────────────────────────────────────
+
+interface Seeded { patients: Array<{ id: string; name: string }>; staff: Staff[] }
+
+const patientId = (s: Seeded, name: string) => s.patients.find((p) => p.name.startsWith(name))!.id
+const doctorId  = (s: Seeded, name: string) => s.staff.find((d) => d.name.includes(name))!.id
+
+/** One visit per specialty, so every clinical template has something to show. */
+async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: string; name: string; price: number }>): Promise<void> {
+  const visits: Record<string, unknown>[] = []
+  const rx: Record<string, unknown>[] = []
+
+  const add = (opts: {
+    patient: string; doctor: string; daysAgo: number; fee: number
+    complaint: string; diagnosis: string; icd?: string; notes?: string
+    vitals?: Record<string, string>; status?: string; billed?: string
+    drugs?: Array<[string, string, string, string]>
+  }) => {
+    const id = uuid()
+    visits.push({
+      id, tenant_id: tenantId, patient_id: patientId(s, opts.patient),
+      doctor_id: doctorId(s, opts.doctor), type: 'opd',
+      visit_date: new Date(Date.now() - opts.daysAgo * 86400000).toISOString(),
+      complaint: opts.complaint, diagnosis: opts.diagnosis, icd_code: opts.icd ?? null,
+      notes: opts.notes ?? null, vitals: opts.vitals ?? null,
+      status: opts.status ?? 'closed', consultation_fee: opts.fee,
+      billing_status: opts.billed ?? 'billed',
+    })
+    for (const [name, dosage, freq, dur] of opts.drugs ?? []) {
+      rx.push({ id: uuid(), tenant_id: tenantId, visit_id: id, drug_name: name, dosage, frequency: freq, duration: dur })
+    }
+    return id
+  }
+
+  add({ patient: 'Anand', doctor: 'Arun Prakash', daysAgo: 3, fee: 500,
+    complaint: 'Fever with body ache for 3 days, mild cough',
+    diagnosis: 'Acute viral fever', icd: 'J06.9',
+    notes: 'Advised rest and plenty of fluids. Review if fever persists beyond 3 days.',
+    vitals: { bp: '128/82', pulse: '92', temp: '101.2', spo2: '98', weight: '74' },
+    drugs: [['Dolo 650', '1 tablet', 'Three times a day', '3 days'],
+            ['Azithral 500', '1 tablet', 'Once a day', '3 days']] })
+
+  add({ patient: 'Murugan', doctor: 'Arun Prakash', daysAgo: 1, fee: 500,
+    complaint: 'Follow-up for diabetes and hypertension, occasional giddiness',
+    diagnosis: 'Type 2 diabetes mellitus with hypertension', icd: 'E11.9',
+    notes: 'Continue current medication. HbA1c and creatinine sent.',
+    vitals: { bp: '146/90', pulse: '78', temp: '98.4', spo2: '97', weight: '68' },
+    drugs: [['Glycomet 500', '1 tablet', 'Twice a day', '30 days'],
+            ['Amlopres 5', '1 tablet', 'Once a day at night', '30 days']] })
+
+  const paedVisit = add({ patient: 'Aarav', doctor: 'Kavitha Suresh', daysAgo: 2, fee: 400,
+    complaint: 'Loose stools since yesterday, taking fluids well',
+    diagnosis: 'Acute gastroenteritis, no dehydration', icd: 'A09',
+    notes: 'ORS explained to mother. Growth on track. Weight-for-age within normal range.',
+    vitals: { temp: '99.1', pulse: '112', weight: '11.4' },
+    drugs: [['ORS sachet', '1 sachet in 200 ml water', 'After each loose stool', '3 days']] })
+
+  const ancVisit = add({ patient: 'Lakshmi', doctor: 'Lakshmi Iyer', daysAgo: 5, fee: 600, status: 'closed',
+    complaint: 'Routine antenatal check, 34 weeks',
+    diagnosis: 'Single live intrauterine pregnancy, 34 weeks',
+    notes: 'Fetal movements good. Iron and calcium continued. Review in 2 weeks.',
+    vitals: { bp: '118/76', pulse: '84', weight: '63' } })
+
+  add({ patient: 'Kavya', doctor: 'Vignesh Kumar', daysAgo: 6, fee: 450,
+    complaint: 'Blurred distance vision for 2 months, headache while reading',
+    diagnosis: 'Myopia with astigmatism, both eyes', icd: 'H52.2',
+    notes: 'Spectacles prescribed. Review after 6 months.',
+    vitals: { bp: '112/74', pulse: '76' } })
+
+  add({ patient: 'Divya', doctor: 'Arun Prakash', daysAgo: 0, fee: 500, status: 'open', billed: 'unbilled',
+    complaint: 'Sore throat and difficulty swallowing for 2 days',
+    diagnosis: 'Acute pharyngitis', icd: 'J02.9',
+    vitals: { bp: '118/78', pulse: '88', temp: '100.4', spo2: '99', weight: '58' } })
+
+  ok(`${visits.length} OPD visits`, (await db.from('visits').insert(visits)).error)
+  ok(`${rx.length} prescriptions`, (await db.from('prescriptions').insert(rx)).error)
+
+  // Paediatrics: birth history and two growth points, so the WHO chart has a line.
+  const aarav = patientId(s, 'Aarav')
+  ok('paediatric profile', (await db.from('pediatric_profiles').insert({
+    patient_id: aarav, tenant_id: tenantId, gestational_age_weeks: 38,
+    birth_weight_kg: 2.9, birth_length_cm: 48, birth_head_circ_cm: 34,
+    delivery_mode: 'normal', nicu_admission: false, feeding: 'family_diet',
+    updated_by: doctorId(s, 'Kavitha Suresh'),
+  })).error)
+  ok('growth measurements', (await db.from('pediatric_growth').insert([
+    { id: uuid(), tenant_id: tenantId, patient_id: aarav, recorded_at: day(-190),
+      weight_kg: 9.8, height_cm: 78.5, head_circ_cm: 46.5, muac_cm: 14.2,
+      recorded_by: doctorId(s, 'Kavitha Suresh') },
+    { id: uuid(), tenant_id: tenantId, patient_id: aarav, recorded_at: day(-2), visit_id: paedVisit,
+      weight_kg: 11.4, height_cm: 86.0, head_circ_cm: 48.0, muac_cm: 15.1,
+      recorded_by: doctorId(s, 'Kavitha Suresh') },
+  ])).error)
+
+  // Obstetrics: an active pregnancy at 34 weeks, with this visit's check recorded.
+  const ancId = uuid()
+  ok('pregnancy record', (await db.from('anc_records').insert({
+    id: ancId, tenant_id: tenantId, patient_id: patientId(s, 'Lakshmi'),
+    lmp: day(-238), edd: day(42), gravida: 2, para: 1, abortions: 0, living: 1,
+    previous_caesareans: 0, blood_group: 'B+', high_risk: false, status: 'active',
+    edd_basis: 'lmp', created_by: doctorId(s, 'Lakshmi Iyer'),
+  })).error)
+  ok('antenatal check', (await db.from('anc_visits').insert({
+    id: uuid(), tenant_id: tenantId, anc_id: ancId, visit_id: ancVisit,
+    visit_date: day(-5), weight_kg: 63, bp: '118/76', pallor: false,
+    fundal_height_cm: 33, fetal_heart_rate: 142, fetal_movements: 'good',
+    urine_albumin: 'nil', urine_sugar: 'nil', hb: 11.4, presentation: 'cephalic',
+    notes: 'Well. Continue iron and calcium.', recorded_by: doctorId(s, 'Lakshmi Iyer'),
+  })).error)
+
+  // A lab order with results, and one still waiting.
+  const murugan = patientId(s, 'Murugan')
+  const pick = (n: string) => tests.find((t) => t.name.startsWith(n))!
+  const reported = uuid(), pending = uuid()
+  ok('2 lab orders', (await db.from('lab_orders').insert([
+    { id: reported, tenant_id: tenantId, patient_id: murugan, ordered_by: doctorId(s, 'Arun Prakash'),
+      status: 'reported', billing_status: 'billed', ordered_at: new Date(Date.now() - 86400000).toISOString(),
+      reported_at: new Date(Date.now() - 3600000 * 6).toISOString(), priority: 'routine' },
+    { id: pending, tenant_id: tenantId, patient_id: patientId(s, 'Divya'), ordered_by: doctorId(s, 'Arun Prakash'),
+      status: 'ordered', billing_status: 'unbilled', ordered_at: new Date().toISOString(), priority: 'routine' },
+  ])).error)
+  ok('lab results', (await db.from('lab_order_items').insert([
+    { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('HbA1c').id,
+      price_snapshot: pick('HbA1c').price, result_value: 8.2, unit: '%', flag: 'high' },
+    { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('Serum Creatinine').id,
+      price_snapshot: pick('Serum Creatinine').price, result_value: 1.1, unit: 'mg/dL', flag: 'normal' },
+    { id: uuid(), tenant_id: tenantId, lab_order_id: pending, test_id: pick('Complete Blood Count').id,
+      price_snapshot: pick('Complete Blood Count').price, flag: 'normal' },
+  ])).error)
+}
+
+// ── 8. Inpatients ────────────────────────────────────────────────────────────
+
+/** Two admissions: a general-ward case and a mother in the labour room. */
+async function createAdmissions(tenantId: string, s: Seeded): Promise<void> {
+  const { data: beds } = await db.from('beds')
+    .select('id, bed_no, ward_id, ward:wards(name)').eq('tenant_id', tenantId)
+  type Bed = { id: string; bed_no: string; ward_id: string; ward: { name: string } | null }
+  const all = (beds ?? []) as unknown as Bed[]
+  const bed = (ward: string, no?: string) =>
+    all.find((b) => b.ward?.name === ward && (!no || b.bed_no === no))!
+
+  const f1 = bed('Female General Ward', 'F1')
+  const labour = bed('Labour Room 1')
+
+  const rows = [
+    { id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Saraswathi'),
+      admitting_doctor_id: doctorId(s, 'Arun Prakash'), ward_id: f1.ward_id, bed_id: f1.id,
+      reason: 'Community-acquired pneumonia, needs IV antibiotics and oxygen',
+      admitted_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+      status: 'admitted', billing_status: 'unbilled' },
+    { id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Lakshmi'),
+      admitting_doctor_id: doctorId(s, 'Lakshmi Iyer'), ward_id: labour.ward_id, bed_id: labour.id,
+      reason: 'Term pregnancy in early labour',
+      admitted_at: new Date(Date.now() - 6 * 3600000).toISOString(),
+      status: 'admitted', billing_status: 'unbilled' },
+  ]
+  ok('2 admissions', (await db.from('admissions').insert(rows)).error)
+  for (const b of [f1, labour]) {
+    await db.from('beds').update({ status: 'occupied' }).eq('id', b.id)
+  }
+  ok('beds marked occupied', null)
+
+  // Progress notes on the pneumonia case.
+  ok('progress notes', (await db.from('ipd_progress_notes').insert([
+    { id: uuid(), tenant_id: tenantId, admission_id: rows[0].id, author_id: doctorId(s, 'Arun Prakash'),
+      note: 'Day 1: Febrile 100.8°F, SpO2 94% on room air. Started on IV Ceftriaxone. Chest X-ray shows right lower zone consolidation.',
+      created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
+    { id: uuid(), tenant_id: tenantId, admission_id: rows[0].id, author_id: doctorId(s, 'Arun Prakash'),
+      note: 'Day 2: Fever settling, 99.1°F. SpO2 97% on room air. Appetite improving. Continue antibiotics.',
+      created_at: new Date(Date.now() - 86400000).toISOString() },
+  ])).error)
+
+  // Early labour: two partograph readings, four hours apart.
+  const labourAdm = rows[1].id
+  ok('partograph readings', (await db.from('partograph_obs').insert([
+    { id: uuid(), tenant_id: tenantId, admission_id: labourAdm,
+      recorded_at: new Date(Date.now() - 5 * 3600000).toISOString(),
+      cervix_cm: 4, contractions_per10: 3, contraction_duration: '20-40',
+      fetal_heart_rate: 140, bp: '116/74', pulse: 86, temp: 98.6,
+      recorded_by: doctorId(s, 'Lakshmi Iyer') },
+    { id: uuid(), tenant_id: tenantId, admission_id: labourAdm,
+      recorded_at: new Date(Date.now() - 3600000).toISOString(),
+      cervix_cm: 6, contractions_per10: 4, contraction_duration: '40+',
+      fetal_heart_rate: 144, bp: '120/78', pulse: 90, temp: 98.8,
+      recorded_by: doctorId(s, 'Lakshmi Iyer') },
+  ])).error)
+}
+
+// ── 9. The rest of a configured hospital ─────────────────────────────────────
+
+/**
+ * The setup checklist on the dashboard is real: it counts rows. Rather than
+ * hiding the reminder, the demo hospital simply finishes setting itself up —
+ * letterhead, OPD hours, a tariff list and a radiology catalogue.
+ */
+async function completeSetup(tenantId: string, s: Seeded): Promise<void> {
+  ok('hospital letterhead', (await db.from('tenant_profiles').insert({
+    tenant_id: tenantId, name: DEMO_NAME,
+    tagline: 'Multi-Specialty Hospital', tagline2: 'Caring since 1998',
+    address_line1: '142, Venkatanarayana Road', address_line2: 'T. Nagar',
+    city: 'Chennai', state: 'Tamil Nadu', pincode: '600017',
+    phone1: '+914428150000', phone2: '+919999900100',
+    email: 'care@demo.uyirly.com', website: 'www.uyirly.com',
+    gst_no: '33AABCU9999A1ZK', gst_enabled: true, gst_state_code: '33',
+    pharmacy_default_gst_rate: 12,
+    emergency_contact: '+914428150108',
+  })).error)
+
+  ok('hospital code', (await db.from('tenants').update({ code: 'UDH' }).eq('id', tenantId)).error)
+
+  // OPD hours — Monday to Saturday for each consulting doctor.
+  const consulting = s.staff.filter((x) => x.role === 'doctor' || x.name === 'Dr. Meena Raghavan')
+  const hours = consulting.flatMap((doc) =>
+    [1, 2, 3, 4, 5, 6].map((dow) => ({
+      id: uuid(), tenant_id: tenantId, doctor_id: doc.id, day_of_week: dow,
+      start_time: '09:00', end_time: '13:00', label: 'Morning OPD',
+      token_cap: 20, is_active: true,
+    })))
+  ok(`${hours.length} OPD sessions`, (await db.from('doctor_availability').insert(hours)).error)
+
+  // 'general' is a single default tariff per hospital, not a category to file
+  // consultations under — there is a unique index enforcing exactly one active.
+  // Consultation fees live on the visit, so they are not tariffs at all.
+  const tariffs = [
+    ['General Procedure',               'general',    500],
+    ['Normal Delivery',                 'package',  28000],
+    ['Caesarean Section (LSCS)',        'package',  55000],
+    ['Appendectomy',                    'surgery',  42000],
+    ['Cataract Surgery (Phaco + IOL)',  'surgery',  24000],
+    ['Hernia Repair (Laparoscopic)',    'surgery',  48000],
+    ['Dressing — Minor',                'procedure',  250],
+    ['Nebulisation',                    'procedure',  200],
+    ['Nursing Charges — General Ward',  'procedure',  400],
+    ['Nursing Charges — ICU',           'procedure', 1200],
+    ['Physiotherapy Session',           'procedure',  350],
+    ['Casualty Attendance',             'emergency',  800],
+  ].map(([name, category, price]) => ({
+    id: uuid(), tenant_id: tenantId, name, category, default_price: price, is_active: true,
+  }))
+  ok(`${tariffs.length} tariffs`, (await db.from('procedure_tariffs').insert(tariffs)).error)
+
+  const scans = [
+    ['Chest X-Ray (PA view)', 'X-Ray', 'Chest',   450],
+    ['X-Ray Knee (AP/Lat)',   'X-Ray', 'Knee',    500],
+    ['Ultrasound Abdomen',    'Ultrasound', 'Abdomen', 1200],
+    ['Obstetric Ultrasound',  'Ultrasound', 'Pelvis',  1400],
+    ['CT Brain (plain)',      'CT', 'Brain',      3500],
+  ].map(([name, modality, body_part, price]) => ({
+    id: uuid(), tenant_id: tenantId, name, modality, body_part, price, is_active: true,
+  }))
+  ok(`${scans.length} radiology studies`, (await db.from('radiology_catalog').insert(scans)).error)
+}
+
+// ── 10. Today ────────────────────────────────────────────────────────────────
+
+/**
+ * A dashboard of zeroes tells a reader nothing. This gives the demo a working
+ * day: booked appointments, money taken at the counter, and one bill still open.
+ */
+async function createToday(tenantId: string, s: Seeded): Promise<void> {
+  const today = new Date()
+  const at = (h: number, m = 0) => {
+    const d = new Date(today); d.setHours(h, m, 0, 0); return d.toISOString()
+  }
+
+  const { data: depts } = await db.from('departments').select('id, name').eq('tenant_id', tenantId)
+  const deptId = (n: string) => (depts ?? []).find((d) => d.name === n)?.id ?? null
+
+  const appts = [
+    ['Anand',      'Arun Prakash',   'General Medicine', 9,  30, 1, 'done',       'Fever review'],
+    ['Murugan',    'Arun Prakash',   'General Medicine', 10,  0, 2, 'done',       'Diabetes follow-up'],
+    ['Aarav',      'Kavitha Suresh', 'Paediatrics',      10, 30, 1, 'checked_in', 'Vaccination due'],
+    ['Kavya',      'Vignesh Kumar',  'Ophthalmology',    11,  0, 1, 'booked',     'Spectacle review'],
+    ['Divya',      'Arun Prakash',   'General Medicine', 11, 30, 3, 'checked_in', 'Sore throat'],
+    ['Fathima',    'Arun Prakash',   'General Medicine', 12,  0, 4, 'booked',     'Blood pressure check'],
+  ].map(([pat, doc, dept, h, m, token, status, reason]) => ({
+    id: uuid(), tenant_id: tenantId,
+    patient_id: patientId(s, pat as string), doctor_id: doctorId(s, doc as string),
+    department_id: deptId(dept as string),
+    scheduled_at: at(h as number, m as number), token_no: token as number,
+    status: status as string, reason: reason as string,
+  }))
+  ok(`${appts.length} appointments today`, (await db.from('appointments').insert(appts)).error)
+
+  // Bills. Two settled at the counter this morning, one still open.
+  const cashier = s.staff.find((x) => x.role === 'accountant')!.id
+  const billNo = async () => {
+    const { data, error } = await db.rpc('get_next_bill_no', { p_tenant_id: tenantId })
+    if (error || !data) { console.error(`  ✗ bill number: ${error?.message}`); process.exit(1) }
+    return data as string
+  }
+
+  const spec: Array<{ patient: string; items: Array<[string, string, number]>; paid: boolean; method: string }> = [
+    { patient: 'Anand',   items: [['consultation', 'Consultation — Dr. Arun Prakash', 500]], paid: true,  method: 'cash' },
+    { patient: 'Murugan', items: [['consultation', 'Consultation — Dr. Arun Prakash', 500],
+                                  ['lab', 'HbA1c', 550], ['lab', 'Serum Creatinine', 250]], paid: true, method: 'upi' },
+    { patient: 'Divya',   items: [['consultation', 'Consultation — Dr. Arun Prakash', 500]], paid: false, method: 'cash' },
+  ]
+
+  for (const b of spec) {
+    const id = uuid()
+    const total = b.items.reduce((sum, [, , amt]) => sum + amt, 0)
+    const { error: bErr } = await db.from('bills').insert({
+      id, tenant_id: tenantId, patient_id: patientId(s, b.patient),
+      bill_no: await billNo(), bill_source: b.items.length > 1 ? 'consolidated' : 'consultation',
+      subtotal: total, discount: 0, tax: 0, total,
+      paid: b.paid ? total : 0, status: b.paid ? 'paid' : 'unpaid',
+      billing_date: today.toISOString().slice(0, 10),
+      created_by: cashier,
+    })
+    if (bErr) { console.error(`  ✗ bill for ${b.patient}: ${bErr.message}`); process.exit(1) }
+
+    await db.from('bill_items').insert(b.items.map(([source, description, amount]) => ({
+      id: uuid(), tenant_id: tenantId, bill_id: id, source, description,
+      qty: 1, unit_price: amount, amount, taxable_value: amount, tax_amount: 0, gst_rate: 0,
+    })))
+
+    if (b.paid) {
+      await db.from('payments').insert({
+        id: uuid(), tenant_id: tenantId, bill_id: id, amount: total,
+        method: b.method, received_by: cashier, received_at: at(9, 45),
+      })
+    }
+  }
+  ok(`${spec.length} bills (2 settled, 1 open)`, null)
+}
+
+/**
+ * The dashboard reads from materialized views, refreshed by pg_cron every five
+ * minutes. A screenshot taken straight after seeding would otherwise show a
+ * hospital with no beds and no footfall.
+ */
+async function refreshDashboard(): Promise<void> {
+  const { error } = await db.rpc('refresh_dashboard_views')
+  if (error) { console.log(`  · dashboard views: ${error.message} (pg_cron will catch up within 5 minutes)`); return }
+  ok('dashboard views refreshed', null)
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────
@@ -242,7 +678,15 @@ async function main() {
   const depts = await createDepartments(tenantId)
   const staff = await createStaff(tenantId, depts)
   await createWards(tenantId, depts)
-  await createPatients(tenantId, staff)
+  const patients = await createPatients(tenantId, staff)
+  const tests = await createLabCatalogue(tenantId)
+  await createStock(tenantId, staff)
+  const seeded: Seeded = { patients, staff }
+  await createVisits(tenantId, seeded, tests)
+  await createAdmissions(tenantId, seeded)
+  await completeSetup(tenantId, seeded)
+  await createToday(tenantId, seeded)
+  await refreshDashboard()
 
   console.log(`
 Done.
