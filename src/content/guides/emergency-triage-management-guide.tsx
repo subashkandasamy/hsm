@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
-import CalloutBox from '@/components/guides/diagrams/CalloutBox'
+import Screenshot from '@/components/guides/Screenshot'
 
 export const faqs = [
   {
@@ -21,85 +20,74 @@ export default function Guide() {
   return (
     <>
       <p>
-        The emergency department breaks the assumptions the rest of a hospital is built on: patients arrive
-        unannounced, in any order, sometimes unable to speak for themselves, and the sickest must be seen
-        first. Emergency software earns its place by making <em>fast</em> and <em>safe</em> compatible under
-        that pressure.
+        Emergency is the one department where registration cannot come first. A patient arrives by
+        ambulance, unconscious, with no name and no phone — and the clock that matters started before they
+        reached the door. Software that insists on a complete record before anything can be recorded is
+        software that will be worked around.
       </p>
 
-      <h2>Triage means urgency order, not arrival order</h2>
-      <p>
-        The defining feature of casualty is that the queue is sorted by how sick a patient is, not when they
-        walked in. Software supports this by letting a triage nurse assign a priority level at the door and
-        having the worklist reorder itself around it, so a critical case rises to the top the moment it is
-        flagged rather than waiting behind earlier, less urgent arrivals.
-      </p>
-      <WorkflowDiagram
-        title="An emergency arrival's path"
-        steps={[
-          { label: 'Arrival', sublabel: 'Rapid / provisional registration' },
-          { label: 'Triage', sublabel: 'Priority level assigned' },
-          { label: 'Treatment', sublabel: 'Seen in urgency order' },
-          { label: 'Disposition', sublabel: 'Discharge or admit' },
-        ]}
+      <h2>Triage decides the order, not arrival</h2>
+      <Screenshot
+        src="/guides/emergency.png" width={2560} height={1248}
+        alt="Emergency screen listing cases by triage level with the complaint, arrival mode, time waiting and status"
+        caption="Cases ordered by severity, with how they arrived and how long they have been waiting."
       />
-
-      <h2>Registration that doesn&apos;t block treatment</h2>
       <p>
-        In OPD it is fine to complete registration before care begins. In casualty it is not — a patient may be
-        unconscious, unaccompanied, or simply too unwell to wait while details are typed. Emergency software
-        has to let staff open a minimal or provisional record and start care immediately, then fill in the full
-        identity once the patient is stable. The paperwork follows the patient; it never gates them.
+        Every case carries a <strong>triage level from 1 to 5</strong> — the standard five-point scale,
+        where 1 is resuscitation and 5 is non-urgent. The list is read by severity rather than by arrival
+        time, which is the entire point of triage: the person who walked in twenty minutes ago with chest
+        pain is seen before the person who arrived an hour ago with a sore throat.
+      </p>
+      <p>
+        Arrival mode is recorded too — walk-in, ambulance or referral — because a patient brought in by
+        ambulance carries different expectations and often a different handover.
       </p>
 
-      <CalloutBox tone="info" title="Guard against duplicate and wrong-state registrations">
-        Under pressure, the same patient can get registered twice, or someone already admitted as an inpatient
-        can be entered as a new casualty case. Good software blocks both at the source — a duplicate open
-        emergency case and registering a current inpatient as fresh — so the record stays clean when it matters
-        most.
-      </CalloutBox>
-
-      <h2>From casualty to admission, without re-keying</h2>
+      <h2>The unidentified patient</h2>
       <p>
-        A large share of emergency patients are stabilised and then admitted. The emergency record should flow
-        straight into the <Link href="/guides/ipd-admission-bed-management-guide">inpatient admission</Link>,
-        carrying its history so nothing is re-entered, and often reaching into the{' '}
-        <Link href="/guides/blood-bank-management-guide">blood bank</Link> or{' '}
-        <Link href="/guides/ot-scheduling-management-guide">operation theatre</Link> for urgent intervention.
-        That traceability from arrival to admission is what keeps a fast-moving casualty auditable afterwards.
+        A case can be registered with what is actually known: an approximate age, an apparent gender, and
+        nothing else. A provisional record is created so treatment can be recorded against someone, and the
+        identity is filled in later when a relative arrives. Insisting on a phone number or an Aadhaar at
+        that moment does not produce better data — it produces a workaround.
       </p>
 
-      <CalloutBox tone="tip" title="How Uyirly handles it">
-        Uyirly&apos;s emergency module supports rapid registration, priority-based triage, and a clean
-        hand-off into IPD — with source-to-admission traceability and guards that block duplicate or
-        inpatient re-registrations before they happen.
-      </CalloutBox>
-
+      <h2>Two registrations that should not happen</h2>
       <p>
-        If your hospital runs a casualty or emergency department,{' '}
-        <Link href="/signup">start a free trial</Link> and register a mock walk-in, triage it, and admit it —
-        the speed of that path is the real measure of emergency software.
-      </p>
-      <h2>How Uyirly handles emergency and triage</h2>
-      <p>
-        In <Link href="/hospital-management-software">Uyirly</Link>, an emergency patient can be registered in
-        seconds &mdash; even before full details are known &mdash; and triaged by severity so the sickest are seen
-        first. The system blocks duplicate ER registrations and stops an already-admitted patient being
-        registered again in the ER, and when a case needs admission it moves straight to IPD, carrying its
-        record so nothing is re-entered.
+        The system refuses both, and this is worth knowing because both are common under pressure:
       </p>
       <ul>
-        <li>Rapid registration for walk-in and brought-in emergencies.</li>
-        <li>Triage by severity so the most critical patients are prioritised.</li>
-        <li>Duplicate and inpatient ER registrations blocked at the source.</li>
-        <li>One tap to admit from the ER into IPD, with full traceability.</li>
+        <li><strong>A second emergency case for a patient who already has an active one</strong> — the existing case is resolved or continued, not duplicated.</li>
+        <li><strong>An emergency case for a patient already admitted as an inpatient</strong> — an admitted patient who deteriorates is a ward event, not a new ER arrival.</li>
+      </ul>
+      <p>
+        Duplicate records made in an emergency are the hardest kind to merge later, because the two halves
+        of the story are both real.
+      </p>
+
+      <h2>Where the case goes</h2>
+      <p>
+        An emergency ends in one of a few ways: treated and sent home, referred elsewhere, or admitted.
+        Admission from the ER carries the record with it — the{' '}
+        <Link href="/guides/ipd-admission-bed-management-guide">admission</Link> records the emergency case
+        it came from, so the trail from ambulance to bed is intact and the patient is not registered twice.
+      </p>
+
+      <h2>What Uyirly does</h2>
+      <ul>
+        <li>Registration in seconds, including for a patient nobody can name yet.</li>
+        <li>Triage levels 1 to 5, with the list read by severity rather than arrival.</li>
+        <li>Arrival mode — walk-in, ambulance or referral — recorded on the case.</li>
+        <li>A second active emergency case, or one for an already-admitted patient, refused at the source.</li>
+        <li>Admission straight into IPD, recording the emergency case it came from.</li>
+        <li>Charges reaching the same patient bill as everything else.</li>
       </ul>
 
       <h2>Getting started</h2>
       <p>
-        Emergency is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
-        software</Link>, connected to <Link href="/guides/ipd-admission-bed-management-guide">IPD admissions</Link>
-        {' '}and billing. You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+        Emergency is part of Uyirly&apos;s{' '}
+        <Link href="/hospital-management-software">hospital management software</Link>, sharing one patient
+        record with the ward, lab and pharmacy that the case will touch.{' '}
+        <Link href="/signup">Start a 30-day free trial</Link> — no credit card.
       </p>
     </>
   )

@@ -817,6 +817,103 @@ async function createFinance(tenantId: string, s: Seeded): Promise<void> {
 }
 
 /**
+ * The theatre, the blood bank, emergency and an insurance claim — each with just
+ * enough in it that the screen shows how it is meant to be read.
+ */
+async function createRestOfHospital(tenantId: string, s: Seeded): Promise<void> {
+  const admin = s.staff[0].id
+
+  // ── Operation theatre ──────────────────────────────────────────────────────
+  const rooms = [
+    { id: uuid(), tenant_id: tenantId, name: 'OT 1', ot_type: 'Major', floor: '2', block: 'B', is_active: true, status: 'available' },
+    { id: uuid(), tenant_id: tenantId, name: 'OT 2', ot_type: 'Minor', floor: '2', block: 'B', is_active: true, status: 'available' },
+  ]
+  ok('2 operation theatres', (await db.from('ot_rooms').insert(rooms)).error)
+
+  const at = (dayOffset: number, h: number, m = 0) => {
+    const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0)
+    return d.toISOString()
+  }
+  ok('2 theatre cases', (await db.from('ot_schedules').insert([
+    {
+      id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Fathima'),
+      surgeon_id: doctorId(s, 'Arun Prakash'), anaesthetist_id: doctorId(s, 'Meena Raghavan'),
+      ot_room_id: rooms[0].id, procedure_name: 'Laparoscopic Cholecystectomy',
+      scheduled_start: at(1, 9), scheduled_end: at(1, 11),
+      status: 'scheduled', billing_status: 'unbilled', price_snapshot: 48000,
+      notes: 'Elective. Fasting from midnight. Consent taken.',
+    },
+    {
+      id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Kavya'),
+      surgeon_id: doctorId(s, 'Vignesh Kumar'), ot_room_id: rooms[1].id,
+      procedure_name: 'Cataract Surgery (Phaco + IOL) — right eye',
+      scheduled_start: at(1, 11, 30), scheduled_end: at(1, 12, 30),
+      status: 'scheduled', billing_status: 'unbilled', price_snapshot: 24000,
+    },
+  ])).error)
+
+  // ── Blood bank ─────────────────────────────────────────────────────────────
+  const groups: Array<[string, string, number]> = [
+    ['O+', 'whole', 14], ['O+', 'prbc', 21], ['A+', 'prbc', 18],
+    ['B+', 'whole', 9], ['B+', 'prbc', 25], ['AB+', 'plasma', 60],
+    ['O-', 'prbc', 12], ['A-', 'platelets', 3],
+  ]
+  ok(`${groups.length} blood units`, (await db.from('blood_units').insert(
+    groups.map(([blood_group, component, daysLeft], i) => ({
+      id: uuid(), tenant_id: tenantId, blood_group, component,
+      bag_number: `BAG-2026-${String(1001 + i)}`, volume_ml: component === 'platelets' ? 200 : 350,
+      collected_at: day(-7), expiry: day(daysLeft), status: 'available',
+      screening_status: 'passed', hiv: 'non_reactive', hbsag: 'non_reactive', hcv: 'non_reactive',
+      syphilis: 'non_reactive', malaria: 'non_reactive', screened_by: admin, screened_at: day(-6),
+    })))).error)
+
+  // ── Emergency ──────────────────────────────────────────────────────────────
+  ok('2 emergency cases', (await db.from('emergency_cases').insert([
+    {
+      id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Vishal'),
+      triage_level: 2, arrival_mode: 'ambulance', status: 'in_treatment',
+      complaint: 'Road traffic accident — laceration to left forearm, conscious and oriented',
+      attended_by: doctorId(s, 'Arun Prakash'),
+      arrived_at: new Date(Date.now() - 50 * 60000).toISOString(),
+    },
+    {
+      id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Karthik'),
+      triage_level: 4, arrival_mode: 'walk_in', status: 'waiting',
+      complaint: 'Fever and sore throat for two days',
+      arrived_at: new Date(Date.now() - 12 * 60000).toISOString(),
+    },
+  ])).error)
+
+  // ── An insurance claim approved for less than it was raised for ────────────
+  const { data: tpa } = await db.from('insurance_tpas').select('id').eq('tenant_id', tenantId).limit(1).maybeSingle()
+  const policyId = uuid()
+  const { error: polErr } = await db.from('insurance_policies').insert({
+    id: policyId, tenant_id: tenantId, patient_id: patientId(s, 'Saraswathi'),
+    provider: 'Star Health and Allied Insurance', policy_no: 'SH-2026-4471902',
+    member_id: 'SH4471902-01', policyholder_name: 'Saraswathi Devi',
+    policyholder_relationship: 'self', tpa_id: tpa?.id ?? null,
+    coverage_amount: 500000, room_rent_limit_per_day: 5000, copay_percent: 10,
+    policy_start_date: day(-250), valid_till: day(115),
+    sub_limit_notes: 'Room rent capped at ₹5,000/day. 10% co-pay on every claim.',
+  })
+  if (polErr) { console.log(`  · policy: ${polErr.message}`); return }
+  ok('an insurance policy with sub-limits', null)
+
+  const { data: admission } = await db.from('admissions')
+    .select('id').eq('tenant_id', tenantId).eq('status', 'admitted').order('admitted_at').limit(1).maybeSingle()
+  ok('a claim approved below what was raised', (await db.from('insurance_claims').insert({
+    id: uuid(), tenant_id: tenantId, policy_id: policyId, admission_id: admission?.id ?? null,
+    claim_type: 'cashless', status: 'approved',
+    estimated_amount: 60000, claim_amount: 48000, approved_amount: 39000,
+    eligibility_status: 'approved', eligibility_approved_amount: 40000,
+    eligibility_decided_at: day(-2), preauth_number: 'PA-2026-889341',
+    diagnosis: 'Community-acquired pneumonia', room_category_requested: 'General Ward',
+    raised_at: day(-2), submitted_at: day(-1), approved_at: day(-1),
+    remarks: 'Room rent allowed to policy limit. Two investigations disallowed as not related to the admitting diagnosis.',
+  })).error)
+}
+
+/**
  * The dashboard reads from materialized views, refreshed by pg_cron every five
  * minutes. A screenshot taken straight after seeding would otherwise show a
  * hospital with no beds and no footfall.
@@ -846,6 +943,7 @@ async function main() {
   await createToday(tenantId, seeded)
   await createIpdBilling(tenantId, seeded)
   await createFinance(tenantId, seeded)
+  await createRestOfHospital(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`

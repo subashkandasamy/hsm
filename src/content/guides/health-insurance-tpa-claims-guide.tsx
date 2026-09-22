@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 
 export const faqs = [
@@ -20,69 +21,87 @@ export default function Guide() {
   return (
     <>
       <p>
-        Insurance billing adds a second audience to every hospital bill — not just the patient, but a TPA
-        reviewing whether each charge is covered. Getting this workflow right avoids delayed discharges and
-        rejected claims.
+        A cashless claim is four separate things that a hospital tends to treat as one: a policy, an
+        eligibility decision before treatment, a claim after it, and a settlement weeks later. Confusing any
+        two of them is how hospitals end up holding a bed for money that was never the blocker, or writing
+        off a shortfall nobody noticed.
       </p>
 
-      <h2>How a cashless claim moves</h2>
+      <h2>The four stages</h2>
       <WorkflowDiagram
-        title="Cashless insurance claim workflow"
+        title="Policy to money"
         steps={[
-          { label: 'Admission', sublabel: 'Insurance details captured' },
-          { label: 'Pre-authorization', sublabel: 'Estimated cost sent to TPA' },
-          { label: 'TPA approval', sublabel: 'Coverage confirmed' },
-          { label: 'Treatment & billing', sublabel: 'Bill accumulates as usual' },
-          { label: 'Final claim & settlement', sublabel: 'Reconciled against pre-auth' },
+          { label: 'Policy', sublabel: 'Insurer, TPA, limits' },
+          { label: 'Eligibility', sublabel: 'Pre-auth before treatment' },
+          { label: 'Claim', sublabel: 'Raised, submitted, decided' },
+          { label: 'Settlement', sublabel: 'What actually arrives' },
         ]}
       />
       <p>
-        The bill itself is built exactly the same way as any other admission — see our{' '}
-        <Link href="/guides/ipd-billing-software-explained">IPD billing guide</Link> — the insurance workflow
-        runs alongside it, tracking pre-authorization status and what portion of the final bill the TPA will
-        actually cover.
+        The two that get conflated are <strong>eligibility</strong> and <strong>settlement</strong>.
+        Eligibility — the pre-authorisation — is the insurer saying it will cover a stated amount. That is
+        what should release the patient at discharge. Settlement is the money arriving, often weeks later.
+        A hospital that waits for settlement before discharging is holding a bed for no reason.
       </p>
 
-      <h2>Why tracking approval status matters</h2>
+      <h2>The policy, and its sub-limits</h2>
       <p>
-        A hospital needs to know, at any point during a stay, whether pre-authorization is still pending,
-        approved, or needs a revised estimate because treatment costs changed. Discharges get delayed when
-        this status isn&apos;t visible and someone has to call the TPA to check.
+        A policy is not just a number. It carries a room-rent cap, a co-pay percentage, and the sub-limits
+        that decide what is actually recoverable. A ₹5,00,000 policy with a ₹5,000 room-rent cap will not
+        pay for a ₹9,000 suite, and the difference lands on the patient — which is a conversation to have
+        at admission, not at discharge.
       </p>
 
-      <h2>The discharge-delay problem, and how to avoid it</h2>
+      <h2>What the desk sees</h2>
+      <Screenshot
+        src="/guides/insurance-approved.png" width={2560} height={1148}
+        alt="Insurance screen showing receivables across awaiting decision, approved to receive, settled this month and 60-plus days pending, with a claim card showing the approved amount and the higher amount originally claimed"
+        caption="Approved to receive, and on the card the shortfall: ₹39,000 approved against ₹48,000 claimed."
+      />
       <p>
-        Almost every delayed insurance discharge traces back to the same root cause: someone had to call the
-        TPA to find out approval status, because it wasn&apos;t visible in the system. If pre-authorization status
-        sits on the admission record itself &mdash; pending, approved, or needs a revised estimate &mdash; the front
-        desk can tell a patient&apos;s family exactly where things stand without picking up the phone. That single
-        change is usually worth more than any other feature on an insurance module.
+        The four figures across the top are the receivables position: what is awaiting a decision, what has
+        been approved and is owed, what settled this month, and what has been pending more than sixty days
+        — the last being the one that quietly becomes a write-off.
       </p>
       <p>
-        The other half of a smooth discharge is a bill that already splits cleanly into &ldquo;covered by
-        insurance&rdquo; and &ldquo;patient pays directly&rdquo; &mdash; because that split was tracked throughout the stay,
-        not calculated for the first time at the discharge counter.
+        On the card itself, the number shown is the one that matters at that stage: an approved claim shows
+        what the insurer agreed, with the amount originally claimed underneath. A claim raised for ₹48,000
+        and approved for ₹39,000 is a ₹9,000 shortfall somebody has to either recover from the patient or
+        absorb — and the only way that decision gets made is if the figure is visible.
       </p>
-      <h2>How Uyirly handles insurance and TPA claims</h2>
+
+      <h2>Deductions are the real work</h2>
       <p>
-        <Link href="/hospital-management-software">Uyirly</Link> runs a cashless claim through four clear
-        stages on the patient&apos;s own bill: add the policy, get the eligibility (pre-authorisation) approved,
-        raise and submit the claim, and record the settlement. The pre-authorisation is what unlocks a
-        cashless discharge, so the paperwork does not hold up the patient, and the claim is built from the
-        same itemised bill the hospital already produced.
+        Insurers disallow lines: an investigation deemed unrelated, room rent above the cap, consumables
+        outside the package. The claim record keeps the reason, because a pattern of the same deduction
+        across many claims is a billing habit worth changing rather than bad luck.
       </p>
+
+      <h2>TPAs, and getting paid</h2>
+      <p>
+        Most claims pass through a TPA rather than the insurer directly, and payments arrive as a
+        remittance covering many claims at once. Matching that payment back to individual claims is the
+        unglamorous half of insurance work — which is why the TPA list, the hospital&apos;s bank accounts
+        and the remittances all live beside the claims rather than in someone&apos;s spreadsheet.
+      </p>
+
+      <h2>What Uyirly does</h2>
       <ul>
-        <li>Four stages &mdash; policy, eligibility check, claim, settlement &mdash; each logged.</li>
-        <li>Pre-authorisation approval covers the cashless discharge balance automatically.</li>
-        <li>A TPA master and bank-account list so claims and settlements are consistent.</li>
-        <li>Every action on a claim is recorded in one history.</li>
+        <li>Policies with insurer, TPA, member ID, room-rent cap, co-pay and sub-limit notes.</li>
+        <li>Eligibility decided and recorded separately from the claim, so discharge turns on pre-authorisation.</li>
+        <li>Claims through raised, submitted, approved, rejected and settled, each with its date.</li>
+        <li>The approved amount shown against what was claimed, so a shortfall is visible rather than absorbed.</li>
+        <li>Deductions recorded with their reason.</li>
+        <li>A TPA master, bank accounts and remittance batches for matching payments back to claims.</li>
+        <li>Receivables by age, including what has been pending more than sixty days.</li>
       </ul>
 
       <h2>Getting started</h2>
       <p>
-        Insurance is part of Uyirly&apos;s <Link href="/hospital-management-software">hospital management
-        software</Link>, built on the same <Link href="/guides/ipd-billing-software-explained">IPD bill</Link>.
-        You can <Link href="/signup">start a 30-day free trial</Link> with no credit card.
+        Insurance sits beside the{' '}
+        <Link href="/guides/ipd-billing-software-explained">bill it is claiming against</Link> in
+        Uyirly&apos;s <Link href="/hospital-management-software">hospital management software</Link>.{' '}
+        <Link href="/signup">Start a 30-day free trial</Link> — no credit card.
       </p>
     </>
   )

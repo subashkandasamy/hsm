@@ -131,6 +131,18 @@ export const SHOTS: Shot[] = [
   { name: 'billing-by-patient',  path: '/billing', selector: 'main', wait: 3000 },
   { name: 'ipd-combined-bill',   path: '/billing/combined/patient/{ipdPatient}', selector: 'main', wait: 4000 },
 
+  // ── Theatre, blood bank, emergency, insurance ──────────────────────────────
+  { name: 'ot-schedule',   path: '/ot',        selector: 'main', wait: 3000 },
+  { name: 'blood-bank',    path: '/blood',     selector: 'main', wait: 3000 },
+  { name: 'emergency',     path: '/emergency', selector: 'main', wait: 3000 },
+  { name: 'insurance',     path: '/insurance', selector: 'main', wait: 3500 },
+  {
+    name: 'insurance-approved',
+    path: '/insurance',
+    steps: [{ clickText: 'Approved' }, { wait: 1500 }],
+    selector: 'main', wait: 3500,
+  },
+
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
   { name: 'patients',     path: '/patients',     selector: 'main', wait: 2500 },
