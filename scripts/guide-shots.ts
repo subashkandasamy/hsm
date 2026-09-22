@@ -38,6 +38,7 @@ export type Step =
   | { click: string }            // CSS selector
   | { clickText: string }        // visible text, exact-ish
   | { fill: [string, string] }   // [selector, value]
+  | { select: [string, string] } // [selector, visible option label]
   | { press: string }            // keyboard key
   | { wait: number }
 
@@ -145,12 +146,33 @@ export const SHOTS: Shot[] = [
 
   // ── Records and specialties ────────────────────────────────────────────────
   { name: 'patient-profile', path: '/patients/{ipdPatient}', selector: 'main', wait: 4000 },
+  {
+    name: 'patient-allergies',
+    path: '/patients/{allergyPatient}',
+    steps: [{ clickText: 'Allergies' }, { wait: 1500 }],
+    selector: 'main', wait: 4000,
+  },
   { name: 'eye-exam',      path: '/opd/{eyeVisit}',    selector: 'div.glass-card', filterText: 'Eye Examination', wait: 4500 },
   { name: 'dental-chart',  path: '/opd/{dentalVisit}', selector: 'div.glass-card', filterText: 'Dental', wait: 4500 },
   {
     name: 'nurse-roster',
     path: '/scheduling',
     selector: 'main', wait: 4500,
+  },
+  {
+    name: 'roster-coverage',
+    path: '/scheduling',
+    steps: [{ clickText: 'Shifts & Coverage' }, { wait: 1500 }],
+    selector: 'main', wait: 4000,
+  },
+  {
+    name: 'doctor-hours',
+    path: '/scheduling',
+    steps: [
+      { clickText: 'Doctor Hours' }, { wait: 1500 },
+      { select: ['select', 'Dr. Arun Prakash'] }, { wait: 1500 },
+    ],
+    selector: 'main', wait: 4000,
   },
   // Attendance is a tab on the staff directory — /hr is still a placeholder page.
   {

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Check, Clock } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
+import { doctorName } from '@/lib/doctors'
 import Input from '@/components/ui/Input'
 import { listDoctorAvailability, setDoctorAvailability } from '@/app/actions/doctorAvailability'
 
@@ -67,7 +68,7 @@ export default function DoctorHoursPanel({ doctors }: { doctors: { id: string; f
         <label className="text-xs font-semibold mb-1 block" style={{ color: '#475569' }}>Doctor</label>
         <Select value={doctorId} onChange={(e) => pickDoctor(e.target.value)} className="w-full sm:w-80">
           <option value="">Select a doctor…</option>
-          {doctors.map((d) => <option key={d.id} value={d.id}>Dr {d.full_name}</option>)}
+          {doctors.map((d) => <option key={d.id} value={d.id}>{doctorName(d.full_name)}</option>)}
         </Select>
         <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
           Set the OPD days &amp; sessions this doctor sees patients. This drives the patient app&apos;s booking calendar (days a doctor isn&apos;t in are greyed out).

@@ -7,3 +7,14 @@ export const DOCTOR_FILTER = 'role.eq.doctor,and(role.eq.admin,sees_patients.eq.
 export function isPractitioner(p: { role: string; sees_patients?: boolean | null } | null | undefined): boolean {
   return !!p && (p.role === 'doctor' || (p.role === 'admin' && !!p.sees_patients))
 }
+
+/**
+ * A doctor's name with the honorific, without doubling it. Most hospitals type
+ * "Dr. Arun Prakash" into the staff record, and prefixing that unconditionally
+ * produced "Dr Dr. Arun Prakash" — including in the patient portal.
+ */
+export function doctorName(fullName: string | null | undefined): string {
+  const name = (fullName ?? '').trim()
+  if (!name) return ''
+  return /^(dr\.?|prof\.?)\s/i.test(name) ? name : `Dr ${name}`
+}

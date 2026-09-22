@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Check, Clock, CalendarClock, Ticket, RefreshCw, Users } from 'lucide-react'
+import { doctorName } from '@/lib/doctors'
 import {
   bookPatientAppointment, getDoctorAvailability, getQueueStatus,
   type PatientAppointment, type PatientRequest, type HospitalDoctor, type AvailableDay, type QueueStatus,
@@ -96,7 +97,7 @@ export default function AppointmentsTab({ patientId, doctors, appointments, requ
           <select value={doctorId} onChange={(e) => pickDoctor(e.target.value)}
             style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 14, marginBottom: 12, background: '#fff', color: '#0F172A' }}>
             <option value="">Select a doctor</option>
-            {doctors.map((d) => <option key={d.id} value={d.id}>Dr {d.name}</option>)}
+            {doctors.map((d) => <option key={d.id} value={d.id}>{doctorName(d.name)}</option>)}
           </select>
 
           {doctorId && (availLoading ? (
@@ -166,7 +167,7 @@ export default function AppointmentsTab({ patientId, doctors, appointments, requ
             {upcoming.map((a) => (
               <div key={a.id} style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div><p style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Dr {a.doctor}</p><p style={{ fontSize: 12, color: '#64748B' }}>{a.reason ?? 'Consultation'}</p></div>
+                  <div><p style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{doctorName(a.doctor)}</p><p style={{ fontSize: 12, color: '#64748B' }}>{a.reason ?? 'Consultation'}</p></div>
                   <div style={{ textAlign: 'right' }}><p style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{fmt(a.date)}</p><p style={{ fontSize: 11, color: APPT_COLOR[a.status] ?? '#64748B' }}>{a.status}</p></div>
                 </div>
                 <button onClick={() => loadQueue(a.id)}
@@ -211,7 +212,7 @@ export default function AppointmentsTab({ patientId, doctors, appointments, requ
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {past.map((a) => (
               <div key={a.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.85 }}>
-                <p style={{ fontSize: 13, color: '#475569' }}>Dr {a.doctor}</p>
+                <p style={{ fontSize: 13, color: '#475569' }}>{doctorName(a.doctor)}</p>
                 <div style={{ textAlign: 'right' }}><p style={{ fontSize: 12, color: '#64748B' }}>{fmt(a.date)}</p><p style={{ fontSize: 11, color: APPT_COLOR[a.status] ?? '#94A3B8' }}>{a.status}</p></div>
               </div>
             ))}

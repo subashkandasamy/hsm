@@ -12,6 +12,7 @@ import { listFollowUps, convertFollowUp, cancelFollowUp, createFollowUp } from '
 import { searchPatients } from '@/app/actions/patients'
 import type { FollowUp, Patient } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { doctorName } from '@/lib/doctors'
 
 interface Doctor { id: string; full_name: string; role: string }
 type StatusFilter = 'pending' | 'converted' | 'cancelled' | 'all'
@@ -139,7 +140,7 @@ export default function FollowUpsPanel({ doctors }: { doctors: Doctor[] }) {
                     <p className="text-xs mt-1" style={{ color: '#64748B' }}>
                       {fu.suggested_date && <>Suggested <strong style={{ color: overdue ? '#B91C1C' : '#475569' }}>{fu.suggested_date}</strong>{' · '}</>}
                       {fu.suggested_doctor?.full_name ? `Dr ${fu.suggested_doctor.full_name}` : 'No doctor set'}
-                      {fu.recommender?.full_name && fu.source !== 'manual' && <> · rec. by Dr {fu.recommender.full_name}</>}
+                      {fu.recommender?.full_name && fu.source !== 'manual' && <> · rec. by {doctorName(fu.recommender.full_name)}</>}
                     </p>
                     {fu.reason && <p className="text-xs mt-1" style={{ color: '#475569' }}>{fu.reason}</p>}
                   </div>

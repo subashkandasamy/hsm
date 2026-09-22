@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { doctorName } from '@/lib/doctors'
 import { ArrowLeft, Stethoscope, Pill, FlaskConical, Scan, CalendarClock, Printer, ImageIcon, Loader2 } from 'lucide-react'
 import { type PatientRecords, type PatientAppointment, type PatientRequest, type HospitalDoctor, getPortalScanImageUrl } from '@/app/actions/patientPortal'
 import AppointmentsTab from './AppointmentsTab'
@@ -86,7 +87,7 @@ export default function HospitalRecords({ patientId, records, appointments, requ
             {records.visits.length === 0 ? empty('No visits recorded.') : records.visits.map((v) => (
               <div key={v.id} style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>Dr {v.doctor}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{doctorName(v.doctor)}</span>
                   <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(v.date)} · {v.type.toUpperCase()}</span>
                 </div>
                 {v.diagnosis && <p style={{ fontSize: 14, color: '#0F172A', marginBottom: 3 }}><strong>Diagnosis:</strong> {v.diagnosis}</p>}
@@ -103,7 +104,7 @@ export default function HospitalRecords({ patientId, records, appointments, requ
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {rxCount === 0 ? empty('No prescriptions.') : records.visits.filter((v) => v.prescriptions.length).map((v) => (
               <div key={v.id} style={card}>
-                <p style={{ fontSize: 12, color: '#94A3B8', marginBottom: 8 }}>{fmt(v.date)} · Dr {v.doctor}</p>
+                <p style={{ fontSize: 12, color: '#94A3B8', marginBottom: 8 }}>{fmt(v.date)} · {doctorName(v.doctor)}</p>
                 {v.prescriptions.map((rx, i) => (
                   <div key={i} style={{ paddingBottom: 8, marginBottom: 8, borderBottom: i < v.prescriptions.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                     <p style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{rx.drug}</p>

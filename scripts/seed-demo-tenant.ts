@@ -231,6 +231,18 @@ async function createPatients(tenantId: string, staff: Staff[]): Promise<Array<{
     })
   }
   ok(`${rows.length} patients`, (await db.from('patients').insert(rows)).error)
+
+  // patients.allergies is the old free-text field; the allergy that actually
+  // warns a doctor at prescribing time lives in patient_allergies, one row per
+  // allergen with its reaction and severity.
+  const allergyOf = (name: string) => rows.find((r) => r.full_name.startsWith(name))!.id
+  ok('2 recorded allergies', (await db.from('patient_allergies').insert([
+    { id: uuid(), tenant_id: tenantId, patient_id: allergyOf('Murugan'), allergen: 'Penicillin',
+      reaction: 'Widespread rash and facial swelling within an hour', severity: 'severe', recorded_by: by },
+    { id: uuid(), tenant_id: tenantId, patient_id: allergyOf('Fathima'), allergen: 'Sulfa drugs',
+      reaction: 'Itchy rash', severity: 'moderate', recorded_by: by },
+  ])).error)
+
   return rows.map((r) => ({ id: r.id, name: r.full_name }))
 }
 
@@ -992,14 +1004,9 @@ async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<vo
     .eq('tenant_id', tenantId).order('block').order('floor').order('wing')
   const nurses = s.staff.filter((x) => x.role === 'nurse')
   if (shifts?.length && nurses.length && units?.length) {
-    // Both nurses staff the same unit, alternating morning and night across the
-    // week. Spreading two nurses over three units leaves every unit short, which
-    // is not what a rota looks like.
-    // Every unit gets the pair, alternating morning and night across the week.
-    // Rows are keyed by (unit, nurse, date), so a nurse can cover more than one
-    // unit — and whichever unit the roster screen opens on has a rota in it.
-    // A nurse works one shift a day — there is a unique key on (nurse, date) —
-    // so the pair staff the first unit, alternating morning and night.
+    // A nurse works one shift a day — duty_roster has a unique key on
+    // (profile_id, date) — so the pair staff the first unit, which is the one
+    // the roster screen opens on, alternating morning and night across the week.
     const rows: Record<string, unknown>[] = []
     for (let d = -2; d <= 4; d++) {
       nurses.forEach((n, i) => {
@@ -1012,6 +1019,20 @@ async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<vo
       })
     }
     ok(`${rows.length} rostered shifts`, (await db.from('duty_roster').insert(rows)).error)
+
+    // The ICU is staffed far more tightly than a general ward, which is the
+    // whole reason the ratio is per unit and per shift rather than one number
+    // for the hospital.
+    const icu = units.at(-1)!.id
+    await db.from('ward_coverage_rules').insert(
+      ['morning', 'night'].map((code) => ({
+        id: uuid(), tenant_id: tenantId, nursing_unit_id: icu,
+        shift_code: code, patient_ratio: 2, min_nurses: 2,
+      })))
+    await db.from('ward_incharges').insert({
+      id: uuid(), tenant_id: tenantId, nursing_unit_id: units[0].id, profile_id: nurses[0].id,
+    })
+    ok('an ICU coverage ratio and a unit in-charge', null)
   }
 
   const present = s.staff.filter((x) => ['nurse', 'pharmacist', 'receptionist', 'lab_tech'].includes(x.role))

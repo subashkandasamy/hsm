@@ -80,6 +80,7 @@ async function resolvePlaceholders(): Promise<Record<string, string>> {
     generalVisit: await visitOf('Murugan%'),
     paedPatient: await patient('Aarav%'),
     ipdPatient: await patient('Saraswathi%'),
+    allergyPatient: await patient('Murugan%'),
     eyePatient: await patient('Kavya%'),
     eyeVisit: await visitOf('Kavya%'),
     dentalVisit: await visitOf('Karthik%'),
@@ -135,6 +136,9 @@ async function runStep(page: Page, step: Step): Promise<void> {
     await page.locator('button').filter({ hasText: step.clickText }).first().click()
   }
   else if ('fill' in step) await page.locator(step.fill[0]).first().fill(step.fill[1])
+  // Pick an option by the text the user would read, not by its value — the
+  // values are uuids the seed regenerates on every run.
+  else if ('select' in step) await page.locator(step.select[0]).first().selectOption({ label: step.select[1] })
   else if ('press' in step) await page.keyboard.press(step.press)
   else if ('wait' in step) await page.waitForTimeout(step.wait)
 }
