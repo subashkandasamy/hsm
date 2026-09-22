@@ -117,6 +117,16 @@ export const SHOTS: Shot[] = [
   },
   { name: 'ipd-admission', path: '/ipd/{wardAdmission}', selector: 'main', wait: 4500 },
 
+  // ── OPD: the consultation itself ───────────────────────────────────────────
+  { name: 'opd-vitals',       path: '/opd/{generalVisit}', selector: 'div.glass-card', filterText: 'Vitals', wait: 4000 },
+  { name: 'opd-consultation', path: '/opd/{generalVisit}', selector: 'div.glass-card', filterText: 'Consultation', wait: 4000 },
+  {
+    name: 'patient-register',
+    path: '/patients',
+    steps: [{ clickText: 'Register' }, { wait: 1200 }],
+    selector: 'form', wait: 2500,
+  },
+
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
   { name: 'patients',     path: '/patients',     selector: 'main', wait: 2500 },
