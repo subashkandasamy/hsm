@@ -32,6 +32,12 @@ export interface Shot {
   wait?: number
   /** Keep the sidebar and top bar — only for shots about navigation itself. */
   chrome?: boolean
+  /**
+   * A different host to capture from — the patient portal lives on its own
+   * (`my.localhost:3000`) with its own session, so these shots get no staff
+   * cookies and sign in through the form in `steps`.
+   */
+  host?: string
 }
 
 export type Step =
@@ -40,6 +46,7 @@ export type Step =
   | { fill: [string, string] }   // [selector, value]
   | { select: [string, string] } // [selector, visible option label]
   | { press: string }            // keyboard key
+  | { goto: string }             // navigate, after signing in — same host
   | { wait: number }
 
 export const SHOTS: Shot[] = [
@@ -190,6 +197,40 @@ export const SHOTS: Shot[] = [
     wait: 3000,
   },
   { name: 'staff-directory', path: '/staff', selector: 'main', wait: 3000 },
+
+  // ── The patient portal (its own host, its own login) ───────────────────────
+  {
+    name: 'portal-family',
+    path: '/',
+    host: 'my.localhost:3000',
+    steps: [
+      { fill: ['input[type="email"]', 'family@demo.uyirly.com'] },
+      { fill: ['input[type="password"]', 'DemoHospital#2026'] },
+      { clickText: 'Sign in' },
+      { wait: 4000 },
+    ],
+    // The dev-tools badge is a sibling div at the end of <body>, so capturing the
+    // app's own root rather than the whole page leaves it out.
+    selector: 'body > div:not([hidden])',
+    width: 900, height: 540, wait: 2500,
+  },
+  {
+    name: 'portal-records',
+    path: '/',
+    host: 'my.localhost:3000',
+    steps: [
+      { fill: ['input[type="email"]', 'family@demo.uyirly.com'] },
+      { fill: ['input[type="password"]', 'DemoHospital#2026'] },
+      { clickText: 'Sign in' },
+      { wait: 3000 },
+      { goto: '/h/{paedPatient}' },
+      { wait: 3000 },
+      { clickText: 'Visits' },
+      { wait: 1500 },
+    ],
+    selector: 'body > div:not([hidden])',
+    width: 900, height: 330, wait: 2500,
+  },
 
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },

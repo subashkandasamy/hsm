@@ -17,6 +17,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
+import { hashPassword } from '../src/lib/patientAuth'
 
 // .env.local is not loaded for a bare tsx run.
 for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -34,6 +35,8 @@ export const DEMO_SLUG = 'demo'
 const DEMO_NAME = 'Uyirly Demo Hospital'
 /** Everyone signs in with this, so a screenshot session is one login away. */
 const DEMO_PASSWORD = 'DemoHospital#2026'
+/** The patient-portal login, which is a different account system from staff. */
+const PORTAL_EMAIL = 'family@demo.uyirly.com'
 const uuid = () => crypto.randomUUID()
 
 const ok = (label: string, error: { message: string } | null) => {
@@ -217,7 +220,7 @@ async function createPatients(tenantId: string, staff: Staff[]): Promise<Array<{
     { name: 'Divya Bharathi',    dob: yearsAgo(31, '-12-25'), gender: 'female', phone: '+919999900010', blood: 'A+' },
   ]
 
-  const rows = []
+  const rows: Array<Record<string, unknown> & { id: string; full_name: string }> = []
   for (const p of spec) {
     const { data: uhid, error } = await db.rpc('get_next_uhid_for', { p_tenant_id: tenantId })
     if (error || !uhid) { console.error(`  ✗ UHID: ${error?.message}`); process.exit(1) }
@@ -1056,6 +1059,52 @@ async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<vo
 }
 
 /**
+ * A family on the patient portal. Records are linked by id rather than by
+ * Aadhaar — the demo hospital deliberately holds no Aadhaar numbers, and the
+ * portal treats an explicit account link as ownership either way.
+ */
+async function createPortalFamily(tenantId: string, s: Seeded): Promise<void> {
+  // patient_accounts is deliberately not tenant-scoped — one patient, many
+  // hospitals — so purge_tenant_data never touches it and a re-seed would
+  // collide with the account the last run left behind.
+  const { data: old } = await db.from('patient_accounts').select('id').eq('email', PORTAL_EMAIL).maybeSingle()
+  if (old) {
+    await db.from('patients').update({ patient_account_id: null, patient_member_id: null })
+      .eq('patient_account_id', old.id as string)
+    await db.from('patient_members').delete().eq('account_id', old.id as string)
+    await db.from('patient_accounts').delete().eq('id', old.id as string)
+  }
+
+  const accountId = uuid()
+  const self = s.patients.find((p) => p.name.startsWith('Anand'))!
+  const child = s.patients.find((p) => p.name.startsWith('Aarav'))!
+
+  const acct = await db.from('patient_accounts').insert({
+    id: accountId, full_name: self.name, email: PORTAL_EMAIL,
+    // patient_accounts.phone is stored the way normalizePhone() writes it —
+    // digits with the country code and no "+", which the portal adds on display.
+    phone: '919999900001', password_hash: hashPassword(DEMO_PASSWORD),
+    last_login_at: new Date().toISOString(),
+  })
+  if (acct.error) { ok('portal family', acct.error); return }
+
+  const members = [
+    { id: uuid(), account_id: accountId, full_name: self.name, relationship: 'self', is_self: true, patient: self.id },
+    { id: uuid(), account_id: accountId, full_name: child.name, relationship: 'child', is_self: false, patient: child.id },
+  ]
+  const mem = await db.from('patient_members').insert(
+    members.map(({ patient: _patient, ...m }) => m))
+  if (mem.error) { ok('portal family', mem.error); return }
+
+  for (const m of members) {
+    await db.from('patients')
+      .update({ patient_account_id: accountId, patient_member_id: m.id })
+      .eq('id', m.patient).eq('tenant_id', tenantId)
+  }
+  ok('a portal family of two', null)
+}
+
+/**
  * The dashboard reads from materialized views, refreshed by pg_cron every five
  * minutes. A screenshot taken straight after seeding would otherwise show a
  * hospital with no beds and no footfall.
@@ -1087,6 +1136,7 @@ async function main() {
   await createFinance(tenantId, seeded)
   await createRestOfHospital(tenantId, seeded)
   await createSpecialtiesAndRota(tenantId, seeded)
+  await createPortalFamily(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`
@@ -1095,6 +1145,7 @@ Done.
   tenant   ${tenantId}
   sign in  https://${DEMO_SLUG}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'uyirly.com'}/login
   admin    ${staff[0].email}
+  portal   ${PORTAL_EMAIL}   (my.localhost:3000 in development)
   password ${DEMO_PASSWORD}
 
 Every person in here is fictional. No Aadhaar, and the mobile numbers are a

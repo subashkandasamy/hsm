@@ -139,6 +139,9 @@ async function runStep(page: Page, step: Step): Promise<void> {
   // Pick an option by the text the user would read, not by its value — the
   // values are uuids the seed regenerates on every run.
   else if ('select' in step) await page.locator(step.select[0]).first().selectOption({ label: step.select[1] })
+  else if ('goto' in step) {
+    await page.goto(new URL(step.goto, page.url()).toString(), { waitUntil: 'networkidle', timeout: 120_000 })
+  }
   else if ('press' in step) await page.keyboard.press(step.press)
   else if ('wait' in step) await page.waitForTimeout(step.wait)
 }
@@ -155,22 +158,32 @@ const HIDE_CHROME = `
      short pages, which reads as a bug in a guide rather than a short list. */
   main { margin-left: 0 !important; min-height: 0 !important; padding-bottom: 8px !important; }
   /* The dev-server overlay badge is not part of the product. */
-  nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }
+  nextjs-portal, [data-nextjs-toast], #__next-build-watcher,
+  [data-nextjs-dev-tools-button], [data-next-badge-root], [data-next-badge] { display: none !important; }
 `
 
 async function capture(page: Page, shot: Shot, raw: string, vars: Record<string, string>): Promise<void> {
-  const path = shot.path.replace(/\{(\w+)\}/g, (_, k: string) => {
+  const fill = (s: string) => s.replace(/\{(\w+)\}/g, (_, k: string) => {
     const v = vars[k]
     if (!v) throw new Error(`nothing in the demo matches {${k}}`)
     return v
   })
-  const res = await page.goto(`http://${HOST}${path}`, { waitUntil: 'networkidle', timeout: 120_000 })
+  const path = fill(shot.path)
+  const host = shot.host ?? HOST
+  const res = await page.goto(`http://${host}${path}`, { waitUntil: 'networkidle', timeout: 120_000 })
   if (res && res.status() !== 200) throw new Error(`HTTP ${res.status()}`)
   await page.waitForTimeout(shot.wait ?? 2000)
   if (!shot.chrome) { await page.addStyleTag({ content: HIDE_CHROME }); await page.waitForTimeout(250) }
 
-  for (const step of shot.steps ?? []) await runStep(page, step)
-  if (shot.steps?.length) await page.waitForTimeout(600)
+  for (const step of shot.steps ?? []) {
+    await runStep(page, 'goto' in step ? { goto: fill(step.goto) } : step)
+  }
+  if (shot.steps?.length) {
+    await page.waitForTimeout(600)
+    // A step that signs in or navigates reloads the document, which drops the
+    // style tag added above — so put it back before the shutter.
+    if (!shot.chrome) { await page.addStyleTag({ content: HIDE_CHROME }); await page.waitForTimeout(250) }
+  }
 
   if (shot.selector) {
     // filterText picks the card by what it says, which survives a class change.
@@ -196,10 +209,14 @@ async function main() {
       viewport: { width: shot.width ?? 1280, height: shot.height ?? 900 },
       deviceScaleFactor: 2,
     })
-    await ctx.addCookies(jar.map((c) => ({
-      name: c.name, value: c.value, domain: HOST.split(':')[0],
-      path: '/', httpOnly: false, secure: false, sameSite: 'Lax' as const,
-    })))
+    // The patient portal is a different host with its own session cookie, so the
+    // staff cookies would only confuse it — those shots sign in through the form.
+    if (!shot.host) {
+      await ctx.addCookies(jar.map((c) => ({
+        name: c.name, value: c.value, domain: HOST.split(':')[0],
+        path: '/', httpOnly: false, secure: false, sameSite: 'Lax' as const,
+      })))
+    }
     const page = await ctx.newPage()
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(e.message))
