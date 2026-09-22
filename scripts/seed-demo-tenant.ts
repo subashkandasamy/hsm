@@ -615,6 +615,22 @@ async function createToday(tenantId: string, s: Seeded): Promise<void> {
   }))
   ok(`${appts.length} appointments today`, (await db.from('appointments').insert(appts)).error)
 
+  // A Schedule H1 medicine handed over, so the register has a line in it. The
+  // entry writes itself: a trigger on dispenses fills the H1 register.
+  const { data: h1Batch } = await db.from('drug_batches')
+    .select('id, drug_master_id, mrp').eq('tenant_id', tenantId).eq('brand_name', 'Taxim-O 200').maybeSingle()
+  if (h1Batch) {
+    await db.from('dispenses').insert({
+      id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Anand'),
+      drug_master_id: h1Batch.drug_master_id, drug_batch_id: h1Batch.id,
+      qty: 10, price_snapshot: h1Batch.mrp,
+      dispensed_by: s.staff.find((x) => x.role === 'pharmacist')!.id,
+      dispensed_at: at(10, 15), billing_status: 'billed',
+    })
+    await db.from('drug_batches').update({ qty_available: 80 }).eq('id', h1Batch.id)
+    ok('Schedule H1 supply (register entry)', null)
+  }
+
   // Bills. Two settled at the counter this morning, one still open.
   const cashier = s.staff.find((x) => x.role === 'accountant')!.id
   const billNo = async () => {

@@ -21,6 +21,7 @@ import {
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import VaccinesView from './VaccinesView'
+import H1RegisterView from './H1RegisterView'
 import type { VaccineOrder, VaccineSupply } from '@/app/actions/vaccination'
 import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
@@ -33,7 +34,7 @@ import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
 import SaleCartBuilder from './SaleCartBuilder'
 
-type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts'
+type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts' | 'h1'
 type BillInfo = { billId: string; billNo: string; status: string }
 
 interface Props {
@@ -221,6 +222,7 @@ export default function PharmacyClient({
               : [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: 0 }]),
             { key: 'stock' as TabKey,  label: 'Stock',       shortLabel: 'Stock',   count: stock.length },
             { key: 'alerts' as TabKey, label: 'Alerts',      shortLabel: 'Alerts',  count: alertCount, urgent: alertCount > 0 },
+            { key: 'h1' as TabKey,     label: 'H1 Register', shortLabel: 'H1',      count: null },
           ]).map(({ key, label, shortLabel, count, urgent }) => (
             <button key={key} onClick={() => setTab(key)}
               className="flex items-center gap-1.5 rounded-lg text-sm font-medium flex-shrink-0"
@@ -230,12 +232,14 @@ export default function PharmacyClient({
               }}>
               <span className="hidden sm:inline">{label}</span>
               <span className="sm:hidden">{shortLabel}</span>
-              <span className="text-xs px-1.5 py-0.5 rounded-full"
-                style={tab === key
-                  ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
-                  : urgent ? { background: '#FEE2E2', color: '#DC2626' } : { background: '#F1F5F9', color: '#64748B' }}>
-                {count}
-              </span>
+              {count != null && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full"
+                  style={tab === key
+                    ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
+                    : urgent ? { background: '#FEE2E2', color: '#DC2626' } : { background: '#F1F5F9', color: '#64748B' }}>
+                  {count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -282,6 +286,8 @@ export default function PharmacyClient({
       )}
       {tab === 'stock' && <StockView stock={stock} canManage={canManage} onRefresh={refresh} />}
       {tab === 'alerts' && <AlertsView alerts={alerts} />}
+
+      {tab === 'h1' && <H1RegisterView />}
 
       {dispenseRx && (
         <DispenseModal
@@ -1170,6 +1176,12 @@ function StockView({ stock, canManage, onRefresh }: {
                     <span className="font-semibold text-sm" style={{ color: '#0F172A' }}>{title}</span>
                     {drug.form && <span className="text-xs px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#475569' }}>{drug.form}</span>}
                     {drug.is_vaccine && <span className="text-xs px-1.5 py-0.5 rounded-md font-semibold" style={{ background: '#F5F3FF', color: '#7C3AED' }}>Vaccine</span>}
+                    {/* H1 and X carry a legal register duty — worth seeing before it is handed over. */}
+                    {(drug.schedule === 'H1' || drug.schedule === 'X') && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-md font-semibold"
+                        title="Every supply is written to the Schedule H1 register"
+                        style={{ background: '#FEE2E2', color: '#B91C1C' }}>Schedule {drug.schedule}</span>
+                    )}
                     {out && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F1F5F9', color: '#64748B' }}>Out of stock</span>}
                     {low && (
                       <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"

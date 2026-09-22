@@ -72,6 +72,13 @@ export const SHOTS: Shot[] = [
     wait: 2500,
   },
   {
+    name: 'pharmacy-h1-register',
+    path: '/pharmacy',
+    steps: [{ clickText: 'H1 Register' }, { wait: 2000 }],
+    selector: 'main',
+    wait: 2500,
+  },
+  {
     name: 'pharmacy-receive',
     path: '/pharmacy/receive',
     selector: 'main',

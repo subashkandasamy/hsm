@@ -284,6 +284,59 @@ export async function lastSupplier(): Promise<string | null> {
   return (data?.[0]?.supplier_name as string | null) ?? null
 }
 
+// ---- Schedule H1 register ---------------------------------------------------
+
+/** One line of the register, as an inspector reads it. */
+export interface H1Entry {
+  entry_no: number
+  supplied_on: string
+  schedule: string
+  patient_name: string
+  patient_uhid: string | null
+  patient_address: string | null
+  prescriber_name: string | null
+  drug_name: string
+  brand_name: string | null
+  batch_no: string | null
+  qty: number
+  supplied_by_name: string | null
+}
+
+/**
+ * The Schedule H1 register for a date range.
+ *
+ * Rule 65(11A) requires this to be kept for three years and produced on
+ * inspection. Nothing writes to it from here — a database trigger fills it as
+ * medicines are dispensed, so there is no path that supplies an H1 medicine and
+ * forgets the entry.
+ */
+export async function listH1Register(from: string, to: string): Promise<H1Entry[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+
+  const { data } = await supabase.from('h1_register')
+    .select('entry_no, supplied_on, schedule, patient_name, patient_uhid, patient_address, prescriber_name, drug_name, brand_name, batch_no, qty, supplier:profiles!h1_register_supplied_by_fkey(full_name)')
+    .gte('supplied_on', from).lte('supplied_on', to)
+    .order('entry_no', { ascending: false })
+    .limit(2000)
+
+  return (data ?? []).map((r) => ({
+    entry_no: r.entry_no as number,
+    supplied_on: r.supplied_on as string,
+    schedule: r.schedule as string,
+    patient_name: r.patient_name as string,
+    patient_uhid: (r.patient_uhid as string | null) ?? null,
+    patient_address: (r.patient_address as string | null) ?? null,
+    prescriber_name: (r.prescriber_name as string | null) ?? null,
+    drug_name: r.drug_name as string,
+    brand_name: (r.brand_name as string | null) ?? null,
+    batch_no: (r.batch_no as string | null) ?? null,
+    qty: r.qty as number,
+    supplied_by_name: ((r.supplier as unknown as { full_name: string } | null)?.full_name) ?? null,
+  }))
+}
+
 // ---- Our own labels ---------------------------------------------------------
 
 /** No 0/O, 1/I/L or U: a code read off a shelf must not be guessable wrongly. */
@@ -772,7 +825,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
   const masterIds = [...new Set(allBatches.filter(b => b.drug_master_id).map(b => b.drug_master_id as string))]
   const tenantIds  = [...new Set(allBatches.filter(b => b.drug_id).map(b => b.drug_id as string))]
 
-  type MRow = { id: string; name: string; generic_name: string | null; form: string | null; strength: string | null; unit: string | null }
+  type MRow = { id: string; name: string; generic_name: string | null; form: string | null; strength: string | null; unit: string | null; schedule: string | null }
   type TRow = MRow & { reorder_level: number }
 
   type BrandDetail = { drug_master_id: string; brand_name: string; manufacturer: string | null; hsn_code: string | null; gst_rate: number | null; pack_size: number | null; pack_unit: string | null }
@@ -783,7 +836,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
   const masterBrandData    = new Map<string, BrandDetail[]>()
 
   if (masterIds.length) {
-    const { data: mDrugs } = await supabase.from('drug_master').select('id, name, generic_name, form, strength, unit').in('id', masterIds)
+    const { data: mDrugs } = await supabase.from('drug_master').select('id, name, generic_name, form, strength, unit, schedule').in('id', masterIds)
     for (const d of (mDrugs ?? [])) { const r = d as unknown as MRow; masterMap.set(r.id, r) }
 
     const { data: brandRows } = await supabase
@@ -800,7 +853,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
     }
   }
   if (tenantIds.length) {
-    const { data: tDrugs } = await supabase.from('drugs').select('id, name, generic_name, form, strength, unit, reorder_level').in('id', tenantIds).eq('is_active', true)
+    const { data: tDrugs } = await supabase.from('drugs').select('id, name, generic_name, form, strength, unit, reorder_level, schedule').in('id', tenantIds).eq('is_active', true)
     for (const d of (tDrugs ?? [])) { const r = d as unknown as TRow; tenantMap.set(r.id, r) }
   }
 
@@ -868,6 +921,7 @@ export async function getStock(): Promise<DrugWithStock[]> {
         is_global: isMaster,
         brand_aliases,
         brand_data,
+        schedule: info.schedule ?? null,
         stocked_brands: stockedBrandsByKey.get(key) ?? [],
         is_vaccine: vaccineKeys.has(key),
         total_qty,

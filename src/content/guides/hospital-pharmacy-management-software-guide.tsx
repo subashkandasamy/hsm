@@ -102,8 +102,8 @@ export default function Guide() {
         <li>Batch-wise stock with expiry alerts before items lapse.</li>
         <li>Oldest-valid-batch suggested first (FEFO), so nothing expires unused.</li>
         <li>One counter for OPD walk-in sales and IPD ward issues.</li>
-        <li>Schedule H, H1 and X carried on each drug, with H1 register fields captured on dispensing.</li>
-        <li>Low-stock flags feed straight into purchase orders.</li>
+        <li>Schedule H, H1 and X shown on the medicine, and every H1 or X supply written to the register as it is handed over.</li>
+        <li>Low-stock flags start the next purchase already filled in.</li>
       </ul>
 
       <h2>Getting started</h2>

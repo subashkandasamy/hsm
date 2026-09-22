@@ -1371,7 +1371,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Stock count', 'Always slightly out of date', 'Live and accurate'],
             ['Dispensing', 'Copied from a paper slip', 'Against the actual prescription'],
             ['Billing', 'Separate counter book', 'On the patient’s bill'],
-            ['Reorder', 'From memory', 'Low-stock flags feed purchase orders'],
+            ['Reorder', 'From memory', 'Low-stock flags start the next purchase'],
             ['Schedule H1', 'A physical logbook', 'Captured automatically'],
           ],
         },
@@ -1380,7 +1380,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     faqs: [
       {
         q: 'Does the pharmacy software track batch and expiry?',
-        a: 'Yes. Every drug is tracked by batch and expiry, with alerts before items expire and oldest-valid-first dispensing, so stock stays accurate and expiry write-offs shrink. Low-stock flags feed reorder and purchase orders.',
+        a: 'Yes. Every drug is tracked by batch and expiry, with alerts before items expire and oldest-valid-first dispensing, so stock stays accurate and expiry write-offs shrink. Anything below its reorder level starts the next purchase already filled in.',
       },
       {
         q: 'Can it bill both OPD walk-in sales and IPD ward medication?',
@@ -1388,7 +1388,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       },
       {
         q: 'Does it handle Schedule H, H1 and X drug records?',
-        a: 'Yes. Each drug carries its schedule classification, and Schedule H1 dispensing automatically captures the required register fields (prescriber, patient, drug, quantity) instead of relying on a separate physical logbook.',
+        a: 'Yes. Each drug carries its schedule, and every Schedule H1 or X supply writes itself to the register — serial number, date, patient, prescriber, drug, batch and quantity — as the medicine is handed over, exportable for inspection instead of kept as a physical logbook.',
       },
     ],
     related: [

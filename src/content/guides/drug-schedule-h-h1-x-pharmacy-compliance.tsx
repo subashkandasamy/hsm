@@ -175,7 +175,7 @@ export default function Guide() {
       </p>
       <ul>
         <li>Schedule H, H1 and X carried on every drug in the catalogue.</li>
-        <li>H1 register fields captured automatically at dispensing.</li>
+        <li>Every H1 or X supply written to the register as it is handed over — serial number, date, patient, prescriber, drug, batch and quantity — and exportable for inspection.</li>
         <li>Dispensing tied to the prescription, so records match reality.</li>
       </ul>
 

@@ -446,6 +446,8 @@ export interface DrugBatch {
 export interface DrugWithStock extends Drug {
   total_qty: number
   batches: DrugBatch[]
+  /** 'H', 'H1', 'X', 'OTC' — what the law requires when supplying it. */
+  schedule?: string | null
   /** Brand names on the batches received, newest purchase first. */
   stocked_brands?: string[]
   /** This hospital gives this medicine as a vaccine. */
