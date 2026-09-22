@@ -10,6 +10,7 @@ import { getVaccination, type Vaccination } from '@/app/actions/vaccination'
 import { istDate, istToday } from '@/lib/istDate'
 import { assessGrowth, sdCurves, AGE_MAX_DAYS, type Assessment, type Severity, type Sex } from '@/lib/growth/zscore'
 import type { PediatricProfile } from '@/lib/types'
+import { firstImplausible, GROWTH_RANGES } from '@/lib/clinical/plausible'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -109,10 +110,13 @@ export async function saveVisitGrowth(visitId: string, input: Record<string, unk
   if (d.weight_kg == null && d.height_cm == null && d.head_circ_cm == null && d.muac_cm == null) {
     return { success: false, error: 'Enter at least one measurement' }
   }
-  // Plausibility guard against unit slips (grams for kg, mm for cm).
-  if ((d.weight_kg ?? 0) > 150 || (d.height_cm ?? 0) > 220 || (d.head_circ_cm ?? 0) > 70 || (d.muac_cm ?? 0) > 40) {
-    return { success: false, error: 'A value looks out of range — enter weight in kg and lengths in cm' }
-  }
+  // Plausibility guard against unit slips (grams for kg, mm for cm), and against
+  // a value typed into the wrong box. Names the field so it can be found.
+  const slip = firstImplausible(
+    { weight_kg: d.weight_kg, height_cm: d.height_cm, head_circ_cm: d.head_circ_cm, muac_cm: d.muac_cm },
+    GROWTH_RANGES,
+  )
+  if (slip) return { success: false, error: slip.message }
 
   const supabase = await createClient()
   const { data: visit } = await supabase.from('visits').select('patient_id, visit_date').eq('id', visitId).maybeSingle()

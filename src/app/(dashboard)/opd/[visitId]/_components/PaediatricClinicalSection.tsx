@@ -10,6 +10,7 @@ import {
   type GrowthPoint, type PaediatricAssessment,
 } from '@/app/actions/pediatrics'
 import { MILESTONE_SOURCE, milestonesForAge } from '@/lib/growth/milestones'
+import { firstImplausible, GROWTH_RANGES } from '@/lib/clinical/plausible'
 import type { PaediatricVisitData, PediatricProfile } from '@/lib/types'
 
 interface Props {
@@ -57,10 +58,22 @@ export default function PaediatricClinicalSection({ visitId, patientId, initialA
   const vm = a.visitMeasurement
   const [meas, setMeas] = useState({ weight: str(vm?.weight_kg), height: str(vm?.height_cm), head: str(vm?.head_circ_cm), muac: str(vm?.muac_cm) })
   const [measSaved, setMeasSaved] = useState(false)
+
+  /** The typed boxes as the growth guard names them. */
+  const measured = {
+    weight_kg: num(meas.weight), height_cm: num(meas.height),
+    head_circ_cm: num(meas.head), muac_cm: num(meas.muac),
+  }
+  // Checked as it is typed, so the wrong box is marked rather than a banner
+  // naming none of them.
+  const slip = firstImplausible(measured, GROWTH_RANGES)
+  const FIELD_OF = { weight: 'weight_kg', height: 'height_cm', head: 'head_circ_cm', muac: 'muac_cm' } as const
+
   function saveMeasurements() {
     setError(''); setMeasSaved(false)
+    if (slip) { setError(slip.message); return }
     startTransition(async () => {
-      const res = await saveVisitGrowth(visitId, { weight_kg: num(meas.weight), height_cm: num(meas.height), head_circ_cm: num(meas.head), muac_cm: num(meas.muac) })
+      const res = await saveVisitGrowth(visitId, measured)
       if (!res.success) { setError(res.error); return }
       await refresh()
       setMeasSaved(true); setTimeout(() => setMeasSaved(false), 2500)
@@ -116,15 +129,26 @@ export default function PaediatricClinicalSection({ visitId, patientId, initialA
               <span className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>{label}</span>
               <input type="number" inputMode="decimal" min={0} step={step} value={meas[k]} disabled={disabled}
                 onChange={(e) => setMeas((m) => ({ ...m, [k]: e.target.value }))}
-                style={{ ...inputStyle, ...(disabled ? { opacity: 0.7 } : {}) }} />
+                aria-invalid={slip?.key === FIELD_OF[k]}
+                style={{
+                  ...inputStyle,
+                  ...(disabled ? { opacity: 0.7 } : {}),
+                  ...(slip?.key === FIELD_OF[k] ? { border: '1px solid #DC2626', background: '#FEF2F2' } : {}),
+                }} />
+              {slip?.key === FIELD_OF[k] && (
+                <span className="block text-xs mt-1" style={{ color: '#DC2626' }}>
+                  expected {GROWTH_RANGES[FIELD_OF[k]].min}–{GROWTH_RANGES[FIELD_OF[k]].max} {GROWTH_RANGES[FIELD_OF[k]].unit}
+                </span>
+              )}
             </label>
           ))}
         </div>
         {!disabled && (
           <div className="flex justify-end">
-            <button onClick={saveMeasurements} disabled={isPending}
+            <button onClick={saveMeasurements} disabled={isPending || !!slip}
+              title={slip ? slip.message : undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ background: measSaved ? '#DCFCE7' : '#0D9488', color: measSaved ? '#15803D' : '#fff', border: 'none', cursor: isPending ? 'wait' : 'pointer' }}>
+              style={{ background: measSaved ? '#DCFCE7' : slip ? '#94A3B8' : '#0D9488', color: measSaved ? '#15803D' : '#fff', border: 'none', cursor: isPending ? 'wait' : slip ? 'not-allowed' : 'pointer' }}>
               {measSaved ? <><CheckCircle className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save &amp; assess</>}
             </button>
           </div>

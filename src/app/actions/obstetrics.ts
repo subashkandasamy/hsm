@@ -10,6 +10,7 @@ import { istAddDays, istDate, istToday } from '@/lib/istDate'
 import { chooseEdd, daysBetween, gaOn } from '@/lib/obstetrics/dating'
 import { ANC_CARE_ITEMS, type CareDone } from '@/lib/obstetrics/ancSchedule'
 import type { ObgynVisitData } from '@/lib/types'
+import { firstImplausible, ANC_RANGES } from '@/lib/clinical/plausible'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -207,9 +208,11 @@ export async function saveVisitAncCheck(visitId: string, input: Record<string, u
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const d = parsed.data
   if (d.bp && !/^\s*\d{2,3}\s*\/\s*\d{2,3}\s*$/.test(d.bp)) return { success: false, error: 'Enter BP as systolic/diastolic, e.g. 120/80' }
-  if ((d.weight_kg ?? 0) > 250 || (d.hb ?? 0) > 25 || (d.fundal_height_cm ?? 0) > 60 || (d.fetal_heart_rate != null && (d.fetal_heart_rate < 50 || d.fetal_heart_rate > 250))) {
-    return { success: false, error: 'A value looks out of range — weight in kg, Hb in g/dL, fundal height in cm, FHR in beats/min' }
-  }
+  const slip = firstImplausible(
+    { weight_kg: d.weight_kg, hb: d.hb, fundal_height_cm: d.fundal_height_cm, fetal_heart_rate: d.fetal_heart_rate },
+    ANC_RANGES,
+  )
+  if (slip) return { success: false, error: slip.message }
   const supabase = await createClient()
   const { data: visit } = await supabase.from('visits').select('patient_id, visit_date').eq('id', visitId).maybeSingle()
   if (!visit) return { success: false, error: 'Visit not found' }
