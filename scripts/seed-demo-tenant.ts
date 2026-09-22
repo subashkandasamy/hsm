@@ -575,6 +575,13 @@ async function completeSetup(tenantId: string, s: Seeded): Promise<void> {
 
   ok('hospital code', (await db.from('tenants').update({ code: 'UDH' }).eq('id', tenantId)).error)
 
+  // Nursing shifts — a real signup seeds these; a tenant built by hand must too.
+  ok('3 nursing shifts', (await db.from('shift_definitions').insert([
+    { id: uuid(), tenant_id: tenantId, code: 'morning', label: 'Morning', start_time: '07:00', end_time: '19:00', crosses_midnight: false, sort_order: 1, is_active: true },
+    { id: uuid(), tenant_id: tenantId, code: 'evening', label: 'Evening', start_time: '14:00', end_time: '21:00', crosses_midnight: false, sort_order: 2, is_active: false },
+    { id: uuid(), tenant_id: tenantId, code: 'night',   label: 'Night',   start_time: '19:00', end_time: '07:00', crosses_midnight: true,  sort_order: 3, is_active: true },
+  ])).error)
+
   // OPD hours — Monday to Saturday for each consulting doctor.
   const consulting = s.staff.filter((x) => x.role === 'doctor' || x.name === 'Dr. Meena Raghavan')
   const hours = consulting.flatMap((doc) =>
@@ -914,6 +921,110 @@ async function createRestOfHospital(tenantId: string, s: Seeded): Promise<void> 
 }
 
 /**
+ * The specialty templates and the rota: an eye examination filled in, a dental
+ * chart with real findings, a week of nursing shifts and today's attendance.
+ */
+async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<void> {
+  // ── Ophthalmology: a refraction that explains the spectacles prescribed ────
+  const { data: eyeVisit } = await db.from('visits')
+    .select('id, clinical_data').eq('tenant_id', tenantId)
+    .eq('patient_id', patientId(s, 'Kavya')).order('visit_date', { ascending: false }).limit(1).maybeSingle()
+  if (eyeVisit) {
+    await db.from('visits').update({
+      clinical_data: {
+        ...(eyeVisit.clinical_data as Record<string, unknown> ?? {}),
+        visualAcuity: { od: '6/12', os: '6/18' },
+        iop: { od: 14, os: 15 },
+        refraction: {
+          od: { sphere: -1.25, cylinder: -0.5, axis: 180 },
+          os: { sphere: -1.75, cylinder: -0.75, axis: 170 },
+        },
+        notes: 'Anterior segment quiet both eyes. Fundus normal. Spectacles prescribed; review in six months.',
+      },
+    }).eq('id', eyeVisit.id)
+    ok('an eye examination with refraction', null)
+  }
+
+  // ── Dental: a visit, a charted mouth and the treatment done ────────────────
+  const { data: dentalDept } = await db.from('departments')
+    .select('id').eq('tenant_id', tenantId).eq('name', 'Dental').maybeSingle()
+  const dentist = s.staff.find((x) => x.name.includes('Meena'))!.id
+  if (dentalDept) {
+    await db.from('profiles').update({ department_id: dentalDept.id }).eq('id', dentist)
+
+    const visitId = uuid()
+    const patient = patientId(s, 'Karthik')
+    await db.from('visits').insert({
+      id: visitId, tenant_id: tenantId, patient_id: patient, doctor_id: dentist, type: 'opd',
+      visit_date: new Date(Date.now() - 4 * 86400000).toISOString(),
+      complaint: 'Pain in the lower right back tooth when chewing, for a week',
+      diagnosis: 'Deep caries #30 with reversible pulpitis', icd_code: 'K02.1',
+      notes: 'Restoration done under local anaesthetic. Advised review if pain persists.',
+      vitals: { bp: '124/80', pulse: '76' },
+      status: 'closed', consultation_fee: 400, billing_status: 'billed',
+    })
+
+    // The chart is the Universal Numbering System (1–32), not FDI — #30 is the
+    // lower right first molar, #19 its counterpart on the left, #1 an upper
+    // right wisdom tooth. The table rejects anything outside 1–32.
+    const chart = await db.from('patient_dental_chart').insert([
+      { id: uuid(), tenant_id: tenantId, patient_id: patient, tooth_number: 30, current_status: 'filled' },
+      { id: uuid(), tenant_id: tenantId, patient_id: patient, tooth_number: 19, current_status: 'decayed' },
+      { id: uuid(), tenant_id: tenantId, patient_id: patient, tooth_number: 14, current_status: 'crowned' },
+      { id: uuid(), tenant_id: tenantId, patient_id: patient, tooth_number: 1, current_status: 'missing' },
+    ])
+    const treat = await db.from('dental_treatments').insert([
+      { id: uuid(), tenant_id: tenantId, visit_id: visitId, patient_id: patient,
+        tooth_number: 30, procedure: 'filling', price_snapshot: 1800,
+        notes: 'Deep caries excavated, lined and restored.', billing_status: 'billed' },
+      { id: uuid(), tenant_id: tenantId, visit_id: visitId, patient_id: patient,
+        tooth_number: 19, procedure: 'cleaning', price_snapshot: 900, billing_status: 'billed' },
+    ])
+    ok('a dental visit with a charted mouth', chart.error ?? treat.error)
+  }
+
+  // ── The nursing rota for this week, and today's attendance ─────────────────
+  const { data: shifts } = await db.from('shift_definitions')
+    .select('id, code').eq('tenant_id', tenantId).eq('is_active', true)
+  // Ordered the way the app lists them, so the rota lands in the unit the
+  // roster screen opens on rather than whichever row Postgres returned first.
+  const { data: units } = await db.from('nursing_units').select('id')
+    .eq('tenant_id', tenantId).order('block').order('floor').order('wing')
+  const nurses = s.staff.filter((x) => x.role === 'nurse')
+  if (shifts?.length && nurses.length && units?.length) {
+    // Both nurses staff the same unit, alternating morning and night across the
+    // week. Spreading two nurses over three units leaves every unit short, which
+    // is not what a rota looks like.
+    // Every unit gets the pair, alternating morning and night across the week.
+    // Rows are keyed by (unit, nurse, date), so a nurse can cover more than one
+    // unit — and whichever unit the roster screen opens on has a rota in it.
+    // A nurse works one shift a day — there is a unique key on (nurse, date) —
+    // so the pair staff the first unit, alternating morning and night.
+    const rows: Record<string, unknown>[] = []
+    for (let d = -2; d <= 4; d++) {
+      nurses.forEach((n, i) => {
+        const shift = shifts[(i + d + shifts.length * 2) % shifts.length]
+        rows.push({
+          id: uuid(), tenant_id: tenantId, profile_id: n.id, date: day(d),
+          shift: shift.code, nursing_unit_id: units[0].id,
+          status: 'published', source: 'manual', created_by: s.staff[0].id,
+        })
+      })
+    }
+    ok(`${rows.length} rostered shifts`, (await db.from('duty_roster').insert(rows)).error)
+  }
+
+  const present = s.staff.filter((x) => ['nurse', 'pharmacist', 'receptionist', 'lab_tech'].includes(x.role))
+  ok(`${present.length} attendance records today`, (await db.from('staff_attendance').insert(
+    present.map((x, i) => ({
+      id: uuid(), tenant_id: tenantId, profile_id: x.id, date: day(0),
+      status: i === present.length - 1 ? 'leave' : 'present',
+      shift: 'morning',
+      check_in: i === present.length - 1 ? null : `08:${String(25 + i).padStart(2, '0')}:00`,
+    })))).error)
+}
+
+/**
  * The dashboard reads from materialized views, refreshed by pg_cron every five
  * minutes. A screenshot taken straight after seeding would otherwise show a
  * hospital with no beds and no footfall.
@@ -944,6 +1055,7 @@ async function main() {
   await createIpdBilling(tenantId, seeded)
   await createFinance(tenantId, seeded)
   await createRestOfHospital(tenantId, seeded)
+  await createSpecialtiesAndRota(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`

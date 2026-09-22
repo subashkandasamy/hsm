@@ -8,6 +8,7 @@ import {
   getUnitRoster, setRosterCell, clearRosterCell, publishRoster, generateRoster,
 } from '@/app/actions/scheduling'
 import type { WardRosterData, RosterPattern } from '@/lib/types'
+import { istDate, istAddDays, istWeekday } from '@/lib/istDate'
 
 interface Props {
   units: { id: string; label: string }[]
@@ -15,18 +16,18 @@ interface Props {
   patterns: RosterPattern[]
 }
 
+// Dates are handled as plain IST calendar days, never as local-midnight Dates:
+// on an IST browser `new Date('2026-09-21T00:00:00').toISOString()` is the 20th,
+// which slid the whole week one day behind the coverage the server sent back.
 function mondayOf(base: Date): string {
-  const x = new Date(base)
-  const day = (x.getDay() + 6) % 7   // 0 = Monday
-  x.setDate(x.getDate() - day)
-  return x.toISOString().slice(0, 10)
-}
-function addDays(date: string, n: number): string {
-  const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const today = istDate(base)
+  const day = (istWeekday(today) + 6) % 7   // 0 = Monday
+  return istAddDays(today, -day)
 }
 function dow(date: string) {
-  return new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' })
+  return new Date(date + 'T00:00:00Z').toLocaleDateString('en-IN', {
+    weekday: 'short', day: 'numeric', timeZone: 'UTC',
+  })
 }
 
 export default function RosterGrid({ units, canManage, patterns }: Props) {
@@ -40,8 +41,8 @@ export default function RosterGrid({ units, canManage, patterns }: Props) {
   const [addSel, setAddSel] = useState('')
   const [patternId, setPatternId] = useState('')
 
-  const weekEnd = addDays(weekStart, 6)
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  const weekEnd = istAddDays(weekStart, 6)
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => istAddDays(weekStart, i)), [weekStart])
 
   const load = useCallback(async () => {
     if (!unitId) return
@@ -104,14 +105,14 @@ export default function RosterGrid({ units, canManage, patterns }: Props) {
           </Select>
 
           <div className="flex items-center gap-1">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))}
+            <button onClick={() => setWeekStart(istAddDays(weekStart, -7))}
               className="p-2 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff' }} title="Previous week">
               <ChevronLeft className="w-4 h-4" style={{ color: '#475569' }} />
             </button>
             <span className="text-xs font-medium px-2" style={{ color: '#334155' }}>
               {new Date(weekStart + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {new Date(weekEnd + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
             </span>
-            <button onClick={() => setWeekStart(addDays(weekStart, 7))}
+            <button onClick={() => setWeekStart(istAddDays(weekStart, 7))}
               className="p-2 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff' }} title="Next week">
               <ChevronRight className="w-4 h-4" style={{ color: '#475569' }} />
             </button>

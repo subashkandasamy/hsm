@@ -332,7 +332,10 @@ export async function getUnitRoster(params: { unitId: string; weekStart: string 
 
   const [rosterRes, nursesRes, shifts, beds, rulesRes, inchargeRes] = await Promise.all([
     supabase.from('duty_roster')
-      .select('*, profile:profiles(id, full_name, role)')
+      // duty_roster points at profiles twice (profile_id and created_by), so the
+      // embed has to name the key — an unqualified one is rejected outright
+      // (PGRST201) and the whole week comes back empty.
+      .select('*, profile:profiles!duty_roster_profile_id_fkey(id, full_name, role)')
       .eq('nursing_unit_id', unitId).gte('date', weekStart).lte('date', weekEnd).order('date'),
     supabase.from('profiles').select('id, full_name').eq('role', 'nurse').eq('is_active', true).order('full_name'),
     listShiftDefinitions(true),

@@ -12,6 +12,9 @@
     "target": "es2022",
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts"],
+  // The scripts import from src/, so the ambient declarations src/ relies on
+  // have to come along — otherwise a module with no published types fails here
+  // while the app build is clean.
+  "include": ["scripts/**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules"]
 }

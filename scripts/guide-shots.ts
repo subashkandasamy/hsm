@@ -143,6 +143,25 @@ export const SHOTS: Shot[] = [
     selector: 'main', wait: 3500,
   },
 
+  // ── Records and specialties ────────────────────────────────────────────────
+  { name: 'patient-profile', path: '/patients/{ipdPatient}', selector: 'main', wait: 4000 },
+  { name: 'eye-exam',      path: '/opd/{eyeVisit}',    selector: 'div.glass-card', filterText: 'Eye Examination', wait: 4500 },
+  { name: 'dental-chart',  path: '/opd/{dentalVisit}', selector: 'div.glass-card', filterText: 'Dental', wait: 4500 },
+  {
+    name: 'nurse-roster',
+    path: '/scheduling',
+    selector: 'main', wait: 4500,
+  },
+  // Attendance is a tab on the staff directory — /hr is still a placeholder page.
+  {
+    name: 'staff-attendance',
+    path: '/staff',
+    steps: [{ clickText: 'Attendance' }, { wait: 2000 }],
+    selector: 'main',
+    wait: 3000,
+  },
+  { name: 'staff-directory', path: '/staff', selector: 'main', wait: 3000 },
+
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
   { name: 'patients',     path: '/patients',     selector: 'main', wait: 2500 },

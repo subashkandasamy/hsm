@@ -80,6 +80,10 @@ async function resolvePlaceholders(): Promise<Record<string, string>> {
     generalVisit: await visitOf('Murugan%'),
     paedPatient: await patient('Aarav%'),
     ipdPatient: await patient('Saraswathi%'),
+    eyePatient: await patient('Kavya%'),
+    eyeVisit: await visitOf('Kavya%'),
+    dentalVisit: await visitOf('Karthik%'),
+    dentalPatient: await patient('Karthik%'),
     estimate: await (async () => {
       const { data } = await svc.from('cost_estimates').select('id').eq('tenant_id', t).limit(1).maybeSingle()
       return (data?.id as string) ?? ''
