@@ -694,7 +694,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'How to actually choose the best HMS for an Indian hospital — what matters, what to avoid.',
     metaTitle: 'Best Hospital Management Software in India (2026)',
     description:
-      'How to choose the best hospital management software in India — what to look for, red flags to avoid, and why Uyirly fits Indian hospitals: GST, TPA, ABDM, flat pricing.',
+      'How to choose the best hospital management software in India — what to look for, red flags to avoid, and why Uyirly fits Indian hospitals: GST, TPA, flat pricing.',
     keywords: [
       'best hospital management software in india',
       'best hospital management software india',
@@ -768,7 +768,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'Pricing that climbs with every bed, user or patient',
           'Modules that do not share one patient and one bill',
-          'GST, TPA, ABDM or NABH handled as “custom work”, not built in',
+          'GST, TPA or NABH handled as “custom work”, not built in',
           'On-premise only, with a server you must buy and maintain',
           'No free trial — you can only see a scripted sales demo',
           'Patient data stored outside India, or unclear on security',
@@ -782,7 +782,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           headers: ['What to check', 'Good sign', 'Red flag'],
           rows: [
             ['Integration', 'One patient & one bill everywhere', 'Separate tools, re-entry needed'],
-            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Handled as custom work'],
+            ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Handled as custom work'],
             ['Pricing', 'Flat monthly, no per-bed fees', 'Per bed / per user / per patient'],
             ['Hosting', 'Cloud — nothing to install', 'On-premise server to maintain'],
             ['Ease of use', 'Staff learn it in a day', 'Needs a week of training'],
@@ -806,7 +806,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Where Uyirly fits',
         body:
-          'We will not claim to be “number one” — that is for you to decide on your own hospital. But [Uyirly](/hospital-management-software) is built to score well on all seven points above: OPD, IPD, pharmacy, lab, radiology, billing, insurance, blood bank, OT and staff on **one shared record and one bill**, with GST, TPA, ABDM and NABH built in, cloud-based, data stored in India, and **flat monthly pricing with no per-bed fees**. The honest way to judge it against any list is a free trial with your own patients and your own bills.',
+          'We will not claim to be “number one” — that is for you to decide on your own hospital. But [Uyirly](/hospital-management-software) is built to score well on all seven points above: OPD, IPD, pharmacy, lab, radiology, billing, insurance, blood bank, OT and staff on **one shared record and one bill**, with GST, TPA cashless claims and NABH records built in (ABDM/ABHA is not integrated today), cloud-based, data stored in India, and **flat monthly pricing with no per-bed fees**. The honest way to judge it against any list is a free trial with your own patients and your own bills.',
         preview: 'dashboard',
         bullets: [
           'One patient and one bill across every department',
@@ -818,7 +818,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     faqs: [
       {
         q: 'Which is the best hospital management software in India?',
-        a: 'There is no single “best” for every hospital — the right choice depends on your size, specialties and budget. What matters is fit: a system where modules truly share one patient and one bill, that handles GST, insurance/TPA, ABDM and NABH natively, prices flatly rather than per bed, and is easy for your staff to use. [Uyirly](/hospital-management-software) is built for Indian hospitals on all of these, and offers a 30-day free trial so you can judge it on your own work rather than a sales demo.',
+        a: 'There is no single “best” for every hospital — the right choice depends on your size, specialties and budget. What matters is fit: a system where modules truly share one patient and one bill, that handles GST, insurance/TPA and NABH natively, prices flatly rather than per bed, and is easy for your staff to use. [Uyirly](/hospital-management-software) is built for Indian hospitals on all of these, and offers a 30-day free trial so you can judge it on your own work rather than a sales demo.',
       },
       {
         q: 'How do I compare hospital management software vendors?',
@@ -1692,21 +1692,22 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     tagline: 'Comparing MocDoc? Here’s how Uyirly approaches the same job — and what to weigh before you choose.',
     metaTitle: 'MocDoc Alternative for Indian Hospitals — Uyirly',
     description:
-      'Considering a MocDoc alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform with flat pricing and a 30-day free trial.',
+      'Considering a MocDoc alternative? See how Uyirly runs OPD, IPD, pharmacy, lab and billing on one platform — including analyzer connectivity and Indian reference ranges — with flat pricing and a 30-day free trial.',
     keywords: [
       'mocdoc alternative',
       'alternative to mocdoc',
       'mocdoc competitors',
       'mocdoc vs uyirly',
       'hospital software like mocdoc',
+      'lab analyzer integration software india',
     ],
     primaryKeyword: 'mocdoc alternative',
     h1: 'A MocDoc alternative built for Indian hospitals',
     subhead:
-      'MocDoc is a well-known hospital, clinic and diagnostics management platform in India. If you’re weighing it up, it’s worth comparing more than one option — this page lays out how Uyirly approaches the same job, and the criteria that actually matter when you choose, so you can decide on your own hospital rather than a demo.',
+      'MocDoc is a well-known hospital, clinic and diagnostics management platform in India. If you’re weighing it up, it’s worth comparing more than one option — this page lays out how Uyirly approaches the same job, what we do and do not do, and the criteria that actually matter, so you can decide on your own hospital rather than a demo.',
     heroBullets: [
       'OPD, IPD, pharmacy, lab and billing on one platform',
-      'One patient record and one bill across departments',
+      'Results arrive straight from your lab analyzers',
       'Flat monthly pricing — no per-bed or per-user metering',
       '30-day free trial, no credit card',
     ],
@@ -1724,31 +1725,75 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'One patient and one bill across every department',
           'GST-ready billing, TPA cashless claims, one record per patient',
-          'Cloud-based — nothing to install, works on any device',
+          'Cloud-based — nothing to install, data stored in India',
+        ],
+      },
+      {
+        h2: 'Your lab analyzers, connected',
+        body:
+          'This is the part most hospitals ask about last and regret first. If your haematology and biochemistry analyzers are not connected, a technician reads numbers off a screen and types them into software — twenty numbers for a single blood count, every time, with a transcription error waiting in each one.\n\nUyirly connects them. You install a small program on the computer next to your machines, read out an eight-character code once, and give your analyzer engineer an address. Results then arrive on the patient’s record by themselves. There is nothing to configure per instrument: the machine announces what it is, and Uyirly recognises it.',
+        subsections: [
+          {
+            h3: 'What happens when the internet drops',
+            body:
+              'The program runs in your laboratory, not in the cloud, for one reason: an analyzer transmits a result once and forgets it. If nothing is listening at that moment, that measurement is gone. Every result is written to your own computer the instant it arrives — before any attempt to send it — and sent when the connection returns. A broadband outage costs you nothing.',
+          },
+          {
+            h3: 'Nothing reaches a patient without a person',
+            body:
+              'A machine can write a result but it cannot release one. Every analyzer result lands unverified and waits for someone in the laboratory to authorise it, and the report names who did. That is NABL 112’s own requirement, and it is the difference between automation and unattended reporting.',
+          },
+          {
+            h3: 'Which analyzers we can connect',
+            body:
+              'If the machine has a data port — network, serial or a file export — we will connect it. That covers most of what Indian laboratories run, including Mindray and Transasia/Erba. What we cannot connect is an analyzer whose only output is its own built-in printer, and we would rather say that before you buy than after. Send us the model and we will confirm.',
+          },
+        ],
+      },
+      {
+        h2: 'Reference ranges built on Indian data',
+        body:
+          'Most hospital software ships reference ranges copied from Western textbooks. For haemoglobin that means flagging a healthy Indian woman as anaemic — Indian multicentric data puts the adult female range near 9.9–14.3 g/dL against a Western figure of roughly 12–15. Uyirly ships sex-aware, age-banded ranges drawn from Indian published data, your laboratory can override any of them, and the range that was actually applied is stored on the result rather than recalculated later. So a report printed today and reprinted next year says the same thing.',
+        bullets: [
+          'Sex-aware and age-banded, down to newborn bands',
+          'Your laboratory overrides anything that does not match its own method',
+          'Critical values are flagged, and who was telephoned is recorded',
         ],
       },
       {
         h2: 'Uyirly at a glance — and what to confirm',
         body:
-          'Here is where Uyirly stands on the things that actually decide a hospital-software choice. We only speak for our own product — please confirm MocDoc’s current features and pricing with them directly.',
+          'Here is where Uyirly stands on the things that actually decide a hospital-software choice, including where the answer is no. We only speak for our own product — please confirm MocDoc’s current features and pricing with them directly.',
         table: {
+          caption: 'Uyirly’s own position on each point. The MocDoc column is deliberately left for you to fill in with them.',
           headers: ['What to compare', 'Uyirly', 'MocDoc'],
           rows: [
-            ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
-            ['Hosting', 'Cloud — nothing to install', 'Confirm with vendor'],
-            ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
-            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
-            ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
-            ['Mobile app', 'Native app for staff & patients', 'Confirm with vendor'],
+            ['Pricing model', 'Flat monthly — ₹2,999 or ₹7,999, no per-bed or per-user fees', 'Confirm with vendor'],
+            ['Lab analyzer connection', 'Included. Network, serial or file export', 'Confirm with vendor'],
+            ['If the internet drops', 'Results held in your laboratory, sent when it returns', 'Confirm with vendor'],
+            ['Releasing a result', 'A person authorises; the report names them', 'Confirm with vendor'],
+            ['Reference ranges', 'Indian published data, sex and age aware, overridable', 'Confirm with vendor'],
+            ['Critical values', 'Flagged, and who was told is recorded', 'Confirm with vendor'],
+            ['One patient, one bill', 'Across OPD, IPD, pharmacy, lab and radiology', 'Confirm with vendor'],
+            ['GST and TPA', 'GST tax invoices and cashless claims built in', 'Confirm with vendor'],
+            ['ABDM / ABHA', 'Not integrated today — no ABHA linkage', 'Confirm with vendor'],
+            ['Where data lives', 'India (Mumbai region)', 'Confirm with vendor'],
+            ['Free trial', '30 days, no credit card', 'Confirm with vendor'],
           ],
         },
       },
       {
+        h2: 'What Uyirly does not do',
+        body:
+          'Every comparison page lists strengths. Here are the gaps, so you find them now rather than in month three.\n\n**ABDM and ABHA are not integrated.** There is no ABHA field and no health-record linkage today. If joining India’s digital health network is a requirement this year, ask us where it stands before you commit.\n\n**Analyzers with no data port cannot be connected.** A semi-automatic machine whose only output is its own printer stays a manual entry, whatever any vendor tells you.\n\n**The laboratory connector runs on Windows.** That is what sits beside analyzers in practice, but if your laboratory PC is something else, tell us first.',
+      },
+      {
         h2: 'What to weigh when you compare',
         body:
-          'The honest way to compare any two hospital systems is to run the same real scenario through each: register a patient, order a lab test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Whichever handles that without re-entering the patient or hand-totalling the bill will save your staff time every day. Then check the pricing model — flat, or metered per bed/user — and whether you can trial it on real work.',
+          'The honest way to compare any two hospital systems is to run the same real scenario through each: register a patient, order a lab test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Whichever handles that without re-entering the patient or hand-totalling the bill will save your staff time every day. Then check the pricing model — flat, or metered per bed and per user — and whether you can trial it on real work.',
         bullets: [
           'Does one patient and one bill flow through every department?',
+          'Will your existing analyzers connect, and at what extra cost?',
           'Is pricing flat, or does it climb with beds and users?',
           'Can you trial it on your own hospital before committing?',
         ],
@@ -1759,25 +1804,38 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'The fairest comparison is a short, real test — not a feature spreadsheet. See our [buyer’s guide](/best-hospital-management-software-in-india) for the full method.',
         steps: [
           { title: 'Run the same scenario in each', body: 'Register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and insurance claim ready.' },
-          { title: 'Check the pricing model', body: 'Ask for the total monthly cost at your current size and at double your size — flat vs per-bed/user changes the answer fast.' },
-          { title: 'Let your staff try it', body: 'A front-desk person and a nurse will tell you in minutes which is easier to use.' },
+          { title: 'Name your analyzers', body: 'Give each vendor the exact models in your laboratory and ask what connecting them costs and how long it takes. This is where quotes diverge most.' },
+          { title: 'Check the pricing model', body: 'Ask for the total monthly cost at your current size and at double your size — flat versus per-bed changes the answer fast.' },
+          { title: 'Let your staff try it', body: 'A front-desk person, a nurse and a lab technician will tell you in minutes which is easier to use.' },
           { title: 'Decide on fit', body: 'Pick the one that handled your workflow with the least friction. Start a [free Uyirly trial](/signup) to include it in the test.' },
         ],
       },
       {
         h2: 'Why Uyirly could be your alternative',
         body:
-          'Uyirly’s bet is simple: flat monthly pricing with no per-bed fees, genuine all-in-one integration, native India-fit (GST, TPA, ABDM, NABH), and a 30-day free trial with no card so you judge it on your own patients and bills. If those are the things pulling you to look beyond your current shortlist, it’s worth a trial — the fairest comparison you can run.',
+          'Uyirly’s bet is simple: flat monthly pricing with no per-bed fees, genuine all-in-one integration, a laboratory that connects to your existing analyzers and reads them against Indian reference ranges, and a 30-day free trial with no card so you judge it on your own patients and bills. If those are the things pulling you to look beyond your current shortlist, it’s worth a trial — the fairest comparison you can run.',
       },
     ],
     faqs: [
       {
         q: 'Is Uyirly a good alternative to MocDoc?',
-        a: 'It depends on what you need — the right choice varies by hospital size, specialties and budget. Uyirly is an all-in-one cloud HMS for Indian hospitals with flat pricing and a 30-day free trial, so the fairest way to judge it as an alternative is to run your real workflows through it and compare. We’d encourage you to verify any other product’s current features and pricing with them directly.',
+        a: 'It depends on what you need — the right choice varies by hospital size, specialties and budget. Uyirly is an all-in-one cloud HMS for Indian hospitals with flat pricing, analyzer connectivity included, and a 30-day free trial, so the fairest way to judge it is to run your real workflows through it and compare. We’d encourage you to verify any other product’s current features and pricing with them directly.',
+      },
+      {
+        q: 'Will Uyirly connect to the lab analyzers we already own?',
+        a: 'If the machine has a data port — a network socket, an RS-232 serial port, or the ability to export a file — then yes, and it is included rather than a paid add-on. That covers most of what Indian laboratories run, including Mindray and Transasia/Erba machines. An analyzer whose only output is its own built-in printer cannot be connected by any software. Send us the exact models and we will confirm before you buy.',
+      },
+      {
+        q: 'What happens to our results if the internet goes down?',
+        a: 'Nothing is lost. The small program that sits beside your analyzers writes every result to your own computer the moment it arrives, before it tries to send anything, and sends it when the connection returns. This is why it runs in your laboratory rather than in the cloud — an analyzer transmits a result once and forgets it, so something has to be listening locally.',
+      },
+      {
+        q: 'Is Uyirly ABDM and ABHA compliant?',
+        a: 'No, and we would rather be direct than say “ready”. There is no ABHA field and no ABDM health-record linkage in Uyirly today. If that is a requirement for you this year, please ask us where it stands before committing.',
       },
       {
         q: 'How do I compare Uyirly and MocDoc fairly?',
-        a: 'Run the same scenario through both: register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Also compare the pricing model (flat vs per-bed/user) and whether you can trial on real patients. Integration and pricing model separate most systems more than feature lists do.',
+        a: 'Run the same scenario through both: register a patient, order a test from a consultation, dispense a medicine, and reach discharge with an itemised bill and an insurance claim ready. Give both vendors your exact analyzer models and compare what connecting them costs. Also compare the pricing model (flat versus per-bed) and whether you can trial on real patients.',
       },
       {
         q: 'Does Uyirly offer a free trial?',
@@ -1786,12 +1844,12 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     related: [
       { label: 'Best hospital management software in India', href: '/best-hospital-management-software-in-india' },
+      { label: 'Lab management software', href: '/lab-management-software' },
       { label: 'Hospital management software', href: '/hospital-management-software' },
-      { label: 'Clinic management software', href: '/clinic-management-software' },
       { label: 'Pricing', href: '/pricing' },
     ],
     disclaimer: TM('MocDoc'),
-    updated: '2026-08-04',
+    updated: '2026-09-23',
   },
 
   'healthray-alternative': {
@@ -1846,7 +1904,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
             ['IPD billing', 'Daily auto-billing, ready at discharge', 'Confirm with vendor'],
-            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
           ],
         },
@@ -1864,7 +1922,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Why Uyirly could be the switch',
         body:
-          'Uyirly leads with flat monthly pricing (no per-bed fees), all-in-one integration, native India-fit — GST, TPA, ABDM, NABH — and a 30-day free trial with no card. If those are what’s drawing you to compare, a trial on your own hospital is the most honest way to see whether it’s the right alternative for you.',
+          'Uyirly leads with flat monthly pricing (no per-bed fees), all-in-one integration, native India-fit — GST, TPA cashless, NABH records — and a 30-day free trial with no card. If those are what’s drawing you to compare, a trial on your own hospital is the most honest way to see whether it’s the right alternative for you.',
       },
     ],
     faqs: [
@@ -1942,7 +2000,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Clinic to hospital', 'Same platform, no migration', 'Confirm with vendor'],
             ['Pricing model', 'Flat monthly, no per-user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
-            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
           ],
         },
@@ -1960,7 +2018,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Why Uyirly could be your pick',
         body:
-          'Uyirly leads with flat monthly pricing (no per-user fees), one platform from clinic to hospital, native India-fit — GST, TPA, ABDM, NABH — and a 30-day free trial with no card. If you want one system that grows from a clinic into a hospital, a trial on your own practice is the clearest way to compare.',
+          'Uyirly leads with flat monthly pricing (no per-user fees), one platform from clinic to hospital, native India-fit — GST, TPA cashless, NABH records — and a 30-day free trial with no card. If you want one system that grows from a clinic into a hospital, a trial on your own practice is the clearest way to compare.',
       },
     ],
     faqs: [
@@ -2039,7 +2097,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Best-fit size', 'Clinics, nursing homes & hospitals', 'Confirm with vendor'],
             ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
-            ['India fit', 'GST, TPA, ABDM, NABH built in', 'Confirm with vendor'],
+            ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Patient app', 'Family accounts, reports & bills online', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
           ],
@@ -2069,7 +2127,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Why Uyirly could be your alternative',
         body:
-          'Uyirly’s bet is simple: all-in-one integration that fits a clinic as well as a hospital, flat monthly pricing with no per-bed fees, native India-fit (GST, TPA, ABDM, NABH), a patient app your patients actually use, and a 30-day free trial with no card. If you’re looking beyond Insta because you want something that fits your size and keeps pricing predictable, it’s worth a trial on your own patients — the most honest comparison you can run.',
+          'Uyirly’s bet is simple: all-in-one integration that fits a clinic as well as a hospital, flat monthly pricing with no per-bed fees, native India-fit (GST, TPA cashless, NABH records), a patient app your patients actually use, and a 30-day free trial with no card. If you’re looking beyond Insta because you want something that fits your size and keeps pricing predictable, it’s worth a trial on your own patients — the most honest comparison you can run.',
       },
     ],
     faqs: [

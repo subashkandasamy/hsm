@@ -211,6 +211,11 @@ export default function SolutionShell({ meta }: { meta: SolutionMeta }) {
                   </table>
                 </div>
               )}
+              {/* A note under the table — it exists to explain what the table
+                  cannot say itself, such as why a competitor's column is blank. */}
+              {s.table?.caption && (
+                <p className="mt-2 text-xs" style={{ color: SLATE6 }}>{renderRich(s.table.caption)}</p>
+              )}
             </section>
           ))}
         </div>
