@@ -117,8 +117,17 @@ export async function resolveBarcodeScan(
     return { type: 'lab_order' as const, id: order.id as string, patientName: p?.full_name ?? 'Unknown' }
   }
 
-  // 2. Tube label: accession no + 2-digit tube no; also accept the accession no typed on its own.
+  // 2. Tube label. Look the barcode up as a stored sample first — that is the
+  //    exact string printed on the tube, and it identifies WHICH tube, not just
+  //    the order. Stripping the last two digits still works for labels printed
+  //    before samples were recorded, and for an accession typed on its own.
   if (/^\d{10,}$/.test(trimmed)) {
+    const { data: sample } = await supabase
+      .from('lab_samples').select('lab_order_id').eq('barcode', trimmed).maybeSingle()
+    if (sample) {
+      const found = await labOrder('id', sample.lab_order_id as string)
+      if (found) return found
+    }
     const found = (await labOrder('accession_no', trimmed.slice(0, -2))) ?? (await labOrder('accession_no', trimmed))
     if (found) return found
   }

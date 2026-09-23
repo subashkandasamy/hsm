@@ -86,6 +86,11 @@ async function resolvePlaceholders(): Promise<Record<string, string>> {
         .eq('tenant_id', t).eq('status', 'reported').not('admission_id', 'is', null).limit(1).maybeSingle()
       return (data?.id as string) ?? ''
     })(),
+    twoTubeOrder: await (async () => {
+      const { data } = await svc.from('lab_samples').select('lab_order_id')
+        .eq('tenant_id', t).eq('tube_no', 2).limit(1).maybeSingle()
+      return (data?.lab_order_id as string) ?? ''
+    })(),
     urineOrder: await (async () => {
       const { data } = await svc.from('lab_orders').select('id, items:lab_order_items(test:lab_tests_catalog(code))')
         .eq('tenant_id', t).eq('status', 'reported')

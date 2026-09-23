@@ -748,7 +748,8 @@ export async function createIpdLabOrder(
     await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
   }
 
-  await logAudit(actor.id, 'create', 'lab_order', orderId, { admissionId, count: testIds.length })
+    await supabase.rpc('ensure_lab_samples', { p_order_id: orderId })
+await logAudit(actor.id, 'create', 'lab_order', orderId, { admissionId, count: testIds.length })
   return { success: true, orderId }
 }
 

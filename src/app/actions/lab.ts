@@ -203,6 +203,9 @@ export async function createLabOrder(
     else await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
   }
 
+  // Work out the tubes now, so the label and the analyzer agree from the start.
+  await supabase.rpc('ensure_lab_samples', { p_order_id: orderId })
+
   await logAudit(actor.id, 'create', 'lab_order', orderId, { patient_id, test_count: test_ids.length })
   return { success: true, orderId }
 }

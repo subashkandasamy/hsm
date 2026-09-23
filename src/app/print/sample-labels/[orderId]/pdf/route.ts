@@ -28,15 +28,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const order = data as unknown as Row | null
   if (!order || !order.patient) return new Response('Lab order not found', { status: 404 })
 
-  // One tube per sample type, in the order tests were added.
-  const tubes = new Map<string, SampleTube>()
-  for (const it of order.items ?? []) {
-    const type = it.test?.sample_type?.trim() || 'Sample'
-    const tube = tubes.get(type.toLowerCase()) ?? { sampleType: type, tests: [] }
-    tube.tests.push(it.test?.code?.trim() || it.test?.name || 'Test')
-    tubes.set(type.toLowerCase(), tube)
+  // Read the tubes rather than recompute them. They were worked out once, in
+  // NABL's draw order, and their barcodes are already on glass — deriving them
+  // again from list position is how a reprint disagrees with the first print.
+  await supabase.rpc('ensure_lab_samples', { p_order_id: orderId })
+  const { data: sampleRows } = await supabase
+    .from('lab_samples')
+    .select(`tube_no, barcode, tube:lab_tube_types(label, closure),
+             items:lab_sample_items(test:lab_tests_catalog(name, code))`)
+    .eq('lab_order_id', orderId)
+    .order('tube_no')
+
+  type SRow = {
+    tube_no: number; barcode: string
+    tube: { label: string; closure: string | null } | null
+    items: Array<{ test: { name: string; code: string | null } | null }>
   }
-  if (tubes.size === 0) return new Response('This order has no tests', { status: 404 })
+  const tubes: SampleTube[] = ((sampleRows ?? []) as unknown as SRow[]).map((r) => ({
+    sampleType: r.tube?.label ?? 'Sample',
+    closure: r.tube?.closure ?? null,
+    barcode: r.barcode,
+    tests: (r.items ?? []).map((i) => i.test?.code?.trim() || i.test?.name || 'Test'),
+  }))
+  if (tubes.length === 0) return new Response('This order has no tests', { status: 404 })
 
   return renderPdfResponse(request, createElement(SampleLabelsPdf, {
     data: {
@@ -45,7 +59,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
       printedAt: new Date().toISOString(),
       encounter: order.admission?.ip_no ?? (order.visit_id ? 'OPD' : null),
       patient: order.patient,
-      tubes: [...tubes.values()],
+      tubes,
     },
   }), `Sample-labels_${order.accession_no}.pdf`)
 }

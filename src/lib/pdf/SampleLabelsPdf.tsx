@@ -11,6 +11,11 @@ export const SAMPLE_LABEL_MM = { w: 50, h: 25 }
 export interface SampleTube {
   sampleType: string
   tests: string[]           // short codes when the catalog has them, else names
+  /** The stored barcode. Recomputing it from a position in a list is how a
+   *  reprint ends up disagreeing with the label already on the tube. */
+  barcode?: string
+  /** Cap colour, so a phlebotomist can reach for the right tube. */
+  closure?: string | null
 }
 
 export interface SampleLabelData {
@@ -35,7 +40,7 @@ export function SampleLabelsPdf({ data }: { data: SampleLabelData }) {
   return (
     <Document title={`Sample labels ${data.accessionNo}`} author="Uyirly" creator="Uyirly">
       {data.tubes.map((tube, i) => {
-        const code = tubeCode(data.accessionNo, i + 1)
+        const code = tube.barcode ?? tubeCode(data.accessionNo, i + 1)
         // Bars stay whole printer dots: 3 dots normally; 2 dots (0.25 mm) only if a very
         // long accession (10,000+ samples in a day) would not fit. Never scaled to fit —
         // a scaled barcode prints uneven bars and stops scanning.
@@ -67,7 +72,7 @@ export function SampleLabelsPdf({ data }: { data: SampleLabelData }) {
             <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: mm(0.3), height: mm(2.9) }}>
               <Text style={{ fontSize: 7, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.3 }}>{data.accessionNo}-{String(i + 1).padStart(2, '0')}</Text>
               <Text style={{ flex: 1, fontSize: 6.5, fontWeight: 700, lineHeight: 1.1, textAlign: 'right', maxLines: 1, textOverflow: 'ellipsis', marginLeft: 3 }}>
-                {tube.sampleType.toUpperCase()}{total > 1 ? `  ${i + 1}/${total}` : ''}
+                {tube.sampleType.toUpperCase()}{tube.closure ? ` · ${tube.closure.toUpperCase()}` : ''}{total > 1 ? `  ${i + 1}/${total}` : ''}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', height: mm(2.3) }}>
