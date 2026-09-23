@@ -273,6 +273,13 @@ function TestRow({ test, selected, onToggle, border, indent }: {
             {test.sample_type}
           </span>
         )}
+        {(test.analyte_count ?? 0) > 1 && (
+          <span title={`This is a panel — it reports ${test.analyte_count} measurements`}
+            className="text-xs px-1.5 py-0 rounded flex-shrink-0 font-medium"
+            style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid #99F6E4' }}>
+            {test.analyte_count} tests
+          </span>
+        )}
       </div>
       <span className="text-sm font-medium flex-shrink-0 ml-2" style={{ color: '#0D9488' }}>
         <Money amount={test.price} />

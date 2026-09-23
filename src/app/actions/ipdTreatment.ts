@@ -767,7 +767,20 @@ export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> 
 export async function listLabCatalogForIpd(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
   const { data } = await supabase.from('lab_tests_catalog').select('*').eq('is_active', true).order('name')
-  return (data ?? []) as LabTestCatalog[]
+  const tests = (data ?? []) as LabTestCatalog[]
+
+  // Same panel counts the OPD list shows — a ward doctor ordering a CBC should
+  // see it is twenty measurements, not guess from the name.
+  const masterIds = [...new Set(tests.map((t) => t.lab_master_id).filter(Boolean))] as string[]
+  if (!masterIds.length) return tests
+  const { data: links } = await supabase
+    .from('lab_test_analytes').select('lab_master_id').in('lab_master_id', masterIds)
+  const counts = new Map<string, number>()
+  for (const r of links ?? []) {
+    const k = r.lab_master_id as string
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  return tests.map((t) => ({ ...t, analyte_count: t.lab_master_id ? counts.get(t.lab_master_id) ?? 0 : 0 }))
 }
 
 // ── IPD Radiology orders ──────────────────────────────────────────────────────

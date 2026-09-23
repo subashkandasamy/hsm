@@ -275,6 +275,12 @@ export const SHOTS: Shot[] = [
     path: '/print/lab/{bloodPanelOrder}',
     selector: 'main, body > div', wait: 4000, width: 1000, height: 1700,
   },
+  {
+    name: 'lab-order-panels',
+    path: '/lab',
+    steps: [{ clickText: 'New Order' }, { wait: 2000 }],
+    selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 1100, height: 1300,
+  },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
   {
     name: 'lab-reported',

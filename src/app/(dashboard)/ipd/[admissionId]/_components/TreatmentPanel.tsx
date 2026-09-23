@@ -768,6 +768,13 @@ function IpdLabTestRow({ test, selected, onToggle }: {
         <p className="text-xs font-medium" style={{ color: '#0F172A' }}>{test.name}</p>
         {test.sample_type && <p className="text-xs" style={{ color: '#94A3B8' }}>{test.sample_type}</p>}
       </div>
+      {(test.analyte_count ?? 0) > 1 && (
+        <span title={`This is a panel — it reports ${test.analyte_count} measurements`}
+          className="text-xs px-1.5 py-0 rounded flex-shrink-0 font-medium"
+          style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid #99F6E4' }}>
+          {test.analyte_count} tests
+        </span>
+      )}
       {test.code && <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{test.code}</span>}
     </label>
   )

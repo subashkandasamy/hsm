@@ -70,11 +70,39 @@ export async function activateFromMaster(
 
 // ---- Catalog ----
 
+
+/**
+ * How many measurements each catalogue test yields, so the ordering screen can
+ * say that a "Complete Blood Count" is twenty and a "Haemoglobin" is one. A
+ * doctor picking from a list of identical-looking rows otherwise has no way to
+ * tell a panel from a single test.
+ *
+ * One extra query for the whole list, not one per row.
+ */
+async function withAnalyteCounts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tests: LabTestCatalog[],
+): Promise<LabTestCatalog[]> {
+  const masterIds = [...new Set(tests.map((t) => t.lab_master_id).filter(Boolean))] as string[]
+  if (!masterIds.length) return tests
+  const { data } = await supabase
+    .from('lab_test_analytes').select('lab_master_id').in('lab_master_id', masterIds)
+  const counts = new Map<string, number>()
+  for (const r of data ?? []) {
+    const k = r.lab_master_id as string
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  return tests.map((t) => ({
+    ...t,
+    analyte_count: t.lab_master_id ? counts.get(t.lab_master_id) ?? 0 : 0,
+  }))
+}
+
 export async function listLabCatalog(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_tests_catalog').select('*').eq('is_active', true).order('name')
-  return (data ?? []) as LabTestCatalog[]
+  return withAnalyteCounts(supabase, (data ?? []) as LabTestCatalog[])
 }
 
 export async function listAllLabCatalog(): Promise<LabTestCatalog[]> {
