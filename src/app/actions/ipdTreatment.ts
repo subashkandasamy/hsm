@@ -697,9 +697,14 @@ export async function createIpdLabOrder(
   if (!gate.success) return gate
 
   const supabase = await createClient()
+  // Same guard as the OPD path: a switched-off test must not be orderable
+  // from a stale ward screen either.
   const { data: tests } = await supabase
-    .from('lab_tests_catalog').select('id, price, name').in('id', testIds)
+    .from('lab_tests_catalog').select('id, price, name').in('id', testIds).eq('is_active', true)
   if (!tests?.length) return { success: false, error: 'No valid tests selected' }
+  if (tests.length !== testIds.length) {
+    return { success: false, error: 'One of those tests is no longer offered — refresh and try again' }
+  }
 
   const priceMap = new Map(tests.map((t) => [t.id as string, t.price as number]))
   const nameMap  = new Map(tests.map((t) => [t.id as string, t.name as string]))

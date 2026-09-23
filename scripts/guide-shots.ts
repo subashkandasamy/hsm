@@ -276,6 +276,15 @@ export const SHOTS: Shot[] = [
     selector: 'main, body > div', wait: 4000, width: 1000, height: 1700,
   },
   {
+    name: 'lab-master-categories',
+    path: '/lab',
+    steps: [
+      { clickText: 'Catalog' }, { wait: 2000 },
+      { clickText: 'Add from Master' }, { wait: 2500 },
+    ],
+    selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 460, height: 1100,
+  },
+  {
     name: 'lab-order-panels',
     path: '/lab',
     steps: [

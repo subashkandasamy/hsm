@@ -18,7 +18,10 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export async function listLabMaster(): Promise<LabTestMaster[]> {
   const supabase = await createClient()
   const { data } = await supabase
-    .from('lab_tests_master').select('*').eq('is_active', true).order('name')
+    // panel_only measurements — MCV, the differential, globulin, the ratios —
+    // are real analytes but cannot be performed on their own, so they never
+    // appear as something a hospital can activate and price.
+    .from('lab_tests_master').select('*').eq('is_active', true).eq('panel_only', false).order('name')
   return (data ?? []) as LabTestMaster[]
 }
 
@@ -158,9 +161,14 @@ export async function createLabOrder(
   const { patient_id, visit_id, test_ids } = parsed.data
 
   // Snapshot prices from catalog
+  // Re-check is_active here, not only in the picker: a stale tab could
+  // otherwise order a test the hospital has switched off.
   const { data: tests } = await supabase
-    .from('lab_tests_catalog').select('id, price, name').in('id', test_ids)
+    .from('lab_tests_catalog').select('id, price, name').in('id', test_ids).eq('is_active', true)
   if (!tests?.length) return { success: false, error: 'No valid tests selected' }
+  if (tests.length !== test_ids.length) {
+    return { success: false, error: 'One of those tests is no longer offered — refresh and try again' }
+  }
 
   const priceMap = new Map(tests.map((t) => [t.id, t.price as number]))
   const orderId = crypto.randomUUID()

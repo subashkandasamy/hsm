@@ -321,6 +321,8 @@ export interface EmergencyCase {
 // ---- Phase 3: Lab ----
 
 export interface LabTestMaster {
+  /** A measurement that only exists inside a panel — an index, a differential, a calculated value. Never separately orderable. */
+  panel_only?: boolean
   id: string; name: string; code: string | null; category: string
   sample_type: string | null; unit: string | null
   ref_low: number | null; ref_high: number | null
