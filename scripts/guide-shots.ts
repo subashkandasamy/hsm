@@ -232,6 +232,12 @@ export const SHOTS: Shot[] = [
     width: 900, height: 330, wait: 2500,
   },
 
+  // ── General store (the non-pharmacy inventory) ─────────────────────────────
+  { name: 'inventory-items',  path: '/inventory', selector: 'main', wait: 3000 },
+  { name: 'inventory-alerts', path: '/inventory', steps: [{ clickText: 'Low stock' }, { wait: 1200 }], selector: 'main', wait: 3000 },
+  { name: 'inventory-orders', path: '/inventory', steps: [{ clickText: 'Orders' }, { wait: 1200 }], selector: 'main', wait: 3000 },
+  { name: 'inventory-expiry', path: '/inventory', steps: [{ clickText: 'Expiry' }, { wait: 1200 }], selector: 'main', wait: 3000 },
+
   // ── Setting the hospital up ────────────────────────────────────────────────
   { name: 'signup', path: '/signup', host: 'localhost:3000', selector: 'form', wait: 3000, width: 900, height: 900 },
 

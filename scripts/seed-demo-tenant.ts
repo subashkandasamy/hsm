@@ -1059,6 +1059,71 @@ async function createSpecialtiesAndRota(tenantId: string, s: Seeded): Promise<vo
 }
 
 /**
+ * The general store — the non-pharmacy side: consumables, linen, housekeeping.
+ * Two items sit below their reorder level and one batch is close to expiry, so
+ * the alert tabs have something in them.
+ */
+async function createGeneralStore(tenantId: string, s: Seeded): Promise<void> {
+  const by = s.staff[0].id
+  const suppliers = [
+    { id: uuid(), tenant_id: tenantId, name: 'Kumaran Surgicals', contact_person: 'R. Kumaran', phone: '+919999900201', email: 'orders@kumaransurgicals.example' },
+    { id: uuid(), tenant_id: tenantId, name: 'Chennai Medical Supplies', contact_person: 'S. Devi', phone: '+919999900202', email: 'sales@cms.example' },
+  ]
+  ok('2 suppliers', (await db.from('suppliers').insert(suppliers)).error)
+
+  // [name, category, unit, in stock, reorder at]
+  const spec: Array<[string, string, string, number, number]> = [
+    ['Surgical gloves (7.5)',     'Consumables',  'pair',  40,  100],
+    ['Disposable syringe 5ml',    'Consumables',  'piece', 620, 200],
+    ['IV cannula 20G',            'Consumables',  'piece', 85,  120],
+    ['Suture 3-0 absorbable',     'Consumables',  'piece', 210, 60],
+    ['Bed sheet (ward)',          'Linen',        'piece', 180, 80],
+    ['Hand sanitiser 500ml',      'Housekeeping', 'bottle', 46, 30],
+  ]
+  const items = spec.map(([name, category, unit, qty, reorder]) => ({
+    id: uuid(), tenant_id: tenantId, name, category, unit,
+    qty_in_stock: qty, reorder_level: reorder, is_active: true,
+  }))
+  ok(`${items.length} store items`, (await db.from('inventory_items').insert(items)).error)
+
+  const batchOf = (name: string) => items.find((i) => i.name.startsWith(name))!.id
+  ok('store batches', (await db.from('inventory_batches').insert([
+    { id: uuid(), tenant_id: tenantId, item_id: batchOf('Surgical gloves'), batch_no: 'GLV-2411',
+      expiry: day(420), qty_available: 40, unit_cost: 11.5, supplier_id: suppliers[0].id, created_by: by },
+    { id: uuid(), tenant_id: tenantId, item_id: batchOf('Disposable syringe'), batch_no: 'SYR-2508',
+      expiry: day(60), qty_available: 220, unit_cost: 3.2, supplier_id: suppliers[0].id, created_by: by },
+    { id: uuid(), tenant_id: tenantId, item_id: batchOf('Disposable syringe'), batch_no: 'SYR-2602',
+      expiry: day(540), qty_available: 400, unit_cost: 3.4, supplier_id: suppliers[0].id, created_by: by },
+    { id: uuid(), tenant_id: tenantId, item_id: batchOf('IV cannula'), batch_no: 'CAN-2505',
+      expiry: day(25), qty_available: 85, unit_cost: 18, supplier_id: suppliers[1].id, created_by: by },
+    { id: uuid(), tenant_id: tenantId, item_id: batchOf('Suture'), batch_no: 'SUT-2601',
+      expiry: day(700), qty_available: 210, unit_cost: 46, supplier_id: suppliers[1].id, created_by: by },
+  ])).error)
+
+  // One order placed with the supplier and still on its way.
+  // get_next_po_no() reads current_tenant_id(), which is NULL under the service
+  // role, so the number is taken from the same sequence table by hand.
+  const year = new Date().getFullYear()
+  await db.from('po_no_seq').upsert({ tenant_id: tenantId, year, last_no: 1 }, { onConflict: 'tenant_id,year' })
+  const poNo = `PO-${year}-00001`
+  const poId = uuid()
+  const lines = [
+    { item: batchOf('Surgical gloves'), qty: 400, price: 11.5 },
+    { item: batchOf('IV cannula'),      qty: 300, price: 18 },
+  ]
+  const total = lines.reduce((t, l) => t + l.qty * l.price, 0)
+  const po = await db.from('purchase_orders').insert({
+    id: poId, tenant_id: tenantId, po_no: poNo as string, supplier_id: suppliers[0].id,
+    status: 'ordered', total, created_by: by,
+  })
+  const poItems = await db.from('po_items').insert(lines.map((l) => ({
+    id: uuid(), tenant_id: tenantId, po_id: poId, item_id: l.item, qty: l.qty,
+    unit_price: l.price, received_qty: 0,
+  })))
+  ok('a purchase order on its way', po.error ?? poItems.error)
+}
+
+/**
  * A family on the patient portal. Records are linked by id rather than by
  * Aadhaar — the demo hospital deliberately holds no Aadhaar numbers, and the
  * portal treats an explicit account link as ownership either way.
@@ -1137,6 +1202,7 @@ async function main() {
   await createRestOfHospital(tenantId, seeded)
   await createSpecialtiesAndRota(tenantId, seeded)
   await createPortalFamily(tenantId, seeded)
+  await createGeneralStore(tenantId, seeded)
   await refreshDashboard()
 
   console.log(`
