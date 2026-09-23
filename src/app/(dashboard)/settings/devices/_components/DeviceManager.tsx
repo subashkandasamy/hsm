@@ -4,12 +4,14 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import EmptyState from '@/components/ui/EmptyState'
+import InstallerCard from './InstallerCard'
 import ConnectorSection from './ConnectorSection'
 import AnalyzerSection from './AnalyzerSection'
 import CodeQueue from './CodeQueue'
 import SampleQueue from './SampleQueue'
 import type {
   ConnectorRow, AnalyzerRow, UnknownCode, UnmatchedMessage, AnalyteOption,
+  ConnectorRelease,
 } from '@/app/actions/devices'
 
 /**
@@ -23,7 +25,7 @@ import type {
  * Setup is below them, because it is done once and then never looked at again.
  */
 export default function DeviceManager({
-  connectors, analyzers, unknownCodes, unmatched, analytes, canManage,
+  connectors, analyzers, unknownCodes, unmatched, analytes, canManage, release,
 }: {
   connectors: ConnectorRow[]
   analyzers: AnalyzerRow[]
@@ -32,6 +34,8 @@ export default function DeviceManager({
   analytes: AnalyteOption[]
   /** Setting the laboratory up is the owner's job; clearing the queues is not. */
   canManage: boolean
+  /** The installer to download, or null when none has been published. */
+  release: ConnectorRelease | null
 }) {
   const router = useRouter()
   const refresh = () => router.refresh()
@@ -57,6 +61,7 @@ export default function DeviceManager({
 
       {canManage && (
         <>
+          <InstallerCard release={release} />
           <ConnectorSection connectors={connectors} onChange={refresh} />
           <AnalyzerSection analyzers={analyzers} onChange={refresh} />
         </>

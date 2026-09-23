@@ -66,6 +66,7 @@ async function main() {
     const nodeExe = await fetchNode('win32', 'x64')
     await inject(nodeExe, path.join(OUT, 'uyirly-connector.exe'), blob, 'win32')
     await writeInstaller()
+    await makeZip()
   }
 
   console.log('\nBuilt into dist-exe/')
@@ -137,6 +138,39 @@ async function inject(sourceBinary, target, blob, platform) {
   if (platform !== 'win32') await fs.chmod(target, 0o755)
 
   console.log(`Injected → ${path.basename(target)}`)
+}
+
+
+/**
+ * One file for the hospital to download.
+ *
+ * Four loose files means somebody downloads the .exe, misses install.ps1, and
+ * rings up. A zip keeps the installer, the uninstaller and the instructions
+ * together with the program they refer to.
+ *
+ * Windows marks a file downloaded from the internet, and PowerShell refuses to
+ * run a blocked .ps1 — INSTALL.txt covers Unblock-File, and the installer is
+ * launched by right-click → Run with PowerShell, which prompts rather than
+ * silently failing.
+ */
+async function makeZip() {
+  const zipName = `uyirly-lab-connector-windows.zip`
+  const zipPath = path.join(OUT, zipName)
+  await fs.rm(zipPath, { force: true })
+  // `zip` ships with macOS and Linux; on Windows the build runs in CI or WSL.
+  execFileSync('zip', ['-j', '-q', zipPath,
+    path.join(OUT, 'uyirly-connector.exe'),
+    path.join(OUT, 'install.ps1'),
+    path.join(OUT, 'uninstall.ps1'),
+    path.join(OUT, 'INSTALL.txt'),
+  ], { stdio: 'inherit' })
+
+  const { size } = await fs.stat(zipPath)
+  const { createHash } = await import('node:crypto')
+  const hash = createHash('sha256').update(await fs.readFile(zipPath)).digest('hex')
+  await fs.writeFile(path.join(OUT, `${zipName}.sha256`), `${hash}  ${zipName}\n`)
+  console.log(`Zipped → ${zipName} (${(size / 1048576).toFixed(1)} MB)`)
+  console.log(`  sha256 ${hash}`)
 }
 
 /**

@@ -69,6 +69,52 @@ export interface AnalyteOption {
   unit_ucum: string | null
 }
 
+export interface ConnectorRelease {
+  version: string
+  file_name: string
+  size_bytes: number
+  sha256: string
+  is_signed: boolean
+  published_at: string
+  url: string
+}
+
+// ── The installer ───────────────────────────────────────────────────────────
+
+/**
+ * Where a hospital gets the program.
+ *
+ * Returns null when nothing has been published, and the page then says so
+ * plainly instead of offering a link that 404s.
+ */
+export async function getConnectorDownload(): Promise<ConnectorRelease | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('connector_releases')
+    .select('version, file_path, file_name, size_bytes, sha256, is_signed, published_at')
+    .eq('platform', 'windows')
+    .eq('is_current', true)
+    .maybeSingle()
+
+  if (!data) return null
+
+  // Derived, never stored: a stored URL strands every row if the project or
+  // the CDN host ever changes.
+  const { data: pub } = supabase.storage
+    .from('connector-downloads')
+    .getPublicUrl(data.file_path as string)
+
+  return {
+    version: data.version as string,
+    file_name: data.file_name as string,
+    size_bytes: Number(data.size_bytes),
+    sha256: data.sha256 as string,
+    is_signed: data.is_signed as boolean,
+    published_at: data.published_at as string,
+    url: pub.publicUrl,
+  }
+}
+
 // ── Connectors ──────────────────────────────────────────────────────────────
 
 export async function listConnectors(): Promise<ConnectorRow[]> {

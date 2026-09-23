@@ -7,7 +7,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import DeviceManager from './_components/DeviceManager'
 import {
   listConnectors, listAnalyzers, listUnknownCodes,
-  listUnmatchedMessages, listAnalytes,
+  listUnmatchedMessages, listAnalytes, getConnectorDownload,
 } from '@/app/actions/devices'
 
 export default async function DevicesSettingsPage() {
@@ -23,12 +23,13 @@ export default async function DevicesSettingsPage() {
   const canManage = hasPermission(actor.role, 'lab:manage')
   if (!canWorkQueues && !canManage) redirect('/dashboard')
 
-  const [connectors, analyzers, unknownCodes, unmatched, analytes] = await Promise.all([
+  const [connectors, analyzers, unknownCodes, unmatched, analytes, release] = await Promise.all([
     listConnectors(),
     listAnalyzers(),
     listUnknownCodes(),
     listUnmatchedMessages(),
     listAnalytes(),
+    getConnectorDownload(),
   ])
 
   return (
@@ -46,6 +47,7 @@ export default async function DevicesSettingsPage() {
         unmatched={unmatched}
         analytes={analytes}
         canManage={canManage}
+        release={release}
       />
     </div>
   )
