@@ -1783,9 +1783,46 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         },
       },
       {
+        h2: 'Feature by feature',
+        body:
+          'The table below sets our own product against what MocDoc publicly documents on its website, checked in September 2026. Two things to read it fairly.\n\nFirst, **“not documented” means we could not find it stated publicly — not that it is missing.** A vendor’s website is marketing, not a specification. Ask them directly.\n\nSecond, we have marked the places where **MocDoc offers something we do not**. A comparison page written by one of the two vendors is worth very little unless it does that.',
+        table: {
+          caption: 'Uyirly column verified against our own database and code. MocDoc column taken from mocdoc.com in September 2026 — confirm anything that matters with them directly, as products change.',
+          headers: ['Feature', 'Uyirly', 'MocDoc (publicly claimed)'],
+          rows: [
+            ['OPD & appointments', 'Yes', 'Yes'],
+            ['IPD, wards & discharge', 'Yes', 'Yes'],
+            ['Pharmacy with batch & expiry', 'Yes', 'Yes'],
+            ['Laboratory (LIS)', 'Yes', 'Yes — sold as MocDoc LIMS'],
+            ['Radiology (RIS)', 'Yes', 'Not documented'],
+            ['Blood bank', 'Yes', 'Not documented'],
+            ['Operation theatre', 'Yes', 'Not documented'],
+            ['GST billing & TPA claims', 'Yes', 'Yes'],
+            ['Patient portal & mobile app', 'Yes', 'Yes'],
+            ['**Analyzer interfacing**', 'Yes — machine to Uyirly, one way', 'Yes — one way **and two way**'],
+            ['Sending orders to the analyzer', '**No** — on our roadmap', 'Yes, claimed'],
+            ['Works when the internet drops', 'Yes — results held in your laboratory', 'Not documented'],
+            ['Result released only by a person', 'Yes — the report names them', 'Not documented'],
+            ['Indian reference ranges', 'Yes — sex and age aware, overridable', 'Not documented'],
+            ['Critical value call recorded', 'Yes', 'Not documented'],
+            ['**ABDM / ABHA**', '**No**', 'Yes, claimed'],
+            ['**PMJAY scheme**', '**No** — selectable as an insurer only', 'Yes, claimed'],
+            ['**Multiple branches**', '**No** — one hospital per account', 'Yes, claimed'],
+            ['Published pricing', 'Yes — ₹2,999 / ₹7,999 a month', 'Not published — contact sales'],
+            ['Self-serve free trial', 'Yes — 30 days, no card', 'Not documented'],
+            ['Data stored in India', 'Yes — Mumbai region', 'Not documented'],
+          ],
+        },
+      },
+      {
+        h2: 'Where MocDoc is ahead of us today',
+        body:
+          'Four things, stated plainly, because you will find them anyway and it is better you hear them from us.\n\n**ABDM and ABHA.** MocDoc documents this integration and we have none. If linking to India’s digital health network matters to you this year, that is a real difference and it favours them.\n\n**PMJAY.** They claim scheme integration. In Uyirly, Ayushman Bharat can be selected as an insurer on a claim, but there is no connection to the scheme itself. For a hospital with heavy PMJAY volume, ask us before you decide.\n\n**Two-way analyzer interfacing.** Our connector receives results. Theirs also claims to send the worklist down to the machine, so a technician does not key the sample in at the analyzer. We intend to add it; today we have not.\n\n**Multiple branches.** MocDoc documents multi-location management. Uyirly is one hospital per account, so a chain needs an account per site.',
+      },
+      {
         h2: 'What Uyirly does not do',
         body:
-          'Every comparison page lists strengths. Here are the gaps, so you find them now rather than in month three.\n\n**ABDM and ABHA are not integrated.** There is no ABHA field and no health-record linkage today. If joining India’s digital health network is a requirement this year, ask us where it stands before you commit.\n\n**Analyzers with no data port cannot be connected.** A semi-automatic machine whose only output is its own printer stays a manual entry, whatever any vendor tells you.\n\n**The laboratory connector runs on Windows.** That is what sits beside analyzers in practice, but if your laboratory PC is something else, tell us first.',
+          'Beyond the four above, three limits worth knowing before you commit rather than in month three.\n\n**Analyzers with no data port cannot be connected.** A semi-automatic machine whose only output is its own built-in printer stays a manual entry, whatever any vendor tells you. Send us your models and we will tell you which ones will connect.\n\n**The laboratory connector runs on Windows.** That is what sits beside analyzers in practice, but if your laboratory PC is something else, tell us first.\n\n**We are newer.** MocDoc has been serving Indian hospitals for years and we have not. What we offer instead is published pricing, a trial that needs no sales call, and straight answers like this page — judge that on your own hospital.',
       },
       {
         h2: 'What to weigh when you compare',
