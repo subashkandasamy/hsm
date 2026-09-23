@@ -1424,7 +1424,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     heroBullets: [
       'Order → worklist → scan → report in one flow',
       'Modality worklist so technicians know what’s pending',
-      'Reporting templates for faster, consistent reports',
+      'Reports typed on the order, with the scan image attached',
       'Billing and patient record shared with the hospital',
     ],
     sections: [
@@ -1592,10 +1592,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     slug: 'operation-theatre-management-software',
     eyebrow: 'OT Management Software',
     group: GROUP_MODULE,
-    tagline: 'Schedule theatres, teams and cases — with pre-op checklists, consumables and OT notes on the patient record.',
+    tagline: 'Schedule theatres, teams and cases — with consumables and OT notes on the patient record.',
     metaTitle: 'Operation Theatre (OT) Management Software India',
     description:
-      'Operation theatre (OT) management software for India — surgery scheduling, surgical team allocation, pre-op checklists, consumables and OT notes.',
+      'Operation theatre (OT) management software for India — surgery scheduling, surgical team allocation, consumables and OT notes.',
     keywords: [
       'operation theatre management software',
       'ot management software',
@@ -1607,11 +1607,11 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     primaryKeyword: 'operation theatre management software',
     h1: 'Operation theatre management software',
     subhead:
-      'An operation theatre is the most tightly scheduled, highest-stakes room in the hospital — a clash or a missed pre-op check has real consequences. Uyirly’s OT management software schedules theatres, surgeons and cases, runs the pre-op checklist, tracks consumables and captures OT notes, all tied to the patient record and the bill.',
+      'An operation theatre is the most tightly scheduled, highest-stakes room in the hospital, and a clash has real consequences. Uyirly’s OT management software schedules theatres, surgeons and cases — with the database itself refusing to double-book a room — tracks consumables and captures OT notes, all tied to the patient record and the bill.',
     heroBullets: [
       'Theatre and surgery scheduling without clashes',
       'Surgeon, anaesthetist and room allocation',
-      'Pre-op checklists so nothing is missed',
+      'Double-booking a theatre is refused, not just warned about',
       'Consumables and OT notes on the patient record',
     ],
     sections: [
@@ -1627,9 +1627,9 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         ],
       },
       {
-        h2: 'Pre-op checklists so nothing is missed',
+        h2: 'A theatre cannot be double-booked',
         body:
-          'A surgical safety checklist exists because missed steps in the OT are dangerous. Uyirly runs the pre-op checklist as part of the case, so consent, fasting status, investigations and the surgical site are confirmed before the patient enters — recorded, not remembered.',
+          'Two cases scheduled into one room at overlapping times is the failure this module exists to prevent, and it is prevented in the database rather than in the screen — the overlap is rejected outright, so it cannot slip through a second browser tab or a race between two schedulers. **What Uyirly does not yet have is a structured pre-operative safety checklist** — consent, fasting, investigations and site marking as confirmed fields on the case. If a WHO-style surgical safety checklist is a requirement for you, say so early; today those confirmations live in the case notes.',
       },
       {
         h2: 'Consumables and OT notes captured in place',
@@ -1652,7 +1652,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           'From scheduling the case to the charges landing on the bill — the same [OT workflow](/guides/ot-scheduling-management-guide) every time.',
         steps: [
           { title: 'Schedule', body: 'Book the case against theatre, surgeon and anaesthetist availability — no clashes.' },
-          { title: 'Pre-op check', body: 'Run the safety checklist — consent, fasting, investigations and surgical site — before the patient enters.' },
+          { title: 'Pre-op', body: 'Confirm consent, fasting, investigations and the surgical site, and record them in the case notes.' },
           { title: 'Surgery', body: 'The case proceeds; the team and room are already assigned.' },
           { title: 'Record', body: 'Consumables, implants and operative notes are captured against the case.' },
           { title: 'Bill', body: 'Procedure and consumable charges post to the patient’s IPD bill automatically.' },
@@ -1666,7 +1666,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       },
       {
         q: 'Does it include a pre-op checklist?',
-        a: 'Yes. The pre-op surgical safety checklist runs as part of the case — consent, fasting, investigations and surgical site confirmed and recorded before the patient enters theatre.',
+        a: 'Not as structured fields. There is no WHO-style surgical safety checklist in Uyirly today — consent, fasting, investigations and site marking are recorded in the case notes rather than confirmed item by item. If a formal checklist is a requirement, raise it before you buy.',
       },
       {
         q: 'Do consumables and OT notes reach the bill and record?',
