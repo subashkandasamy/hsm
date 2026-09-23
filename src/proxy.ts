@@ -107,7 +107,12 @@ export async function proxy(request: NextRequest) {
   // themselves inside the route handler. They have no session cookie, so they
   // must skip the cookie-based auth redirect entirely — otherwise the request
   // is bounced to /login before it ever reaches the handler.
-  if (pathname.startsWith('/api/cron/') || pathname.startsWith('/api/webhooks/')) {
+  // A lab connector carries a bearer token and no cookie, and the token is what
+  // identifies its tenant — so it must reach the handler rather than being
+  // bounced to a login page it cannot use.
+  if (pathname.startsWith('/api/cron/')
+    || pathname.startsWith('/api/webhooks/')
+    || pathname.startsWith('/api/device/')) {
     return NextResponse.next()
   }
 
