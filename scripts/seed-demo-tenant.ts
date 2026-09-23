@@ -620,6 +620,39 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
     }
   }
 
+  // A critical potassium, so the notification queue is not theoretical. NABL
+  // §5.8 wants the record that somebody was telephoned, and a feature nobody
+  // has ever seen fire is a feature nobody trusts.
+  {
+    const kft = tests.find((t) => t.name.startsWith('Kidney Function'))
+    if (kft) {
+      const critOrder = uuid()
+      await db.from('lab_orders').insert({
+        id: critOrder, tenant_id: tenantId, patient_id: patientId(s, 'Murugan'),
+        ordered_by: doctorId(s, 'Arun Prakash'), status: 'collected', billing_status: 'billed',
+        ordered_at: new Date(Date.now() - 2700000).toISOString(), priority: 'stat',
+      })
+      await db.from('lab_order_items').insert({
+        id: uuid(), tenant_id: tenantId, lab_order_id: critOrder,
+        test_id: kft.id, price_snapshot: kft.price, flag: 'pending',
+      })
+      const { data: ka } = await db.from('lab_analytes').select('id, code')
+        .in('code', ['K', 'NA', 'CREAT', 'UREA'])
+      const byCode = new Map((ka ?? []).map((a) => [a.code as string, a.id as string]))
+      const { error: kErr } = await db.rpc('save_lab_analyte_results', {
+        p_order_id: critOrder,
+        p_items: [['K', 6.8], ['NA', 133], ['CREAT', 2.9], ['UREA', 78]]
+          .filter(([code]) => byCode.has(code as string))
+          .map(([code, n]) => ({
+            test_id: kft.id, analyte_id: byCode.get(code as string),
+            value_num: n, value_text: null,
+          })),
+        p_source: 'manual',
+      })
+      ok('a critical potassium awaiting notification', kErr)
+    }
+  }
+
   ok('lab results', (await db.from('lab_order_items').insert([
     { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('HbA1c').id,
       price_snapshot: pick('HbA1c').price, result_value: 8.2, unit: '%', flag: 'high' },

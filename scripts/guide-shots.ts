@@ -303,6 +303,7 @@ export const SHOTS: Shot[] = [
     ],
     selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 1100, height: 1300,
   },
+  { name: 'lab-critical', path: '/lab', selector: 'main', wait: 3500, width: 1280, height: 900 },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
   {
     name: 'lab-reported',

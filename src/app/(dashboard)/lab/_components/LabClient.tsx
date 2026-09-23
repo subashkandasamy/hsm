@@ -8,7 +8,8 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog, labOrdersAwaitingPayment } from '@/app/actions/lab'
+import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog, labOrdersAwaitingPayment, listOpenCriticalResults, type OpenCritical } from '@/app/actions/lab'
+import CriticalResultsBar from './CriticalResultsBar'
 import type { LabOrder, LabTestCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -37,12 +38,13 @@ interface Props {
   verified?: LabOrder[]
   reported: LabOrder[]
   awaitingPayment?: string[]
+  critical?: OpenCritical[]
   catalog: LabTestCatalog[]
 }
 
 type TabKey = 'collect' | 'results' | 'verify' | 'reported'
 
-export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting }: Props) {
+export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting, critical: initCritical }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order')
@@ -58,6 +60,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   // Orders held up by an unpaid outpatient bill. Inpatients and cashless-
   // approved patients are never in here — same rule as collectSample.
   const [awaitingPayment, setAwaitingPayment] = useState<Set<string>>(new Set(initAwaiting ?? []))
+  const [critical, setCritical] = useState<OpenCritical[]>(initCritical ?? [])
   const [reported, setReported] = useState<LabOrder[]>(initReported)
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
@@ -86,6 +89,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
     setVerified(ver)
     setReported(r)
     setAwaitingPayment(new Set(await labOrdersAwaitingPayment(c.map((o) => o.id))))
+    setCritical(await listOpenCriticalResults())
     setCatalog(cat)
     setLoading(false)
   }
@@ -178,6 +182,9 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
           </div>
         }
       />
+
+      {/* Above everything. A potassium of 6.8 is not something to find by browsing. */}
+      <CriticalResultsBar items={critical} canAct={canProcess} onDone={refresh} />
 
       {catalog.length === 0 && <SetupNudge message="Add your lab tests to start ordering" />}
 

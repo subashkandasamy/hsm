@@ -534,3 +534,90 @@ export async function getPanelMeasurements(labMasterId: string): Promise<Array<{
     .map((r) => r.analyte)
     .filter((a): a is NonNullable<typeof a> => !!a)
 }
+
+// ── Critical results (NABL 112 §5.8) ─────────────────────────────────────────
+
+export interface OpenCritical {
+  id: string
+  lab_order_id: string
+  accession_no: string | null
+  patient_name: string
+  patient_uhid: string
+  analyte: string
+  value_num: number | null
+  unit: string | null
+  notified_to_name: string | null
+  created_at: string
+}
+
+/**
+ * Critical results nobody has confirmed telling a clinician about.
+ *
+ * This is the queue NABL §5.8 is really about: a critical value must be
+ * "communicated to the concerned clinician after proper documentation", and a
+ * red flag on a report is neither the communication nor the documentation.
+ */
+export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
+  await requirePermission((await getActorProfile()).role, 'lab:read')
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('lab_critical_notifications')
+    .select(`id, lab_order_id, value_num, created_at,
+             analyte:lab_analytes(name, short_name, unit_ucum),
+             doctor:profiles!lab_critical_notifications_notified_to_fkey(full_name),
+             order:lab_orders(accession_no, patient:patients(full_name, uhid))`)
+    .eq('acknowledged', false)
+    .order('created_at', { ascending: true })
+  if (error) { console.error('[listOpenCriticalResults]', error.message); return [] }
+
+  type Row = {
+    id: string; lab_order_id: string; value_num: number | null; created_at: string
+    analyte: { name: string; short_name: string | null; unit_ucum: string | null } | null
+    doctor: { full_name: string } | null
+    order: { accession_no: string | null; patient: { full_name: string; uhid: string } | null } | null
+  }
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    id: r.id,
+    lab_order_id: r.lab_order_id,
+    accession_no: r.order?.accession_no ?? null,
+    patient_name: r.order?.patient?.full_name ?? '—',
+    patient_uhid: r.order?.patient?.uhid ?? '—',
+    analyte: r.analyte?.short_name ?? r.analyte?.name ?? '—',
+    value_num: r.value_num,
+    unit: r.analyte?.unit_ucum ?? null,
+    notified_to_name: r.doctor?.full_name ?? null,
+    created_at: r.created_at,
+  }))
+}
+
+/**
+ * Record that the clinician was told. Closes the entry.
+ *
+ * Nothing is sent from here — a critical result is communicated by a person
+ * picking up a telephone, and pretending software did it would be the lie an
+ * assessor is looking for.
+ */
+export async function acknowledgeCritical(input: {
+  id: string; toName: string; method: string; note?: string
+}): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:process')
+  if (!input.toName.trim()) return { success: false, error: 'Who did you tell?' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('lab_critical_notifications').update({
+    notified_to_name: input.toName.trim(),
+    notified_by: actor.id,
+    notified_at: new Date().toISOString(),
+    method: input.method,
+    note: input.note?.trim() || null,
+    acknowledged: true,
+  }).eq('id', input.id).eq('acknowledged', false)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'critical_notified', 'lab_critical_notification', input.id, {
+    to: input.toName, method: input.method,
+  })
+  return { success: true }
+}
