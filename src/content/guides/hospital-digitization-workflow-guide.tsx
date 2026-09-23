@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import WorkflowDiagram from '@/components/guides/diagrams/WorkflowDiagram'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 
@@ -57,10 +58,16 @@ export default function Guide() {
       <p>
         Everything downstream depends on this step being right. Every patient needs one unique health ID
         (UHID) that every department searches against &mdash; not a fresh entry each visit. Get this wrong and
-        every later module inherits duplicate, fragmented patient records. Our{' '}
-        <Link href="/guides/patient-records-emr-uhid-guide">EMR &amp; UHID guide</Link> covers how this connects to
-        India&apos;s ABHA health ID system.
+        every later module inherits duplicate, fragmented patient records &mdash; and no amount of care in the
+        later modules fixes it. Our{' '}
+        <Link href="/guides/patient-records-emr-uhid-guide">EMR and UHID guide</Link> covers how the identity
+        is issued and, just as importantly, how a returning patient is found again.
       </p>
+      <Screenshot
+        src="/guides/patients.png" width={2560} height={1814}
+        alt="Patient register listing each patient with their UHID, age and gender, phone number, last visit and outstanding balance, with a search box above"
+        caption="Step one is a register you can search — which is what stops the second record being created."
+      />
 
       <h2>Step 2: OPD &mdash; the highest-volume workflow</h2>
       <p>
@@ -94,6 +101,11 @@ export default function Guide() {
         manually gather charges from four departments at discharge, one of the earlier steps isn&apos;t actually
         connected yet. See <Link href="/guides/ipd-billing-software-explained">IPD billing explained</Link>.
       </p>
+      <Screenshot
+        src="/guides/ipd-combined-bill.png" width={2560} height={3750}
+        alt="A combined hospital bill with room charges, nursing charges, laboratory and pharmacy sections, each line dated and subtotalled, and a totals panel"
+        caption="The proof that the earlier steps connected: nobody assembled this."
+      />
 
       <CalloutBox tone="tip" title="Digitize in phases, not all at once">
         Trying to switch every department to digital on the same day is where most rollouts struggle. A
