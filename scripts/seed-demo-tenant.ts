@@ -276,27 +276,36 @@ async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string;
     ['Urine Routine & Microscopy (R&M)','URM','Urine', null,   200, null, null],
   ]
   const rows: Array<Record<string, unknown> & { id: string; name: string; code: string; price: number; lab_master_id?: string | null }> =
-    spec.map(([name, code, sample, unit, price, lo, hi]) => ({
-      id: uuid(), tenant_id: tenantId, name, code, sample_type: sample,
-      unit, price, ref_low: lo, ref_high: hi, category: 'General', is_active: true,
+    spec.map(([name, code, , , price]) => ({
+      id: uuid(), tenant_id: tenantId, name, code, price, is_active: true,
     }))
-  // Point each one at the shared master where the match is unambiguous, the
-  // same rule migration 0174 applies to existing rows. Without this a CBC is
-  // just a name and has no analytes behind it — the panel only resolves through
-  // lab_master_id.
-  const { data: master } = await db.from('lab_tests_master').select('id, code, name')
-  const byCode = new Map<string, string[]>()
-  const byName = new Map<string, string[]>()
+  // Activate from the shared catalogue exactly the way the app does: everything
+  // except the price is copied from master. The seed used to invent its own
+  // category, unit and reference range, which is why the demo filed every test
+  // under "General" and showed haemoglobin as 13-17 when master says 11.5-17.5
+  // — a demo that did not show what a real hospital actually gets.
+  const { data: master } = await db.from('lab_tests_master').select('*')
+  const byCode = new Map<string, Array<Record<string, unknown>>>()
+  const byName = new Map<string, Array<Record<string, unknown>>>()
   for (const m of master ?? []) {
     const c = String(m.code ?? '').trim().toUpperCase()
     const n = String(m.name ?? '').trim().toLowerCase()
-    byCode.set(c, [...(byCode.get(c) ?? []), m.id as string])
-    byName.set(n, [...(byName.get(n) ?? []), m.id as string])
+    byCode.set(c, [...(byCode.get(c) ?? []), m])
+    byName.set(n, [...(byName.get(n) ?? []), m])
   }
   for (const r of rows) {
     const c = byCode.get(r.code.trim().toUpperCase())
     const n = byName.get(r.name.trim().toLowerCase())
-    r.lab_master_id = c?.length === 1 ? c[0] : n?.length === 1 ? n[0] : null
+    const m = c?.length === 1 ? c[0] : n?.length === 1 ? n[0] : null
+    if (!m) { r.lab_master_id = null; r.category = 'General'; continue }
+    r.lab_master_id   = m.id as string
+    r.name            = m.name as string
+    r.category        = (m.category as string) ?? 'General'
+    r.sample_type     = m.sample_type ?? null
+    r.unit            = m.unit ?? null
+    r.ref_low         = m.ref_low ?? null
+    r.ref_high        = m.ref_high ?? null
+    r.reference_range = m.reference_range ?? null
   }
 
   ok(`${rows.length} lab tests`, (await db.from('lab_tests_catalog').insert(rows)).error)

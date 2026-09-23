@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
-import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster } from '@/app/actions/lab'
+import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster, getPanelMeasurements } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 
 interface Props { open: boolean; onClose: () => void }
@@ -59,6 +59,19 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   const [catQuery, setCatQuery]     = useState('')
   const [catExpanded, setCatExpanded] = useState<Set<string>>(new Set())
   const [editId, setEditId]         = useState<string | null>(null)
+  // Which panel is expanded to show what it measures, and the cached list.
+  const [openPanel, setOpenPanel] = useState<string | null>(null)
+  const [panelRows, setPanelRows] = useState<Record<string, Array<{ code: string; name: string; short_name: string | null; unit_ucum: string | null }>>>({})
+
+  async function togglePanel(t: LabTestCatalog) {
+    if (!t.lab_master_id) return
+    if (openPanel === t.id) { setOpenPanel(null); return }
+    setOpenPanel(t.id)
+    if (!panelRows[t.id]) {
+      const rows = await getPanelMeasurements(t.lab_master_id)
+      setPanelRows((p) => ({ ...p, [t.id]: rows }))
+    }
+  }
   const [editForm, setEditForm]     = useState<TestForm>(BLANK)
   const [editErr, setEditErr]       = useState('')
   const [editSaving, setEditSaving] = useState(false)
@@ -333,10 +346,14 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                                       several of them vary by sex and age. The single range on the
                                       catalogue row is the old one and no longer what results are
                                       judged against, so showing it would contradict the report. */}
-                                  {(t.analyte_count ?? 0) > 0 ? (
-                                    <span style={{ color: '#0D9488' }}>
-                                      {t.analyte_count} measurement{t.analyte_count === 1 ? '' : 's'}
-                                    </span>
+                                  {(t.analyte_count ?? 0) > 1 ? (
+                                    <button onClick={() => togglePanel(t)}
+                                      className="underline underline-offset-2"
+                                      style={{ color: '#0D9488', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}>
+                                      {t.analyte_count} measurements {openPanel === t.id ? '▾' : '▸'}
+                                    </button>
+                                  ) : (t.analyte_count ?? 0) === 1 ? (
+                                    <span style={{ color: '#94A3B8' }}>1 measurement</span>
                                   ) : (t.reference_range ?? (t.ref_low != null || t.ref_high != null)) ? (
                                     <span>{t.reference_range ?? `${t.ref_low ?? '?'} – ${t.ref_high ?? '?'}`}</span>
                                   ) : null}
@@ -360,6 +377,27 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                             </div>
+                            {openPanel === t.id && (
+                              <div className="px-3 pb-3 pt-1" style={{ background: '#F8FAFC' }}>
+                                <p className="text-xs mb-1.5" style={{ color: '#94A3B8' }}>
+                                  What this panel reports — these are measurements, not tests you can
+                                  order on their own.
+                                </p>
+                                {panelRows[t.id]
+                                  ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {panelRows[t.id].map((a) => (
+                                        <span key={a.code} className="text-xs px-1.5 py-0.5 rounded"
+                                          style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0' }}>
+                                          {a.short_name ?? a.name}
+                                          {a.unit_ucum && <span style={{ color: '#94A3B8' }}> {a.unit_ucum}</span>}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )
+                                  : <p className="text-xs" style={{ color: '#94A3B8' }}>Loading…</p>}
+                              </div>
+                            )}
                             {editId === t.id && (
                               <div className="px-3 pb-3" style={{ background: '#F8FAFC' }}>
                                 <TestForm form={editForm} err={editErr} saving={editSaving} accent="#0D9488"

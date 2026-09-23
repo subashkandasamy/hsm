@@ -512,3 +512,25 @@ export async function getLabVerifier(orderId: string): Promise<string | null> {
     .eq('id', orderId).maybeSingle()
   return ((data as unknown as { verifier: { full_name: string } | null } | null)?.verifier?.full_name) ?? null
 }
+
+/**
+ * The measurements a panel reports, for the catalogue and ordering screens.
+ *
+ * Read-only: these are analytes, not tests. You cannot order "haemoglobin out
+ * of a CBC" — a standalone Haemoglobin is a different catalogue entry at a
+ * different price. This only answers the question a clinician actually asks:
+ * what does this panel give me?
+ */
+export async function getPanelMeasurements(labMasterId: string): Promise<Array<{
+  code: string; name: string; short_name: string | null; unit_ucum: string | null
+}>> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_test_analytes')
+    .select('display_order, analyte:lab_analytes(code, name, short_name, unit_ucum)')
+    .eq('lab_master_id', labMasterId)
+    .order('display_order')
+  return ((data ?? []) as unknown as Array<{ analyte: { code: string; name: string; short_name: string | null; unit_ucum: string | null } | null }>)
+    .map((r) => r.analyte)
+    .filter((a): a is NonNullable<typeof a> => !!a)
+}
