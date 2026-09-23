@@ -366,10 +366,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     slug: 'electronic-medical-records-software',
     eyebrow: 'EMR / EHR Software',
     group: GROUP_SOFTWARE,
-    tagline: 'One lifelong patient record across every visit and department — EMR/EHR that’s ABDM/ABHA-ready.',
+    tagline: 'One lifelong patient record across every visit and department, on a single timeline.',
     metaTitle: 'Electronic Medical Records (EMR/EHR) Software India',
     description:
-      'Uyirly is cloud EMR/EHR software for Indian hospitals and clinics — one lifelong patient record across OPD, IPD, lab, pharmacy and radiology, ABDM/ABHA-ready. Free trial.',
+      'Uyirly is cloud EMR/EHR software for Indian hospitals and clinics — one lifelong patient record across OPD, IPD, lab, pharmacy and radiology, held in India. Free trial.',
     keywords: [
       'electronic medical records software',
       'emr software',
@@ -384,11 +384,11 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     primaryKeyword: 'electronic medical records software',
     h1: 'Electronic medical records, one lifelong patient history',
     subhead:
-      'Uyirly’s electronic medical records software keeps a single record for each patient across every visit and every department — consultations, admissions, lab, radiology, pharmacy and billing — instead of scattered files that never meet. It’s a full EMR inside your hospital and an ABDM/ABHA-ready EHR that can link to a patient’s national health account.',
+      'Uyirly’s electronic medical records software keeps a single record for each patient across every visit and every department — consultations, admissions, lab, radiology, pharmacy and billing — instead of scattered files that never meet. It is a full EMR inside your hospital, with the record building itself as the hospital runs.',
     heroBullets: [
       'One UHID that unifies a patient’s whole history',
       'Consultations, labs, scans and medicines on one timeline',
-      'ABDM/ABHA-ready for India’s digital health mission',
+      'Allergies that warn by drug class when a doctor prescribes',
       'Cloud-based, role-based access, fully audit-logged',
     ],
     sections: [
@@ -399,21 +399,21 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'One UHID that unifies a patient’s whole history',
           'Consultations, vitals, labs, scans and medicines on one timeline',
-          'ABDM/ABHA-ready for India’s digital health mission',
+          'Allergies that warn by drug class when a doctor prescribes',
           'Cloud-based, role-based access, fully audit-logged',
         ],
       },
       {
         h2: 'EMR vs EHR — and why it matters in India',
         body:
-          'People use the two terms loosely, but there is a simple difference. An **EMR** (electronic medical record) is the record within one hospital. An **EHR** (electronic health record) is designed to follow the patient between providers. India’s [ABDM](/guides/abdm-abha-health-id-hospitals-guide) — the Ayushman Bharat Digital Mission — is building exactly that portability through the ABHA health ID. Uyirly is built for both: a complete EMR inside your facility, and ABDM/ABHA-ready so records can link to a patient’s national health account instead of staying locked in one building.',
+          'People use the two terms loosely, but there is a simple difference. An **EMR** (electronic medical record) is the record within one hospital. An **EHR** (electronic health record) is designed to follow the patient between providers. India’s [ABDM](/guides/abdm-abha-health-id-hospitals-guide) — the Ayushman Bharat Digital Mission — is building exactly that portability through the ABHA health ID. Uyirly is a complete EMR inside your facility. It is **not** ABDM integrated today, and we would rather say so than use the word “ready”: there is no ABHA field and no health information exchange. What it does give you is the prerequisite — one identity per patient with the whole history under it, which is what any future linkage would attach to.',
         table: {
           headers: ['', 'EMR', 'EHR'],
           rows: [
             ['Scope', 'One hospital or clinic', 'Follows the patient everywhere'],
             ['Owner', 'The facility', 'The patient (via ABHA)'],
             ['In India', 'Your day-to-day record', 'Linked through ABDM/ABHA'],
-            ['Uyirly', 'Full EMR built in', 'ABDM/ABHA-ready'],
+            ['Uyirly', 'Full EMR built in', 'Not ABDM integrated today'],
           ],
         },
       },
@@ -463,10 +463,10 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'One record, safely shared',
         body:
-          'A shared record is only safe if access is controlled. Uyirly is role-based — a receptionist, a doctor, a lab technician and an accountant each see exactly what their job needs — and every view and change is audit-logged. The record is one; who can read and edit which part of it is not. That combination makes it both useful across the hospital and defensible under India’s [DPDP data-protection rules](/guides/hospital-software-data-security-dpdp), with data stored in India.',
+          'A shared record is only safe if access is controlled. Uyirly is role-based — a receptionist, a doctor, a lab technician and an accountant each see exactly what their job needs — and every change is audit-logged. The record is one; who can read and edit which part of it is not. That combination makes it both useful across the hospital and defensible under India’s [DPDP data-protection rules](/guides/hospital-software-data-security-dpdp), with data stored in India.',
         bullets: [
           'Role-based access for reception, doctors, lab, pharmacy and accounts',
-          'Every view and edit audit-logged',
+          'Every change audit-logged — who, what, when',
           'Data stored in India, aligned with the DPDP Act',
         ],
       },
@@ -474,15 +474,15 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     faqs: [
       {
         q: 'What is the difference between EMR and EHR software?',
-        a: 'An EMR (electronic medical record) is the digital chart of a patient within a single hospital or clinic. An EHR (electronic health record) is designed to travel with the patient across different providers. Uyirly is a full EMR inside your facility and is ABDM/ABHA-ready, so records can link to a patient’s national health account under India’s digital health mission.',
+        a: 'An EMR (electronic medical record) is the digital chart of a patient within a single hospital or clinic. An EHR (electronic health record) is designed to travel with the patient across different providers. Uyirly is a full EMR inside your facility. It is not connected to ABDM, so it is not yet an EHR in that second sense.',
       },
       {
         q: 'Is the EMR ABDM and ABHA compliant?',
-        a: 'Uyirly is built to be ABDM/ABHA-ready — it can link a patient’s records to their ABHA (Ayushman Bharat Health Account) health ID so the record fits into India’s national digital health framework, rather than staying locked inside one hospital.',
+        a: 'No, and we would rather be direct about it than say “ready”. There is no ABHA field and no ABDM health information exchange in Uyirly today. What you do get is the prerequisite for any such linkage: one identity per patient with the whole history filed under it, held in India.',
       },
       {
         q: 'Who can see a patient’s medical record?',
-        a: 'Access is role-based: reception, doctors, lab, pharmacy and accounts each see only what their role needs, and every view and edit is audit-logged. The record is unified, but access to each part is controlled.',
+        a: 'Access is role-based: reception, doctors, lab, pharmacy and accounts each see only what their role needs, and every change is audit-logged with who made it and when. Reads are not logged. The record is unified, but access to each part is controlled.',
       },
       {
         q: 'Can it replace our paper files and scanned records?',
@@ -525,7 +525,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       'OPD, IPD, pharmacy, lab, radiology and billing in one place',
       'One patient record and one bill across the whole hospital',
       'Insurance/TPA, blood bank, OT and emergency built in',
-      'Cloud-based, ABDM-ready and NABH-friendly',
+      'Cloud-based, NABH-friendly, and held in India',
     ],
     sections: [
       {
@@ -672,7 +672,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       },
       {
         q: 'Is it ABDM / ABHA and NABH ready?',
-        a: 'Yes. Records are ABDM/ABHA-ready, and the documentation and workflows are built to map to NABH expectations, which makes audits and accreditation easier to prepare for.',
+        a: 'Two different answers. ABDM: no — there is no ABHA linkage in Uyirly today. NABH: the documentation and workflows are built to map to what NABH expects — one patient record, audit logs, nurse-to-patient ratios, drug schedules — which makes an audit easier to prepare for, though no software makes a hospital accredited by itself.',
       },
     ],
     related: [
@@ -1235,7 +1235,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       {
         h2: 'Built for Indian multi-specialty hospitals',
         body:
-          'Uyirly handles what an Indian multi-specialty hospital actually deals with — GST-ready billing, insurance and TPA cashless claims, ABDM/ABHA-ready records and NABH-friendly documentation — on flat monthly pricing with no per-bed metering. It’s cloud-based, so multiple branches read from the same live patient database, and it scales from a growing hospital to a large institution on the same platform.',
+          'Uyirly handles what an Indian multi-specialty hospital actually deals with — GST-ready billing, insurance and TPA cashless claims, and NABH-friendly documentation — on flat monthly pricing with no per-bed metering. It’s cloud-based, so multiple branches read from the same live patient database, and it scales from a growing hospital to a large institution on the same platform.',
         bullets: [
           'GST billing, TPA claims, ABDM/ABHA records, NABH documentation',
           'Cloud-based, multi-branch on one live database',
@@ -1723,7 +1723,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         preview: 'dashboard',
         bullets: [
           'One patient and one bill across every department',
-          'GST-ready billing, TPA cashless claims, ABDM/ABHA-ready records',
+          'GST-ready billing, TPA cashless claims, one record per patient',
           'Cloud-based — nothing to install, works on any device',
         ],
       },
@@ -1833,7 +1833,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'One patient and one bill, no re-entry between departments',
           'Daily IPD auto-billing; discharge bill ready at checkout',
-          'GST billing, TPA claims, ABDM/ABHA-ready records',
+          'GST billing, TPA claims, one record per patient',
         ],
       },
       {
@@ -1929,7 +1929,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'One patient record across clinic and hospital workflows',
           'Prescription, pharmacy and billing tied to the consultation',
-          'GST billing, TPA claims, ABDM/ABHA-ready records',
+          'GST billing, TPA claims, one record per patient',
         ],
       },
       {
@@ -2025,7 +2025,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         preview: 'dashboard',
         bullets: [
           'One patient and one bill across every department',
-          'GST billing, TPA cashless claims, ABDM/ABHA-ready records',
+          'GST billing, TPA cashless claims, one record per patient',
           'Patient app with family accounts — reports & bills online',
         ],
       },

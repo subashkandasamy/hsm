@@ -68,15 +68,22 @@ export default function Guide() {
       <h2>How Uyirly handles data migration</h2>
       <p>
         Moving to <Link href="/hospital-management-software">Uyirly</Link> does not mean re-typing years of
-        records before you can start. You can go live immediately with new patients and bring historical data
-        across in the background &mdash; patients, and the essentials like contact details and key history &mdash; so
-        the hospital is running from day one while the old data catches up. Because it is cloud-based, there
-        is no server to set up first, and your data is stored in India and backed up automatically.
+        records before you can start. The usual path is to go live with <strong>new</strong> patients the same
+        day and let the record build forwards, keeping the old register or system available for looking up
+        history when someone returns. Within a few months almost every regular patient has been seen once and
+        has a real record; the ones who have not are the ones you were rarely looking up anyway.
+      </p>
+      <p>
+        Be clear-eyed about the alternative: there is <strong>no self-serve bulk patient import</strong> in
+        Uyirly today. If you need a patient list loaded before you start, that is a conversation to have
+        before go-live rather than an afternoon&apos;s work in the app. And however it is loaded, the
+        deduplication question from earlier in this guide applies &mdash; a bad import is worse than none.
       </p>
       <ul>
-        <li>Go live with new patients the same day; migrate history in parallel.</li>
-        <li>Patient records carry a single UHID, so nothing is duplicated.</li>
-        <li>Data stored in India with automatic backups.</li>
+        <li>Go live with new patients the same day; no migration has to finish first.</li>
+        <li>Every patient carries one UHID, so the forward-built record does not fragment.</li>
+        <li>Data held in India &mdash; the database runs in the Mumbai region &mdash; with automatic backups.</li>
+        <li>No bulk import tool in the product; talk to us before go-live if history has to come across.</li>
       </ul>
 
       <h2>Getting started</h2>

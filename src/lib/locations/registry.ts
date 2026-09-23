@@ -64,7 +64,7 @@ export function getCityMeta(slug: string): SolutionMeta | undefined {
     heroBullets: [
       'OPD, IPD, pharmacy, lab and billing on one platform',
       'One patient record and one bill across every department',
-      'GST billing, insurance/TPA claims, ABDM/ABHA-ready records',
+      'GST billing, insurance/TPA claims, one record per patient',
       'Cloud-based — nothing to install; data stored in India',
     ],
     sections: [
@@ -94,7 +94,7 @@ export function getCityMeta(slug: string): SolutionMeta | undefined {
           {
             h3: 'Built for India',
             body:
-              'GST-ready billing, insurance and TPA cashless claims, and ABDM/ABHA-ready records are built in — not bolted on — so your billing and paperwork match how Indian hospitals actually run.',
+              'GST-ready billing and insurance and TPA cashless claims are built in — not bolted on — so your billing and paperwork match how Indian hospitals actually run.',
           },
           {
             h3: 'Cloud-based, works across branches',

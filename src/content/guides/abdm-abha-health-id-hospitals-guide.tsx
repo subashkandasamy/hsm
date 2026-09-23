@@ -53,18 +53,25 @@ export default function Guide() {
         <li>Some scheme empanelments and government programs increasingly favor or require ABDM-compatible systems.</li>
         <li>Adoption is still growing — a hospital doesn&apos;t need this on day one, but a vendor with no path toward it is worth questioning.</li>
       </ul>
-      <h2>How Uyirly fits ABDM and ABHA</h2>
+      <h2>Where Uyirly stands on this</h2>
       <p>
-        <Link href="/electronic-medical-records-software">Uyirly</Link> keeps a complete electronic medical
-        record inside your hospital and is built to be ABDM/ABHA-ready, so a patient&apos;s records can link to
-        their ABHA (Ayushman Bharat Health Account) rather than staying locked in one building. Every patient
-        already has a single UHID that unifies their history, which is the foundation any national health-ID
-        linkage needs.
+        Plainly, because &ldquo;ABDM-ready&rdquo; is a phrase that gets used to mean very little:{' '}
+        <Link href="/electronic-medical-records-software">Uyirly</Link> is <strong>not</strong> ABDM
+        integrated. There is no ABHA field, no health information exchange, and no ABDM registry
+        registration. A hospital that needs to link records to a patient&apos;s ABHA today needs something
+        else, or needs to wait.
+      </p>
+      <p>
+        What Uyirly does have is the thing any such linkage rests on: one internal identity per patient,
+        with every visit, order, report and bill filed under it. Hospitals whose records are fragmented
+        across duplicate registrations cannot link to a national ID even after the integration exists,
+        because there is no single record to link. Getting that right is worth doing regardless of what
+        happens to ABDM.
       </p>
       <ul>
-        <li>A full EMR today, ABDM/ABHA-ready for national linkage.</li>
-        <li>One UHID per patient &mdash; the base for linking to an ABHA.</li>
-        <li>Records stored in India, aligned with the DPDP Act.</li>
+        <li>A full EMR inside the hospital, with one UHID per patient.</li>
+        <li>No ABDM or ABHA integration at present.</li>
+        <li>Records held in India &mdash; the database runs in the Mumbai region &mdash; aligned with the DPDP Act.</li>
       </ul>
 
       <h2>Getting started</h2>

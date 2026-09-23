@@ -70,14 +70,14 @@ export default function Guide() {
         <Link href="/cloud-based-hospital-management-system">Uyirly</Link> is built so patient data is safe by
         default. Data is stored in India and aligned with the DPDP Act. Each hospital&apos;s data is kept strictly
         separate from every other hospital&apos;s, access is controlled by staff role so people only see what their
-        job needs, all traffic is encrypted, and every view and change is audit-logged. Backups are automatic,
+        job needs, all traffic is encrypted, and every change is audit-logged. Backups are automatic,
         so a stolen or broken PC never means lost records &mdash; which is exactly where a single clinic computer
         is most at risk.
       </p>
       <ul>
         <li>Data stored in India, aligned with the DPDP Act.</li>
         <li>Strict separation between hospitals; role-based access within each.</li>
-        <li>Encryption in transit and an audit log of every action.</li>
+        <li>Encryption in transit, and an audit log of every change &mdash; who changed what, and when. Reads are not logged, so the trail answers &ldquo;who altered this record&rdquo; rather than &ldquo;who looked at it&rdquo;.</li>
         <li>Automatic backups &mdash; no data lost when a local machine dies.</li>
       </ul>
 

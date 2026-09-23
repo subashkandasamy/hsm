@@ -68,7 +68,8 @@ export default function Guide() {
         <li>Structured, complete digital records instead of scattered paper.</li>
         <li>Role-based access, so only the right staff see the right data.</li>
         <li>Audit trails on every action, with data stored in India.</li>
-        <li>Consistent workflows &mdash; consent, checklists, prescriptions &mdash; captured as you work.</li>
+        <li>Prescriptions, orders and nursing records captured as you work, rather than written up afterwards.</li>
+        <li>Consent forms and other paperwork held against the patient as uploaded documents &mdash; note these are scanned documents, not structured consent workflows, and Uyirly has no built-in NABH checklist tooling.</li>
       </ul>
 
       <h2>Getting started</h2>

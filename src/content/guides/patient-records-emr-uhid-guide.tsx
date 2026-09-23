@@ -150,8 +150,9 @@ export default function Guide() {
       <p>
         A record that everybody can open is a different risk from a paper file, because it leaves no trace.
         Access is by role — reception sees demographics and bills, clinical staff see clinical history,
-        accounts sees money — and views and edits are logged, which is what turns &ldquo;who looked at this
-        record&rdquo; into a question with an answer. The wider obligations are covered in our{' '}
+        accounts sees money — and every change is logged with who made it and when. Worth knowing the limit:
+        reads are not logged, so the trail answers &ldquo;who altered this record&rdquo; rather than &ldquo;who
+        opened it&rdquo;. The wider obligations are covered in our{' '}
         <Link href="/guides/hospital-software-data-security-dpdp">data security and DPDP guide</Link>.
       </p>
 
@@ -164,7 +165,7 @@ export default function Guide() {
         <li>Allergies as allergen, reaction and severity — a banner on the record and a class-aware warning at prescribing.</li>
         <li>Drug interaction warnings against the rest of the same prescription.</li>
         <li>Outstanding balance on the record, so nobody starts a visit unaware of it.</li>
-        <li>Role-based access, with views and edits audit-logged.</li>
+        <li>Role-based access, with every change audit-logged (reads are not).</li>
       </ul>
 
       <h2>Getting started</h2>
