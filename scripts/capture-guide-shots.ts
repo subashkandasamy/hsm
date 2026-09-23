@@ -81,6 +81,14 @@ async function resolvePlaceholders(): Promise<Record<string, string>> {
     paedPatient: await patient('Aarav%'),
     ipdPatient: await patient('Saraswathi%'),
     allergyPatient: await patient('Murugan%'),
+    urineOrder: await (async () => {
+      const { data } = await svc.from('lab_orders').select('id, items:lab_order_items(test:lab_tests_catalog(code))')
+        .eq('tenant_id', t).eq('status', 'reported')
+      for (const o of (data ?? []) as Array<{ id: string; items: Array<{ test: { code: string } | null }> }>) {
+        if (o.items?.some((i) => i.test?.code === 'URM')) return o.id
+      }
+      return ''
+    })(),
     eyePatient: await patient('Kavya%'),
     eyeVisit: await visitOf('Kavya%'),
     dentalVisit: await visitOf('Karthik%'),

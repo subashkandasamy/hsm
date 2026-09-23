@@ -471,6 +471,22 @@ export async function getPortalRadiologyReport(orderId: string): Promise<{
   return { order, patient, tenantProfile, imageUrl, imageIsPdf }
 }
 
+/**
+ * The analyte results behind a patient's lab report.
+ *
+ * Goes through ownedOrderPatient like every other portal fetch, so it inherits
+ * both the ownership check and the 'reported' gate — a patient cannot reach the
+ * twenty numbers of a CBC any earlier than they can reach the report itself.
+ */
+export async function getPortalLabAnalytes(orderId: string): Promise<unknown[]> {
+  const svc = createServiceClient()
+  const owned = await ownedOrderPatient(svc, 'lab_orders', orderId)
+  if (!owned) return []
+  const { data, error } = await svc.rpc('get_lab_report_analytes', { p_order_id: orderId })
+  if (error) { console.error('[getPortalLabAnalytes]', error.message); return [] }
+  return (data ?? []) as unknown[]
+}
+
 // Lightweight signed-URL fetch for inline scan viewing in the Scans tab.
 export async function getPortalScanImageUrl(orderId: string): Promise<{ url: string | null; isPdf: boolean }> {
   const svc = createServiceClient()

@@ -265,6 +265,11 @@ export const SHOTS: Shot[] = [
     // what makes the whole panel visible in one shot.
     selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 1180, height: 1500,
   },
+  {
+    name: 'lab-report-panel',
+    path: '/print/lab/{urineOrder}',
+    selector: 'main, body > div', wait: 4000, width: 1000, height: 1500,
+  },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
   {
     name: 'lab-reported',

@@ -9,6 +9,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { isBillCashlessCovered, resolveServiceBill, billsCashlessCovered } from '@/lib/cashlessCover'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
+import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -456,4 +457,22 @@ export async function saveAnalyteResults(
     analytes: row?.written ?? 0, critical: row?.critical ?? 0,
   })
   return { success: true, written: row?.written ?? 0, critical: row?.critical ?? 0 }
+}
+
+/** The analyte results a printed report shows, with the range that was applied. */
+export async function getLabReportAnalytes(orderId: string): Promise<ReportAnalyte[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('get_lab_report_analytes', { p_order_id: orderId })
+  if (error) { console.error('[getLabReportAnalytes]', error.message); return [] }
+  return (data ?? []) as ReportAnalyte[]
+}
+
+/** Who authorised the release, for the signature block ISO 15189 Cl. 5.8.3 asks for. */
+export async function getLabVerifier(orderId: string): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_orders')
+    .select('verifier:profiles!lab_orders_verified_by_fkey(full_name)')
+    .eq('id', orderId).maybeSingle()
+  return ((data as unknown as { verifier: { full_name: string } | null } | null)?.verifier?.full_name) ?? null
 }

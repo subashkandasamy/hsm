@@ -600,6 +600,13 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
             test_id: urm.id, analyte_id: byCode.get(code), value_num: num, value_text: txt,
           })),
       })
+      // Released, so there is a finished multi-analyte report to print.
+      await db.from('lab_orders').update({
+        status: 'reported',
+        verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
+        verified_at: new Date(Date.now() - 3600000).toISOString(),
+        reported_at: new Date(Date.now() - 3600000).toISOString(),
+      }).eq('id', urineOrder)
       ok('a urine routine, reported the way a strip reports', urErr)
     }
   }
