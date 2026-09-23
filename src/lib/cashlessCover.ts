@@ -71,3 +71,73 @@ export async function isBillCashlessCovered(
     .eq('eligibility_status', 'approved')
   return (count ?? 0) > 0
 }
+
+/**
+ * The batched form of isBillCashlessCovered, for a worklist.
+ *
+ * Same rule, same scopes — an approval raised against one bill of a visit or
+ * admission covers the whole encounter — but resolved in three queries instead
+ * of three per row. Used to tell a screen which orders are genuinely waiting on
+ * money; it must agree exactly with the single-bill check, because a screen
+ * that wrongly says "awaiting payment" stops a collection that should have gone
+ * ahead.
+ */
+export async function billsCashlessCovered(
+  supabase: Supa,
+  bills: Array<{ id: string; visit_id: string | null; admission_id: string | null }>,
+): Promise<Set<string>> {
+  const covered = new Set<string>()
+  if (!bills.length) return covered
+
+  const visitIds = [...new Set(bills.map((b) => b.visit_id).filter(Boolean))] as string[]
+  const admIds = [...new Set(bills.map((b) => b.admission_id).filter(Boolean))] as string[]
+
+  // Every bill sharing an encounter with one of ours — an approval on the
+  // consultation bill lifts the gate for the visit's later lab bills.
+  const sibling = new Map<string, string[]>()   // encounter key -> bill ids
+  const allBillIds = new Set(bills.map((b) => b.id))
+  if (visitIds.length) {
+    const { data } = await supabase.from('bills').select('id, visit_id').in('visit_id', visitIds)
+    for (const b of data ?? []) {
+      const k = `v:${b.visit_id}`
+      sibling.set(k, [...(sibling.get(k) ?? []), b.id as string])
+      allBillIds.add(b.id as string)
+    }
+  }
+  if (admIds.length) {
+    const { data } = await supabase.from('bills').select('id, admission_id').in('admission_id', admIds)
+    for (const b of data ?? []) {
+      const k = `a:${b.admission_id}`
+      sibling.set(k, [...(sibling.get(k) ?? []), b.id as string])
+      allBillIds.add(b.id as string)
+    }
+  }
+
+  const scopes: string[] = [`bill_id.in.(${[...allBillIds].join(',')})`]
+  if (visitIds.length) scopes.push(`visit_id.in.(${visitIds.join(',')})`)
+  if (admIds.length) scopes.push(`admission_id.in.(${admIds.join(',')})`)
+
+  const { data: claims } = await supabase
+    .from('insurance_claims')
+    .select('bill_id, visit_id, admission_id')
+    .or(scopes.join(','))
+    .eq('eligibility_status', 'approved')
+
+  const okBill = new Set((claims ?? []).map((c) => c.bill_id as string).filter(Boolean))
+  const okVisit = new Set((claims ?? []).map((c) => c.visit_id as string).filter(Boolean))
+  const okAdm = new Set((claims ?? []).map((c) => c.admission_id as string).filter(Boolean))
+
+  for (const b of bills) {
+    const sibs = [
+      ...(b.visit_id ? sibling.get(`v:${b.visit_id}`) ?? [] : []),
+      ...(b.admission_id ? sibling.get(`a:${b.admission_id}`) ?? [] : []),
+      b.id,
+    ]
+    if (sibs.some((id) => okBill.has(id))
+      || (b.visit_id && okVisit.has(b.visit_id))
+      || (b.admission_id && okAdm.has(b.admission_id))) {
+      covered.add(b.id)
+    }
+  }
+  return covered
+}

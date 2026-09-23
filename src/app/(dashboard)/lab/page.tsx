@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic'
-import { listLabOrders, listLabCatalog } from '@/app/actions/lab'
+import { listLabOrders, listLabCatalog, labOrdersAwaitingPayment } from '@/app/actions/lab'
 import LabClient from './_components/LabClient'
 
 export default async function LaboratoryPage() {
@@ -12,8 +12,13 @@ export default async function LaboratoryPage() {
     listLabCatalog(),
   ])
 
+  // Computed here rather than after the first client refresh, so the worklist
+  // never paints a live Collect button on a sample that is waiting on money.
+  const awaitingPayment = await labOrdersAwaitingPayment(toCollect.map((o) => o.id))
+
   return (
     <LabClient
+      awaitingPayment={awaitingPayment}
       toCollect={toCollect}
       resultQueue={[...collected, ...processing]}
       verified={verified}

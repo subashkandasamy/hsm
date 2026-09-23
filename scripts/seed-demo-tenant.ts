@@ -44,6 +44,13 @@ const ok = (label: string, error: { message: string } | null) => {
   console.log(`  ✓ ${label}`)
 }
 
+/** The tenant's next bill number, from the same sequence the app uses. */
+async function nextBillNo(tenantId: string): Promise<string> {
+  const { data, error } = await db.rpc('get_next_bill_no', { p_tenant_id: tenantId })
+  if (error || !data) { console.error(`  ✗ bill number: ${error?.message}`); process.exit(1) }
+  return data as string
+}
+
 /** YYYY-MM-DD, n days from today. */
 function day(offset: number): string {
   const d = new Date()
@@ -511,6 +518,27 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
       verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
       verified_at: new Date(Date.now() - 900000).toISOString() },
   ])).error)
+  // The outpatient order that is waiting on money. Without a real bill linked
+  // to it the payment gate is inert, and the gate is the thing that decides
+  // whether a sample may be collected at all.
+  {
+    const billId = uuid()
+    const price = pick('Complete Blood Count').price
+    await db.from('bills').insert({
+      id: billId, tenant_id: tenantId, patient_id: patientId(s, 'Divya'),
+      bill_no: await nextBillNo(tenantId), bill_source: 'lab', billing_date: day(0),
+      subtotal: price, discount: 0, tax: 0, total: price, paid: 0, status: 'unpaid',
+      created_by: s.staff.find((x) => x.role === 'accountant')!.id,
+    })
+    await db.from('bill_items').insert({
+      id: uuid(), tenant_id: tenantId, bill_id: billId, source: 'lab', ref_id: pending,
+      description: 'Complete Blood Count (CBC)', qty: 1, unit_price: price, amount: price,
+      taxable_value: price, tax_amount: 0, gst_rate: 0,
+    })
+    await db.from('lab_orders').update({ billing_status: 'billed' }).eq('id', pending)
+    ok('an outpatient lab order awaiting payment', null)
+  }
+
   ok('lab results', (await db.from('lab_order_items').insert([
     { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('HbA1c').id,
       price_snapshot: pick('HbA1c').price, result_value: 8.2, unit: '%', flag: 'high' },

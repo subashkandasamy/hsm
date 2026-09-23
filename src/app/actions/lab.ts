@@ -6,7 +6,7 @@ import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
+import { isBillCashlessCovered, resolveServiceBill, billsCashlessCovered } from '@/lib/cashlessCover'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag } from '@/lib/types'
 
@@ -369,4 +369,45 @@ export async function listLabOrders(filters?: {
 
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as LabOrder[]
+}
+
+/**
+ * Which of these orders cannot be collected yet because the money has not
+ * arrived. Lets the worklist say so on the row instead of letting somebody
+ * press Collect and read an error.
+ *
+ * Mirrors collectSample exactly, so the screen and the action never disagree:
+ * an inpatient is never blocked — their charge settles into the combined bill
+ * at discharge — and neither is a patient with an eligibility-approved cashless
+ * claim on the encounter. Only an unpaid outpatient bill holds a sample up.
+ *
+ * Three queries regardless of how many orders are on screen.
+ */
+export async function labOrdersAwaitingPayment(orderIds: string[]): Promise<string[]> {
+  if (!orderIds.length) return []
+  const supabase = await createClient()
+
+  const { data: orders } = await supabase
+    .from('lab_orders').select('id, admission_id').in('id', orderIds)
+  // Inpatients are exempt by design — nobody waits on cash in a ward.
+  const opd = (orders ?? []).filter((o) => !o.admission_id).map((o) => o.id as string)
+  if (!opd.length) return []
+
+  const { data: items } = await supabase
+    .from('bill_items')
+    .select('ref_id, bill:bills(id, status, visit_id, admission_id)')
+    .eq('source', 'lab').in('ref_id', opd)
+
+  type B = { id: string; status: string; visit_id: string | null; admission_id: string | null }
+  const billOf = new Map<string, B>()
+  for (const it of items ?? []) {
+    const b = (it as unknown as { ref_id: string; bill: B | null }).bill
+    if (b && b.status !== 'cancelled') billOf.set((it as unknown as { ref_id: string }).ref_id, b)
+  }
+
+  const unpaid = [...billOf.entries()].filter(([, b]) => b.status !== 'paid')
+  if (!unpaid.length) return []
+
+  const covered = await billsCashlessCovered(supabase, unpaid.map(([, b]) => b))
+  return unpaid.filter(([, b]) => !covered.has(b.id)).map(([orderId]) => orderId)
 }

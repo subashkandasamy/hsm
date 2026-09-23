@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Plus, RefreshCw, FlaskConical, Settings, Printer } from 'lucide-react'
+import { Plus, RefreshCw, FlaskConical, Settings, Printer, IndianRupee } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog } from '@/app/actions/lab'
+import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog, labOrdersAwaitingPayment } from '@/app/actions/lab'
 import type { LabOrder, LabTestCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -36,12 +36,13 @@ interface Props {
   resultQueue: LabOrder[]
   verified?: LabOrder[]
   reported: LabOrder[]
+  awaitingPayment?: string[]
   catalog: LabTestCatalog[]
 }
 
 type TabKey = 'collect' | 'results' | 'verify' | 'reported'
 
-export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog }: Props) {
+export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order')
@@ -54,6 +55,9 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [toCollect, setToCollect] = useState<LabOrder[]>(initCollect)
   const [resultQueue, setResultQueue] = useState<LabOrder[]>(initQueue)
   const [verified, setVerified] = useState<LabOrder[]>(initVerified ?? [])
+  // Orders held up by an unpaid outpatient bill. Inpatients and cashless-
+  // approved patients are never in here — same rule as collectSample.
+  const [awaitingPayment, setAwaitingPayment] = useState<Set<string>>(new Set(initAwaiting ?? []))
   const [reported, setReported] = useState<LabOrder[]>(initReported)
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
@@ -81,6 +85,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
     setResultQueue([...col, ...proc])
     setVerified(ver)
     setReported(r)
+    setAwaitingPayment(new Set(await labOrdersAwaitingPayment(c.map((o) => o.id))))
     setCatalog(cat)
     setLoading(false)
   }
@@ -256,7 +261,14 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                           <Printer className="w-3 h-3" /> Label
                         </button>
                       )}
-                      {canProcess && (
+                      {canProcess && (awaitingPayment.has(order.id) ? (
+                        <span
+                          title="An outpatient sample is collected once the bill is paid, or once a cashless claim is approved. Inpatients are not held up."
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+                          style={{ background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                          <IndianRupee className="w-3 h-3" /> Awaiting payment
+                        </span>
+                      ) : (
                         <button
                           onClick={() => handleCollect(order.id)}
                           disabled={actionId === order.id}
@@ -264,7 +276,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                           style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
                           {actionId === order.id ? 'Collecting…' : 'Collect Sample'}
                         </button>
-                      )}
+                      ))}
                     </>
                   )}
                   {tab === 'results' && canProcess && (
