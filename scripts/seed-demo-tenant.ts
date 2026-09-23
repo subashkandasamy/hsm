@@ -270,10 +270,30 @@ async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string;
     ['Thyroid Profile (T3 T4 TSH)','THY',  'Blood', 'mIU/L',   650, 0.4, 4.0],
     ['Urine Routine',              'URIN', 'Urine', null,      200, null, null],
   ]
-  const rows = spec.map(([name, code, sample, unit, price, lo, hi]) => ({
-    id: uuid(), tenant_id: tenantId, name, code, sample_type: sample,
-    unit, price, ref_low: lo, ref_high: hi, category: 'General', is_active: true,
-  }))
+  const rows: Array<Record<string, unknown> & { id: string; name: string; code: string; price: number; lab_master_id?: string | null }> =
+    spec.map(([name, code, sample, unit, price, lo, hi]) => ({
+      id: uuid(), tenant_id: tenantId, name, code, sample_type: sample,
+      unit, price, ref_low: lo, ref_high: hi, category: 'General', is_active: true,
+    }))
+  // Point each one at the shared master where the match is unambiguous, the
+  // same rule migration 0174 applies to existing rows. Without this a CBC is
+  // just a name and has no analytes behind it — the panel only resolves through
+  // lab_master_id.
+  const { data: master } = await db.from('lab_tests_master').select('id, code, name')
+  const byCode = new Map<string, string[]>()
+  const byName = new Map<string, string[]>()
+  for (const m of master ?? []) {
+    const c = String(m.code ?? '').trim().toUpperCase()
+    const n = String(m.name ?? '').trim().toLowerCase()
+    byCode.set(c, [...(byCode.get(c) ?? []), m.id as string])
+    byName.set(n, [...(byName.get(n) ?? []), m.id as string])
+  }
+  for (const r of rows) {
+    const c = byCode.get(r.code.trim().toUpperCase())
+    const n = byName.get(r.name.trim().toLowerCase())
+    r.lab_master_id = c?.length === 1 ? c[0] : n?.length === 1 ? n[0] : null
+  }
+
   ok(`${rows.length} lab tests`, (await db.from('lab_tests_catalog').insert(rows)).error)
 
   const scans = [
