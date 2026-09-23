@@ -311,11 +311,14 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                       <div>
                         {group.map(t => (
                           <Fragment key={t.id}>
-                            <div className="flex items-center gap-3 px-3 py-2.5"
+                            {/* The price, status and edit control are all flex-shrink-0,
+                                so on a phone they crushed the name to "Complete Blo…".
+                                Letting the name wrap costs a line and reads. */}
+                            <div className="flex items-start gap-3 px-3 py-2.5"
                               style={{ borderBottom: '1px solid #F8FAFC', background: t.is_active ? '#fff' : '#FAFAFA' }}>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-sm font-medium truncate" style={{ color: t.is_active ? '#0F172A' : '#94A3B8' }}>
+                                <div className="flex items-start gap-1.5 flex-wrap">
+                                  <span className="text-sm font-medium" style={{ color: t.is_active ? '#0F172A' : '#94A3B8' }}>
                                     {t.name}
                                   </span>
                                   {t.lab_master_id && (
@@ -326,9 +329,17 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                                 <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: '#94A3B8' }}>
                                   {t.code && <span className="font-mono">{t.code}</span>}
                                   {t.sample_type && <span className="capitalize">{t.sample_type}</span>}
-                                  {(t.reference_range ?? (t.ref_low != null || t.ref_high != null)) && (
+                                  {/* A test with analytes carries a range per measurement, and
+                                      several of them vary by sex and age. The single range on the
+                                      catalogue row is the old one and no longer what results are
+                                      judged against, so showing it would contradict the report. */}
+                                  {(t.analyte_count ?? 0) > 0 ? (
+                                    <span style={{ color: '#0D9488' }}>
+                                      {t.analyte_count} measurement{t.analyte_count === 1 ? '' : 's'}
+                                    </span>
+                                  ) : (t.reference_range ?? (t.ref_low != null || t.ref_high != null)) ? (
                                     <span>{t.reference_range ?? `${t.ref_low ?? '?'} – ${t.ref_high ?? '?'}`}</span>
-                                  )}
+                                  ) : null}
                                 </div>
                               </div>
                               <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#0D9488' }}>
@@ -400,9 +411,12 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                 return (
                   <div key={cat} className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                     {/* Group header */}
-                    <div className="flex items-center gap-2 px-3 py-2.5"
+                    {/* Stacked on a phone. Side by side the price box and Activate All
+                        are flex-shrink-0, so they squeezed the category name down to
+                        "A." — every group looked identical on a narrow screen. */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2.5"
                       style={{ background: '#F8FAFC', borderBottom: expanded ? '1px solid #E2E8F0' : 'none' }}>
-                      <button onClick={() => toggleMasterGroup(cat)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                      <button onClick={() => toggleMasterGroup(cat)} className="flex items-center gap-2 w-full sm:flex-1 min-w-0 text-left">
                         {expanded ? <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: '#64748B' }} />
                           : <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: '#64748B' }} />}
                         <span className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{cat}</span>
@@ -413,13 +427,13 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                       </button>
 
                       {/* Group price + Activate All */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-shrink-0">
+                        <div className="flex-1 sm:flex-none">
                           <input type="number" min={0} step="0.01"
                             value={groupPrices[cat] ?? ''}
                             onChange={e => setGroupPrices(prev => ({ ...prev, [cat]: e.target.value }))}
                             placeholder="Group ₹"
-                            className="w-24 px-2 py-1.5 rounded-lg text-xs border font-semibold"
+                            className="w-full sm:w-24 px-2 py-1.5 rounded-lg text-xs border font-semibold"
                             style={{ borderColor: masterErrors[`group_${cat}`] ? '#DC2626' : '#0D9488', color: '#0D9488', background: '#fff' }} />
                           {masterErrors[`group_${cat}`] && (
                             <p className="text-xs mt-0.5" style={{ color: '#DC2626' }}>{masterErrors[`group_${cat}`]}</p>

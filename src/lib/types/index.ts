@@ -330,6 +330,8 @@ export interface LabTestMaster {
 export interface LabTestCatalog {
   /** How many measurements this test yields. >1 means a panel. Computed, not stored. */
   analyte_count?: number
+  /** Which measurements, so the ordering screen can spot a test already inside a panel. */
+  analyte_ids?: string[]
   id: string; name: string; code: string | null; category: string
   sample_type: string | null; unit: string | null
   ref_low: number | null; ref_high: number | null

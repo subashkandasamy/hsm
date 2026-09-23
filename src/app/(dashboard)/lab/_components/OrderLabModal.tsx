@@ -66,6 +66,31 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
 
   const total = catalog.filter((t) => selected.has(t.id)).reduce((s, t) => s + t.price, 0)
 
+  /**
+   * Tests that are already inside another selected test.
+   *
+   * A CBC reports haemoglobin, so ticking both CBC and Haemoglobin bills the
+   * patient for the same measurement twice and gives the lab two ways to
+   * disagree with itself. Real laboratories catch this at ordering; we did not,
+   * so a doctor ticking the obvious pair was quietly overcharging.
+   *
+   * A warning, not a block — there are real reasons to repeat a measurement by
+   * a different method, and the doctor is the one who knows.
+   */
+  const redundant = (() => {
+    const picked = catalog.filter((t) => selected.has(t.id) && (t.analyte_ids?.length ?? 0) > 0)
+    const out: Array<{ test: LabTestCatalog; insideOf: string }> = []
+    for (const a of picked) {
+      const mine = new Set(a.analyte_ids ?? [])
+      const cover = picked.find((b) =>
+        b.id !== a.id
+        && (b.analyte_ids?.length ?? 0) > mine.size
+        && [...mine].every((x) => b.analyte_ids?.includes(x)))
+      if (cover) out.push({ test: a, insideOf: cover.name })
+    }
+    return out
+  })()
+
   function toggleTest(id: string) {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -157,6 +182,17 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
               </span>
             )}
           </div>
+          {redundant.length > 0 && (
+            <div className="mb-2 rounded-xl px-3 py-2 text-xs"
+              style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+              {redundant.map(({ test, insideOf }) => (
+                <p key={test.id}>
+                  <strong>{test.name}</strong> is already part of <strong>{insideOf}</strong> — the patient
+                  will be billed for both.
+                </p>
+              ))}
+            </div>
+          )}
           <input type="search" value={testSearch}
             onChange={(e) => setTestSearch(e.target.value)}
             placeholder="Filter tests…"

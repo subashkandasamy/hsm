@@ -278,7 +278,11 @@ export const SHOTS: Shot[] = [
   {
     name: 'lab-order-panels',
     path: '/lab',
-    steps: [{ clickText: 'New Order' }, { wait: 2000 }],
+    steps: [
+      { clickText: 'New Order' }, { wait: 2000 },
+      { clickText: 'Complete Blood Count' }, { wait: 400 },
+      { clickText: 'Haemoglobin' }, { wait: 800 },
+    ],
     selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 1100, height: 1300,
   },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },

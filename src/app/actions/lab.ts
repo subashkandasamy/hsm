@@ -86,16 +86,16 @@ async function withAnalyteCounts(
   const masterIds = [...new Set(tests.map((t) => t.lab_master_id).filter(Boolean))] as string[]
   if (!masterIds.length) return tests
   const { data } = await supabase
-    .from('lab_test_analytes').select('lab_master_id').in('lab_master_id', masterIds)
-  const counts = new Map<string, number>()
+    .from('lab_test_analytes').select('lab_master_id, analyte_id').in('lab_master_id', masterIds)
+  const byMaster = new Map<string, string[]>()
   for (const r of data ?? []) {
     const k = r.lab_master_id as string
-    counts.set(k, (counts.get(k) ?? 0) + 1)
+    byMaster.set(k, [...(byMaster.get(k) ?? []), r.analyte_id as string])
   }
-  return tests.map((t) => ({
-    ...t,
-    analyte_count: t.lab_master_id ? counts.get(t.lab_master_id) ?? 0 : 0,
-  }))
+  return tests.map((t) => {
+    const ids = t.lab_master_id ? byMaster.get(t.lab_master_id) ?? [] : []
+    return { ...t, analyte_count: ids.length, analyte_ids: ids }
+  })
 }
 
 export async function listLabCatalog(): Promise<LabTestCatalog[]> {
@@ -109,7 +109,7 @@ export async function listAllLabCatalog(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_tests_catalog').select('*').order('name')
-  return (data ?? []) as LabTestCatalog[]
+  return withAnalyteCounts(supabase, (data ?? []) as LabTestCatalog[])
 }
 
 export async function updateLabTest(
