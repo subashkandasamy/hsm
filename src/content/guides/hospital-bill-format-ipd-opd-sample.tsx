@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import BillBreakdown from '@/components/guides/diagrams/BillBreakdown'
 
 export const faqs = [
@@ -74,9 +75,30 @@ export default function Guide() {
         total={8890}
       />
       <p>
-        Any advance paid at admission is applied against this total &mdash; a ₹5,000 advance here would leave
-        ₹3,890 due at discharge. For the full department-by-department breakdown of how an IPD bill accumulates
-        day by day, see our{' '}
+        An advance paid at admission is held against the stay and set against this total when the cashier
+        applies it &mdash; a ₹5,000 advance here leaves ₹3,890 to collect at discharge. A bill should state
+        all three numbers, not just the balance, so the family can see where their deposit went.
+      </p>
+
+      <h2>The same bill, as software produces it</h2>
+      <p>
+        The samples above are the shape. This is a real one, printed from a two-day admission:
+      </p>
+      <Screenshot
+        src="/guides/ipd-combined-bill.png" width={2560} height={3750}
+        alt="A printed hospital bill on letterhead with GST number, patient name and UHID, bill number and date, then sections for room charges, nursing charges, laboratory and pharmacy with each line dated and priced, and a totals panel showing grand total, advance collected, advance applied, advance not yet applied and balance due"
+        caption="Letterhead and GST number, patient and UHID, then every charge dated and grouped by what it is."
+      />
+      <p>
+        Three things in it are worth copying into whatever format you use. Each line is{' '}
+        <strong>dated</strong>, so a question about a particular day has an answer on the page. Each section
+        carries its own <strong>subtotal</strong>, so &ldquo;how much was the pharmacy&rdquo; does not
+        require adding up rows. And the GST column says <strong>Exempt</strong> rather than being left
+        blank &mdash; a blank reads as an omission, and the patient cannot tell the difference between
+        exempt and forgotten.
+      </p>
+      <p>
+        For the full department-by-department breakdown of how an IPD bill accumulates day by day, see our{' '}
         <Link href="/guides/ipd-billing-software-explained">IPD billing explained guide</Link>.
       </p>
 
@@ -95,13 +117,15 @@ export default function Guide() {
         In <Link href="/hospital-management-software">Uyirly</Link> you do not assemble the bill &mdash; it builds
         itself. For OPD, the consultation, tests and pharmacy items land on one receipt. For IPD, bed and
         nursing charges accrue daily and every test, medicine and procedure posts to the running bill, so the
-        itemised bill and a GST-ready invoice are ready the moment the patient is discharged. Advances are
-        already applied, so there is no manual totalling at the counter.
+        itemised bill is ready the moment the patient is discharged, with nothing to total at the counter.
       </p>
       <ul>
-        <li>One itemised bill across consultation, room, lab, pharmacy and procedures.</li>
-        <li>GST-ready invoice, printable for the patient or insurer.</li>
-        <li>IPD bill ready at discharge, with advances applied.</li>
+        <li>One itemised bill across consultation, room, nursing, lab, pharmacy and procedures.</li>
+        <li>Every line dated, every section subtotalled.</li>
+        <li>HSN/SAC and GST per line, with CGST, SGST and IGST summarised &mdash; or marked exempt where healthcare is.</li>
+        <li>Headed <em>Tax Invoice</em> or <em>Bill of Supply</em> according to whether any tax actually applies.</li>
+        <li>Advance collected, advance applied and advance still unapplied stated separately, beside the balance due.</li>
+        <li>Printable, or downloadable as a PDF for the patient or the insurer.</li>
       </ul>
 
       <h2>Getting started</h2>

@@ -14,7 +14,7 @@ export const faqs = [
   },
   {
     q: 'What happens to an advance payment in IPD billing?',
-    a: 'An advance paid at admission is held against the admission and automatically applied to reduce the amount due as daily and departmental charges accumulate, rather than being refunded and re-collected.',
+    a: 'It is held against the admission rather than against any one bill, and reduces what is due once a cashier applies it to the bills — usually at discharge. The bill shows all three figures: collected, applied, and still unapplied, so a deposit is never quietly forgotten.',
   },
   {
     q: 'How is nursing charged in an IPD bill?',
@@ -82,7 +82,7 @@ export default function Guide() {
 
       <h2>The combined bill</h2>
       <Screenshot
-        src="/guides/ipd-combined-bill.png" width={2560} height={3632}
+        src="/guides/ipd-combined-bill.png" width={2560} height={3750}
         alt="Combined hospital bill on the hospital's letterhead, showing room charges by date, nursing charges per shift, pharmacy and lab sections with totals, and buttons to print, view a day-wise statement or download a PDF"
         caption="Every charge of the stay on one itemised bill, grouped by what it is and dated."
       />
@@ -100,10 +100,17 @@ export default function Guide() {
 
       <h2>Advances, and why discharge is fast</h2>
       <p>
-        An advance taken at admission is held against the admission, not against a particular bill. As
-        charges accumulate it is applied to them, so the balance shown is always what is genuinely
-        outstanding — and at discharge the patient pays the difference rather than the whole amount with a
-        refund to follow.
+        An advance taken at admission is held against the admission, not against a particular bill. That is
+        the right model — the money is the patient&apos;s deposit, not a payment for anything in particular
+        yet — but it has a consequence worth understanding: <strong>an advance reduces the balance due only
+        once it is applied to a bill</strong>, which a cashier does. It does not silently net itself off as
+        charges accrue.
+      </p>
+      <p>
+        So the bill states all three figures: what was collected, how much of it has been applied, and how
+        much is still sitting unapplied. At discharge the cashier applies the advance and takes the
+        difference — the deposit is never lost track of, and nobody has to remember that a patient paid
+        ₹15,000 three days ago.
       </p>
       <p>
         If an advance exceeds the final bill, the excess is refunded as its own recorded transaction rather

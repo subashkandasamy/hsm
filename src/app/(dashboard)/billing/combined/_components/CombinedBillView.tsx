@@ -55,6 +55,11 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
       )
     : null
   const hasGst = !!gstSummary && gstSummary.taxTotal > 0
+  // Advance money the hospital is holding that has not been set against a bill,
+  // and so is not reflected in the balance due below.
+  const advanceUnapplied = Math.max(
+    0, data.advanceCollected - (data.advanceAdjusted ?? 0) - data.advanceRefunded,
+  )
   const bannerLabel = gstRegistered ? (hasGst ? 'Tax Invoice' : 'Bill of Supply') : 'Summary Bill'
   const gstCols = gstRegistered ? 7 : 5
 
@@ -289,6 +294,11 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                 { label: 'SGST',                    value: gstSummary?.sgst ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
                 { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: true, show: true },
                 { label: 'Advance Collected',       value: data.advanceCollected, size: '13px', weight: 500, color: '#0D9488', border: false, show: data.advanceCollected > 0 },
+                // An advance only reduces the balance once it is adjusted against a
+                // bill. Showing what was collected without showing what has been
+                // applied is how a bill ends up being argued about at the counter.
+                { label: 'Advance Applied to Bills', value: data.advanceAdjusted ?? 0, size: '13px', weight: 500, color: '#0D9488', border: false, show: data.advanceCollected > 0 },
+                { label: 'Advance Not Yet Applied', value: advanceUnapplied, size: '13px', weight: 600, color: '#B45309', border: false, show: advanceUnapplied > 0 },
                 { label: 'Advance Refunded',        value: -data.advanceRefunded, size: '13px', weight: 500, color: '#F59E0B', border: false, show: data.advanceRefunded > 0 },
                 { label: 'Total Payments Received', value: data.totalPaid,        size: '13px', weight: 500, color: '#10B981', border: false, show: true },
                 { label: 'Refunded (credit notes)', value: -(data.refunded ?? 0), size: '13px', weight: 500, color: '#B45309', border: false, show: (data.refunded ?? 0) > 0 },

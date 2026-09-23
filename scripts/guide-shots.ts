@@ -232,6 +232,9 @@ export const SHOTS: Shot[] = [
     width: 900, height: 330, wait: 2500,
   },
 
+  // ── Setting the hospital up ────────────────────────────────────────────────
+  { name: 'signup', path: '/signup', host: 'localhost:3000', selector: 'form', wait: 3000, width: 900, height: 900 },
+
   // ── The rest of the hospital ───────────────────────────────────────────────
   { name: 'dashboard',    path: '/dashboard',    selector: 'main', wait: 3000 },
   { name: 'patients',     path: '/patients',     selector: 'main', wait: 2500 },
