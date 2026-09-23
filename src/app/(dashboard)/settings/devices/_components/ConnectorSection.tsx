@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff } from 'lucide-react'
+import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff, Trash2 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import {
-  createConnector, regeneratePairingCode, revokeConnector, type ConnectorRow,
+  createConnector, regeneratePairingCode, revokeConnector, deleteConnector,
+  type ConnectorRow,
 } from '@/app/actions/devices'
 
 /**
@@ -30,6 +31,7 @@ export default function ConnectorSection({
   const [error, setError] = useState('')
   const [issued, setIssued] = useState<{ code: string; name: string } | null>(null)
   const [revoking, setRevoking] = useState<ConnectorRow | null>(null)
+  const [deleting, setDeleting] = useState<ConnectorRow | null>(null)
 
   function handleCreate() {
     setError('')
@@ -59,6 +61,16 @@ export default function ConnectorSection({
     })
   }
 
+  function handleDelete() {
+    if (!deleting) return
+    startTransition(async () => {
+      const res = await deleteConnector(deleting.id)
+      setDeleting(null)
+      if (!res.success) { setError(res.error); return }
+      onChange()
+    })
+  }
+
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -75,6 +87,13 @@ export default function ConnectorSection({
         </button>
       </div>
 
+      {error && !showCreate && (
+        <p className="text-xs mb-2 rounded-lg px-3 py-2"
+          style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
+          {error}
+        </p>
+      )}
+
       {connectors.length === 0 ? (
         <GlassCard>
           <EmptyState
@@ -89,6 +108,7 @@ export default function ConnectorSection({
             <ConnectorCard key={c.id} connector={c}
               onRegenerate={() => handleRegenerate(c)}
               onRevoke={() => setRevoking(c)}
+              onDelete={() => setDeleting(c)}
               busy={isPending} />
           ))}
         </div>
@@ -132,20 +152,42 @@ export default function ConnectorSection({
         description={`${revoking?.name ?? ''} will stop sending results immediately. Results it has already sent are kept — this is a laboratory record. To reconnect it later you will create a new pairing code.`}
         confirmLabel="Disconnect"
       />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={handleDelete}
+        loading={isPending}
+        title="Remove this computer?"
+        description={
+          deleting && deleting.message_count > 0
+            // Say exactly what survives. Both tables that point at a connector
+            // clear the link rather than delete the row, and a result's
+            // provenance names the analyzer, not the PC that relayed it.
+            ? `${deleting.name} passed on ${deleting.message_count} message${deleting.message_count > 1 ? 's' : ''}. Those results and the machines that produced them are kept — only the note of which computer relayed them is cleared.`
+            : `${deleting?.name ?? 'This computer'} never connected, so there is nothing to lose.`
+        }
+        confirmLabel="Remove"
+      />
     </section>
   )
 }
 
 function ConnectorCard({
-  connector: c, onRegenerate, onRevoke, busy,
+  connector: c, onRegenerate, onRevoke, onDelete, busy,
 }: {
   connector: ConnectorRow
   onRegenerate: () => void
   onRevoke: () => void
+  onDelete: () => void
   busy: boolean
 }) {
   const revoked = c.status === 'revoked'
   const waiting = !c.paired_at && !revoked
+  // One that never connected is a typo, not a record — it goes without ceremony.
+  // One that is working has to be disconnected first, so results never stop
+  // arriving as a side effect of tidying up.
+  const removable = revoked || !c.paired_at
 
   return (
     <GlassCard className="p-4">
@@ -190,20 +232,29 @@ function ConnectorCard({
           </p>
         </div>
 
-        {!revoked && (
-          <div className="flex gap-1.5 flex-shrink-0">
+        <div className="flex gap-1.5 flex-shrink-0">
+          {!revoked && (
             <button onClick={onRegenerate} disabled={busy} title="New pairing code"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"
               style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
               <RefreshCw className="w-3 h-3" /> New code
             </button>
+          )}
+          {!revoked && c.paired_at && (
             <button onClick={onRevoke} disabled={busy} title="Disconnect"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"
               style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA', cursor: 'pointer' }}>
-              <Ban className="w-3 h-3" />
+              <Ban className="w-3 h-3" /> Disconnect
             </button>
-          </div>
-        )}
+          )}
+          {removable && (
+            <button onClick={onDelete} disabled={busy} title="Remove"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"
+              style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA', cursor: 'pointer' }}>
+              <Trash2 className="w-3 h-3" /> Remove
+            </button>
+          )}
+        </div>
       </div>
     </GlassCard>
   )

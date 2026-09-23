@@ -23,6 +23,8 @@ export interface ConnectorRow {
   paired_at: string | null
   pairing_code: string | null
   pairing_expires_at: string | null
+  /** How much has come through it — decides whether removing it loses history. */
+  message_count: number
 }
 
 export interface AnalyzerRow {
@@ -71,11 +73,23 @@ export interface AnalyteOption {
 
 export async function listConnectors(): Promise<ConnectorRow[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('connectors')
-    .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at')
-    .order('created_at')
-  return (data ?? []) as ConnectorRow[]
+  const [{ data }, { data: msgs }] = await Promise.all([
+    supabase.from('connectors')
+      .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at')
+      .order('created_at'),
+    supabase.from('analyzer_messages').select('connector_id'),
+  ])
+
+  const seen = new Map<string, number>()
+  for (const m of msgs ?? []) {
+    const key = m.connector_id as string | null
+    if (key) seen.set(key, (seen.get(key) ?? 0) + 1)
+  }
+
+  return (data ?? []).map((c) => ({
+    ...c,
+    message_count: seen.get(c.id as string) ?? 0,
+  })) as ConnectorRow[]
 }
 
 /**
@@ -161,6 +175,41 @@ export async function revokeConnector(id: string): Promise<SimpleResult> {
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'update', 'connector', id, { action: 'revoked' })
+  revalidatePath('/settings/devices')
+  return { success: true }
+}
+
+/**
+ * Remove a connector entirely.
+ *
+ * Safe to do, which is worth stating plainly: both tables that reference a
+ * connector are ON DELETE SET NULL, so every raw message and every discovered
+ * analyzer survives — only the note of which computer relayed them is cleared.
+ * A result's provenance points at the analyzer that produced it, not at the PC
+ * in between, so nothing clinical is lost.
+ *
+ * Only a connector that is already disconnected may go. Removing one that is
+ * still working would stop results arriving with no warning, so that is a
+ * deliberate two-step: disconnect, then delete.
+ */
+export async function deleteConnector(id: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+
+  const supabase = await createClient()
+  const { data: connector } = await supabase
+    .from('connectors').select('id, name, status, paired_at').eq('id', id).maybeSingle()
+  if (!connector) return { success: false, error: 'That computer is no longer here' }
+
+  const live = connector.status !== 'revoked' && !!connector.paired_at
+  if (live) {
+    return { success: false, error: 'Disconnect this computer before removing it' }
+  }
+
+  const { error } = await supabase.from('connectors').delete().eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'delete', 'connector', id, { name: connector.name })
   revalidatePath('/settings/devices')
   return { success: true }
 }
