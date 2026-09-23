@@ -261,14 +261,19 @@ async function createPatients(tenantId: string, staff: Staff[]): Promise<Array<{
 /** A handful of common tests, priced — a fresh tenant starts with none. */
 async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string; name: string; price: number }>> {
   const spec: Array<[string, string, string, string | null, number, number | null, number | null]> = [
-    ['Complete Blood Count (CBC)', 'CBC',  'Blood', 'g/dL',    350, 13, 17],
+    ['Complete Blood Count (CBC)', 'CBC',  'Blood', null,      350, null, null],
     ['Haemoglobin',                'HB',   'Blood', 'g/dL',    120, 13, 17],
     ['Random Blood Sugar',         'RBS',  'Blood', 'mg/dL',   100, 70, 140],
     ['HbA1c',                      'HBA1C','Blood', '%',       550, 4,  5.7],
     ['Serum Creatinine',           'CREA', 'Blood', 'mg/dL',   250, 0.6, 1.3],
-    ['Liver Function Test',        'LFT',  'Blood', 'U/L',     750, null, null],
-    ['Thyroid Profile (T3 T4 TSH)','THY',  'Blood', 'mIU/L',   650, 0.4, 4.0],
-    ['Urine Routine',              'URIN', 'Urine', null,      200, null, null],
+    // Named to match the shared catalogue so they link and gain their analytes.
+    // The old names — "Liver Function Test", "Urine Routine" — matched nothing,
+    // and the panel only resolves through lab_master_id.
+    ['Liver Function Test (LFT)',  'LFT',  'Blood', null,      750, null, null],
+    ['Kidney Function Test (KFT)', 'KFT',  'Blood', null,      700, null, null],
+    ['Lipid Profile (Full)',       'LIPID','Blood', null,      800, null, null],
+    ['Thyroid Profile (T3 T4 TSH)','TFT',  'Blood', null,      650, null, null],
+    ['Urine Routine & Microscopy (R&M)','URM','Urine', null,   200, null, null],
   ]
   const rows: Array<Record<string, unknown> & { id: string; name: string; code: string; price: number; lab_master_id?: string | null }> =
     spec.map(([name, code, sample, unit, price, lo, hi]) => ({
@@ -557,6 +562,46 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
     })
     await db.from('lab_orders').update({ billing_status: 'billed' }).eq('id', pending)
     ok('an outpatient lab order awaiting payment', null)
+  }
+
+  // A urine routine, entered the way the strip and the microscope report it:
+  // two numbers, several points on an ordered scale, and some free text. The
+  // picture is a urinary tract infection, so the ordinals flag and the text
+  // does not — which is the behaviour worth being able to see.
+  {
+    const urm = tests.find((t) => t.name.startsWith('Urine Routine'))
+    if (urm) {
+      const urineOrder = uuid()
+      await db.from('lab_orders').insert({
+        id: urineOrder, tenant_id: tenantId, patient_id: patientId(s, 'Fathima'),
+        ordered_by: doctorId(s, 'Kavitha Suresh'), status: 'collected', billing_status: 'billed',
+        ordered_at: new Date(Date.now() - 3600000 * 3).toISOString(), priority: 'routine',
+      })
+      await db.from('lab_order_items').insert({
+        id: uuid(), tenant_id: tenantId, lab_order_id: urineOrder,
+        test_id: urm.id, price_snapshot: urm.price, flag: 'pending',
+      })
+      const { data: ua } = await db.from('lab_analytes').select('id, code').like('code', 'UR_%')
+      const byCode = new Map((ua ?? []).map((a) => [a.code as string, a.id as string]))
+      const strip: Array<[string, number | null, string | null]> = [
+        ['UR_COLOUR', null, 'Pale yellow'], ['UR_APPEAR', null, 'Clear'],
+        ['UR_PH', 6.0, null],               ['UR_SG', 1.018, null],
+        ['UR_PROT', null, '2+'],            ['UR_GLU', null, 'Negative'],
+        ['UR_KET', null, 'Negative'],       ['UR_BLOOD', null, 'Trace'],
+        ['UR_NIT', null, 'Positive'],       ['UR_LEU', null, '2+'],
+        ['UR_PUS', null, '8-10'],           ['UR_RBC', null, '1-2'],
+        ['UR_EPI', null, 'Occasional'],     ['UR_BACT', null, 'Moderate'],
+      ]
+      const { error: urErr } = await db.rpc('save_lab_analyte_results', {
+        p_order_id: urineOrder,
+        p_items: strip
+          .filter(([code]) => byCode.has(code))
+          .map(([code, num, txt]) => ({
+            test_id: urm.id, analyte_id: byCode.get(code), value_num: num, value_text: txt,
+          })),
+      })
+      ok('a urine routine, reported the way a strip reports', urErr)
+    }
   }
 
   ok('lab results', (await db.from('lab_order_items').insert([
