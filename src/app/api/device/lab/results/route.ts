@@ -223,6 +223,11 @@ export async function POST(request: Request) {
     p_items: items,
     p_source: 'analyzer',
     p_analyzer: analyzerId,
+    // Tube barcodes are only unique within a hospital — accession numbers
+    // restart at 0001 daily per tenant — so two hospitals ordering on the same
+    // day genuinely share a barcode. The lookup above filters by tenant; this
+    // makes the database refuse rather than rely on that one filter holding.
+    p_tenant_id: tenantId,
   })
 
   if (saveErr) {
