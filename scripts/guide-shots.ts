@@ -254,6 +254,17 @@ export const SHOTS: Shot[] = [
     steps: [{ clickText: 'To Release' }, { wait: 1500 }],
     selector: 'main', wait: 3000,
   },
+  {
+    name: 'lab-result-entry',
+    path: '/lab',
+    steps: [
+      { clickText: 'Result Entry' }, { wait: 1200 },
+      { clickText: 'Enter Results' }, { wait: 2500 },
+    ],
+    // The modal caps itself at 92vh and scrolls inside, so a tall viewport is
+    // what makes the whole panel visible in one shot.
+    selector: 'div.glass-card.flex.flex-col', wait: 3000, width: 1180, height: 1500,
+  },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
   {
     name: 'lab-reported',

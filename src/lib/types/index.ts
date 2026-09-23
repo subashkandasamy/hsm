@@ -336,6 +336,33 @@ export interface LabTestCatalog {
 }
 
 export type LabFlag = 'pending' | 'normal' | 'high' | 'low'
+export type AnalyteValueType = 'numeric' | 'ordinal' | 'text'
+export type AnalyteFlag =
+  | 'pending' | 'normal' | 'high' | 'low'
+  | 'critical_high' | 'critical_low' | 'abnormal' | 'unranged'
+
+/** One row of the result-entry form: an analyte, its range for THIS patient, and any value already entered. */
+export interface AnalyteFormRow {
+  test_id: string
+  test_name: string
+  analyte_id: string
+  code: string
+  name: string
+  short_name: string | null
+  unit_ucum: string | null
+  decimals: number
+  display_order: number
+  value_type: AnalyteValueType
+  allowed_values: string[] | null
+  ref_low: number | null
+  ref_high: number | null
+  crit_low: number | null
+  crit_high: number | null
+  value_num: number | null
+  value_text: string | null
+  flag: AnalyteFlag
+}
+
 export type LabOrderStatus = 'ordered' | 'collected' | 'processing' | 'verified' | 'reported' | 'cancelled'
 
 export interface LabOrderItem {

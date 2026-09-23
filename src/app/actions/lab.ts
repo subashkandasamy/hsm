@@ -8,7 +8,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { isBillCashlessCovered, resolveServiceBill, billsCashlessCovered } from '@/lib/cashlessCover'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
-import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag } from '@/lib/types'
+import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -410,4 +410,50 @@ export async function labOrdersAwaitingPayment(orderIds: string[]): Promise<stri
 
   const covered = await billsCashlessCovered(supabase, unpaid.map(([, b]) => b))
   return unpaid.filter(([, b]) => !covered.has(b.id)).map(([orderId]) => orderId)
+}
+
+// ── Analyte-level results ────────────────────────────────────────────────────
+
+/**
+ * The result-entry form for an order: every analyte of every panel on it, with
+ * the reference range already resolved for this patient's sex and age, and
+ * anything previously entered.
+ *
+ * Tests with no analytes behind them return no rows and keep the single-value
+ * field they have always had, so a hospital's own local panel goes on working.
+ */
+export async function getOrderAnalyteForm(orderId: string): Promise<AnalyteFormRow[]> {
+  await requirePermission((await getActorProfile()).role, 'lab:read')
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('get_order_analyte_form', { p_order_id: orderId })
+  if (error) { console.error('[getOrderAnalyteForm]', error.message); return [] }
+  return (data ?? []) as AnalyteFormRow[]
+}
+
+/**
+ * Write a whole panel in one transaction. The database resolves each analyte's
+ * range for the patient and decides the flag, so the value the technician sees
+ * previewed and the value stored can never diverge.
+ */
+export async function saveAnalyteResults(
+  orderId: string,
+  items: Array<{ test_id: string; analyte_id: string; value_num?: number | null; value_text?: string | null }>,
+): Promise<{ success: true; written: number; critical: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:process')
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('save_lab_analyte_results', {
+    p_order_id: orderId,
+    p_items: items,
+    p_source: 'manual',
+  })
+  if (error) return { success: false, error: error.message }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { written: number; critical: number } | null
+  await logAudit(actor.id, 'results', 'lab_order', orderId, {
+    analytes: row?.written ?? 0, critical: row?.critical ?? 0,
+  })
+  return { success: true, written: row?.written ?? 0, critical: row?.critical ?? 0 }
 }
