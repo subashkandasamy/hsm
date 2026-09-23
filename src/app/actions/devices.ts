@@ -292,7 +292,7 @@ export async function mapAnalyzerCode(
   analyteId: string,
 ): Promise<SimpleResult> {
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'lab:manage')
+  await requirePermission(actor.role, 'lab:process')
   if (!analyteId) return { success: false, error: 'Choose what this code measures' }
 
   const supabase = await createClient()
@@ -309,7 +309,7 @@ export async function mapAnalyzerCode(
 /** Some codes are genuinely not ours to record — internal flags, QC channels. */
 export async function ignoreAnalyzerCode(mappingId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'lab:manage')
+  await requirePermission(actor.role, 'lab:process')
 
   const supabase = await createClient()
   const { error } = await supabase.from('analyzer_mappings')
@@ -346,7 +346,7 @@ export async function retryMessage(
   barcode?: string,
 ): Promise<{ success: true; status: string; written?: number; error?: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'lab:manage')
+  await requirePermission(actor.role, 'lab:process')
 
   const supabase = await createClient()
   // Read through the user's own client first, so RLS proves this message
@@ -388,7 +388,7 @@ export async function retryMessage(
 /** Not ours — a control run, another hospital's tube, a test transmission. */
 export async function ignoreMessage(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'lab:manage')
+  await requirePermission(actor.role, 'lab:process')
 
   const supabase = await createClient()
   const { error } = await supabase.from('analyzer_messages')

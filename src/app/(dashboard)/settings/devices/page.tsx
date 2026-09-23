@@ -12,7 +12,16 @@ import {
 
 export default async function DevicesSettingsPage() {
   const actor = await getActorProfile()
-  if (!hasPermission(actor.role, 'lab:manage')) redirect('/dashboard')
+
+  // Two different jobs live on this page. Answering "what does CRP-HS measure?"
+  // and attaching a stranded result are bench work — the technician knows the
+  // machine and is holding the tube. Setting a laboratory up with connectors
+  // and switching an analyzer live is the owner's. `lab:manage` also gates test
+  // pricing, so granting it to a technician to clear a queue would hand them
+  // the price list; hence the split rather than one permission for the page.
+  const canWorkQueues = hasPermission(actor.role, 'lab:process')
+  const canManage = hasPermission(actor.role, 'lab:manage')
+  if (!canWorkQueues && !canManage) redirect('/dashboard')
 
   const [connectors, analyzers, unknownCodes, unmatched, analytes] = await Promise.all([
     listConnectors(),
@@ -26,7 +35,9 @@ export default async function DevicesSettingsPage() {
     <div>
       <PageHeader
         title="Analyzer connection"
-        subtitle="Connect your laboratory machines so results arrive on their own."
+        subtitle={canManage
+          ? 'Connect your laboratory machines so results arrive on their own.'
+          : 'Results waiting on you before they can reach a patient.'}
       />
       <DeviceManager
         connectors={connectors}
@@ -34,6 +45,7 @@ export default async function DevicesSettingsPage() {
         unknownCodes={unknownCodes}
         unmatched={unmatched}
         analytes={analytes}
+        canManage={canManage}
       />
     </div>
   )
