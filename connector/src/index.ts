@@ -59,6 +59,14 @@ async function main(): Promise<void> {
   if (code) {
     config = await pair(flag('--server') ?? DEFAULT_SERVER, code)
     log.info(`Paired with ${config.hospital ?? config.serverUrl} as "${config.connectorName}"`)
+    // The installer pairs while somebody is standing there to type the code,
+    // then hands running over to the scheduled task. Exiting non-zero on
+    // failure is what lets it stop before scheduling anything.
+    if (args.includes('--pair-only')) {
+      console.log(`\n  Paired with ${config.hospital ?? config.serverUrl}.`)
+      console.log(`  Analyzers should send to ${lanIp() ?? 'this computer'} : ${config.listenPort}\n`)
+      return
+    }
   } else if (!config) {
     if (!process.stdin.isTTY) {
       log.error('Not set up yet, and there is nobody to ask. '

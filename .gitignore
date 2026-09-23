@@ -46,3 +46,5 @@ next-env.d.ts
 # The connector is a separate program a hospital runs on its own PC.
 connector/node_modules/
 connector/dist/
+connector/dist-exe/
+connector/.build/

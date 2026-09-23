@@ -13,23 +13,27 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/link.test.ts"
+    "test": "tsx test/link.test.ts",
+    "package": "node build.mjs",
+    "package:win": "node build.mjs --win",
+    "package:all": "node build.mjs --all"
   },
   "comment": [
     "Deliberately kept out of the app's package.json and out of its tsconfig,",
     "for the same reason Playwright is: nothing here should ever be installed",
     "on the production server. This is a program a hospital runs on its own PC.",
     "",
-    "serialport is optional because it is a native module — it cannot be baked",
+    "serialport is optional because it is a native module \u2014 it cannot be baked",
     "into a single-file executable, and a connector whose analyzers are all on",
     "the network must still run without it."
   ],
-  "dependencies": {},
   "optionalDependencies": {
     "serialport": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
