@@ -652,6 +652,67 @@ async function createAdmissions(tenantId: string, s: Seeded): Promise<void> {
       status: 'admitted', billing_status: 'unbilled' },
   ]
   ok('2 admissions', (await db.from('admissions').insert(rows)).error)
+
+  // An inpatient's bloods: two panels on one report, ordered the way the ward
+  // orders them. Proves the analyte layer is not a urine special case and that
+  // an IPD order — which takes a different code path to OPD — resolves the same
+  // panels, because both write lab_orders from the same catalogue.
+  {
+    const adm = rows.find((r) => r.patient_id === patientId(s, 'Saraswathi'))
+    const { data: cat } = await db.from('lab_tests_catalog')
+      .select('id, code, price').eq('tenant_id', tenantId).in('code', ['CBC', 'LFT'])
+    const { data: analytes } = await db.from('lab_analytes').select('id, code')
+    const aid = new Map((analytes ?? []).map((a) => [a.code as string, a.id as string]))
+
+    if (adm && cat?.length === 2) {
+      const orderId = uuid()
+      await db.from('lab_orders').insert({
+        id: orderId, tenant_id: tenantId, patient_id: adm.patient_id,
+        admission_id: adm.id, ordered_by: doctorId(s, 'Arun Prakash'),
+        status: 'reported', billing_status: 'billed', priority: 'routine',
+        ordered_at: new Date(Date.now() - 86400000).toISOString(),
+        verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
+        verified_at: new Date(Date.now() - 79200000).toISOString(),
+        reported_at: new Date(Date.now() - 79200000).toISOString(),
+      })
+      await db.from('lab_order_items').insert(cat.map((c) => ({
+        id: uuid(), tenant_id: tenantId, lab_order_id: orderId,
+        test_id: c.id as string, price_snapshot: c.price as number, flag: 'pending',
+      })))
+
+      // Community-acquired pneumonia: a raised white count with neutrophilia,
+      // mild anaemia, and a low albumin — a picture the flags should catch.
+      const cbcId = cat.find((c) => c.code === 'CBC')!.id as string
+      const lftId = cat.find((c) => c.code === 'LFT')!.id as string
+      const values: Array<[string, string, number]> = [
+        [cbcId, 'HGB', 9.2], [cbcId, 'RBC', 3.9], [cbcId, 'HCT', 30.1],
+        [cbcId, 'MCV', 77.2], [cbcId, 'MCH', 23.6], [cbcId, 'MCHC', 30.6],
+        [cbcId, 'RDW_CV', 15.8], [cbcId, 'WBC', 14.2],
+        [cbcId, 'NEUT_PCT', 84], [cbcId, 'LYMPH_PCT', 11], [cbcId, 'MONO_PCT', 4],
+        [cbcId, 'EOS_PCT', 1], [cbcId, 'BASO_PCT', 0], [cbcId, 'PLT', 312],
+        [lftId, 'TBIL', 0.9], [lftId, 'DBIL', 0.2], [lftId, 'IBIL', 0.7],
+        [lftId, 'SGOT', 34], [lftId, 'SGPT', 29], [lftId, 'ALP', 104],
+        [lftId, 'TP', 6.1], [lftId, 'ALB', 3.1], [lftId, 'GLOB', 3.0],
+      ]
+      const { error: resErr } = await db.rpc('save_lab_analyte_results', {
+        p_order_id: orderId,
+        p_items: values
+          .filter(([, code]) => aid.has(code))
+          .map(([test_id, code, v]) => ({
+            test_id, analyte_id: aid.get(code), value_num: v, value_text: null,
+          })),
+        p_source: 'manual',
+      })
+      // save_lab_analyte_results sends a released order back to processing, by
+      // design — a changed value withdraws its authorisation. Restore it.
+      await db.from('lab_orders').update({
+        status: 'reported',
+        verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
+        verified_at: new Date(Date.now() - 79200000).toISOString(),
+      }).eq('id', orderId)
+      ok('an inpatient CBC and LFT, reported', resErr)
+    }
+  }
   for (const b of [f1, labour]) {
     await db.from('beds').update({ status: 'occupied' }).eq('id', b.id)
   }
