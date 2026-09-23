@@ -250,25 +250,78 @@ export async function enterResults(
     }).eq('id', item_id)
   }
 
-  // Editing an already-reported order (corrections) must keep it reported —
-  // don't kick it back to 'processing' and out of the Reported tab.
-  const { data: cur } = await supabase
-    .from('lab_orders').select('status').eq('id', orderId).single()
-  if (cur?.status !== 'reported') {
-    await supabase.from('lab_orders').update({ status: 'processing' }).eq('id', orderId)
-  }
+  // Changing a value withdraws any authorisation it had. A corrected result is
+  // a different result, and it has to be looked at again before it goes back
+  // out — including when the order had already been released, which is exactly
+  // the case where a silent edit would be worst.
+  //
+  // (Full amendment history — keeping the superseded value and marking the
+  // report amended — is the next piece of work. This is the gate, not the trail.)
+  await supabase.from('lab_orders').update({
+    status: 'processing', verified_by: null, verified_at: null,
+  }).eq('id', orderId).in('status', ['collected', 'processing', 'verified', 'reported'])
   await logAudit(actor.id, 'results', 'lab_order', orderId)
   return { success: true }
 }
 
+/**
+ * Authorise results for release. Nothing outside the laboratory — the patient
+ * portal, the printed report — shows an order until this has happened, which is
+ * what stops a half-typed panel, or an analyzer's unreviewed output, reaching a
+ * patient.
+ *
+ * Not a four-eyes rule: a small hospital's lab is often one technician, so
+ * lab:verify is granted to that role by default. The point is that releasing is
+ * a deliberate act by a person, not that it is a different person.
+ */
+export async function verifyOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:verify')
+  const supabase = await createClient()
+
+  const { data: items } = await supabase
+    .from('lab_order_items')
+    .select('id, result_value, result_text')
+    .eq('lab_order_id', orderId)
+  if (!items?.length) return { success: false, error: 'This order has no tests' }
+
+  const pending = items.filter((i) => i.result_value == null && !i.result_text)
+  if (pending.length === items.length) {
+    return { success: false, error: 'No results have been entered yet' }
+  }
+  if (pending.length) {
+    return {
+      success: false,
+      error: `${pending.length} of ${items.length} tests have no result yet — enter or cancel them first`,
+    }
+  }
+
+  const { error } = await supabase.from('lab_orders').update({
+    status: 'verified', verified_by: actor.id, verified_at: new Date().toISOString(),
+  }).eq('id', orderId).in('status', ['collected', 'processing'])
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'verify', 'lab_order', orderId)
+  return { success: true }
+}
+
+/** Release a verified order. This is the point it becomes visible to the patient. */
 export async function reportOrder(orderId: string): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'lab:process')
+  await requirePermission(actor.role, 'lab:verify')
   const supabase = await createClient()
+
+  const { data: cur } = await supabase
+    .from('lab_orders').select('status').eq('id', orderId).single()
+  if (cur?.status !== 'verified') {
+    return { success: false, error: 'Results must be verified before the report is released' }
+  }
+
   const { error } = await supabase.from('lab_orders').update({
     status: 'reported', reported_at: new Date().toISOString(),
-  }).eq('id', orderId)
+  }).eq('id', orderId).eq('status', 'verified')
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'report', 'lab_order', orderId)
   return { success: true }
@@ -294,7 +347,7 @@ export async function getLabOrder(id: string): Promise<LabOrder | null> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_orders')
-    .select(`*, patient:patients(id,full_name,uhid), orderer:profiles(id,full_name),
+    .select(`*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
              items:lab_order_items(*, test:lab_tests_catalog(*))`)
     .eq('id', id).single()
   return data as unknown as LabOrder | null
@@ -306,7 +359,7 @@ export async function listLabOrders(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('lab_orders')
-    .select(`*, patient:patients(id,full_name,uhid), orderer:profiles(id,full_name),
+    .select(`*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
              items:lab_order_items(*, test:lab_tests_catalog(*))`)
     .order('ordered_at', { ascending: false })
 

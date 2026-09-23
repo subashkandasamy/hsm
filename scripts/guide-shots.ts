@@ -248,6 +248,12 @@ export const SHOTS: Shot[] = [
   { name: 'ward-board',   path: '/wards',        selector: 'main', wait: 2500 },
   { name: 'ipd-list',     path: '/ipd',          selector: 'main', wait: 2500 },
   { name: 'opd-queue',    path: '/opd',          selector: 'main', wait: 2500 },
+  {
+    name: 'lab-to-release',
+    path: '/lab',
+    steps: [{ clickText: 'To Release' }, { wait: 1500 }],
+    selector: 'main', wait: 3000,
+  },
   { name: 'lab-orders',    path: '/lab', selector: 'main', wait: 2500 },
   {
     name: 'lab-reported',

@@ -477,6 +477,8 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
         ordered_by: doctorId(s, 'Arun Prakash'), status: 'reported', billing_status: 'billed',
         ordered_at: new Date(Date.now() - 2 * 86400000).toISOString(),
         reported_at: new Date(Date.now() - 86400000 * 1.8).toISOString(),
+        verified_by: doctorId(s, 'Arun Prakash'),
+        verified_at: new Date(Date.now() - 86400000 * 1.8).toISOString(),
         priority: 'urgent',
         report: 'Right lower zone consolidation with air bronchograms. Cardiac silhouette normal. No pleural effusion. Findings consistent with lobar pneumonia.',
       },
@@ -492,13 +494,22 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
   // A lab order with results, and one still waiting.
   const murugan = patientId(s, 'Murugan')
   const pick = (n: string) => tests.find((t) => t.name.startsWith(n))!
-  const reported = uuid(), pending = uuid()
-  ok('2 lab orders', (await db.from('lab_orders').insert([
+  const reported = uuid(), pending = uuid(), awaitingRelease = uuid()
+  ok('3 lab orders (one awaiting release)', (await db.from('lab_orders').insert([
     { id: reported, tenant_id: tenantId, patient_id: murugan, ordered_by: doctorId(s, 'Arun Prakash'),
       status: 'reported', billing_status: 'billed', ordered_at: new Date(Date.now() - 86400000).toISOString(),
-      reported_at: new Date(Date.now() - 3600000 * 6).toISOString(), priority: 'routine' },
+      reported_at: new Date(Date.now() - 3600000 * 6).toISOString(), priority: 'routine',
+      verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
+      verified_at: new Date(Date.now() - 3600000 * 6).toISOString() },
     { id: pending, tenant_id: tenantId, patient_id: patientId(s, 'Divya'), ordered_by: doctorId(s, 'Arun Prakash'),
       status: 'ordered', billing_status: 'unbilled', ordered_at: new Date().toISOString(), priority: 'routine' },
+    // Results in, authorised, not yet released — so the To Release queue is not
+    // empty and the gate between the bench and the patient is visible.
+    { id: awaitingRelease, tenant_id: tenantId, patient_id: patientId(s, 'Fathima'),
+      ordered_by: doctorId(s, 'Kavitha Suresh'), status: 'verified', billing_status: 'billed',
+      ordered_at: new Date(Date.now() - 3600000 * 4).toISOString(), priority: 'routine',
+      verified_by: s.staff.find((x) => x.role === 'lab_tech')!.id,
+      verified_at: new Date(Date.now() - 900000).toISOString() },
   ])).error)
   ok('lab results', (await db.from('lab_order_items').insert([
     { id: uuid(), tenant_id: tenantId, lab_order_id: reported, test_id: pick('HbA1c').id,
@@ -507,6 +518,10 @@ async function createVisits(tenantId: string, s: Seeded, tests: Array<{ id: stri
       price_snapshot: pick('Serum Creatinine').price, result_value: 1.1, unit: 'mg/dL', flag: 'normal' },
     { id: uuid(), tenant_id: tenantId, lab_order_id: pending, test_id: pick('Complete Blood Count').id,
       price_snapshot: pick('Complete Blood Count').price, flag: 'pending' },
+    { id: uuid(), tenant_id: tenantId, lab_order_id: awaitingRelease, test_id: pick('Random Blood Sugar').id,
+      price_snapshot: pick('Random Blood Sugar').price, result_value: 164, unit: 'mg/dL', flag: 'high' },
+    { id: uuid(), tenant_id: tenantId, lab_order_id: awaitingRelease, test_id: pick('Haemoglobin').id,
+      price_snapshot: pick('Haemoglobin').price, result_value: 11.4, unit: 'g/dL', flag: 'low' },
   ])).error)
 }
 

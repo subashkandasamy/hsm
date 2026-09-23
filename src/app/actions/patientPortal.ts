@@ -318,12 +318,15 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
     svc.from('visits')
       .select('id, type, visit_date, complaint, diagnosis, notes, doctor:profiles(full_name)')
       .eq('patient_id', patientId).order('visit_date', { ascending: false }),
+    // Only released results. Without this filter a patient could read an order
+    // that was still being worked on — a half-entered panel, or an unverified
+    // one — which is neither finished nor anybody's intention to publish.
     svc.from('lab_orders')
       .select('id, status, ordered_at, reported_at, items:lab_order_items(result_value, result_text, unit, flag, test:lab_tests_catalog(name, unit, reference_range))')
-      .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
+      .eq('patient_id', patientId).eq('status', 'reported').order('ordered_at', { ascending: false }),
     svc.from('radiology_orders')
       .select('id, status, ordered_at, reported_at, report, image_url, test:radiology_catalog(name)')
-      .eq('patient_id', patientId).order('ordered_at', { ascending: false }),
+      .eq('patient_id', patientId).eq('status', 'reported').order('ordered_at', { ascending: false }),
   ])
 
   const visits = (visitsRes.data ?? []) as Array<Record<string, unknown>>
@@ -397,7 +400,11 @@ async function ownedOrderPatient(
 ): Promise<{ owner: { name: string; uhid: string; tenant: string; tenantId: string }; patientId: string } | null> {
   const session = await getPatientSession()
   if (!session) return null
-  const { data } = await svc.from(table).select('patient_id').eq('id', orderId).maybeSingle()
+  // Released orders only, checked here rather than at each call site — the list
+  // is already filtered, so this is the guard against an id arriving some other
+  // way. Every portal report and scan-image fetch goes through this function.
+  const { data } = await svc.from(table)
+    .select('patient_id, status').eq('id', orderId).eq('status', 'reported').maybeSingle()
   const patientId = (data?.patient_id as string | null) ?? null
   if (!patientId) return null
   const owner = await ownsPatient(svc, patientId, session)
@@ -424,7 +431,7 @@ export async function getPortalLabReport(orderId: string): Promise<{
   if (!owned) return null
   const [{ data: order }, tenantProfile, patient] = await Promise.all([
     svc.from('lab_orders')
-      .select('*, patient:patients(id,full_name,uhid), orderer:profiles(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
+      .select('*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
       .eq('id', orderId).maybeSingle(),
     portalTenantProfile(svc, owned.owner.tenantId),
     portalPatientDemographics(svc, owned.patientId),
@@ -441,7 +448,7 @@ export async function getPortalRadiologyReport(orderId: string): Promise<{
   if (!owned) return null
   const [{ data: order }, tenantProfile, patient] = await Promise.all([
     svc.from('radiology_orders')
-      .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles(id,full_name)')
+      .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
       .eq('id', orderId).maybeSingle(),
     portalTenantProfile(svc, owned.owner.tenantId),
     portalPatientDemographics(svc, owned.patientId),

@@ -9,7 +9,7 @@ import DateText from '@/components/ui/DateText'
 import Money from '@/components/ui/Money'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { markPerformed, listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
+import { markPerformed, verifyRadiologyOrder, listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
 import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -18,7 +18,7 @@ import ReportEntryModal from './ReportEntryModal'
 import AddRadiologyTestModal from './AddRadiologyTestModal'
 
 const STATUS_MAP: Record<string, string> = {
-  ordered: 'pending', performed: 'info', reported: 'success', cancelled: 'cancelled',
+  ordered: 'pending', performed: 'info', verified: 'info', reported: 'success', cancelled: 'cancelled',
 }
 
 const MODALITY_COLORS: Record<string, { bg: string; color: string }> = {
@@ -42,6 +42,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'radiology:order')
   const canProcess = !!role && hasPermission(role, 'radiology:process')
+  const canVerify  = !!role && hasPermission(role, 'radiology:verify')
   const isAdmin    = !!role && hasPermission(role, 'radiology:manage')
   const [tab, setTab] = useState<TabKey>('pending')
   const [pending, setPending] = useState<RadiologyOrder[]>(initP)
@@ -79,6 +80,20 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
     await refresh()
     setActionId(null)
     setTab('performed')
+  }
+
+  async function handleRelease(orderId: string) {
+    setActionId(orderId)
+    setActionError(null)
+    const res = await verifyRadiologyOrder(orderId)
+    if (!res.success) {
+      setActionError({ id: orderId, msg: res.error })
+      setActionId(null)
+      return
+    }
+    await refresh()
+    setActionId(null)
+    setTab('reported')
   }
 
   const TABS: { key: TabKey; label: string; data: RadiologyOrder[] }[] = [
@@ -218,8 +233,16 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                         {tab === 'performed' && canProcess && (
                           <button onClick={() => setReportOrder(order)}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                            Add Report
+                            style={{ background: order.report ? '#fff' : '#0D9488', color: order.report ? '#0D9488' : '#fff', border: order.report ? '1px solid #99F6E4' : 'none', cursor: 'pointer' }}>
+                            {order.report ? 'Edit Report' : 'Add Report'}
+                          </button>
+                        )}
+                        {tab === 'performed' && canVerify && order.report && (
+                          <button onClick={() => handleRelease(order.id)} disabled={actionId === order.id}
+                            title="Authorise this report and release it to the patient"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: actionId === order.id ? 'not-allowed' : 'pointer' }}>
+                            {actionId === order.id ? 'Releasing…' : 'Release Report'}
                           </button>
                         )}
                         {tab === 'reported' && (

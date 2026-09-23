@@ -117,6 +117,7 @@ const LAB_STATUS_STYLE: Record<LabOrderStatus, { label: string; color: string; b
   ordered:    { label: 'Ordered',    color: '#92400E', bg: '#FEF3C7' },
   collected:  { label: 'Collected',  color: '#1E40AF', bg: '#DBEAFE' },
   processing: { label: 'Processing', color: '#7C3AED', bg: '#F5F3FF' },
+  verified:   { label: 'Verified',   color: '#0F766E', bg: '#CCFBF1' },
   reported:   { label: 'Reported',   color: '#065F46', bg: '#DCFCE7' },
   cancelled:  { label: 'Cancelled',  color: '#6B7280', bg: '#F3F4F6' },
 }
@@ -124,6 +125,7 @@ const LAB_STATUS_STYLE: Record<LabOrderStatus, { label: string; color: string; b
 const RAD_STATUS_STYLE: Record<RadiologyOrderStatus, { label: string; color: string; bg: string }> = {
   ordered:   { label: 'Ordered',   color: '#92400E', bg: '#FEF3C7' },
   performed: { label: 'Performed', color: '#1E40AF', bg: '#DBEAFE' },
+  verified:  { label: 'Verified',  color: '#0F766E', bg: '#CCFBF1' },
   reported:  { label: 'Reported',  color: '#065F46', bg: '#DCFCE7' },
   cancelled: { label: 'Cancelled', color: '#6B7280', bg: '#F3F4F6' },
 }

@@ -14,6 +14,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const { orderId } = await params
   const [order, profile] = await Promise.all([getLabOrder(orderId), getTenantProfile()])
   if (!order) return new Response('Lab order not found', { status: 404 })
+  // A report is a released document. Verify it first; before that, the results
+  // are still the laboratory's working copy.
+  if (order.status !== 'reported') {
+    return new Response('This report has not been verified and released yet', { status: 409 })
+  }
 
   const supabase = await createClient()
   const [{ data: demo }, logo] = await Promise.all([

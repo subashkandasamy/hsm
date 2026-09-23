@@ -15,6 +15,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const { orderId } = await params
   const [order, profile, stored] = await Promise.all([getRadiologyOrder(orderId), getTenantProfile(), getRadiologyImageUrl(orderId)])
   if (!order) return new Response('Radiology order not found', { status: 404 })
+  if (order.status !== 'reported') {
+    return new Response('This report has not been verified and released yet', { status: 409 })
+  }
 
   const supabase = await createClient()
   const [{ data: demo }, logo, image] = await Promise.all([

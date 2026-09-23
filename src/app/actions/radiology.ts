@@ -162,14 +162,43 @@ export async function uploadReport(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:process')
   const supabase = await createClient()
+  // Writing a report no longer releases it. It waits for verifyRadiologyOrder,
+  // and re-writing one withdraws any authorisation it already had.
   const { error } = await supabase.from('radiology_orders').update({
     report,
     image_url: imageUrl,
-    status: 'reported',
-    reported_at: new Date().toISOString(),
+    status: 'performed',
+    verified_by: null,
+    verified_at: null,
   }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'report', 'radiology_order', orderId)
+  await logAudit(actor.id, 'report_draft', 'radiology_order', orderId)
+  return { success: true }
+}
+
+/**
+ * Authorise a radiology report for release. Until this happens the report is
+ * not shown to the patient and will not print.
+ */
+export async function verifyRadiologyOrder(orderId: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'radiology:verify')
+  const supabase = await createClient()
+
+  const { data: cur } = await supabase
+    .from('radiology_orders').select('status, report').eq('id', orderId).single()
+  if (!cur?.report?.trim()) return { success: false, error: 'There is no report to verify yet' }
+
+  const { error } = await supabase.from('radiology_orders').update({
+    status: 'reported',
+    verified_by: actor.id,
+    verified_at: new Date().toISOString(),
+    reported_at: new Date().toISOString(),
+  }).eq('id', orderId).eq('status', 'performed')
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'verify', 'radiology_order', orderId)
   return { success: true }
 }
 
@@ -239,7 +268,7 @@ export async function getRadiologyOrder(id: string): Promise<RadiologyOrder | nu
   const supabase = await createClient()
   const { data } = await supabase
     .from('radiology_orders')
-    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles(id,full_name)')
+    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
     .eq('id', id).single()
   return data as unknown as RadiologyOrder | null
 }
@@ -250,7 +279,7 @@ export async function listRadiologyOrders(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('radiology_orders')
-    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles(id,full_name)')
+    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
     .order('ordered_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)

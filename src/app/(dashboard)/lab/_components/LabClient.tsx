@@ -8,7 +8,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { collectSample, reportOrder, listLabOrders, listLabCatalog } from '@/app/actions/lab'
+import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog } from '@/app/actions/lab'
 import type { LabOrder, LabTestCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -21,7 +21,7 @@ import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 const STATUS_MAP: Record<string, string> = {
   ordered: 'pending', collected: 'info', processing: 'info',
-  reported: 'success', cancelled: 'cancelled',
+  verified: 'info', reported: 'success', cancelled: 'cancelled',
 }
 
 const FLAG_COLORS: Record<string, { bg: string; color: string }> = {
@@ -34,23 +34,26 @@ const FLAG_COLORS: Record<string, { bg: string; color: string }> = {
 interface Props {
   toCollect: LabOrder[]
   resultQueue: LabOrder[]
+  verified?: LabOrder[]
   reported: LabOrder[]
   catalog: LabTestCatalog[]
 }
 
-type TabKey = 'collect' | 'results' | 'reported'
+type TabKey = 'collect' | 'results' | 'verify' | 'reported'
 
-export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, reported: initReported, catalog: initCatalog }: Props) {
+export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order')
   const canProcess      = !!role && hasPermission(role, 'lab:process')
+  const canVerify       = !!role && hasPermission(role, 'lab:verify')
   const canPrintSample  = !!role && hasPermission(role, 'barcode:print:sample')
   const isAdmin    = !!role && hasPermission(role, 'lab:manage')
   const isReadOnly = useIsReadOnly()
   const [tab, setTab] = useState<TabKey>('collect')
   const [toCollect, setToCollect] = useState<LabOrder[]>(initCollect)
   const [resultQueue, setResultQueue] = useState<LabOrder[]>(initQueue)
+  const [verified, setVerified] = useState<LabOrder[]>(initVerified ?? [])
   const [reported, setReported] = useState<LabOrder[]>(initReported)
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
@@ -66,15 +69,17 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
 
   async function refresh() {
     setLoading(true)
-    const [c, col, proc, r, cat] = await Promise.all([
+    const [c, col, proc, ver, r, cat] = await Promise.all([
       listLabOrders({ status: 'ordered' }),
       listLabOrders({ status: 'collected' }),
       listLabOrders({ status: 'processing' }),
+      listLabOrders({ status: 'verified' }),
       listLabOrders({ status: 'reported' }),
       listLabCatalog(),
     ])
     setToCollect(c)
     setResultQueue([...col, ...proc])
+    setVerified(ver)
     setReported(r)
     setCatalog(cat)
     setLoading(false)
@@ -94,9 +99,29 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
     setTab('results')
   }
 
+  async function handleVerify(orderId: string) {
+    setActionId(orderId)
+    setActionError(null)
+    const res = await verifyOrder(orderId)
+    if (!res.success) {
+      setActionError({ id: orderId, msg: res.error })
+      setActionId(null)
+      return
+    }
+    await refresh()
+    setActionId(null)
+    setTab('verify')
+  }
+
   async function handleReport(orderId: string) {
     setActionId(orderId)
-    await reportOrder(orderId)
+    setActionError(null)
+    const res = await reportOrder(orderId)
+    if (!res.success) {
+      setActionError({ id: orderId, msg: res.error })
+      setActionId(null)
+      return
+    }
     await refresh()
     setActionId(null)
   }
@@ -104,10 +129,15 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const TABS: { key: TabKey; label: string; count: number }[] = [
     { key: 'collect', label: 'To Collect', count: toCollect.length },
     { key: 'results', label: 'Result Entry', count: resultQueue.length },
+    { key: 'verify', label: 'To Release', count: verified.length },
     { key: 'reported', label: 'Reported', count: reported.length },
   ]
 
-  const currentList = tab === 'collect' ? toCollect : tab === 'results' ? resultQueue : reported
+  const currentList =
+    tab === 'collect' ? toCollect
+    : tab === 'results' ? resultQueue
+    : tab === 'verify' ? verified
+    : reported
 
   return (
     <div>
@@ -245,13 +275,36 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                         style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                         Enter Results
                       </button>
+                      {canVerify && (
+                        <button
+                          onClick={() => handleVerify(order.id)}
+                          disabled={actionId === order.id}
+                          title="Check the results, then authorise them for release"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                          style={{ background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }}>
+                          Verify
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {tab === 'verify' && (
+                    <>
                       <button
-                        onClick={() => handleReport(order.id)}
-                        disabled={actionId === order.id}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                        style={{ background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }}>
-                        Mark Reported
+                        onClick={() => setViewOrder(order)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: '#fff', color: '#0D9488', border: '1px solid #99F6E4', cursor: 'pointer' }}>
+                        Review
                       </button>
+                      {canVerify && (
+                        <button
+                          onClick={() => handleReport(order.id)}
+                          disabled={actionId === order.id}
+                          title="Release to the patient and allow the report to print"
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          Release Report
+                        </button>
+                      )}
                     </>
                   )}
                   {tab === 'reported' && (

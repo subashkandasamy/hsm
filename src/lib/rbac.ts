@@ -9,8 +9,8 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'wards:manage',
     'ipd:read', 'ipd:write', 'ipd:notes',
     'emergency:read', 'emergency:register', 'emergency:triage',
-    'lab:read', 'lab:order', 'lab:process', 'lab:manage',
-    'radiology:read', 'radiology:order', 'radiology:process', 'radiology:manage',
+    'lab:read', 'lab:order', 'lab:process', 'lab:verify', 'lab:manage',
+    'radiology:read', 'radiology:order', 'radiology:process', 'radiology:verify', 'radiology:manage',
     'pharmacy:read', 'pharmacy:dispense', 'pharmacy:manage',
     'ot:read', 'ot:schedule', 'ot:record', 'ot:manage',
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:request', 'bloodbank:issue', 'bloodbank:screen', 'bloodbank:transfuse',
@@ -37,8 +37,8 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'opd:read', 'opd:write', 'opd:vitals',
     'ipd:read', 'ipd:write', 'ipd:notes', 'ipd:nursing',
     'emergency:read', 'emergency:register', 'emergency:triage',
-    'lab:read', 'lab:order',
-    'radiology:read', 'radiology:order',
+    'lab:read', 'lab:order', 'lab:verify',
+    'radiology:read', 'radiology:order', 'radiology:verify',
     'pharmacy:read',
     'ot:read', 'ot:schedule', 'ot:record',
     'bloodbank:read', 'bloodbank:request', 'bloodbank:transfuse',
@@ -85,8 +85,11 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   ],
   lab_tech: [
     'patients:read',
-    'lab:read', 'lab:process',
-    'radiology:read', 'radiology:process',
+    // A small hospital's lab is often one technician, so verification is granted
+    // here by default — the gate is that releasing is a deliberate act, not that
+    // it is a second person. A larger hospital can hold these to a senior role.
+    'lab:read', 'lab:process', 'lab:verify',
+    'radiology:read', 'radiology:process', 'radiology:verify',
     'bloodbank:read', 'bloodbank:manage', 'bloodbank:issue', 'bloodbank:screen',
     'emr:read',
     'barcode:print:sample',

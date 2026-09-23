@@ -336,7 +336,7 @@ export interface LabTestCatalog {
 }
 
 export type LabFlag = 'pending' | 'normal' | 'high' | 'low'
-export type LabOrderStatus = 'ordered' | 'collected' | 'processing' | 'reported' | 'cancelled'
+export type LabOrderStatus = 'ordered' | 'collected' | 'processing' | 'verified' | 'reported' | 'cancelled'
 
 export interface LabOrderItem {
   id: string; lab_order_id: string; test_id: string; price_snapshot: number
@@ -354,6 +354,7 @@ export interface LabOrder {
   status: LabOrderStatus; billing_status: BillingStatus
   priority: OrderPriority; scheduled_for: string | null
   ordered_at: string; reported_at: string | null
+  verified_by?: string | null; verified_at?: string | null
   sample_label_printed_at?: string | null
   accession_no?: string
   items?: LabOrderItem[]
@@ -372,7 +373,7 @@ export interface RadiologyCatalog {
   radiology_master_id?: string | null
 }
 
-export type RadiologyOrderStatus = 'ordered' | 'performed' | 'reported' | 'cancelled'
+export type RadiologyOrderStatus = 'ordered' | 'performed' | 'verified' | 'reported' | 'cancelled'
 
 export interface RadiologyOrder {
   id: string; patient_id: string; visit_id: string | null; admission_id: string | null
@@ -1314,8 +1315,8 @@ export type Permission =
   | 'wards:manage'
   | 'ipd:read' | 'ipd:write' | 'ipd:notes'
   | 'emergency:read' | 'emergency:register' | 'emergency:triage'
-  | 'lab:read' | 'lab:order' | 'lab:process' | 'lab:manage'
-  | 'radiology:read' | 'radiology:order' | 'radiology:process' | 'radiology:manage'
+  | 'lab:read' | 'lab:order' | 'lab:process' | 'lab:verify' | 'lab:manage'
+  | 'radiology:read' | 'radiology:order' | 'radiology:process' | 'radiology:verify' | 'radiology:manage'
   | 'pharmacy:read' | 'pharmacy:dispense' | 'pharmacy:manage'
   | 'ot:read' | 'ot:schedule' | 'ot:record' | 'ot:manage'
   | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue' | 'bloodbank:screen' | 'bloodbank:transfuse'

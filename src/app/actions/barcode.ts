@@ -151,7 +151,7 @@ export async function getLabOrderForLabel(labOrderId: string): Promise<LabOrder 
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_orders')
-    .select(`*, patient:patients(id, full_name, uhid), orderer:profiles(id, full_name), items:lab_order_items(*, test:lab_tests_catalog(*))`)
+    .select(`*, patient:patients(id, full_name, uhid), orderer:profiles!ordered_by(id, full_name), items:lab_order_items(*, test:lab_tests_catalog(*))`)
     .eq('id', labOrderId)
     .single()
   return data as LabOrder | null
