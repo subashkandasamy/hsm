@@ -34,6 +34,14 @@ export default function SampleQueue({
 
   if (!messages.length) return null
 
+  // Two different problems used to share one heading. A message whose codes
+  // are unknown had already found its patient, so "Attach to a patient" did
+  // nothing and the hospital had no way to tell why.
+  const noPatient = messages.filter((m) => m.status !== 'unmapped')
+  const noCodes = messages.filter((m) => m.status === 'unmapped')
+  const countOf = (list: UnmatchedMessage[]) =>
+    list.reduce((n, m) => n + (m.result_count || 0), 0)
+
   function attach(m: UnmatchedMessage) {
     setError(''); setNote('')
     startTransition(async () => {
@@ -68,11 +76,12 @@ export default function SampleQueue({
 
   return (
     <section className="mb-6">
-      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #BFDBFE', background: '#EFF6FF' }}>
+      {noPatient.length > 0 && (
+      <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid #BFDBFE', background: '#EFF6FF' }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid #BFDBFE' }}>
           <FileQuestion className="w-4 h-4 flex-shrink-0" style={{ color: '#1D4ED8' }} />
           <p className="text-sm font-semibold" style={{ color: '#1E3A8A' }}>
-            {messages.length} result{messages.length > 1 ? 's' : ''} could not be matched to a patient
+            {countOf(noPatient)} result{countOf(noPatient) === 1 ? '' : 's'} could not be matched to a patient
           </p>
         </div>
 
@@ -83,7 +92,7 @@ export default function SampleQueue({
           </p>
         </div>
 
-        {messages.map((m) => (
+        {noPatient.map((m) => (
           <div key={m.id} className="px-4 py-3" style={{ background: '#fff', borderTop: '1px solid #DBEAFE' }}>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {m.sample_barcode ? (
@@ -155,6 +164,50 @@ export default function SampleQueue({
           </div>
         ))}
       </div>
+      )}
+
+      {noCodes.length > 0 && (
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #FDE68A', background: '#FFFBEB' }}>
+          <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid #FDE68A' }}>
+            <FileQuestion className="w-4 h-4 flex-shrink-0" style={{ color: '#B45309' }} />
+            <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
+              {countOf(noCodes)} result{countOf(noCodes) === 1 ? '' : 's'} waiting on a measurement you have not identified
+            </p>
+          </div>
+          <div className="px-4 py-2.5" style={{ background: '#fff', borderBottom: '1px solid #FEF3C7' }}>
+            <p className="text-xs" style={{ color: '#64748B' }}>
+              These found their patient. Answer the measurements above and they will
+              go through by themselves — there is nothing to attach.
+            </p>
+          </div>
+          {noCodes.map((m) => (
+            <div key={m.id} className="px-4 py-3" style={{ background: '#fff', borderTop: '1px solid #FEF3C7' }}>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-sm font-mono font-semibold" style={{ color: '#0F172A' }}>
+                  {m.sample_barcode}
+                </span>
+                <span className="text-xs" style={{ color: '#94A3B8' }}>
+                  {m.result_count} measurement{m.result_count === 1 ? '' : 's'} · {m.analyzer_label}
+                </span>
+                <div className="flex gap-1.5 ml-auto">
+                  <button onClick={() => retry(m)} disabled={isPending}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+                    style={{ background: '#B45309', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                    <RotateCw className="w-3 h-3" /> Try again
+                  </button>
+                  <button onClick={() => ignore(m)} disabled={isPending} title="Not a patient sample"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              {m.error && <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>{m.error}</p>}
+            </div>
+          ))}
+          {note && <p className="text-xs px-4 py-2" style={{ background: '#fff', color: '#B45309' }}>{note}</p>}
+        </div>
+      )}
     </section>
   )
 }

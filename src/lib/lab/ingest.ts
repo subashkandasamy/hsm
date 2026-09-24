@@ -210,7 +210,9 @@ export async function processMessage(
 
   if (!items.length) {
     const error = `None of these codes are mapped yet: ${[...new Set(unmapped)].join(', ')}`
-    await svc.from('analyzer_messages').update({ status: 'unmatched', error }).eq('id', messageId)
+    // Not 'unmatched' — the patient WAS found. Saying otherwise sends the
+    // hospital to re-type a barcode that was already right.
+    await svc.from('analyzer_messages').update({ status: 'unmapped', error }).eq('id', messageId)
     return { status: 'unmapped', unmapped: [...new Set(unmapped)], error }
   }
 

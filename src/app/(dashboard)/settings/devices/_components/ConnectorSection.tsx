@@ -183,11 +183,15 @@ function ConnectorCard({
   busy: boolean
 }) {
   const revoked = c.status === 'revoked'
-  const waiting = !c.paired_at && !revoked
+  // One fact decides this, not two. The card previously took its badge from
+  // `status` and its message from `paired_at`, so a row could say "Connected"
+  // and "Waiting for the installer to be run" at the same time.
+  const setUp = !!c.paired_at || !!c.last_seen_at
+  const waiting = !setUp && !revoked
   // One that never connected is a typo, not a record — it goes without ceremony.
   // One that is working has to be disconnected first, so results never stop
   // arriving as a side effect of tidying up.
-  const removable = revoked || !c.paired_at
+  const removable = revoked || !setUp
 
   return (
     <GlassCard className="p-4">
@@ -200,7 +204,7 @@ function ConnectorCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{c.name}</p>
-            <StatusPill status={c.status} paired={!!c.paired_at} />
+            <StatusPill status={c.status} setUp={setUp} />
           </div>
 
           {c.machine_name && (
@@ -260,15 +264,16 @@ function ConnectorCard({
   )
 }
 
-function StatusPill({ status, paired }: { status: string; paired: boolean }) {
+function StatusPill({ status, setUp }: { status: string; setUp: boolean }) {
   const map: Record<string, { bg: string; fg: string; label: string; icon: boolean }> = {
     online:  { bg: '#ECFDF5', fg: '#047857', label: 'Connected',    icon: true },
     offline: { bg: '#FEF3C7', fg: '#B45309', label: 'Not responding', icon: false },
     pending: { bg: '#F1F5F9', fg: '#64748B', label: 'Not set up yet', icon: false },
     revoked: { bg: '#F1F5F9', fg: '#94A3B8', label: 'Disconnected', icon: false },
   }
-  const s = map[status] ?? map.pending
-  const label = status === 'pending' && paired ? 'Set up' : s.label
+  // Never claim a connection to something that has never spoken to us.
+  const s = !setUp && status !== 'revoked' ? map.pending : (map[status] ?? map.pending)
+  const label = s.label
   return (
     <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1"
       style={{ background: s.bg, color: s.fg }}>

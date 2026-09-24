@@ -49,8 +49,6 @@ export interface AstmMessage {
   warnings: string[]
 }
 
-const STX = '\x02'
-const ETX = '\x03'
 const EOT = '\x04'
 const ENQ = '\x05'
 const ACK = '\x06'

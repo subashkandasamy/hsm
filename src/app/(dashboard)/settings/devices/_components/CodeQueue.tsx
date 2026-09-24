@@ -3,6 +3,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { HelpCircle, Check, EyeOff } from 'lucide-react'
 import Combobox from '@/components/ui/Combobox'
+import { formatUnit } from '@/lib/lab/units'
 import {
   mapAnalyzerCode, ignoreAnalyzerCode,
   type UnknownCode, type AnalyteOption,
@@ -38,7 +39,7 @@ export default function CodeQueue({
     const byLabel = new Map<string, AnalyteOption>()
     const labels: string[] = []
     for (const a of analytes) {
-      const label = `${a.name} (${a.code})${a.unit_ucum ? ` · ${a.unit_ucum}` : ''}`
+      const label = `${a.name} (${a.code})${a.unit_ucum ? ` · ${formatUnit(a.unit_ucum)}` : ''}`
       labels.push(label)
       byLabel.set(label, a)
     }
@@ -90,7 +91,7 @@ export default function CodeQueue({
               <span className="text-sm font-mono font-bold" style={{ color: '#0F172A' }}>{c.analyzer_code}</span>
               {c.last_value && (
                 <span className="text-xs" style={{ color: '#475569' }}>
-                  last sent <strong>{c.last_value}</strong>{c.unit_ucum ? ` ${c.unit_ucum}` : ''}
+                  last sent <strong>{c.last_value}</strong>{c.unit_ucum ? ` ${formatUnit(c.unit_ucum)}` : ''}
                 </span>
               )}
               {c.times_seen > 0 && (
