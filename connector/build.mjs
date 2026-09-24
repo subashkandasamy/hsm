@@ -291,6 +291,8 @@ netsh advfirewall firewall delete rule name="Uyirly Lab Connector" 2>$null | Out
 netsh advfirewall firewall add rule name="Uyirly Lab Connector" dir=in action=allow \`
   protocol=TCP localport=5150 profile=any | Out-Null
 Write-Host "Opened port 5150 for analyzers"
+# The status page is deliberately NOT opened in the firewall: it is bound to
+# 127.0.0.1 and has no business being reachable from the rest of the hospital.
 
 # Start with Windows, as SYSTEM, and restart if it ever stops.
 $xml = @"
@@ -321,6 +323,16 @@ schtasks /Create /TN $name /XML $xmlPath /F | Out-Null
 Remove-Item $xmlPath -Force
 schtasks /Run /TN $name | Out-Null
 
+# Somewhere to look. The service has no window of its own, so without this a
+# laboratory has no way to see whether it is working short of Command Prompt.
+$statusUrl = 'http://localhost:5151'
+$link = (New-Object -ComObject WScript.Shell).CreateShortcut(
+  [System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk'))
+$link.TargetPath = $statusUrl
+$link.Description = 'Is the lab connector working?'
+$link.Save()
+Write-Host "Put a shortcut on the desktop: Uyirly Lab Connector"
+
 Write-Host ""
 Write-Host "Done. The connector is running and will start with Windows." -ForegroundColor Green
 & $exe --check
@@ -332,6 +344,7 @@ Write-Host "Give the address above to your analyzer engineer."
 $ErrorActionPreference = 'SilentlyContinue'
 schtasks /End    /TN 'UyirlyLabConnector' | Out-Null
 schtasks /Delete /TN 'UyirlyLabConnector' /F | Out-Null
+Remove-Item ([System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk'))
 netsh advfirewall firewall delete rule name="Uyirly Lab Connector" | Out-Null
 Remove-Item "$env:ProgramFiles\\Uyirly\\Connector" -Recurse -Force
 Write-Host "Removed. Results not yet sent are still in C:\\ProgramData\\Uyirly\\Connector\\queue"
@@ -365,7 +378,13 @@ TO CONNECT AN ANALYZER
   Uyirly recognises the machine from what it sends.
 
 TO CHECK ON IT
-  Open Command Prompt and run:
+  Double-click "Uyirly Lab Connector" on the desktop. A page opens showing
+  whether it is working, the address for your engineer, and whether anything
+  is waiting to be sent. It refreshes by itself, so you can leave it open.
+
+  That page is only visible on this computer, and never shows patient names.
+
+  If you need more detail, open Command Prompt and run:
       "%ProgramFiles%\\Uyirly\\Connector\\uyirly-connector.exe" --check
 
   It checks everything — pairing, the internet, the port, the firewall, and

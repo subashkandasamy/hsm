@@ -30,6 +30,8 @@ export interface Config {
   hospital: string | null
   /** TCP port analyzers connect to. What the service engineer types in. */
   listenPort: number
+  /** Where the local status page is served. Loopback only. */
+  statusPort?: number
   /** COM ports / tty devices to open, with their line settings. */
   serial: Array<{ path: string; baudRate: number }>
   /** Folders to watch for analyzers that can only write a file. */

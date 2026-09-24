@@ -162,6 +162,33 @@ jobs:
           & "$env:ProgramFiles\Uyirly\Connector\uyirly-connector.exe" --check
           if ($LASTEXITCODE -ne 0) { throw "--check reported a problem (exit $LASTEXITCODE)" }
 
+      - name: The status page works, and only on this computer
+        shell: pwsh
+        run: |
+          $page = (Invoke-WebRequest -Uri 'http://localhost:5151' -UseBasicParsing -TimeoutSec 10).Content
+          if ($page -notmatch 'Uyirly Lab Connector') { throw 'the status page did not render' }
+          if ($page -notmatch 'Working')              { throw 'the page does not report a working connector' }
+          if ($page -notmatch '5150')                 { throw 'the page does not show the engineer address' }
+
+          # A desktop shortcut, or nobody will ever find it.
+          $lnk = [System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk')
+          if (-not (Test-Path $lnk)) { throw 'the desktop shortcut was not created' }
+
+          # It must not be reachable from the rest of the hospital network.
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 |
+                 Where-Object { $_.IPAddress -notlike '127.*' } | Select-Object -First 1).IPAddress
+          try {
+            Invoke-WebRequest -Uri "http://${ip}:5151" -UseBasicParsing -TimeoutSec 5 | Out-Null
+            throw "the status page answered on $ip — it must be loopback only"
+          } catch [System.Net.WebException], [Microsoft.PowerShell.Commands.HttpResponseException] {
+            Write-Host "correctly refused on $ip"
+          } catch {
+            if ($_.Exception.Message -like '*must be loopback only*') { throw }
+            Write-Host "correctly unreachable on $ip"
+          }
+          Write-Host 'status page verified'
+          exit 0
+
       - name: uninstall.ps1 removes what it made
         working-directory: connector/dist-exe
         shell: pwsh
@@ -170,6 +197,8 @@ jobs:
           schtasks /Query /TN 'UyirlyLabConnector' 2>$null
           if ($LASTEXITCODE -eq 0) { throw 'the startup task survived uninstall' }
           if (Test-Path "$env:ProgramFiles\Uyirly\Connector") { throw 'the program folder survived uninstall' }
+          $lnk = [System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk')
+          if (Test-Path $lnk) { throw 'the desktop shortcut survived uninstall' }
           # Unsent results are deliberately kept — uninstall must not destroy
           # laboratory data that has not reached the server.
           if (-not (Test-Path "$env:ProgramData\Uyirly\Connector")) {

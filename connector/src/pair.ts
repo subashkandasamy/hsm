@@ -42,6 +42,7 @@ export async function pair(serverUrl: string, code: string): Promise<Config> {
     connectorName: body.connectorName ?? 'Lab computer',
     hospital: body.hospital ?? null,
     listenPort: body.listenPort ?? 5150,
+    statusPort: 5151,
     serial: [],
     watchFolders: [],
     pairedAt: new Date().toISOString(),

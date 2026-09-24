@@ -5,6 +5,7 @@ import { Queue } from './queue.js'
 import { Uploader } from './uploader.js'
 import { promptForPairing, pair } from './pair.js'
 import { runCheck } from './check.js'
+import { startStatusPage, type LiveState } from './status-page.js'
 import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
@@ -90,6 +91,12 @@ async function main(): Promise<void> {
 
   const uploader = new Uploader(queue, config)
 
+  // What the status page reads. Kept here rather than inside the page so the
+  // page stays a view and never becomes something the connector depends on.
+  const live: LiveState = {
+    tcpBound: false, lastMessageAt: null, receivedCount: 0, lastProblem: null,
+  }
+
   // The single path every transport funnels into. Persist, then try to send —
   // and never the other way round.
   const receive = async (raw: string, source: string): Promise<void> => {
@@ -100,10 +107,14 @@ async function main(): Promise<void> {
         return
       }
       log.info(`Received ${raw.length} bytes from ${source}, saved as ${id.slice(0, 8)}`)
+      live.lastMessageAt = new Date()
+      live.receivedCount += 1
       uploader.nudge()
     } catch (e) {
       // The one genuinely bad outcome: a real measurement we could not write
       // down. Say so loudly — the laboratory needs to type this one in.
+      live.lastProblem = `A result from ${source} could not be saved to this computer `
+        + 'and must be entered by hand. Please call support.'
       log.error(`COULD NOT SAVE a result from ${source}: ${(e as Error).message}. `
         + 'This result must be entered by hand.')
     }
@@ -111,13 +122,15 @@ async function main(): Promise<void> {
 
   const stoppers: Array<() => void> = []
 
-  let tcpBound = false
   const tcp = startTcp(
     config.listenPort,
     (raw, src) => void receive(raw, src),
-    (bound) => { tcpBound = bound },
+    (bound) => { live.tcpBound = bound },
   )
   stoppers.push(() => tcp.close())
+
+  const statusPage = startStatusPage(config.statusPort ?? 5151, config, live)
+  stoppers.push(() => statusPage.close())
 
   for (const folder of config.watchFolders) {
     stoppers.push(startFolderWatch(folder, (raw, src) => void receive(raw, src)))
@@ -136,7 +149,7 @@ async function main(): Promise<void> {
   // anything. Announcing "Ready" while the port was taken is exactly how this
   // program once sat for ever with nothing listening.
   await new Promise((r) => setTimeout(r, 500))
-  if (tcpBound) {
+  if (live.tcpBound) {
     log.info(`Ready. Analyzers should send to ${lanIp() ?? 'this computer'} : ${config.listenPort}`)
   } else {
     log.error('NOT ready for network analyzers — port '
