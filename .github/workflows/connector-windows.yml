@@ -105,6 +105,7 @@ jobs:
 
           if ($fail.Count) { $fail | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
           Write-Host 'install verified'
+          exit 0   # same reason: native commands above leave $LASTEXITCODE set
 
       - name: An analyzer connects and its result arrives
         working-directory: connector
@@ -175,6 +176,10 @@ jobs:
             throw 'the queue folder was deleted — unsent results must survive an uninstall'
           }
           Write-Host 'uninstall verified, queue preserved'
+          # schtasks /Query above correctly fails once the task is gone, and the
+          # Actions pwsh wrapper exits the step with the last native command's
+          # code — so a step that succeeded would report failure without this.
+          exit 0
 
       - name: Logs, if anything went wrong
         if: failure()
