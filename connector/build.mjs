@@ -124,13 +124,18 @@ async function inject(sourceBinary, target, blob, platform) {
     try { execFileSync('codesign', ['--remove-signature', target], { stdio: 'ignore' }) } catch {}
   }
 
-  const postject = path.join(HERE, 'node_modules/.bin/postject')
+  // Call postject's own script with node rather than the .bin shim. On Windows
+  // npm writes postject.cmd and postject.ps1 but no extension-less file, so
+  // spawning "node_modules/.bin/postject" fails with ENOENT — which is exactly
+  // how the first Windows CI run died.
+  const postjectCli = path.join(HERE, 'node_modules/postject/dist/cli.js')
   const flags = [
+    postjectCli,
     target, 'NODE_SEA_BLOB', blob,
     '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
   ]
   if (platform === 'darwin') flags.push('--macho-segment-name', 'NODE_SEA')
-  execFileSync(postject, flags, { stdio: 'inherit' })
+  execFileSync(process.execPath, flags, { stdio: 'inherit' })
 
   if (platform === 'darwin') {
     try { execFileSync('codesign', ['--sign', '-', target], { stdio: 'ignore' }) } catch {}
