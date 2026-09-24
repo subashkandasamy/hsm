@@ -8,6 +8,10 @@ name: Connector — Windows install
 # executable, install it, pair it, let a fake analyzer connect over TCP, and
 # confirm the result reached the server.
 #
+# A step's background processes do not survive into the next step, so every
+# step that needs the mock server starts it itself; the mock reloads what it
+# recorded so restarting loses nothing.
+#
 # It talks to a mock server inside the job, never to production. Pointing CI at
 # the real one would mean a live pairing code in a repository secret and test
 # rows appearing in a hospital's account.
@@ -47,50 +51,11 @@ jobs:
         working-directory: connector
         run: node build.mjs --win
 
-      - name: Start the mock Uyirly
-        working-directory: connector
-        shell: pwsh
-        run: |
-          Start-Process node -ArgumentList 'test/mock-server.mjs','8787','received.json' `
-            -RedirectStandardOutput mock.log -RedirectStandardError mock.err
-          # Wait for it rather than sleeping a fixed amount.
-          $ok = $false
-          foreach ($i in 1..30) {
-            try {
-              Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/device/ping' -UseBasicParsing `
-                -TimeoutSec 2 -ErrorAction Stop | Out-Null
-              $ok = $true; break
-            } catch {
-              # A 401 means it is up and refusing us, which is what we want.
-              if ($_.Exception.Response.StatusCode.value__ -eq 401) { $ok = $true; break }
-              Start-Sleep -Milliseconds 500
-            }
-          }
-          if (-not $ok) { Get-Content mock.err -ErrorAction SilentlyContinue; throw 'mock server never came up' }
-          Write-Host 'mock server is up'
-
-      # The connector uses Node's fetch. PowerShell uses .NET. A probe that
-      # passes in one and fails in the other is the difference between "the
-      # server died" and "this runner's loopback behaves oddly", and guessing
-      # between those costs a CI round trip each time.
-      - name: The mock is still reachable, from Node as well as PowerShell
-        working-directory: connector
-        shell: pwsh
-        run: |
-          $procs = Get-Process node -ErrorAction SilentlyContinue
-          Write-Host "node processes running: $($procs.Count)"
-          try {
-            Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/device/ping' -UseBasicParsing -TimeoutSec 5 | Out-Null
-            Write-Host 'PowerShell reached it'
-          } catch {
-            Write-Host "PowerShell got: $($_.Exception.Response.StatusCode.value__) $($_.Exception.Message)"
-          }
-          node -e "fetch('http://127.0.0.1:8787/api/device/ping').then(r=>console.log('node fetch reached it, HTTP '+r.status)).catch(e=>{console.log('node fetch FAILED: '+e.message+' / '+(e.cause&&e.cause.code));process.exit(1)})"
-
       - name: Run install.ps1 the way a hospital would
         working-directory: connector/dist-exe
         shell: pwsh
         run: |
+          ..\test\start-mock.ps1
           .\install.ps1 -Code 'CITE-ST01' -Server 'http://127.0.0.1:8787'
           if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
 
@@ -125,6 +90,7 @@ jobs:
         working-directory: connector
         shell: pwsh
         run: |
+          .\test\start-mock.ps1
           # The scheduled task starts the connector; give it a moment to bind.
           $listening = $false
           foreach ($i in 1..40) {
@@ -159,6 +125,7 @@ jobs:
         working-directory: connector
         shell: pwsh
         run: |
+          .\test\start-mock.ps1
           node test/fake-analyzer.mjs 127.0.0.1 5150 260923000101 13.4
           Start-Sleep -Seconds 6
           $rec = Get-Content received.json -Raw | ConvertFrom-Json
@@ -170,6 +137,7 @@ jobs:
       - name: --check reports a healthy install
         shell: pwsh
         run: |
+          .\connector\test\start-mock.ps1
           & "$env:ProgramFiles\Uyirly\Connector\uyirly-connector.exe" --check
           if ($LASTEXITCODE -ne 0) { throw "--check reported a problem (exit $LASTEXITCODE)" }
 

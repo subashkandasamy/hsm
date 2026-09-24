@@ -14,13 +14,21 @@
  */
 
 import http from 'node:http'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 
 const port = Number(process.argv[2] ?? 8787)
 const outFile = process.argv[3] ?? 'received.json'
 
 const TOKEN = 'mock-token-for-windows-ci'
-const received = { paired: null, messages: [], pings: 0 }
+
+// Picked up from disk rather than started empty, because this gets restarted.
+// A GitHub Actions step does not leave its background processes running for
+// the next one, so the mock is started afresh wherever it is needed — and the
+// duplicate-suppression test only means anything if it still remembers the
+// message it accepted two steps ago.
+const received = existsSync(outFile)
+  ? JSON.parse(readFileSync(outFile, 'utf8'))
+  : { paired: null, messages: [], pings: 0 }
 
 const save = () => writeFileSync(outFile, JSON.stringify(received, null, 2))
 save()
