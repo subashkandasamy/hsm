@@ -2,8 +2,7 @@ import { Queue, type QueuedMessage } from './queue.js'
 import { lanIp, type Config } from './config.js'
 import { log } from './log.js'
 import os from 'node:os'
-
-const VERSION = '1.0.0'
+import { VERSION } from './version.js'
 
 /**
  * Getting what is on disk to the server, and knowing when to stop trying.

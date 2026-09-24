@@ -4,6 +4,7 @@ import { initLog, log } from './log.js'
 import { Queue } from './queue.js'
 import { Uploader } from './uploader.js'
 import { promptForPairing, pair } from './pair.js'
+import { runCheck } from './check.js'
 import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
@@ -28,6 +29,7 @@ import { startSerial } from './transports/serial.js'
  *   uyirly-connector                 run (prompts to pair on first use)
  *   uyirly-connector --pair CODE     pair without prompting
  *   uyirly-connector --status        what is waiting, and where the files are
+ *   uyirly-connector --check         diagnose everything, and say how to fix it
  */
 
 const DEFAULT_SERVER = process.env.UYIRLY_SERVER ?? 'https://demo.uyirly.com'
@@ -43,6 +45,12 @@ async function main(): Promise<void> {
 
   const queue = new Queue(path.join(dataDir(), 'queue'))
   await queue.init()
+
+  // Everything a support call opens with, in one screen somebody can photograph.
+  if (args.includes('--check')) {
+    process.exitCode = await runCheck(await loadConfig())
+    return
+  }
 
   if (args.includes('--status')) {
     const config = await loadConfig()

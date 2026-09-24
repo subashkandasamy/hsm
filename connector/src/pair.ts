@@ -1,6 +1,7 @@
 import os from 'node:os'
 import readline from 'node:readline/promises'
 import { saveConfig, lanIp, type Config } from './config.js'
+import { VERSION } from './version.js'
 
 /**
  * First run: turn a code somebody read out into an identity for this machine.
@@ -21,7 +22,7 @@ export async function pair(serverUrl: string, code: string): Promise<Config> {
       code,
       machineName: os.hostname(),
       lanIp: lanIp(),
-      version: '1.0.0',
+      version: VERSION,
     }),
   })
 

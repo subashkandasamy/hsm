@@ -297,7 +297,7 @@ schtasks /Run /TN $name | Out-Null
 
 Write-Host ""
 Write-Host "Done. The connector is running and will start with Windows." -ForegroundColor Green
-& $exe --status
+& $exe --check
 Write-Host ""
 Write-Host "Give the address above to your analyzer engineer."
 `)
@@ -340,10 +340,12 @@ TO CONNECT AN ANALYZER
 
 TO CHECK ON IT
   Open Command Prompt and run:
-      "%ProgramFiles%\\Uyirly\\Connector\\uyirly-connector.exe" --status
+      "%ProgramFiles%\\Uyirly\\Connector\\uyirly-connector.exe" --check
 
-  It shows whether it is paired, how many results are waiting, and the address
-  for your engineer.
+  It checks everything — pairing, the internet, the port, the firewall, and
+  whether it will restart after a power cut — and tells you how to fix
+  anything that is wrong. If you need help, photograph that screen and send
+  it to us.
 
 IF SOMETHING LOOKS WRONG
   The log is in:
