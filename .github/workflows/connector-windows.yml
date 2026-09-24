@@ -73,15 +73,35 @@ jobs:
           if ($rec.paired.code -ne 'CITE-ST01') { $fail += "wrong pairing code sent: $($rec.paired.code)" }
           if (-not $rec.paired.machineName)   { $fail += 'no machine name was reported' }
 
+          # netsh and schtasks return an ARRAY of lines, and -match on an array
+          # filters it rather than testing it — so "-notmatch" is truthy whenever
+          # any single line fails to match, which is always. Join first.
+          # This is why the run claimed the firewall was off while the
+          # connector's own --check, three seconds earlier, said it was on.
+
           # Starts with Windows, and is running now.
-          $task = schtasks /Query /TN 'UyirlyLabConnector' /FO LIST 2>$null
+          $task = (schtasks /Query /TN 'UyirlyLabConnector' /FO LIST 2>$null) -join "`n"
           if ($LASTEXITCODE -ne 0) { $fail += 'the startup task was not created' }
-          elseif ($task -notmatch 'Running') { $fail += 'the startup task exists but is not running' }
+          elseif ($task -notmatch 'Running') {
+            # A task that has just been told to run may still be starting.
+            foreach ($i in 1..20) {
+              Start-Sleep -Milliseconds 500
+              $task = (schtasks /Query /TN 'UyirlyLabConnector' /FO LIST 2>$null) -join "`n"
+              if ($task -match 'Running') { break }
+            }
+            if ($task -notmatch 'Running') {
+              Write-Host "--- schtasks says ---`n$task"
+              $fail += 'the startup task exists but never started running'
+            }
+          }
 
           # Analyzers can reach us.
-          $fw = netsh advfirewall firewall show rule name="Uyirly Lab Connector" 2>$null
+          $fw = (netsh advfirewall firewall show rule name="Uyirly Lab Connector" 2>$null) -join "`n"
           if ($LASTEXITCODE -ne 0) { $fail += 'the firewall rule was not created' }
-          elseif ($fw -notmatch 'Enabled:\s*Yes') { $fail += 'the firewall rule is switched off' }
+          elseif ($fw -notmatch 'Enabled:\s*Yes') {
+            Write-Host "--- netsh says ---`n$fw"
+            $fail += 'the firewall rule is switched off'
+          }
 
           if ($fail.Count) { $fail | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
           Write-Host 'install verified'
