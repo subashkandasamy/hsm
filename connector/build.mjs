@@ -157,13 +157,19 @@ async function makeZip() {
   const zipName = `uyirly-lab-connector-windows.zip`
   const zipPath = path.join(OUT, zipName)
   await fs.rm(zipPath, { force: true })
-  // `zip` ships with macOS and Linux; on Windows the build runs in CI or WSL.
-  execFileSync('zip', ['-j', '-q', zipPath,
-    path.join(OUT, 'uyirly-connector.exe'),
-    path.join(OUT, 'install.ps1'),
-    path.join(OUT, 'uninstall.ps1'),
-    path.join(OUT, 'INSTALL.txt'),
-  ], { stdio: 'inherit' })
+  const members = ['uyirly-connector.exe', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt']
+    .map((f) => path.join(OUT, f))
+
+  if (process.platform === 'win32') {
+    // Windows has no `zip`. Compress-Archive is built in, and the build runs
+    // here on a CI runner testing the install.
+    execFileSync('powershell', ['-NoProfile', '-Command',
+      `Compress-Archive -Path ${members.map((m) => `'${m}'`).join(',')} -DestinationPath '${zipPath}' -Force`,
+    ], { stdio: 'inherit' })
+  } else {
+    // -j so the archive is flat: a hospital unzips it and sees four files.
+    execFileSync('zip', ['-j', '-q', zipPath, ...members], { stdio: 'inherit' })
+  }
 
   const { size } = await fs.stat(zipPath)
   const { createHash } = await import('node:crypto')
@@ -239,6 +245,15 @@ async function writePs1(file, body) {
 async function writeInstaller() {
   await writePs1(path.join(OUT, 'install.ps1'), `# Uyirly Lab Connector - install
 # Right-click this file and choose "Run with PowerShell (as Administrator)".
+#
+# It asks for the pairing code, or you can supply it:
+#   .\\install.ps1 -Code K7MQ-3RXW -Server https://yourhospital.uyirly.com
+param(
+  [string]$Code,
+  [string]$Server,
+  # Skips the firewall rule and the startup task. Only for testing the rest.
+  [switch]$NoService
+)
 
 $ErrorActionPreference = 'Stop'
 $name    = 'UyirlyLabConnector'
@@ -255,10 +270,16 @@ Copy-Item "$PSScriptRoot\\uyirly-connector.exe" $exe -Force
 Write-Host "Installed to $exe"
 
 # Pair now, while there is a person here to type the code.
-$code = Read-Host "Pairing code from Settings -> Analyzers"
-$site = Read-Host "Hospital web address (e.g. https://yourhospital.uyirly.com)"
-& $exe --pair $code --server $site --pair-only
+if (-not $Code)   { $Code   = Read-Host "Pairing code from Settings -> Analyzers" }
+if (-not $Server) { $Server = Read-Host "Hospital web address (e.g. https://yourhospital.uyirly.com)" }
+& $exe --pair $Code --server $Server --pair-only
 if ($LASTEXITCODE -ne 0) { Write-Host "Pairing failed. Nothing was scheduled." -ForegroundColor Red; exit 1 }
+
+if ($NoService) {
+  Write-Host "Skipping firewall and startup task (-NoService)."
+  & $exe --check
+  exit $LASTEXITCODE
+}
 
 # Let the analyzers reach us. Harmless if it already exists.
 netsh advfirewall firewall delete rule name="Uyirly Lab Connector" 2>$null | Out-Null

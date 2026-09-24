@@ -1,0 +1,183 @@
+name: Connector — Windows install
+
+# The Windows half of the connector cannot be rehearsed on a Mac. install.ps1,
+# the firewall rule and the scheduled task only exist once they are on Windows,
+# so without this the first time they ever run is in a hospital's laboratory.
+#
+# A free GitHub-hosted Windows runner does the whole thing: build the
+# executable, install it, pair it, let a fake analyzer connect over TCP, and
+# confirm the result reached the server.
+#
+# It talks to a mock server inside the job, never to production. Pointing CI at
+# the real one would mean a live pairing code in a repository secret and test
+# rows appearing in a hospital's account.
+
+on:
+  push:
+    paths:
+      - 'connector/**'
+      - '.github/workflows/connector-windows.yml'
+  pull_request:
+    paths:
+      - 'connector/**'
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: windows-latest
+    # Windows minutes bill at 2x on a private repo; this finishes in ~4.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: connector
+        run: npm ci
+
+      - name: Unit tests — the ASTM link layer
+        working-directory: connector
+        run: npm test
+
+      - name: Build the Windows executable
+        working-directory: connector
+        run: node build.mjs --win
+
+      - name: Start the mock Uyirly
+        working-directory: connector
+        shell: pwsh
+        run: |
+          Start-Process node -ArgumentList 'test/mock-server.mjs','8787','received.json' `
+            -RedirectStandardOutput mock.log -RedirectStandardError mock.err
+          # Wait for it rather than sleeping a fixed amount.
+          $ok = $false
+          foreach ($i in 1..30) {
+            try {
+              Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/device/ping' -UseBasicParsing `
+                -TimeoutSec 2 -ErrorAction Stop | Out-Null
+              $ok = $true; break
+            } catch {
+              # A 401 means it is up and refusing us, which is what we want.
+              if ($_.Exception.Response.StatusCode.value__ -eq 401) { $ok = $true; break }
+              Start-Sleep -Milliseconds 500
+            }
+          }
+          if (-not $ok) { Get-Content mock.err -ErrorAction SilentlyContinue; throw 'mock server never came up' }
+          Write-Host 'mock server is up'
+
+      - name: Run install.ps1 the way a hospital would
+        working-directory: connector/dist-exe
+        shell: pwsh
+        run: |
+          .\install.ps1 -Code 'CITE-ST01' -Server 'http://127.0.0.1:8787'
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+
+      - name: The install did what it claims
+        shell: pwsh
+        run: |
+          $fail = @()
+
+          $exe = "$env:ProgramFiles\Uyirly\Connector\uyirly-connector.exe"
+          if (-not (Test-Path $exe)) { $fail += 'executable was not copied into Program Files' }
+
+          # Paired, and the mock recorded it.
+          $rec = Get-Content connector\received.json -Raw | ConvertFrom-Json
+          if (-not $rec.paired)               { $fail += 'the installer never paired' }
+          if ($rec.paired.code -ne 'CITE-ST01') { $fail += "wrong pairing code sent: $($rec.paired.code)" }
+          if (-not $rec.paired.machineName)   { $fail += 'no machine name was reported' }
+
+          # Starts with Windows, and is running now.
+          $task = schtasks /Query /TN 'UyirlyLabConnector' /FO LIST 2>$null
+          if ($LASTEXITCODE -ne 0) { $fail += 'the startup task was not created' }
+          elseif ($task -notmatch 'Running') { $fail += 'the startup task exists but is not running' }
+
+          # Analyzers can reach us.
+          $fw = netsh advfirewall firewall show rule name="Uyirly Lab Connector" 2>$null
+          if ($LASTEXITCODE -ne 0) { $fail += 'the firewall rule was not created' }
+          elseif ($fw -notmatch 'Enabled:\s*Yes') { $fail += 'the firewall rule is switched off' }
+
+          if ($fail.Count) { $fail | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
+          Write-Host 'install verified'
+
+      - name: An analyzer connects and its result arrives
+        working-directory: connector
+        shell: pwsh
+        run: |
+          # The scheduled task starts the connector; give it a moment to bind.
+          $listening = $false
+          foreach ($i in 1..40) {
+            if (Test-NetConnection -ComputerName 127.0.0.1 -Port 5150 -InformationLevel Quiet -WarningAction SilentlyContinue) {
+              $listening = $true; break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $listening) { throw 'nothing is listening on 5150 — the service did not start' }
+
+          node test/fake-analyzer.mjs 127.0.0.1 5150 260923000101 13.4
+          if ($LASTEXITCODE -ne 0) { throw 'the fake analyzer could not deliver' }
+
+          # It has to travel: analyzer -> connector -> disk -> mock server.
+          $got = $null
+          foreach ($i in 1..40) {
+            $rec = Get-Content received.json -Raw | ConvertFrom-Json
+            if ($rec.messages.Count -ge 1) { $got = $rec.messages[0]; break }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $got) { throw 'the result never reached the server' }
+
+          # The records must arrive intact and separated, not fused into one
+          # line — the bug an end-to-end run caught once already.
+          if ($got.raw -notmatch 'BC-5130')      { throw 'the instrument header was lost' }
+          if ($got.raw -notmatch '260923000101') { throw 'the sample barcode was lost' }
+          if ($got.raw -match 'P\|1P\|1')        { throw 'records were fused together' }
+          if (-not $got.source)                  { throw 'the connector did not report its source' }
+          Write-Host "result delivered, source: $($got.source)"
+
+      - name: A repeat transmission does not become a second result
+        working-directory: connector
+        shell: pwsh
+        run: |
+          node test/fake-analyzer.mjs 127.0.0.1 5150 260923000101 13.4
+          Start-Sleep -Seconds 6
+          $rec = Get-Content received.json -Raw | ConvertFrom-Json
+          if ($rec.messages.Count -ne 1) {
+            throw "expected 1 message after a duplicate, got $($rec.messages.Count)"
+          }
+          Write-Host 'duplicate correctly ignored'
+
+      - name: --check reports a healthy install
+        shell: pwsh
+        run: |
+          & "$env:ProgramFiles\Uyirly\Connector\uyirly-connector.exe" --check
+          if ($LASTEXITCODE -ne 0) { throw "--check reported a problem (exit $LASTEXITCODE)" }
+
+      - name: uninstall.ps1 removes what it made
+        working-directory: connector/dist-exe
+        shell: pwsh
+        run: |
+          .\uninstall.ps1
+          schtasks /Query /TN 'UyirlyLabConnector' 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'the startup task survived uninstall' }
+          if (Test-Path "$env:ProgramFiles\Uyirly\Connector") { throw 'the program folder survived uninstall' }
+          # Unsent results are deliberately kept — uninstall must not destroy
+          # laboratory data that has not reached the server.
+          if (-not (Test-Path "$env:ProgramData\Uyirly\Connector")) {
+            throw 'the queue folder was deleted — unsent results must survive an uninstall'
+          }
+          Write-Host 'uninstall verified, queue preserved'
+
+      - name: Logs, if anything went wrong
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host '--- connector log ---'
+          Get-Content "$env:ProgramData\Uyirly\Connector\logs\connector.log" -Tail 60 -ErrorAction SilentlyContinue
+          Write-Host '--- mock server ---'
+          Get-Content connector\mock.log -Tail 30 -ErrorAction SilentlyContinue
+          Get-Content connector\mock.err -Tail 30 -ErrorAction SilentlyContinue
+          Write-Host '--- what the mock received ---'
+          Get-Content connector\received.json -ErrorAction SilentlyContinue
