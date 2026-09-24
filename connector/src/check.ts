@@ -135,33 +135,52 @@ async function pingServer(config: Config): Promise<{ line: Line; body?: Record<s
 }
 
 /**
- * Is the port available, or already taken?
+ * Is our connector listening on the port, or has something else taken it?
  *
- * Taken is ambiguous and the distinction matters: it is either our own service
- * already running, which is correct, or some other program squatting on it,
- * which means no analyzer can connect. We cannot tell from the socket alone,
- * so the report says both possibilities rather than guessing.
+ * This used to answer by trying to bind the port, which could not tell the two
+ * apart — "in use" was reported identically whether it was our own service
+ * doing its job or a stray program blocking every analyzer in the laboratory.
+ * It also raced with the service it was meant to be checking.
+ *
+ * So ask properly. An analyzer opens the conversation with ENQ and expects
+ * ACK; our connector answers, and essentially nothing else will. That tests
+ * the thing that actually matters — whether an instrument's first byte gets
+ * the right reply — rather than a proxy for it.
  */
 async function checkPort(port: number): Promise<Line> {
-  const free = await new Promise<boolean>((resolve) => {
-    const srv = net.createServer()
-    srv.once('error', () => resolve(false))
-    srv.once('listening', () => srv.close(() => resolve(true)))
-    srv.listen(port, '0.0.0.0')
+  const ENQ = 0x05, ACK = 0x06
+
+  const outcome = await new Promise<'ours' | 'someone-else' | 'nothing'>((resolve) => {
+    const sock = net.createConnection({ port, host: '127.0.0.1' })
+    const done = (r: 'ours' | 'someone-else' | 'nothing') => {
+      sock.destroy()
+      resolve(r)
+    }
+    const timer = setTimeout(() => done('someone-else'), 4000)
+
+    sock.on('connect', () => sock.write(Buffer.from([ENQ])))
+    sock.on('data', (d) => {
+      if (d.includes(ACK)) { clearTimeout(timer); done('ours') }
+    })
+    sock.on('error', () => { clearTimeout(timer); done('nothing') })
+    sock.on('close', () => { clearTimeout(timer); resolve('nothing') })
   })
 
-  if (free) {
-    // Guidance goes in the detail, not a `fix`: fixes only print on a failing
-    // line, and "free" is correct when --check is run on its own. Whether that
-    // is a problem depends on the startup line below.
+  if (outcome === 'ours') {
+    return { state: 'ok', label: `Port ${port}`, detail: 'the connector is listening and answering' }
+  }
+  if (outcome === 'someone-else') {
     return {
-      state: 'ok', label: `Port ${port}`,
-      detail: 'free — nothing is listening (normal unless it should be running)',
+      state: 'bad', label: `Port ${port}`,
+      detail: 'something is on this port, but it is not the connector',
+      fix: 'Another program has taken the port, so no analyzer can reach us. '
+        + 'Stop it, or change the port in Settings → Analyzers.',
     }
   }
   return {
-    state: 'ok', label: `Port ${port}`,
-    detail: 'in use — the connector is running, or another program has it',
+    state: 'warn', label: `Port ${port}`,
+    detail: 'nothing is listening — analyzers cannot connect',
+    fix: 'The connector is not running. Check the startup task below, or start it.',
   }
 }
 

@@ -111,7 +111,12 @@ async function main(): Promise<void> {
 
   const stoppers: Array<() => void> = []
 
-  const tcp = startTcp(config.listenPort, (raw, src) => void receive(raw, src))
+  let tcpBound = false
+  const tcp = startTcp(
+    config.listenPort,
+    (raw, src) => void receive(raw, src),
+    (bound) => { tcpBound = bound },
+  )
   stoppers.push(() => tcp.close())
 
   for (const folder of config.watchFolders) {
@@ -126,7 +131,18 @@ async function main(): Promise<void> {
 
   const waiting = await queue.size()
   if (waiting) log.info(`${waiting} result(s) from last time are waiting to be sent.`)
-  log.info(`Ready. Analyzers should send to ${lanIp() ?? 'this computer'} : ${config.listenPort}`)
+
+  // listen() resolves asynchronously, so give it a moment before claiming
+  // anything. Announcing "Ready" while the port was taken is exactly how this
+  // program once sat for ever with nothing listening.
+  await new Promise((r) => setTimeout(r, 500))
+  if (tcpBound) {
+    log.info(`Ready. Analyzers should send to ${lanIp() ?? 'this computer'} : ${config.listenPort}`)
+  } else {
+    log.error('NOT ready for network analyzers — port '
+      + `${config.listenPort} could not be opened. Anything on a serial cable or `
+      + 'in a watched folder still works, and we keep trying for the port.')
+  }
 
   const shutdown = (signal: string) => {
     log.info(`Stopping (${signal}). Anything unsent stays on disk and goes when we start again.`)
