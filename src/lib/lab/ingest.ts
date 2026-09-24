@@ -3,6 +3,20 @@ import { parseAstm, detectProtocol } from './astm'
 
 type Svc = ReturnType<typeof createServiceClient>
 
+/**
+ * How the connector heard this, from the label it sent.
+ *
+ * Recorded so the settings screen can say "over the network" or "on COM3"
+ * rather than guessing — a hospital tracing a silent analyzer needs to know
+ * which cable to look at.
+ */
+function transportOf(source?: string | null): string {
+  if (!source) return 'tcp'
+  if (source.startsWith('serial')) return 'serial'
+  if (source.startsWith('file')) return 'file'
+  return 'tcp'
+}
+
 export interface IngestOutcome {
   status: 'matched' | 'unmatched' | 'unmapped' | 'failed' | 'stored'
   order?: string
@@ -30,11 +44,13 @@ export interface IngestOutcome {
  */
 export async function processMessage(
   svc: Svc,
-  { tenantId, connectorId, messageId, raw }: {
+  { tenantId, connectorId, messageId, raw, source }: {
     tenantId: string
     connectorId: string | null
     messageId: string
     raw: string
+    /** Where the connector heard it: 'tcp 192.168.1.50', 'serial COM3'. */
+    source?: string | null
   },
 ): Promise<IngestOutcome> {
   // ── Parse ────────────────────────────────────────────────────────────────
@@ -50,11 +66,29 @@ export async function processMessage(
   const parsed = parseAstm(raw)
 
   // ── Which instrument? ────────────────────────────────────────────────────
+  //
+  // Most instruments name themselves in the header, which is what makes this
+  // list discovered rather than configured. Some do not — an older machine, a
+  // vendor who left the field blank, a serial link that dropped the first
+  // frame.
+  //
+  // Registering those under a stand-in identity rather than skipping them:
+  // without it, no analyzer row is created, so no code is ever recorded, so
+  // the hospital is told "these codes are not mapped yet" with nothing on the
+  // screen to map. The message then sits in the queue for ever. A machine we
+  // cannot name is still a machine whose codes a technician can identify.
+  //
+  // Keyed on where the connector heard it, so two unnamed machines on one lab
+  // PC stay separate. If the connector could not say, they merge — visible to
+  // the hospital, and better than the dead end.
+  const fingerprint = parsed.fingerprint
+    ?? `Unidentified${source ? ` (${source})` : ''}`
+
   let analyzerId: string | null = null
-  if (parsed.fingerprint) {
+  {
     const { data: known } = await svc.from('lab_analyzers')
       .select('id, status').eq('tenant_id', tenantId)
-      .eq('fingerprint', parsed.fingerprint).maybeSingle()
+      .eq('fingerprint', fingerprint).maybeSingle()
 
     if (known) {
       analyzerId = known.id as string
@@ -62,18 +96,23 @@ export async function processMessage(
       // First time we have seen it. Recognise it from the shared library if we
       // can; either way it is recorded as 'discovered' and nothing it sends
       // goes anywhere near a patient until a person has looked at it.
-      const { data: lib } = await svc.from('device_library')
-        .select('id, manufacturer, model, protocol, framing')
-        .eq('fingerprint', parsed.fingerprint).maybeSingle()
+      //
+      // Only a real, self-declared identity is worth looking up — a stand-in
+      // built from a port number will never be in a library of instruments.
+      const { data: lib } = parsed.fingerprint
+        ? await svc.from('device_library')
+            .select('id, manufacturer, model, protocol, framing')
+            .eq('fingerprint', parsed.fingerprint).maybeSingle()
+        : { data: null }
 
       analyzerId = crypto.randomUUID()
       await svc.from('lab_analyzers').insert({
         id: analyzerId, tenant_id: tenantId, connector_id: connectorId,
         device_library_id: lib?.id ?? null,
-        fingerprint: parsed.fingerprint,
+        fingerprint,
         manufacturer: parsed.manufacturer ?? lib?.manufacturer ?? null,
         model: parsed.model ?? lib?.model ?? null,
-        protocol: 'astm', transport: 'tcp', status: 'discovered',
+        protocol: 'astm', transport: transportOf(source), status: 'discovered',
       })
 
       // Seed this hospital's code map from the library, where we have one.

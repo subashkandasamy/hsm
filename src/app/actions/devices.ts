@@ -399,7 +399,7 @@ export async function retryMessage(
   // belongs to the actor's hospital before the service role touches anything.
   const { data: msg } = await supabase
     .from('analyzer_messages')
-    .select('id, tenant_id, connector_id, raw_message')
+    .select('id, tenant_id, connector_id, raw_message, source')
     .eq('id', id)
     .maybeSingle()
   if (!msg) return { success: false, error: 'That message is no longer here' }
@@ -421,6 +421,9 @@ export async function retryMessage(
     connectorId: (msg.connector_id as string | null) ?? null,
     messageId: id,
     raw: msg.raw_message as string,
+    // The same source as the first attempt, or a replay would compute a
+    // different stand-in identity and create a second analyzer for one machine.
+    source: (msg.source as string | null) ?? null,
   })
 
   await logAudit(actor.id, 'update', 'analyzer_message', id, {

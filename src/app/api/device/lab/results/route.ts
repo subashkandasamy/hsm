@@ -59,7 +59,12 @@ export async function POST(request: Request) {
   const tenantId = connector.tenant_id as string
   const connectorId = connector.id as string
 
-  let body: { raw?: string; idempotencyKey?: string; machineName?: string; lanIp?: string; version?: string }
+  let body: {
+    raw?: string; idempotencyKey?: string; machineName?: string
+    lanIp?: string; version?: string
+    /** Where the connector heard it — 'tcp 192.168.1.50', 'serial COM3'. */
+    source?: string
+  }
   try { body = await request.json() } catch { return json(400, { error: 'Body must be JSON' }) }
 
   const raw = (body.raw ?? '').toString()
@@ -86,6 +91,7 @@ export async function POST(request: Request) {
   const { error: insErr } = await svc.from('analyzer_messages').insert({
     id: messageId, tenant_id: tenantId, connector_id: connectorId,
     raw_message: raw, idempotency_key: idempotencyKey, status: 'received',
+    source: body.source ?? null,
   })
   if (insErr) {
     if (insErr.code === '23505') {
@@ -95,7 +101,9 @@ export async function POST(request: Request) {
     return json(500, { error: insErr.message })
   }
 
-  const outcome = await processMessage(svc, { tenantId, connectorId, messageId, raw })
+  const outcome = await processMessage(svc, {
+    tenantId, connectorId, messageId, raw, source: body.source ?? null,
+  })
   return json(outcome.status === 'matched' ? 200 : 202, { ...outcome })
 }
 

@@ -120,6 +120,9 @@ export class Uploader {
         body: JSON.stringify({
           raw: msg.raw,
           idempotencyKey: msg.id,
+          // Which port or cable this came off, so an unnamed machine can still
+          // be told apart from the other unnamed machine in the same room.
+          source: msg.source,
           lanIp: lanIp(),
           machineName: os.hostname(),
           version: VERSION,
