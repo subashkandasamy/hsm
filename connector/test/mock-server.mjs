@@ -86,4 +86,7 @@ http.createServer(async (req, res) => {
   }
 
   send(res, 404, { error: 'not found' })
-}).listen(port, () => console.log(`mock Uyirly listening on ${port}`))
+// Bound explicitly to IPv4 loopback. Left to itself Node binds the
+// unspecified address, and on Windows that is an IPv6 socket whose IPv4
+// mapping is not something to rely on when the client asks for 127.0.0.1.
+}).listen(port, '127.0.0.1', () => console.log(`mock Uyirly listening on 127.0.0.1:${port}`))

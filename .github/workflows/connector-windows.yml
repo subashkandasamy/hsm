@@ -69,6 +69,24 @@ jobs:
           if (-not $ok) { Get-Content mock.err -ErrorAction SilentlyContinue; throw 'mock server never came up' }
           Write-Host 'mock server is up'
 
+      # The connector uses Node's fetch. PowerShell uses .NET. A probe that
+      # passes in one and fails in the other is the difference between "the
+      # server died" and "this runner's loopback behaves oddly", and guessing
+      # between those costs a CI round trip each time.
+      - name: The mock is still reachable, from Node as well as PowerShell
+        working-directory: connector
+        shell: pwsh
+        run: |
+          $procs = Get-Process node -ErrorAction SilentlyContinue
+          Write-Host "node processes running: $($procs.Count)"
+          try {
+            Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/device/ping' -UseBasicParsing -TimeoutSec 5 | Out-Null
+            Write-Host 'PowerShell reached it'
+          } catch {
+            Write-Host "PowerShell got: $($_.Exception.Response.StatusCode.value__) $($_.Exception.Message)"
+          }
+          node -e "fetch('http://127.0.0.1:8787/api/device/ping').then(r=>console.log('node fetch reached it, HTTP '+r.status)).catch(e=>{console.log('node fetch FAILED: '+e.message+' / '+(e.cause&&e.cause.code));process.exit(1)})"
+
       - name: Run install.ps1 the way a hospital would
         working-directory: connector/dist-exe
         shell: pwsh
