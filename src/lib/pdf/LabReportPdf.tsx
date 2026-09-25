@@ -33,6 +33,8 @@ const FLAG: Record<string, { label: string; color: string }> = {
 
 /** One measurement on the report — a panel member, or a single test's one value. */
 export interface ReportAnalyte {
+  /** The NABL discipline that performed it — the report's section heading. */
+  department?: string | null
   test_id: string; test_name: string; test_code: string | null; sample_type: string | null
   analyte_id: string; name: string; short_name: string | null
   unit_ucum: string | null; decimals: number; value_type: string; display_order: number
@@ -75,9 +77,24 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
     groups.set(key, [...(groups.get(key) ?? []), it])
   }
 
-  // Panels, each printed under its own heading in report order.
-  const panels = new Map<string, ReportAnalyte[]>()
-  for (const a of analytes) panels.set(a.test_id, [...(panels.get(a.test_id) ?? []), a])
+  // Panels, each printed under its own heading in report order, and those
+  // grouped under the discipline that performed them.
+  //
+  // Every Indian laboratory report is laid out this way, and NABL accredits
+  // per discipline — so a report has to make plain which accredited department
+  // stands behind each number rather than running chemistry and microbiology
+  // together under one anonymous list. The SQL already returns them in the
+  // conventional order, so insertion order is the print order.
+  const departments = new Map<string, Map<string, ReportAnalyte[]>>()
+  for (const a of analytes) {
+    const dept = a.department ?? 'Laboratory'
+    if (!departments.has(dept)) departments.set(dept, new Map())
+    const panels = departments.get(dept)!
+    panels.set(a.test_id, [...(panels.get(a.test_id) ?? []), a])
+  }
+  // A single-discipline report needs no heading — on a plain CBC it would be
+  // one word of ceremony above one table.
+  const showDepartmentHeadings = departments.size > 1
 
   return (
     <A4 title={`Lab report ${patient.full_name} ${ref}`}>
@@ -98,7 +115,17 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
         ['Priority', order.priority === 'stat' ? 'STAT (urgent)' : 'Routine'],
       ]} />
 
-      {[...panels.entries()].map(([testId, rows]) => (
+      {[...departments.entries()].map(([dept, panels]) => (
+        <View key={dept}>
+          {showDepartmentHeadings && (
+            <View wrap={false}>
+              <Text style={{ fontSize: 8, letterSpacing: 1.1, marginTop: 14, marginBottom: 2,
+                             color: '#64748B', fontFamily: 'Helvetica-Bold' }}>
+                {`DEPARTMENT OF ${dept.toUpperCase()}`}
+              </Text>
+            </View>
+          )}
+          {[...panels.entries()].map(([testId, rows]) => (
         <View key={testId}>
           <View wrap={false}>
             <SectionTitle>{rows[0].test_name}</SectionTitle>
@@ -130,6 +157,8 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
             })}
             empty="No results."
           />
+        </View>
+          ))}
         </View>
       ))}
 

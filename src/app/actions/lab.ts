@@ -56,6 +56,14 @@ export async function activateFromMaster(
     name:            master.name,
     code:            master.code ?? null,
     category:        (master as Record<string, unknown>).category as string ?? 'General',
+    // The clinical grouping a doctor orders by, and the discipline that runs
+    // it, are different facts and both have to come across.
+    department:      (master as Record<string, unknown>).department as string ?? null,
+    // Which container it is drawn into. Added in 0183 and backfilled there,
+    // but never copied here — so anything activated since has been arriving
+    // with no tube type, which ensure_lab_samples reads as 'other'. That puts
+    // a serum test in the wrong tube and out of NABL's draw order.
+    tube_type:       (master as Record<string, unknown>).tube_type as string ?? null,
     sample_type:     master.sample_type ?? null,
     unit:            master.unit ?? null,
     ref_low:         master.ref_low ?? null,
