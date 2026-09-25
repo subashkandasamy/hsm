@@ -35,6 +35,9 @@ const FLAG: Record<string, { label: string; color: string }> = {
 export interface ReportAnalyte {
   /** The NABL discipline that performed it — the report's section heading. */
   department?: string | null
+  /** Set when the hospital sent this test out rather than running it. */
+  referred_to?: string | null
+  referred_nabl?: string | null
   test_id: string; test_name: string; test_code: string | null; sample_type: string | null
   analyte_id: string; name: string; short_name: string | null
   unit_ucum: string | null; decimals: number; value_type: string; display_order: number
@@ -129,6 +132,14 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
         <View key={testId}>
           <View wrap={false}>
             <SectionTitle>{rows[0].test_name}</SectionTitle>
+            {rows[0].referred_to && (
+              // A laboratory may not present another laboratory's work as its
+              // own, so a referred result says where it was done.
+              <Text style={{ fontSize: 7.5, color: '#64748B', marginTop: -2, marginBottom: 3 }}>
+                {`Referred to ${rows[0].referred_to}${
+                  rows[0].referred_nabl ? ` · NABL ${rows[0].referred_nabl}` : ''}`}
+              </Text>
+            )}
           </View>
           <DataTable
             columns={[
