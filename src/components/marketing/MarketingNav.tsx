@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import MobileLoginMenu from '@/app/_components/MobileLoginMenu'
 import BrandMark from '@/components/ui/BrandMark'
+import WhatsAppButton from './WhatsAppButton'
 
 const TEAL   = '#0D9488'
 const SLATE9 = '#0F172A'
@@ -51,6 +52,10 @@ export default function MarketingNav({ ctaLabel = 'Start free trial' }: { ctaLab
           </Link>
         </div>
       </div>
+      {/* Every public page renders this nav and no signed-in page does, so it
+          is where a site-wide button belongs — it will never follow a hospital
+          into the software they are working in. */}
+      <WhatsAppButton />
     </header>
   )
 }
