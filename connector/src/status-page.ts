@@ -4,6 +4,8 @@ import { lanIp, dataDir, type Config } from './config.js'
 import { Queue } from './queue.js'
 import { log } from './log.js'
 import { VERSION } from './version.js'
+import { diskWatch } from './dicom/server.js'
+import { humanBytes, WARN_FREE_BYTES, type DiskState } from './dicom/disk.js'
 
 /**
  * A window onto a program that otherwise has none.
@@ -90,13 +92,21 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
   const ip = lanIp()
   const address = `${ip ?? "this computer's IP"} : ${config.listenPort}`
 
+  // Only present once a scanner has connected — a laboratory with no imaging
+  // has no disk of ours to care about.
+  const disk: DiskState | null = diskWatch?.current ?? null
+
   // One headline, because a technician should not have to read a table to
   // learn whether to worry.
-  const good = state.tcpBound
-  const headline = good ? 'Working' : 'Not receiving from network analyzers'
+  const good = state.tcpBound && !disk?.refusing
+  const headline = good ? 'Working'
+    : disk?.refusing ? 'Disk almost full — scans are being refused'
+    : 'Not receiving from network analyzers'
   const detail = good
     ? `Connected to ${config.hospital ?? config.serverUrl}`
-    : `Port ${config.listenPort} could not be opened — another program may be using it`
+    : disk?.refusing
+      ? `Only ${humanBytes(disk.freeBytes)} left on this computer. Free space or move old studies off it.`
+      : `Port ${config.listenPort} could not be opened — another program may be using it`
 
   const rows: Array<[string, string, boolean?]> = [
     ['Give your analyzer engineer', address],
@@ -107,6 +117,12 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
     ['Received since starting', String(state.receivedCount)],
     ['This computer', `${os.hostname()} · connector ${VERSION}`],
   ]
+
+  if (disk) {
+    rows.splice(3, 0, ['Scan images stored here',
+      `${humanBytes(disk.usedByImagesBytes)} used · ${humanBytes(disk.freeBytes)} free`,
+      disk.freeBytes < WARN_FREE_BYTES])
+  }
 
   return `<!doctype html>
 <html lang="en"><head>

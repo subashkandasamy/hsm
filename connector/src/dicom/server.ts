@@ -4,6 +4,7 @@ import type { requests, responses, association } from 'dcmjs-dimse'
 import { log } from '../log.js'
 import type { Config } from '../config.js'
 import { dataDir } from '../config.js'
+import { DiskWatch } from './disk.js'
 
 /**
  * dcmjs-dimse ships as a minified CommonJS bundle with ESM-style type
@@ -44,6 +45,9 @@ interface Handlers {
   /** Called once a study has gone quiet, with everything held on disk. */
   onStudyComplete: (study: ReceivedStudy) => void
 }
+
+/** Exposed so the status page and --check can report the same numbers. */
+export let diskWatch: DiskWatch | null = null
 
 export interface WorklistItem {
   accessionNumber: string
@@ -135,6 +139,10 @@ export async function startDicom(
   const port = config.dicomPort ?? 11112
   const root = path.join(dataDir(), 'dicom')
   const open = new Map<string, OpenStudy>()
+
+  const disk = new DiskWatch(root)
+  await disk.start()
+  diskWatch = disk
 
   const flush = (uid: string) => {
     const s = open.get(uid)
@@ -252,6 +260,17 @@ export async function startDicom(
       void (async () => {
         const response = CStoreResponse.fromRequest(request)
         try {
+          // Checked before writing, not after. A disk that fills mid-study
+          // leaves half a study on disk and a scanner that believes it sent a
+          // whole one — refusing up front makes the machine report the failure
+          // in the room, to the person who just did the scan.
+          if (!disk.accepting) {
+            // The DICOM status a store SCP uses when it has nowhere to put it.
+            response.setStatus(Status.ResourceLimitation)
+            callback(response)
+            return
+          }
+
           const ds = request.getDataset()
           if (!ds) throw new Error('store request carried no dataset')
           const el = ds.getElements() as Record<string, unknown>
@@ -337,6 +356,8 @@ export async function startDicom(
   return {
     close: () => {
       for (const uid of [...open.keys()]) flush(uid)
+      disk.stop()
+      diskWatch = null
       server.close()
     },
   }

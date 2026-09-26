@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import path from 'node:path'
 import { dataDir, lanIp, type Config } from './config.js'
 import { Queue } from './queue.js'
+import { checkDisk, humanBytes, WARN_FREE_BYTES, REFUSE_FREE_BYTES } from './dicom/disk.js'
 
 const exec = promisify(execFile)
 
@@ -60,6 +61,10 @@ export async function runCheck(config: Config | null): Promise<number> {
   // ── Does it start with the computer? ─────────────────────────────────────
   const task = await checkStartup()
   if (task) lines.push(task)
+
+  // ── Room for more images ─────────────────────────────────────────────────
+  const diskLine = await checkImageDisk()
+  if (diskLine) lines.push(diskLine)
 
   // ── Anything stuck on this machine ───────────────────────────────────────
   lines.push(await checkQueue())
@@ -277,6 +282,41 @@ async function checkStartup(): Promise<Line | null> {
       fix: 'Re-run install.ps1 as Administrator.',
     }
   }
+}
+
+/**
+ * Whether there is room for more scans.
+ *
+ * Shown only once images exist, because a laboratory with no scanner has no
+ * reason to be told about a folder it does not use. A full disk is the one
+ * failure here that silently loses a patient's study, so it is worth a line.
+ */
+async function checkImageDisk(): Promise<Line | null> {
+  const dir = path.join(dataDir(), 'dicom')
+  const s = await checkDisk(dir)
+  if (!s) return null
+  if (s.usedByImagesBytes === 0 && s.freeBytes > WARN_FREE_BYTES) return null
+
+  const used = humanBytes(s.usedByImagesBytes)
+  const free = humanBytes(s.freeBytes)
+
+  if (s.freeBytes < REFUSE_FREE_BYTES) {
+    return {
+      state: 'bad', label: 'Room for scans',
+      detail: `only ${free} free — scanners are being REFUSED`,
+      fix: 'Free space on this computer, or move old studies off it. Scanners will '
+        + 'report a failure until there is room, which is deliberate: better that '
+        + 'somebody is told than that a study goes missing.',
+    }
+  }
+  if (s.freeBytes < WARN_FREE_BYTES) {
+    return {
+      state: 'warn', label: 'Room for scans',
+      detail: `${free} free, scans using ${used}`,
+      fix: 'Plan to free space before it runs out.',
+    }
+  }
+  return { state: 'ok', label: 'Room for scans', detail: `${free} free, scans using ${used}` }
 }
 
 async function checkQueue(): Promise<Line> {
