@@ -37,6 +37,9 @@ export interface Config {
   dicomPort?: number
   /** The name a scanner must be told to call us. Typed into its console. */
   dicomAeTitle?: string
+  /** Where scan images are served. Reachable from the hospital network,
+   *  unlike the status page, because a doctor is not sitting at this PC. */
+  viewerPort?: number
   /** COM ports / tty devices to open, with their line settings. */
   serial: Array<{ path: string; baudRate: number }>
   /** Folders to watch for analyzers that can only write a file. */

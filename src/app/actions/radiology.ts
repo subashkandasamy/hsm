@@ -397,7 +397,9 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
   if (!connector?.lan_ip) return null
 
   return {
-    url: `http://${connector.lan_ip}:5151/study/${encodeURIComponent(study.study_instance_uid as string)}`,
+    // 5152, not the status page on 5151: the status page is bound to loopback
+    // and a doctor is at their own desk, not beside the connector.
+    url: `http://${connector.lan_ip}:5152/study/${encodeURIComponent(study.study_instance_uid as string)}`,
     images: Number(study.instance_count ?? 0),
     series: Number(study.series_count ?? 0),
     modality: (study.modality as string | null) ?? null,

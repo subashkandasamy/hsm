@@ -46,23 +46,12 @@ export function startStatusPage(
   port: number,
   config: Config,
   state: LiveState,
+  viewerPort = port + 1,
 ): { close: () => void } {
   const queue = new Queue(`${dataDir()}/queue`)
 
   const server = http.createServer(async (req, res) => {
     if (req.url === '/favicon.ico') { res.writeHead(204); res.end(); return }
-
-    // The scan viewer shares this port. Uyirly links straight to it, and a
-    // plain navigation to a private address is not subject to the mixed
-    // content and local-network rules that would block a fetch.
-    try {
-      if (await handleViewer(req, res)) return
-    } catch (e) {
-      log.warn(`Viewer request failed: ${(e as Error).message}`)
-      res.writeHead(500, { 'content-type': 'text/plain' })
-      res.end('Could not open that study.')
-      return
-    }
     let waiting = 0
     let oldest: string | null = null
     try {
@@ -85,7 +74,33 @@ export function startStatusPage(
     log.info(`Status page at http://localhost:${port}`)
   })
 
-  return { close: () => server.close() }
+  // ── The viewer needs a different door ──────────────────────────────────
+  //
+  // The status page is bound to loopback on purpose: it is a diagnostic for
+  // whoever is sitting at this computer, and it has no business being readable
+  // from the rest of the hospital.
+  //
+  // The scan viewer is the opposite. A doctor looking at an X-ray is at their
+  // own desk, not in the laboratory, so binding it to loopback would mean only
+  // the person beside the connector could ever see an image — which defeats
+  // the point of receiving them at all.
+  const viewer = http.createServer(async (req, res) => {
+    try {
+      if (await handleViewer(req, res)) return
+      res.writeHead(404, { 'content-type': 'text/plain' })
+      res.end('Not found')
+    } catch (e) {
+      log.warn(`Viewer request failed: ${(e as Error).message}`)
+      res.writeHead(500, { 'content-type': 'text/plain' })
+      res.end('Could not open that study.')
+    }
+  })
+  viewer.on('error', (e) => log.warn(`Could not open the scan viewer: ${(e as Error).message}`))
+  viewer.listen(viewerPort, '0.0.0.0', () => {
+    log.info(`Scan viewer at http://${lanIp() ?? 'this computer'}:${viewerPort}`)
+  })
+
+  return { close: () => { server.close(); viewer.close() } }
 }
 
 function ago(d: Date | string | null): string {

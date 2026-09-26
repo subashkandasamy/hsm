@@ -298,6 +298,13 @@ netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" 2>$null | 
 netsh advfirewall firewall add rule name="Uyirly Scanners (DICOM)" dir=in action=allow \`
   protocol=TCP localport=11112 profile=any | Out-Null
 Write-Host "Opened port 11112 for scanners"
+
+# The scan viewer. Doctors open it from their own desks, so unlike the status
+# page — which stays on this computer only — it has to cross the network.
+netsh advfirewall firewall delete rule name="Uyirly Scan Viewer" 2>$null | Out-Null
+netsh advfirewall firewall add rule name="Uyirly Scan Viewer" dir=in action=allow \`
+  protocol=TCP localport=5152 profile=any | Out-Null
+Write-Host "Opened port 5152 so doctors can view scans"
 # The status page is deliberately NOT opened in the firewall: it is bound to
 # 127.0.0.1 and has no business being reachable from the rest of the hospital.
 
@@ -354,6 +361,7 @@ schtasks /Delete /TN 'UyirlyLabConnector' /F | Out-Null
 Remove-Item ([System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk'))
 netsh advfirewall firewall delete rule name="Uyirly Lab Connector" | Out-Null
 netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" | Out-Null
+netsh advfirewall firewall delete rule name="Uyirly Scan Viewer" | Out-Null
 Remove-Item "$env:ProgramFiles\\Uyirly\\Connector" -Recurse -Force
 Write-Host "Removed. Results not yet sent are still in C:\\ProgramData\\Uyirly\\Connector\\queue"
 Write-Host "Delete that folder only once you are sure nothing is waiting."

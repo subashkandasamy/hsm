@@ -131,7 +131,9 @@ async function main(): Promise<void> {
   )
   stoppers.push(() => tcp.close())
 
-  const statusPage = startStatusPage(config.statusPort ?? 5151, config, live)
+  const statusPage = startStatusPage(
+    config.statusPort ?? 5151, config, live, config.viewerPort ?? 5152,
+  )
   stoppers.push(() => statusPage.close())
 
   // Scanners. Same program, another port — a hospital installs one thing
