@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dataDir } from '../config.js'
-import { renderDicomToPng, UnsupportedImage } from './render.js'
+import { renderDicomToPng, presetsFor, UnsupportedImage } from './render.js'
 import { log } from '../log.js'
 
 /**
@@ -81,13 +81,18 @@ export async function handleViewer(req: IncomingMessage, res: ServerResponse): P
     const found = files[index]
     if (!found) { res.writeHead(404); res.end(); return true }
     try {
-      const { png } = await renderDicomToPng(found.file)
+      const wanted = url.searchParams.get('w') ?? undefined
+      const r = await renderDicomToPng(found.file, { window: wanted })
       res.writeHead(200, {
         'content-type': 'image/png',
-        // The bytes for an image never change, and a CT is many requests.
+        // Which window produced these bytes, so the page can say so without
+        // decoding the image a second time.
+        'x-window-applied': encodeURIComponent(r.applied),
+        'x-window-guessed': r.guessed ? '1' : '0',
+        // Safe to cache: the same window on the same image is the same picture.
         'cache-control': 'private, max-age=86400',
       })
-      res.end(png)
+      res.end(r.png)
     } catch (e) {
       const why = e instanceof UnsupportedImage ? e.message : 'This image could not be opened.'
       if (!(e instanceof UnsupportedImage)) {
@@ -99,13 +104,27 @@ export async function handleViewer(req: IncomingMessage, res: ServerResponse): P
     return true
   }
 
+  // /study/<uid>/original/<n>.dcm — the untouched file, for a proper viewer.
+  if (parts[2] === 'original') {
+    const index = Number.parseInt(parts[3] ?? '', 10)
+    const found = files[index]
+    if (!found) { res.writeHead(404); res.end(); return true }
+    const bytes = await fs.readFile(found.file)
+    res.writeHead(200, {
+      'content-type': 'application/dicom',
+      'content-disposition': `attachment; filename="image-${index + 1}.dcm"`,
+    })
+    res.end(bytes)
+    return true
+  }
+
   // /study/<uid>
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-  res.end(renderPage(studyUid, files))
+  res.end(await renderPage(studyUid, files))
   return true
 }
 
-function renderPage(studyUid: string, files: Found[]): string {
+async function renderPage(studyUid: string, files: Found[]): Promise<string> {
   const shown = files.slice(0, MAX_PREVIEW)
   const bySeries = new Map<string, number[]>()
   shown.forEach((f, i) => {
@@ -132,16 +151,55 @@ function renderPage(studyUid: string, files: Found[]): string {
       </div>
     </section>`).join('')
 
+  // Decode one image to learn what this study offers. Cheaper than asking
+  // every file, and a study's images share their display settings.
+  let offered: Array<{ name: string }> = []
+  let presets: Array<{ key: string; name: string }> = []
+  let guessed = false
+  let applied = ''
+  try {
+    const probe = await renderDicomToPng(shown[0].file)
+    offered = probe.offered
+    presets = presetsFor(probe.isCt)
+    guessed = probe.guessed
+    applied = probe.applied
+  } catch { /* the grid will show the error per image */ }
+
+  // The buttons that let a doctor decide for themselves rather than trust our
+  // choice — which is the honest answer to "it looks darker than the machine".
+  const choices = [
+    ...offered.map((w, i) => ({ key: String(i), name: w.name })),
+    ...presets,
+  ]
+  const windowBar = choices.length > 1 ? `
+    <div class="windows">
+      <span class="wl">Brightness</span>
+      ${choices.map((c, i) => `<button class="wbtn${i === 0 ? ' on' : ''}" data-w="${esc(c.key)}">${esc(c.name)}</button>`).join('')}
+    </div>` : ''
+
+  // Said plainly, because a wrong window does not look broken — it looks like
+  // a different finding, and somebody could act on it.
+  const notice = guessed
+    ? `<p class="warn">This image did not say how it should be displayed, so the
+       brightness was chosen automatically. It may not match the scanner. Use the
+       original file if anything matters.</p>`
+    : applied
+      ? `<p class="applied">Showing: <strong>${esc(applied)}</strong> — the same setting the machine recorded.</p>`
+      : ''
+
   const truncated = files.length > MAX_PREVIEW
     ? `<p class="empty small">Showing the first ${MAX_PREVIEW} of ${files.length} images.
        The rest are stored and can be opened on the scanner.</p>`
     : ''
 
-  return shell('Scan images', `${series}${truncated}
+  return shell('Scan images', `${notice}${windowBar}${series}${truncated}
     <div id="big" hidden>
       <button id="close" aria-label="Close">&times;</button>
       <img id="bigimg" alt="">
-      <div id="nav"><button id="prev">&#8249;</button><span id="pos"></span><button id="next">&#8250;</button></div>
+      <div id="nav">
+        <button id="prev">&#8249;</button><span id="pos"></span><button id="next">&#8250;</button>
+        <a id="orig" download>Original file</a>
+      </div>
     </div>
     <script>
       // A plain lightbox. No library: this page is served from a laboratory PC
@@ -151,13 +209,31 @@ function renderPage(studyUid: string, files: Found[]): string {
       const big = document.getElementById('big');
       const bigimg = document.getElementById('bigimg');
       const pos = document.getElementById('pos');
+      const origin = ${JSON.stringify(`/study/${encodeURIComponent(studyUid)}/original/`)};
+      const orig = document.getElementById('orig');
       let at = 0;
+      let win = '';
       function show(i) {
         at = (i + total) % total;
-        bigimg.src = base + at;
+        bigimg.src = base + at + (win ? '?w=' + encodeURIComponent(win) : '');
         pos.textContent = (at + 1) + ' of ' + total;
+        orig.href = origin + at;
         big.hidden = false;
       }
+      // Changing the window reloads every tile as well as the open image, so
+      // the grid never disagrees with what is being looked at.
+      document.querySelectorAll('.wbtn').forEach(function (b) {
+        b.addEventListener('click', function () {
+          win = b.dataset.w;
+          document.querySelectorAll('.wbtn').forEach(function (o) { o.classList.remove('on'); });
+          b.classList.add('on');
+          const q = win ? '?w=' + encodeURIComponent(win) : '';
+          document.querySelectorAll('.tile img').forEach(function (img, i) {
+            img.src = base + i + q;
+          });
+          if (!big.hidden) show(at);
+        });
+      });
       document.querySelectorAll('.tile').forEach(function (t) {
         t.addEventListener('click', function (e) { e.preventDefault(); show(+t.dataset.i); });
       });
@@ -202,9 +278,25 @@ function shell(title: string, body: string): string {
   #nav button, #close { background:#1E293B; color:#E2E8F0; border:none; border-radius:8px;
                         font-size:20px; width:44px; height:38px; cursor:pointer; }
   #close { position:fixed; top:16px; right:16px; }
+  #orig { color:#94A3B8; font-size:13px; margin-left:14px; }
+  .windows { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 18px; }
+  .wl { font-size:12px; color:#64748B; text-transform:uppercase; letter-spacing:.07em;
+        margin-right:4px; }
+  .wbtn { background:#1E293B; color:#CBD5E1; border:1px solid #334155; border-radius:999px;
+          padding:5px 12px; font-size:13px; cursor:pointer; }
+  .wbtn.on { background:#0D9488; color:#fff; border-color:#0D9488; }
+  .warn { background:#422006; border:1px solid #854D0E; color:#FDE68A; padding:11px 14px;
+          border-radius:8px; font-size:13px; margin:0 0 16px; }
+  .applied { color:#94A3B8; font-size:13px; margin:0 0 16px; }
+  .applied strong { color:#E2E8F0; }
+  .foot { max-width:900px; margin:28px auto 0; padding-top:16px; border-top:1px solid #1E293B;
+          color:#64748B; font-size:12px; }
 </style></head><body>
 <h1>Scan images</h1>
 <p class="lead">Stored in this hospital. Use the arrow keys to move between images.</p>
 ${body}
+<p class="foot"><strong>Preview only — not for diagnosis.</strong> Screens differ and this
+page is not a diagnostic display. For reporting, open the study on the scanner or download
+the original file.</p>
 </body></html>`
 }

@@ -104,6 +104,66 @@ await test('refuses a compressed image with an explanation, not a crash', async 
   await assert.rejects(() => renderDicomToPng(file))
 })
 
+await test('offers the windows the image names, not invented ones', async () => {
+  const px = new Int16Array(64).fill(0)
+  const file = await makeDicom('multi', px, {
+    Modality: 'CT',
+    WindowCenter: [40, -600], WindowWidth: [400, 1500],
+    WindowCenterWidthExplanation: ['SOFT TISSUE', 'LUNG'],
+  })
+  const r = await renderDicomToPng(file)
+  assert.equal(r.offered.length, 2, 'both windows should be offered')
+  assert.equal(r.offered[0].name, 'SOFT TISSUE')
+  assert.equal(r.offered[1].name, 'LUNG')
+  assert.equal(r.applied, 'SOFT TISSUE', 'the first is what the machine was showing')
+  assert.equal(r.guessed, false, 'nothing was guessed here')
+})
+
+await test('switching window actually changes the picture', async () => {
+  const px = new Int16Array(64)
+  for (let i = 0; i < 64; i++) px[i] = 400
+  const file = await makeDicom('switch', px, {
+    Modality: 'CT', RescaleIntercept: -1000, RescaleSlope: 1,
+    WindowCenter: [40, -600], WindowWidth: [400, 1500],
+    WindowCenterWidthExplanation: ['SOFT TISSUE', 'LUNG'],
+  })
+  const { PNG } = await import('pngjs')
+  const a = PNG.sync.read((await renderDicomToPng(file, { window: '0' })).png).data[0]
+  const b = PNG.sync.read((await renderDicomToPng(file, { window: '1' })).png).data[0]
+  assert.notEqual(a, b, 'the two windows must not produce the same grey')
+})
+
+await test('says so when it had to guess', async () => {
+  const px = new Int16Array(64).fill(50)
+  const file = await makeDicom('noWindow', px, {})   // no WindowCenter at all
+  const r = await renderDicomToPng(file)
+  assert.equal(r.guessed, true, 'must admit the brightness was invented')
+  assert.match(r.applied, /automatic/i)
+})
+
+await test('CT presets are offered only for CT', async () => {
+  const px = new Int16Array(64).fill(0)
+  const ct = await renderDicomToPng(await makeDicom('isCt', px, {
+    Modality: 'CT', WindowCenter: 40, WindowWidth: 400,
+  }))
+  const us = await renderDicomToPng(await makeDicom('isUs', px, {
+    Modality: 'US', WindowCenter: 40, WindowWidth: 400,
+  }))
+  assert.equal(ct.isCt, true)
+  assert.equal(us.isCt, false, 'a lung window on an ultrasound means nothing')
+})
+
+await test('refuses a palette image it cannot read rather than showing grey', async () => {
+  const px = new Uint8Array(64).fill(1)
+  const file = await makeDicom('palette', px, {
+    PhotometricInterpretation: 'PALETTE COLOR',
+    // Descriptor present but no table data — the case that would otherwise
+    // silently render a Doppler study in grey.
+    RedPaletteColorLookupTableDescriptor: [4, 0, 8],
+  })
+  await assert.rejects(() => renderDicomToPng(file), /colour/i)
+})
+
 await fs.rm(dir, { recursive: true, force: true })
 console.log(failures ? `\n${failures} failing\n` : '\nall passing\n')
 process.exit(failures ? 1 : 0)
