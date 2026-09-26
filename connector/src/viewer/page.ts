@@ -268,12 +268,20 @@ function shell(title: string, body: string): string {
   .grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
   .tile { display:block; background:#000; border:1px solid #1E293B; border-radius:6px;
           overflow:hidden; aspect-ratio:1; }
-  .tile img { width:100%; height:100%; object-fit:contain; display:block; }
+  .tile img { width:100%; height:100%; object-fit:contain; display:block;
+              image-rendering:pixelated; }
   .empty { color:#94A3B8; }
   .small { font-size:13px; }
   #big { position:fixed; inset:0; background:rgba(2,6,23,.96); display:flex;
          align-items:center; justify-content:center; flex-direction:column; z-index:50; }
-  #bigimg { max-width:96vw; max-height:84vh; object-fit:contain; }
+  /* Grow to fill the window, not just shrink to fit it. max-width alone caps
+     a large image but leaves a small one at its native size, and ultrasound
+     frames are often only 256 pixels across — which is most of what a small
+     hospital scans. width/height with object-fit scales both ways while
+     keeping the proportions.
+     image-rendering: pixelated because a medical image enlarged with smoothing
+     invents detail that is not in the data. Blocky is honest. */
+  #bigimg { width:96vw; height:84vh; object-fit:contain; image-rendering:pixelated; }
   #nav { margin-top:12px; display:flex; gap:18px; align-items:center; color:#94A3B8; }
   #nav button, #close { background:#1E293B; color:#E2E8F0; border:none; border-radius:8px;
                         font-size:20px; width:44px; height:38px; cursor:pointer; }
