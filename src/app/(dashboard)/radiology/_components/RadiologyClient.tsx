@@ -16,6 +16,7 @@ import { hasPermission } from '@/lib/rbac'
 import OrderRadiologyModal from './OrderRadiologyModal'
 import ReportEntryModal from './ReportEntryModal'
 import AddRadiologyTestModal from './AddRadiologyTestModal'
+import ViewScanButton from './ViewScanButton'
 
 const STATUS_MAP: Record<string, string> = {
   ordered: 'pending', performed: 'info', verified: 'info', reported: 'success', cancelled: 'cancelled',
@@ -223,6 +224,9 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Only appears once a machine has actually sent images
+                            and the computer holding them is reachable. */}
+                        {tab !== 'pending' && <ViewScanButton orderId={order.id} />}
                         {tab === 'pending' && canProcess && (
                           <button onClick={() => handlePerform(order.id)} disabled={actionId === order.id}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold"

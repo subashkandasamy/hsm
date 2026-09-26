@@ -6,6 +6,7 @@ import { log } from './log.js'
 import { VERSION } from './version.js'
 import { diskWatch } from './dicom/server.js'
 import { humanBytes, WARN_FREE_BYTES, type DiskState } from './dicom/disk.js'
+import { handleViewer } from './viewer/page.js'
 
 /**
  * A window onto a program that otherwise has none.
@@ -50,6 +51,18 @@ export function startStatusPage(
 
   const server = http.createServer(async (req, res) => {
     if (req.url === '/favicon.ico') { res.writeHead(204); res.end(); return }
+
+    // The scan viewer shares this port. Uyirly links straight to it, and a
+    // plain navigation to a private address is not subject to the mixed
+    // content and local-network rules that would block a fetch.
+    try {
+      if (await handleViewer(req, res)) return
+    } catch (e) {
+      log.warn(`Viewer request failed: ${(e as Error).message}`)
+      res.writeHead(500, { 'content-type': 'text/plain' })
+      res.end('Could not open that study.')
+      return
+    }
     let waiting = 0
     let oldest: string | null = null
     try {

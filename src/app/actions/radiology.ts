@@ -344,3 +344,62 @@ export async function activateRadiologyFromMaster(
   const { data: test } = await supabase.from('radiology_catalog').select('*').eq('id', id).single()
   return { success: true, test: test as RadiologyCatalog }
 }
+
+export interface StudyLink {
+  /** Opened in a new tab, on the hospital's own network. */
+  url: string
+  images: number
+  series: number
+  modality: string | null
+}
+
+/**
+ * Where the scan images for an order can be looked at.
+ *
+ * The images live on the computer the connector runs on, not here — a CT study
+ * is hundreds of megabytes and a busy hospital makes gigabytes a day. So this
+ * returns a link to that computer rather than the pictures.
+ *
+ * Which means it only works inside the hospital, and returns null from
+ * anywhere else. That is a deliberate limit of storing images locally, not an
+ * oversight: a doctor at home and the patient portal both see nothing until
+ * there is a cloud copy of something.
+ *
+ * The page is opened as a normal link rather than loaded into ours. Since
+ * Chrome 142 a public site may not even ask a private address for a
+ * subresource without the viewer granting a permission first, whereas plain
+ * navigation is untouched by those rules — so this way nobody is prompted.
+ */
+export async function getStudyViewerLink(orderId: string): Promise<StudyLink | null> {
+  const supabase = await createClient()
+
+  const { data: study } = await supabase
+    .from('radiology_studies')
+    .select('study_instance_uid, instance_count, series_count, modality, status')
+    .eq('radiology_order_id', orderId)
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!study?.study_instance_uid) return null
+
+  // Whichever lab computer received it told us its address when it last
+  // checked in. Without one there is nothing to link to.
+  const { data: connector } = await supabase
+    .from('connectors')
+    .select('lan_ip, status')
+    .not('lan_ip', 'is', null)
+    .neq('status', 'revoked')
+    .order('last_seen_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!connector?.lan_ip) return null
+
+  return {
+    url: `http://${connector.lan_ip}:5151/study/${encodeURIComponent(study.study_instance_uid as string)}`,
+    images: Number(study.instance_count ?? 0),
+    series: Number(study.series_count ?? 0),
+    modality: (study.modality as string | null) ?? null,
+  }
+}
