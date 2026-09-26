@@ -47,6 +47,8 @@ export function startStatusPage(
   config: Config,
   state: LiveState,
   viewerPort = port + 1,
+  /** Read fresh each request: it is fetched from Uyirly after startup. */
+  viewerKey: () => string | null = () => null,
 ): { close: () => void } {
   const queue = new Queue(`${dataDir()}/queue`)
 
@@ -86,7 +88,7 @@ export function startStatusPage(
   // the point of receiving them at all.
   const viewer = http.createServer(async (req, res) => {
     try {
-      if (await handleViewer(req, res)) return
+      if (await handleViewer(req, res, viewerKey())) return
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('Not found')
     } catch (e) {

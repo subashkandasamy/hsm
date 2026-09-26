@@ -95,3 +95,35 @@ export async function reportStudy(config: Config, study: ReceivedStudy): Promise
     + `The images are on this computer at ${study.storagePath} and nothing is lost, `
     + 'but the order will not show them until somebody looks.')
 }
+
+/**
+ * The key for checking that a viewer link came from Uyirly.
+ *
+ * Fetched at startup rather than kept from pairing, so a connector installed
+ * before links were signed begins verifying them without anybody reinstalling
+ * it. Without a key the viewer refuses everything, which is the safe way to
+ * fail: no images shown beats a patient's scans readable by the network.
+ */
+export async function fetchViewerKey(config: Config): Promise<string | null> {
+  const url = `${config.serverUrl.replace(/\/$/, '')}/api/device/viewer-key`
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 12_000)
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${config.token}` },
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (res.ok) {
+        const body = await res.json() as { viewerKey?: string }
+        if (body.viewerKey) return body.viewerKey
+      }
+      if (res.status === 401 || res.status === 403) break
+    } catch { /* offline; try again below */ }
+    await new Promise((r) => setTimeout(r, attempt * 4_000))
+  }
+  log.warn('Could not fetch the key for checking scan-viewer links. '
+    + 'Images will not open until this computer can reach Uyirly again.')
+  return null
+}

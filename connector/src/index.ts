@@ -7,7 +7,7 @@ import { promptForPairing, pair } from './pair.js'
 import { runCheck } from './check.js'
 import { startStatusPage, type LiveState } from './status-page.js'
 import { startDicom } from './dicom/server.js'
-import { fetchWorklist, reportStudy } from './radiology.js'
+import { fetchWorklist, reportStudy, fetchViewerKey } from './radiology.js'
 import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
@@ -131,8 +131,14 @@ async function main(): Promise<void> {
   )
   stoppers.push(() => tcp.close())
 
+  // Fetched rather than stored at pairing, so a connector installed before
+  // links were signed starts verifying them without being reinstalled.
+  let viewerKey: string | null = null
+  void fetchViewerKey(config).then((k) => { viewerKey = k })
+
   const statusPage = startStatusPage(
     config.statusPort ?? 5151, config, live, config.viewerPort ?? 5152,
+    () => viewerKey,
   )
   stoppers.push(() => statusPage.close())
 

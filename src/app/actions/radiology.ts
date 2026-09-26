@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { signViewerLink, VIEWER_LINK_TTL_SECONDS } from '@/lib/lab/viewerLink'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
@@ -387,7 +388,7 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
   // checked in. Without one there is nothing to link to.
   const { data: connector } = await supabase
     .from('connectors')
-    .select('lan_ip, status')
+    .select('lan_ip, status, viewer_key')
     .not('lan_ip', 'is', null)
     .neq('status', 'revoked')
     .order('last_seen_at', { ascending: false })
@@ -396,10 +397,19 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
 
   if (!connector?.lan_ip) return null
 
+  // Signed and time-limited. Without this anyone on the hospital network who
+  // had the study's identifier could read a patient's scans — and a study id
+  // is permanent, so once it reaches a browser history or a chat message it
+  // would be a key that never expires.
+  const studyUid = study.study_instance_uid as string
+  const expiresAt = Math.floor(Date.now() / 1000) + VIEWER_LINK_TTL_SECONDS
+  const signature = signViewerLink((connector.viewer_key as string) ?? '', studyUid, expiresAt)
+
   return {
     // 5152, not the status page on 5151: the status page is bound to loopback
     // and a doctor is at their own desk, not beside the connector.
-    url: `http://${connector.lan_ip}:5152/study/${encodeURIComponent(study.study_instance_uid as string)}`,
+    url: `http://${connector.lan_ip}:5152/study/${encodeURIComponent(studyUid)}`
+       + `?e=${expiresAt}&s=${signature}`,
     images: Number(study.instance_count ?? 0),
     series: Number(study.series_count ?? 0),
     modality: (study.modality as string | null) ?? null,

@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dataDir } from '../config.js'
 import { renderDicomToPng, presetsFor, UnsupportedImage } from './render.js'
 import { log } from '../log.js'
+import { verifyViewerLink } from './link.js'
 
 /**
  * Looking at a scan, from inside the hospital.
@@ -59,7 +60,9 @@ const esc = (s: string) =>
  * Handles the viewer's URLs. Returns false when the request is not ours, so
  * the status page keeps its own routes.
  */
-export async function handleViewer(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+export async function handleViewer(
+  req: IncomingMessage, res: ServerResponse, viewerKey: string | null,
+): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const parts = url.pathname.split('/').filter(Boolean)
   if (parts[0] !== 'study' || !parts[1]) return false
@@ -70,6 +73,26 @@ export async function handleViewer(req: IncomingMessage, res: ServerResponse): P
   if (studyUid.includes('..') || studyUid.includes('/') || studyUid.includes('\\')) {
     res.writeHead(400, { 'content-type': 'text/plain' })
     res.end('Bad study id')
+    return true
+  }
+
+  // ── The link must be one Uyirly issued ─────────────────────────────────
+  //
+  // This port is reachable from the whole hospital network, so without a
+  // signature anyone who had a study's identifier could read a patient's
+  // scans — and an identifier is permanent, unlike this.
+  const expiresAt = Number.parseInt(url.searchParams.get('e') ?? '', 10)
+  const signature = url.searchParams.get('s') ?? ''
+  if (!viewerKey || !verifyViewerLink(viewerKey, studyUid, expiresAt, signature)) {
+    const stale = Number.isFinite(expiresAt) && expiresAt * 1000 < Date.now()
+    res.writeHead(stale ? 410 : 403, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(shell(stale ? 'Link expired' : 'Not allowed', `
+      <p class="empty">${stale
+        ? 'This link has expired.'
+        : 'This link is not valid.'}</p>
+      <p class="empty small">Open the scan from the patient's order in Uyirly to get a
+      fresh one. Links are timed so that one which is forwarded or bookmarked cannot be
+      used later.</p>`))
     return true
   }
 
@@ -120,11 +143,11 @@ export async function handleViewer(req: IncomingMessage, res: ServerResponse): P
 
   // /study/<uid>
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-  res.end(await renderPage(studyUid, files))
+  res.end(await renderPage(studyUid, files, `e=${expiresAt}&s=${encodeURIComponent(signature)}`))
   return true
 }
 
-async function renderPage(studyUid: string, files: Found[]): Promise<string> {
+async function renderPage(studyUid: string, files: Found[], auth: string): Promise<string> {
   const shown = files.slice(0, MAX_PREVIEW)
   const bySeries = new Map<string, number[]>()
   shown.forEach((f, i) => {
@@ -145,7 +168,7 @@ async function renderPage(studyUid: string, files: Found[]): Promise<string> {
       <div class="grid">
         ${idx.map((i) => `
           <a class="tile" href="#i${i}" data-i="${i}">
-            <img loading="lazy" src="/study/${encodeURIComponent(studyUid)}/image/${i}"
+            <img loading="lazy" src="/study/${encodeURIComponent(studyUid)}/image/${i}?${auth}"
                  alt="Image ${i + 1}">
           </a>`).join('')}
       </div>
@@ -206,6 +229,7 @@ async function renderPage(studyUid: string, files: Found[]): Promise<string> {
       // that may have no route to the internet at all.
       const total = ${shown.length};
       const base = ${JSON.stringify(`/study/${encodeURIComponent(studyUid)}/image/`)};
+      const auth = ${JSON.stringify(auth)};
       const big = document.getElementById('big');
       const bigimg = document.getElementById('bigimg');
       const pos = document.getElementById('pos');
@@ -215,9 +239,9 @@ async function renderPage(studyUid: string, files: Found[]): Promise<string> {
       let win = '';
       function show(i) {
         at = (i + total) % total;
-        bigimg.src = base + at + (win ? '?w=' + encodeURIComponent(win) : '');
+        bigimg.src = base + at + '?' + auth + (win ? '&w=' + encodeURIComponent(win) : '');
         pos.textContent = (at + 1) + ' of ' + total;
-        orig.href = origin + at;
+        orig.href = origin + at + '?' + auth;
         big.hidden = false;
       }
       // Changing the window reloads every tile as well as the open image, so
@@ -227,7 +251,7 @@ async function renderPage(studyUid: string, files: Found[]): Promise<string> {
           win = b.dataset.w;
           document.querySelectorAll('.wbtn').forEach(function (o) { o.classList.remove('on'); });
           b.classList.add('on');
-          const q = win ? '?w=' + encodeURIComponent(win) : '';
+          const q = '?' + auth + (win ? '&w=' + encodeURIComponent(win) : '');
           document.querySelectorAll('.tile img').forEach(function (img, i) {
             img.src = base + i + q;
           });
