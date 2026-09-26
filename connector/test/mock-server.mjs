@@ -26,9 +26,12 @@ const TOKEN = 'mock-token-for-windows-ci'
 // the next one, so the mock is started afresh wherever it is needed — and the
 // duplicate-suppression test only means anything if it still remembers the
 // message it accepted two steps ago.
+const EMPTY = { paired: null, messages: [], pings: 0, worklistAsks: 0, studies: [] }
+// Merged rather than replaced: a file written before these fields existed would
+// otherwise come back missing them and crash on the first push.
 const received = existsSync(outFile)
-  ? JSON.parse(readFileSync(outFile, 'utf8'))
-  : { paired: null, messages: [], pings: 0 }
+  ? { ...EMPTY, ...JSON.parse(readFileSync(outFile, 'utf8')) }
+  : { ...EMPTY }
 
 const save = () => writeFileSync(outFile, JSON.stringify(received, null, 2))
 save()
@@ -73,6 +76,36 @@ http.createServer(async (req, res) => {
       listenPort: 5150, analyzersSeen: 0, needingAttention: 0,
       serverTime: new Date().toISOString(),
     })
+  }
+
+  if (url.pathname === '/api/device/radiology/worklist' && req.method === 'GET') {
+    if (auth !== TOKEN) return send(res, 401, { error: 'bad token' })
+    // One booked patient, so the worklist path is exercised with real content
+    // rather than an empty list that would pass even if nothing worked.
+    const items = [{
+      accessionNumber: 'R2609260001', patientId: 'CI-UH-1',
+      patientName: 'Test Patient', patientBirthDate: '1984-04-12', patientSex: 'F',
+      modality: 'US', studyDescription: 'CI Ultrasound', bodyPart: 'Abdomen',
+      scheduledFor: new Date().toISOString(), referringPhysician: 'Dr CI',
+      priority: 'ROUTINE',
+    }]
+    received.worklistAsks++
+    save()
+    return send(res, 200, { count: items.length, items })
+  }
+
+  if (url.pathname === '/api/device/radiology/studies' && req.method === 'POST') {
+    if (auth !== TOKEN) return send(res, 401, { error: 'bad token' })
+    const body = await read(req)
+    received.studies.push({
+      studyInstanceUid: body.studyInstanceUid,
+      accessionNumber: body.accessionNumber,
+      aeTitle: body.aeTitle,
+      instanceCount: body.instanceCount,
+      series: (body.series ?? []).length,
+    })
+    save()
+    return send(res, 200, { status: body.accessionNumber ? 'matched' : 'unmatched' })
   }
 
   if (url.pathname === '/api/device/lab/results' && req.method === 'POST') {

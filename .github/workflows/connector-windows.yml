@@ -162,6 +162,52 @@ jobs:
           & "$env:ProgramFiles\Uyirly\Connector\uyirly-connector.exe" --check
           if ($LASTEXITCODE -ne 0) { throw "--check reported a problem (exit $LASTEXITCODE)" }
 
+      # Radiology runs through the same executable, so the same install must
+      # answer scanners too. Without this the DICOM path is only ever exercised
+      # on a Mac, which is how the postject and ESM-export failures got in.
+      - name: A scanner can reach it, and the worklist comes back
+        working-directory: connector
+        shell: pwsh
+        run: |
+          .\test\start-mock.ps1
+
+          # The firewall rule must exist, or a real machine cannot connect at
+          # all and the failure is silent at both ends.
+          $fw = (netsh advfirewall firewall show rule name="Uyirly Scanners (DICOM)" 2>$null) -join "`n"
+          if ($LASTEXITCODE -ne 0)          { throw 'the scanner firewall rule was not created' }
+          if ($fw -notmatch 'Enabled:\s*Yes') { throw 'the scanner firewall rule is switched off' }
+
+          $listening = $false
+          foreach ($i in 1..40) {
+            if (Test-NetConnection -ComputerName 127.0.0.1 -Port 11112 -InformationLevel Quiet -WarningAction SilentlyContinue) {
+              $listening = $true; break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $listening) { throw 'nothing is listening on 11112 — scanners cannot connect' }
+
+          # Speaks real DICOM: echo, worklist, then sends an image back.
+          node test/fake-scanner.mjs 127.0.0.1 11112 CI_SCANNER 2>&1 | Tee-Object -Variable out
+          if ($LASTEXITCODE -ne 0) { throw 'the fake scanner could not complete' }
+          if (($out -join "`n") -notmatch 'echo\s*:\s*answered') { throw 'the connector did not answer a DICOM echo' }
+
+          $text = $out -join "`n"
+          if ($text -notmatch 'Test Patient|Patient\^Test') { throw 'the worklist did not reach the scanner' }
+          if ($text -notmatch 'image sent')                  { throw 'the scanner could not send an image' }
+
+          # The study closes on a thirty-second idle timer, then is reported.
+          $got = $null
+          foreach ($i in 1..24) {
+            Start-Sleep -Seconds 2
+            $rec = Get-Content received.json -Raw | ConvertFrom-Json
+            if ($rec.studies.Count -ge 1) { $got = $rec.studies[0]; break }
+          }
+          if (-not $got)                          { throw 'the study was never reported to the server' }
+          if ($got.accessionNumber -ne 'R2609260001') { throw "wrong accession came back: $($got.accessionNumber)" }
+          if ($got.aeTitle -ne 'CI_SCANNER')      { throw "the machine was not identified: $($got.aeTitle)" }
+          Write-Host "scanner verified — study $($got.accessionNumber) from $($got.aeTitle), $($got.instanceCount) image(s)"
+          exit 0
+
       - name: The status page works, and only on this computer
         shell: pwsh
         run: |

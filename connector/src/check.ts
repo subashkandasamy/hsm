@@ -48,9 +48,14 @@ export async function runCheck(config: Config | null): Promise<number> {
   // ── The port analyzers connect to ────────────────────────────────────────
   lines.push(await checkPort(config.listenPort))
 
+  // ── The scanner port ─────────────────────────────────────────────────────
+  lines.push(await checkDicomPort(config.dicomPort ?? 11112, config.dicomAeTitle ?? 'UYIRLY'))
+
   // ── Windows firewall ─────────────────────────────────────────────────────
   const fw = await checkFirewall(config.listenPort)
   if (fw) lines.push(fw)
+  const fwD = await checkFirewall(config.dicomPort ?? 11112, 'Uyirly Scanners (DICOM)', 'scanners')
+  if (fwD) lines.push(fwD)
 
   // ── Does it start with the computer? ─────────────────────────────────────
   const task = await checkStartup()
@@ -184,23 +189,73 @@ async function checkPort(port: number): Promise<Line> {
   }
 }
 
+/**
+ * Is our own DICOM server answering?
+ *
+ * Asked the same way a scanner asks: open an association and send C-ECHO, the
+ * "are you there" every imaging engineer tries first. Nothing but a DICOM
+ * server will answer it, so this distinguishes us from a stray program on the
+ * port — exactly as the lab check sends ENQ and waits for ACK.
+ */
+async function checkDicomPort(port: number, aeTitle: string): Promise<Line> {
+  let answered = false
+  try {
+    const dimse = ((await import('dcmjs-dimse')) as unknown as {
+      default: typeof import('dcmjs-dimse')
+    }).default
+    const { Client, requests } = dimse
+
+    answered = await new Promise<boolean>((resolve) => {
+      const client = new Client()
+      const req = new requests.CEchoRequest()
+      let ok = false
+      req.on('response', () => { ok = true })
+      client.addRequest(req)
+      client.on('networkError', () => resolve(false))
+      client.on('closed', () => resolve(ok))
+      setTimeout(() => resolve(ok), 6000)
+      client.send('127.0.0.1', port, 'UYIRLY-CHECK', aeTitle)
+    })
+  } catch {
+    return {
+      state: 'warn', label: `Scanner port ${port}`,
+      detail: 'could not be tested in this build',
+    }
+  }
+
+  if (answered) {
+    return { state: 'ok', label: `Scanner port ${port}`, detail: `answering as "${aeTitle}"` }
+  }
+  return {
+    state: 'warn', label: `Scanner port ${port}`,
+    detail: 'nothing is answering — scanners cannot send here',
+    fix: 'The connector may not be running, or another program has the port. '
+      + 'If you have no scanners, this line can be ignored.',
+  }
+}
+
 /** Only meaningful on Windows; elsewhere there is nothing useful to say. */
-async function checkFirewall(port: number): Promise<Line | null> {
+async function checkFirewall(
+  port: number,
+  ruleName = 'Uyirly Lab Connector',
+  what = 'analyzers',
+): Promise<Line | null> {
   if (process.platform !== 'win32') return null
+  const label = what === 'analyzers' ? 'Firewall' : 'Firewall (scanners)'
   try {
     const { stdout } = await exec('netsh',
-      ['advfirewall', 'firewall', 'show', 'rule', 'name=Uyirly Lab Connector'])
+      ['advfirewall', 'firewall', 'show', 'rule', `name=${ruleName}`])
     if (/Enabled:\s*Yes/i.test(stdout)) {
-      return { state: 'ok', label: 'Firewall', detail: `allowed (inbound TCP ${port})` }
+      return { state: 'ok', label, detail: `allowed (inbound TCP ${port})` }
     }
     return {
-      state: 'warn', label: 'Firewall', detail: 'a rule exists but is switched off',
+      state: 'warn', label, detail: 'a rule exists but is switched off',
       fix: 'Re-run install.ps1 as Administrator to repair it.',
     }
   } catch {
     return {
-      state: 'bad', label: 'Firewall', detail: 'no rule — analyzers cannot reach this computer',
-      fix: `Run as Administrator:  netsh advfirewall firewall add rule name="Uyirly Lab Connector" dir=in action=allow protocol=TCP localport=${port}`,
+      state: 'bad', label, detail: `no rule — ${what} cannot reach this computer`,
+      fix: `Run as Administrator:  netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=${port}`,
     }
   }
 }

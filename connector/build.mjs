@@ -291,6 +291,13 @@ netsh advfirewall firewall delete rule name="Uyirly Lab Connector" 2>$null | Out
 netsh advfirewall firewall add rule name="Uyirly Lab Connector" dir=in action=allow \`
   protocol=TCP localport=5150 profile=any | Out-Null
 Write-Host "Opened port 5150 for analyzers"
+
+# Scanners. Without this a machine simply cannot reach us and the failure is
+# silent at both ends — the console reports a timeout and nothing appears here.
+netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" 2>$null | Out-Null
+netsh advfirewall firewall add rule name="Uyirly Scanners (DICOM)" dir=in action=allow \`
+  protocol=TCP localport=11112 profile=any | Out-Null
+Write-Host "Opened port 11112 for scanners"
 # The status page is deliberately NOT opened in the firewall: it is bound to
 # 127.0.0.1 and has no business being reachable from the rest of the hospital.
 
@@ -346,6 +353,7 @@ schtasks /End    /TN 'UyirlyLabConnector' | Out-Null
 schtasks /Delete /TN 'UyirlyLabConnector' /F | Out-Null
 Remove-Item ([System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk'))
 netsh advfirewall firewall delete rule name="Uyirly Lab Connector" | Out-Null
+netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" | Out-Null
 Remove-Item "$env:ProgramFiles\\Uyirly\\Connector" -Recurse -Force
 Write-Host "Removed. Results not yet sent are still in C:\\ProgramData\\Uyirly\\Connector\\queue"
 Write-Host "Delete that folder only once you are sure nothing is waiting."
@@ -376,6 +384,17 @@ TO CONNECT AN ANALYZER
   Give that address to whoever services your analyzer. They enter it as the
   "host" or "LIS" address on the machine. Nothing else needs setting up —
   Uyirly recognises the machine from what it sends.
+
+TO CONNECT A SCANNER (X-ray, ultrasound, CT, MRI)
+  Your imaging engineer needs three things, which they type into the machine:
+
+      AE Title:  UYIRLY
+      IP:        the address printed above
+      Port:      11112
+
+  They will usually press "Verify" or "Echo" first. If that succeeds, the
+  wiring is right. Then switch on the worklist so today's patients appear on
+  the machine instead of being typed in by hand.
 
 TO CHECK ON IT
   Double-click "Uyirly Lab Connector" on the desktop. A page opens showing
