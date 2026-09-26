@@ -23,7 +23,7 @@
     "for the same reason Playwright is: nothing here should ever be installed",
     "on the production server. This is a program a hospital runs on its own PC.",
     "",
-    "serialport is optional because it is a native module \u2014 it cannot be baked",
+    "serialport is optional because it is a native module — it cannot be baked",
     "into a single-file executable, and a connector whose analyzers are all on",
     "the network must still run without it."
   ],
@@ -39,5 +39,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "dcmjs-dimse": "^0.3.3"
   }
 }

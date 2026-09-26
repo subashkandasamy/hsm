@@ -32,6 +32,11 @@ export interface Config {
   listenPort: number
   /** Where the local status page is served. Loopback only. */
   statusPort?: number
+  /** Port scanners connect to. 11112 is the registered DICOM port; 104 is the
+   *  traditional one and some older consoles cannot be moved off it. */
+  dicomPort?: number
+  /** The name a scanner must be told to call us. Typed into its console. */
+  dicomAeTitle?: string
   /** COM ports / tty devices to open, with their line settings. */
   serial: Array<{ path: string; baudRate: number }>
   /** Folders to watch for analyzers that can only write a file. */

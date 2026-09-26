@@ -6,6 +6,8 @@ import { Uploader } from './uploader.js'
 import { promptForPairing, pair } from './pair.js'
 import { runCheck } from './check.js'
 import { startStatusPage, type LiveState } from './status-page.js'
+import { startDicom } from './dicom/server.js'
+import { fetchWorklist, reportStudy } from './radiology.js'
 import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
@@ -131,6 +133,18 @@ async function main(): Promise<void> {
 
   const statusPage = startStatusPage(config.statusPort ?? 5151, config, live)
   stoppers.push(() => statusPage.close())
+
+  // Scanners. Same program, another port — a hospital installs one thing
+  // whether its machines are analyzers, scanners or both.
+  const dicom = await startDicom(config, {
+    getWorklist: (modality) => fetchWorklist(config, modality),
+    onStudyComplete: (study) => {
+      live.lastMessageAt = new Date()
+      live.receivedCount += 1
+      void reportStudy(config, study)
+    },
+  })
+  stoppers.push(() => dicom.close())
 
   for (const folder of config.watchFolders) {
     stoppers.push(startFolderWatch(folder, (raw, src) => void receive(raw, src)))
