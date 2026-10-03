@@ -330,11 +330,30 @@ export async function verifyOrder(orderId: string): Promise<SimpleResult> {
 
   const { data: items } = await supabase
     .from('lab_order_items')
-    .select('id, result_value, result_text')
+    .select('id, test_id, result_value, result_text')
     .eq('lab_order_id', orderId)
   if (!items?.length) return { success: false, error: 'This order has no tests' }
 
-  const pending = items.filter((i) => i.result_value == null && !i.result_text)
+  // A panel's results are NOT on its lab_order_items row — a CBC's twenty
+  // numbers live in lab_result_analytes and the item carries nothing. Checking
+  // only the item made every analyte test unverifiable: a hospital would enter
+  // an HbA1c, be told "no results have been entered yet", and try again.
+  const { data: analyteRows } = await supabase
+    .from('lab_result_analytes')
+    .select('test_id, value_num, value_text')
+    .eq('lab_order_id', orderId)
+
+  const testsWithAnalyteValues = new Set(
+    (analyteRows ?? [])
+      .filter((r) => r.value_num != null || (r.value_text ?? '') !== '')
+      .map((r) => r.test_id as string),
+  )
+
+  const pending = items.filter((i) =>
+    i.result_value == null
+    && !i.result_text
+    && !testsWithAnalyteValues.has(i.test_id as string))
+
   if (pending.length === items.length) {
     return { success: false, error: 'No results have been entered yet' }
   }
