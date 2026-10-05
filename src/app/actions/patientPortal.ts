@@ -307,6 +307,31 @@ async function ownsPatient(svc: ReturnType<typeof createServiceClient>, patientI
   }
 }
 
+/** One analyte row as get_lab_report_analytes returns it. */
+interface PortalAnalyte {
+  test_id: string; test_name: string
+  name: string; short_name: string | null
+  unit_ucum: string | null; decimals: number | null
+  value_num: number | null; value_text: string | null
+  ref_low: number | null; ref_high: number | null; flag: string
+}
+
+function portalAnalyteRow(a: PortalAnalyte) {
+  const reference = a.ref_low != null && a.ref_high != null ? `${a.ref_low} – ${a.ref_high}`
+    : a.ref_high != null ? `< ${a.ref_high}`
+    : a.ref_low != null ? `> ${a.ref_low}`
+    : null
+  return {
+    // Named for the measurement, prefixed by the panel it came out of, so a
+    // patient reading "Haemoglobin" knows which report it belongs to.
+    test: `${a.test_name} · ${a.short_name ?? a.name}`,
+    result: a.value_text ?? (a.value_num != null ? a.value_num.toFixed(a.decimals ?? 0) : null),
+    unit: a.unit_ucum,
+    reference,
+    flag: a.flag,
+  }
+}
+
 export async function getPatientHospitalRecords(patientId: string): Promise<PatientRecords | null> {
   const session = await getPatientSession()
   if (!session) return null
@@ -322,12 +347,26 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
     // that was still being worked on — a half-entered panel, or an unverified
     // one — which is neither finished nor anybody's intention to publish.
     svc.from('lab_orders')
-      .select('id, status, ordered_at, reported_at, items:lab_order_items(result_value, result_text, unit, flag, test:lab_tests_catalog(name, unit, reference_range))')
+      .select('id, status, ordered_at, reported_at, items:lab_order_items(test_id, result_value, result_text, unit, flag, test:lab_tests_catalog(name, unit, reference_range))')
       .eq('patient_id', patientId).eq('status', 'reported').order('ordered_at', { ascending: false }),
     svc.from('radiology_orders')
       .select('id, status, ordered_at, reported_at, report, image_url, test:radiology_catalog(name)')
       .eq('patient_id', patientId).eq('status', 'reported').order('ordered_at', { ascending: false }),
   ])
+
+  // The analyte values behind every released order, in the order the printed
+  // report uses. Same RPC the PDF calls, so the two can never disagree.
+  const labIds = ((labRes.data ?? []) as Array<Record<string, unknown>>).map((l) => l.id as string)
+  const analytesByOrder = new Map<string, PortalAnalyte[]>()
+  if (labIds.length) {
+    const fetched = await Promise.all(
+      labIds.map(async (id) => {
+        const { data } = await svc.rpc('get_lab_report_analytes', { p_order_id: id })
+        return [id, (data ?? []) as PortalAnalyte[]] as const
+      }),
+    )
+    for (const [id, rows] of fetched) analytesByOrder.set(id, rows)
+  }
 
   const visits = (visitsRes.data ?? []) as Array<Record<string, unknown>>
   const visitIds = visits.map((v) => v.id as string)
@@ -360,21 +399,35 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       notes: v.notes as string | null,
       prescriptions: rxByVisit.get(v.id as string) ?? [],
     })),
-    labs: ((labRes.data ?? []) as Array<Record<string, unknown>>).map((l) => ({
-      id: l.id as string,
-      date: (l.reported_at ?? l.ordered_at) as string,
-      status: l.status as string,
-      items: ((l.items ?? []) as Array<Record<string, unknown>>).map((it) => {
-        const t = it.test as { name?: string; unit?: string | null; reference_range?: string | null } | null
-        return {
-          test: t?.name ?? 'Test',
-          result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
-          unit: (it.unit as string | null) ?? (t?.unit ?? null),
-          reference: t?.reference_range ?? null,
-          flag: it.flag as string,
-        }
-      }),
-    })),
+    labs: ((labRes.data ?? []) as Array<Record<string, unknown>>).map((l) => {
+      const orderId = l.id as string
+      const panelRows = analytesByOrder.get(orderId) ?? []
+      const panelTestIds = new Set(panelRows.map((a) => a.test_id))
+
+      // A panel's values are in lab_result_analytes; its lab_order_items row
+      // stays empty. Reading only the item showed a released CBC as a single
+      // blank line, and hid the download button with it — the patient was told
+      // their report was ready and shown nothing.
+      const singles = ((l.items ?? []) as Array<Record<string, unknown>>)
+        .filter((it) => !panelTestIds.has(it.test_id as string))
+        .map((it) => {
+          const t = it.test as { name?: string; unit?: string | null; reference_range?: string | null } | null
+          return {
+            test: t?.name ?? 'Test',
+            result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
+            unit: (it.unit as string | null) ?? (t?.unit ?? null),
+            reference: t?.reference_range ?? null,
+            flag: it.flag as string,
+          }
+        })
+
+      return {
+        id: orderId,
+        date: (l.reported_at ?? l.ordered_at) as string,
+        status: l.status as string,
+        items: [...panelRows.map(portalAnalyteRow), ...singles],
+      }
+    }),
     radiology: ((radRes.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       id: r.id as string,
       date: (r.reported_at ?? r.ordered_at) as string,

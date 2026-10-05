@@ -207,6 +207,10 @@ export async function createLabOrder(
         qty: 1, unit_price: item.price_snapshot,
       })),
     })
+    // A failed bill is only logged — the order stays, so the laboratory is not
+    // blocked by an accounting problem. What must not happen is the sample
+    // going through as if there were nothing to pay, which is what collectSample
+    // now checks for rather than trusting this line to have succeeded.
     if ('error' in bill) console.error('[createLabOrder] bill failed:', bill.error)
     else await supabase.from('lab_orders').update({ billing_status: 'billed' }).eq('id', orderId)
   }
@@ -236,12 +240,7 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
     // time and settles into the combined bill at discharge, so an admitted patient
     // never waits on a cash payment to have their sample collected. (Only OPD cash
     // is gated below; cashless is exempt in both paths.)
-    const { error } = await supabase
-      .from('lab_orders').update({ status: 'collected' }).eq('id', orderId).eq('status', 'ordered')
-    if (error) return { success: false, error: error.message }
-
-    await logAudit(actor.id, 'collect', 'lab_order', orderId)
-    return { success: true }
+    return markCollected(supabase, actor.id, orderId)
   }
 
   // OPD path: gate on payment before sample collection
@@ -252,10 +251,45 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
     return { success: false, error: 'Awaiting payment — please collect payment before collecting the sample' }
   }
 
-  const { error } = await supabase
-    .from('lab_orders').update({ status: 'collected' }).eq('id', orderId).eq('status', 'ordered')
+  // No bill at all, on an order that costs something, is not the same as
+  // nothing to pay. The gate above only fires on a bill it can FIND, so a
+  // billing failure at order time used to arrive here as silence and the test
+  // was run free. A chargeable order with no bill is held until someone looks.
+  if (!linkedBill) {
+    const chargeable = ((order?.items ?? []) as Array<{ price_snapshot: number | null }>)
+      .reduce((sum, i) => sum + (i.price_snapshot ?? 0), 0)
+    if (chargeable > 0) {
+      return {
+        success: false,
+        error: 'This order was never billed — raise the bill from Billing before collecting the sample',
+      }
+    }
+  }
+
+  return markCollected(supabase, actor.id, orderId)
+}
+
+/**
+ * The one place an order becomes 'collected'.
+ *
+ * Both paths used to update and return success without looking at whether a
+ * row had actually changed, so a second click, or a click on an order someone
+ * else had already moved on, reported "collected" having done nothing.
+ */
+async function markCollected(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  actorId: string,
+  orderId: string,
+): Promise<SimpleResult> {
+  const { data, error } = await supabase
+    .from('lab_orders').update({ status: 'collected' })
+    .eq('id', orderId).eq('status', 'ordered')
+    .select('id')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'collect', 'lab_order', orderId)
+  if (!data?.length) {
+    return { success: false, error: 'This sample is no longer awaiting collection — refresh the page' }
+  }
+  await logAudit(actorId, 'collect', 'lab_order', orderId)
   return { success: true }
 }
 
@@ -268,16 +302,35 @@ export async function enterResults(
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
 
+  // The same two gates the database puts on the panel path (0175), which this
+  // one went around entirely: results on a tube nobody drew, and results on a
+  // cancelled order. An order left at 'ordered' with results on it could also
+  // never be verified afterwards, because verifyOrder only moves an order out
+  // of 'collected' or 'processing'.
+  const { data: order } = await supabase
+    .from('lab_orders').select('status').eq('id', orderId).maybeSingle()
+  if (!order) return { success: false, error: 'That order no longer exists' }
+  if (order.status === 'ordered') {
+    return { success: false, error: 'Collect the sample before entering results' }
+  }
+  if (order.status === 'cancelled') {
+    return { success: false, error: 'This order was cancelled' }
+  }
+
   for (const raw of items) {
     const parsed = LabResultItemSchema.safeParse(raw)
     if (!parsed.success) continue
     const { item_id, result_value, result_text, unit } = parsed.data
 
-    // Fetch the catalog item to auto-flag
+    // Scoped to this order, not just to the id. item_id arrives from the
+    // browser; without the second filter a crafted call could write a result
+    // onto another patient's order in the same hospital, and the audit entry
+    // would name the order it was not written to.
     const { data: item } = await supabase
       .from('lab_order_items')
       .select('test_id, lab_tests_catalog(ref_low, ref_high)')
-      .eq('id', item_id).single()
+      .eq('id', item_id).eq('lab_order_id', orderId).maybeSingle()
+    if (!item) continue
 
     let flag: LabFlag = 'normal'
     if (result_value != null) {
@@ -295,7 +348,7 @@ export async function enterResults(
       result_text: result_text ?? null,
       unit: unit ?? null,
       flag,
-    }).eq('id', item_id)
+    }).eq('id', item_id).eq('lab_order_id', orderId)
   }
 
   // Changing a value withdraws any authorisation it had. A corrected result is
@@ -364,10 +417,16 @@ export async function verifyOrder(orderId: string): Promise<SimpleResult> {
     }
   }
 
-  const { error } = await supabase.from('lab_orders').update({
+  const { data: updated, error } = await supabase.from('lab_orders').update({
     status: 'verified', verified_by: actor.id, verified_at: new Date().toISOString(),
-  }).eq('id', orderId).in('status', ['collected', 'processing'])
+  }).eq('id', orderId).in('status', ['collected', 'processing']).select('id')
   if (error) return { success: false, error: error.message }
+  // The status filter can match nothing — an order already verified, released
+  // or cancelled. Reporting success for an authorisation that never happened
+  // is the worst possible lie to tell on this particular screen.
+  if (!updated?.length) {
+    return { success: false, error: 'This order is no longer awaiting verification — refresh the page' }
+  }
 
   await logAudit(actor.id, 'verify', 'lab_order', orderId)
   return { success: true }
@@ -386,10 +445,13 @@ export async function reportOrder(orderId: string): Promise<SimpleResult> {
     return { success: false, error: 'Results must be verified before the report is released' }
   }
 
-  const { error } = await supabase.from('lab_orders').update({
+  const { data: updated, error } = await supabase.from('lab_orders').update({
     status: 'reported', reported_at: new Date().toISOString(),
-  }).eq('id', orderId).eq('status', 'verified')
+  }).eq('id', orderId).eq('status', 'verified').select('id')
   if (error) return { success: false, error: error.message }
+  if (!updated?.length) {
+    return { success: false, error: 'This order is no longer awaiting release — refresh the page' }
+  }
   await logAudit(actor.id, 'report', 'lab_order', orderId)
   return { success: true }
 }
@@ -399,9 +461,24 @@ export async function cancelLabOrder(orderId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:order')
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('lab_orders').update({ status: 'cancelled' }).eq('id', orderId)
+
+  // Only an order that has not been authorised. Without the status filter this
+  // would cancel a released report — wiping its charge off the bill and leaving
+  // a patient holding a result the hospital now says was never done — and would
+  // happily run a second time on an already-cancelled order, stripping bill
+  // lines again.
+  const { data: updated, error } = await supabase
+    .from('lab_orders').update({ status: 'cancelled' })
+    .eq('id', orderId).in('status', ['ordered', 'collected', 'processing'])
+    .select('id')
   if (error) return { success: false, error: error.message }
+  if (!updated?.length) {
+    return {
+      success: false,
+      error: 'Only an order that has not been verified can be cancelled — '
+        + 'a released report has to be withdrawn by the laboratory instead',
+    }
+  }
 
   // Take the order off its bill(s) — only its own lines, never other charges.
   const billing = await removeOrderFromBills(supabase, 'lab', orderId)
@@ -597,6 +674,10 @@ export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
              doctor:profiles!lab_critical_notifications_notified_to_fkey(full_name),
              order:lab_orders(accession_no, patient:patients(full_name, uhid))`)
     .eq('acknowledged', false)
+    // A result corrected to a non-critical value before anyone was telephoned
+    // withdraws its own entry. The row stays for the record; it leaves the
+    // queue, because there is no longer a clinician to call.
+    .is('withdrawn_at', null)
     .order('created_at', { ascending: true })
   if (error) { console.error('[listOpenCriticalResults]', error.message); return [] }
 
@@ -636,15 +717,20 @@ export async function acknowledgeCritical(input: {
   if (!input.toName.trim()) return { success: false, error: 'Who did you tell?' }
 
   const supabase = await createClient()
-  const { error } = await supabase.from('lab_critical_notifications').update({
+  const { data: closed, error } = await supabase.from('lab_critical_notifications').update({
     notified_to_name: input.toName.trim(),
     notified_by: actor.id,
     notified_at: new Date().toISOString(),
     method: input.method,
     note: input.note?.trim() || null,
     acknowledged: true,
-  }).eq('id', input.id).eq('acknowledged', false)
+  }).eq('id', input.id).eq('acknowledged', false).is('withdrawn_at', null).select('id')
   if (error) return { success: false, error: error.message }
+  // Recording a call for an alert that was withdrawn, or already closed, would
+  // put a communication in the register that did not need to happen.
+  if (!closed?.length) {
+    return { success: false, error: 'That alert has already been closed or withdrawn' }
+  }
 
   await logAudit(actor.id, 'critical_notified', 'lab_critical_notification', input.id, {
     to: input.toName, method: input.method,

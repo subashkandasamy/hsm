@@ -1,17 +1,38 @@
 'use client'
 
+import { Fragment, useEffect, useState } from 'react'
 import { Printer, Pencil } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import DateText from '@/components/ui/DateText'
 import SendToPatientButton from '@/components/ui/SendToPatientButton'
 import { sendReportNotification } from '@/app/actions/notifications'
-import type { LabOrder, LabOrderItem, LabFlag } from '@/lib/types'
+import { getLabReportAnalytes } from '@/app/actions/lab'
+import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
+import type { LabOrder, LabOrderItem } from '@/lib/types'
 
-const FLAG_COLORS: Record<LabFlag, { bg: string; color: string; label: string }> = {
-  pending: { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
-  normal:  { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
-  high:    { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
-  low:     { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
+/**
+ * Every flag the two result tables can carry, not only the four a single-value
+ * test produces. An analyte can come back critical, abnormal or unranged, and
+ * a lookup that missed those labelled a critical potassium "PENDING".
+ */
+const FLAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  pending:       { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
+  normal:        { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
+  high:          { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
+  low:           { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
+  critical_high: { bg: '#991B1B', color: '#fff',    label: 'CRITICAL' },
+  critical_low:  { bg: '#1E3A8A', color: '#fff',    label: 'CRITICAL' },
+  abnormal:      { bg: '#FEE2E2', color: '#DC2626', label: 'ABNORMAL' },
+  unranged:      { bg: '#F1F5F9', color: '#64748B', label: '—' },
+}
+
+const ABNORMAL = new Set(['high', 'low', 'abnormal', 'critical_high', 'critical_low'])
+
+function analyteRange(a: ReportAnalyte): string {
+  if (a.ref_low != null && a.ref_high != null) return `${a.ref_low} – ${a.ref_high}`
+  if (a.ref_high != null) return `< ${a.ref_high}`
+  if (a.ref_low != null) return `> ${a.ref_low}`
+  return '—'
 }
 
 function refRange(item: LabOrderItem): string {
@@ -32,6 +53,35 @@ interface Props {
 
 export default function LabReportModal({ order, canEdit, onClose, onEdit }: Props) {
   const items = order.items ?? []
+
+  // A panel's numbers are not on its lab_order_items row — a CBC's twenty
+  // values live in lab_result_analytes. Reading only the item made this screen
+  // show "—  PENDING" for every test on a panel, and this is the screen
+  // somebody looks at before pressing Release Report: the one place a result
+  // is checked by a person, showing nothing.
+  const [analytes, setAnalytes] = useState<ReportAnalyte[]>([])
+  const [loadingAnalytes, setLoadingAnalytes] = useState(true)
+
+  // order.id does not change while a modal is open, so this runs once and the
+  // initial `true` above is the loading state — no synchronous setState needed.
+  useEffect(() => {
+    let live = true
+    getLabReportAnalytes(order.id)
+      .then((rows) => { if (live) setAnalytes(rows as ReportAnalyte[]) })
+      .finally(() => { if (live) setLoadingAnalytes(false) })
+    return () => { live = false }
+  }, [order.id])
+
+  // Tests whose results are held as analytes — their item row stays empty by
+  // design, so showing it as well would print each panel twice.
+  const analyteTestIds = new Set(analytes.map((a) => a.test_id))
+  const singles = items.filter((i) => !analyteTestIds.has(i.test_id))
+
+  const byTest = new Map<string, { name: string; rows: ReportAnalyte[] }>()
+  for (const a of analytes) {
+    if (!byTest.has(a.test_id)) byTest.set(a.test_id, { name: a.test_name, rows: [] })
+    byTest.get(a.test_id)!.rows.push(a)
+  }
 
   return (
     <Modal open onClose={onClose} title={`Lab Report — ${order.patient?.full_name ?? '—'}`} maxWidth="46rem">
@@ -63,9 +113,39 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => {
+              {[...byTest.entries()].map(([testId, panel]) => (
+                <Fragment key={testId}>
+                  <tr style={{ borderTop: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+                    <td colSpan={5} style={{ ...td, fontWeight: 700, color: '#0F766E', fontSize: '12px' }}>
+                      {panel.name}
+                    </td>
+                  </tr>
+                  {panel.rows.map((a) => {
+                    const fc = FLAG_COLORS[a.flag] ?? FLAG_COLORS.pending
+                    const abnormal = ABNORMAL.has(a.flag)
+                    const value = a.value_text
+                      ?? (a.value_num != null ? a.value_num.toFixed(a.decimals ?? 0) : '—')
+                    return (
+                      <tr key={a.analyte_id} style={{ borderTop: '1px solid #F1F5F9' }}>
+                        <td style={{ ...td, color: '#0F172A', paddingLeft: '22px' }}>{a.short_name ?? a.name}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: abnormal ? 800 : 600, color: abnormal ? fc.color : '#0F172A' }}>
+                          {value}
+                        </td>
+                        <td style={{ ...td, color: '#64748B' }}>{a.unit_ucum ?? '—'}</td>
+                        <td style={{ ...td, color: '#64748B' }}>{analyteRange(a)}</td>
+                        <td style={{ ...td, textAlign: 'center' }}>
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: fc.bg, color: fc.color }}>
+                            {fc.label}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </Fragment>
+              ))}
+              {singles.map((item) => {
                 const fc = FLAG_COLORS[item.flag] ?? FLAG_COLORS.pending
-                const abnormal = item.flag === 'high' || item.flag === 'low'
+                const abnormal = ABNORMAL.has(item.flag)
                 const resultDisplay = item.result_value != null ? String(item.result_value) : (item.result_text || '—')
                 return (
                   <tr key={item.id} style={{ borderTop: '1px solid #F1F5F9' }}>
@@ -85,6 +165,9 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
               })}
               {items.length === 0 && (
                 <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: '#94A3B8' }}>No tests on this order.</td></tr>
+              )}
+              {items.length > 0 && loadingAnalytes && analytes.length === 0 && singles.length === 0 && (
+                <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: '#94A3B8' }}>Loading results…</td></tr>
               )}
             </tbody>
           </table>

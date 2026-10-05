@@ -13,13 +13,24 @@ type Tab = 'appointments' | 'visits' | 'prescriptions' | 'lab' | 'radiology'
 function fmt(d: string): string {
   try { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) } catch { return d }
 }
-const FLAG_COLOR: Record<string, string> = { high: '#DC2626', low: '#B45309', normal: '#15803D', pending: '#94A3B8' }
+const FLAG_COLOR: Record<string, string> = {
+  high: '#DC2626', low: '#B45309', normal: '#15803D', pending: '#94A3B8',
+  critical_high: '#991B1B', critical_low: '#1E3A8A', abnormal: '#DC2626',
+}
+// An analyte can come back critical, abnormal or unranged. Without those
+// entries the lookup fell through to PENDING, so a released critical value
+// was labelled as though it had not been measured.
 const FLAG_PILL: Record<string, { bg: string; color: string; label: string }> = {
   high: { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
   low: { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
   normal: { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
   pending: { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
+  critical_high: { bg: '#991B1B', color: '#FFFFFF', label: 'CRITICAL' },
+  critical_low: { bg: '#1E3A8A', color: '#FFFFFF', label: 'CRITICAL' },
+  abnormal: { bg: '#FEE2E2', color: '#DC2626', label: 'ABNORMAL' },
+  unranged: { bg: '#F1F5F9', color: '#64748B', label: '—' },
 }
+const ABNORMAL_FLAGS = new Set(['high', 'low', 'abnormal', 'critical_high', 'critical_low'])
 
 function printBtn(href: string) {
   return (
@@ -141,7 +152,7 @@ export default function HospitalRecords({ patientId, records, appointments, requ
                       <tbody>
                         {l.items.map((it, i) => {
                           const pill = FLAG_PILL[it.flag] ?? FLAG_PILL.pending
-                          const abnormal = it.flag === 'high' || it.flag === 'low'
+                          const abnormal = ABNORMAL_FLAGS.has(it.flag)
                           return (
                             <tr key={i} style={{ borderTop: '1px solid #F1F5F9' }}>
                               <td style={{ padding: '7px 8px 7px 0', color: '#0F172A', fontWeight: 600 }}>{it.test}</td>
