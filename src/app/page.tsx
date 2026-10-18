@@ -5,7 +5,7 @@ import {
   Stethoscope, BedDouble, FlaskConical, Scan, Pill, Scissors,
   Droplets, Receipt, ShieldPlus, Package, Users, Mic,
   Smartphone, Bell, LayoutGrid, Siren, FileText, IndianRupee,
-  CalendarClock, Eye, Smile, HeartPulse,
+  CalendarClock, Eye, Smile, HeartPulse, Cable, WifiOff,
 } from 'lucide-react'
 import ScrollReveal from '@/components/ui/ScrollReveal'
 import MarketingNav from '@/components/marketing/MarketingNav'
@@ -49,7 +49,7 @@ function Nav() {
 
 // ── Hero ───────────────────────────────────────────────────────────────────────
 function Hero() {
-  const modules = ['OPD', 'IPD & Wards', 'Emergency', 'Lab', 'Radiology', 'Pharmacy', 'OT', 'Blood Bank', 'Billing', 'Insurance', 'Scheduling', 'Patient Portal', 'HR', 'Inventory', 'Dental', 'Ophthalmology']
+  const modules = ['OPD', 'IPD & Wards', 'Emergency', 'Lab', 'Analyzer Link', 'Radiology', 'Pharmacy', 'OT', 'Blood Bank', 'Billing', 'Insurance', 'Scheduling', 'Patient Portal', 'HR', 'Inventory', 'Dental', 'Ophthalmology']
 
   return (
     <section className="relative overflow-hidden px-4 sm:px-6" style={{ paddingTop: '80px', paddingBottom: '100px', background: 'linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 40%, #ffffff 100%)' }}>
@@ -72,7 +72,7 @@ function Hero() {
             style={{ background: 'rgba(13,148,136,0.1)', color: TD, border: '1px solid rgba(13,148,136,0.2)' }}>
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
               style={{ background: T, animation: 'pulseDot 2s ease-in-out infinite' }} />
-            India's most complete Hospital Management Platform
+            India’s most complete Hospital Management Platform
           </span>
         </div>
 
@@ -138,7 +138,7 @@ function Hero() {
 
 // ── Stats bar ──────────────────────────────────────────────────────────────────
 const STATS = [
-  { value: '18',   label: 'Integrated modules',       suffix: '+' },
+  { value: '20',   label: 'Integrated modules',       suffix: '' },
   { value: '50+',  label: 'Connected data tables',    suffix: '' },
   { value: '7',    label: 'Role-based access tiers',  suffix: '' },
   { value: '100%', label: 'India data residency',     suffix: '' },
@@ -167,7 +167,8 @@ const ALL_MODULES = [
   { icon: <BedDouble className="w-5 h-5" />,   name: 'IPD & Wards',   desc: 'Bed management, ward board, daily notes' },
   { icon: <Siren className="w-5 h-5" />,        name: 'Emergency',     desc: 'Triage, rapid registration, case tracking' },
   { icon: <FlaskConical className="w-5 h-5" />, name: 'Laboratory',    desc: 'Orders, results, abnormal flagging' },
-  { icon: <Scan className="w-5 h-5" />,         name: 'Radiology',     desc: 'X-ray, CT, MRI ordering and reporting' },
+  { icon: <Cable className="w-5 h-5" />,        name: 'Device Link',   desc: 'Analyzers and scanners connected — results arrive on their own' },
+  { icon: <Scan className="w-5 h-5" />,         name: 'Radiology',     desc: 'X-ray, CT, MRI ordering, DICOM worklist and images' },
   { icon: <Pill className="w-5 h-5" />,         name: 'Pharmacy',      desc: 'FEFO dispensing, POS billing, stock alerts' },
   { icon: <Scissors className="w-5 h-5" />,     name: 'Operation Theatre', desc: 'Scheduling, consumables, OT records' },
   { icon: <Droplets className="w-5 h-5" />,     name: 'Blood Bank',    desc: 'Inventory, cross-matching, issue tracking' },
@@ -404,6 +405,60 @@ function DiagnosticsMock() {
   )
 }
 
+/**
+ * The connector, as the laboratory sees it.
+ *
+ * The other mocks on this page show a screen inside Uyirly. This one shows the
+ * small program that sits on a PC in the lab, because the thing worth selling
+ * is not a screen — it is that nobody typed any of these numbers.
+ */
+function AnalyzerMock() {
+  const devices = [
+    { name: 'Mindray BC-5130',  kind: 'Haematology · network',  today: '142 results', when: '2 min ago',  live: true },
+    { name: 'Erba Chem 5x',     kind: 'Biochemistry · serial',  today: '87 results',  when: '9 min ago',  live: true },
+    { name: 'GE LOGIQ P9',      kind: 'Ultrasound · DICOM',     today: '11 studies',  when: '24 min ago', live: true },
+  ]
+  return (
+    <div className="hover-lift rounded-2xl overflow-hidden"
+      style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.07)' }}>
+      <div className="px-5 py-4 flex items-center justify-between"
+        style={{ background: '#ECFDF5', borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: '#065F46' }}>Lab front desk PC — working</p>
+          <p className="text-xs mt-0.5" style={{ color: '#047857' }}>3 instruments connected · nothing typed by hand</p>
+        </div>
+        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
+          style={{ background: '#059669', color: '#fff' }}>
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#fff' }} />
+          Live
+        </span>
+      </div>
+
+      {devices.map(({ name, kind, today, when }) => (
+        <div key={name} className="px-5 py-3.5 flex items-center justify-between gap-3"
+          style={{ borderBottom: `1px solid ${S2}` }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold truncate" style={{ color: S9 }}>{name}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>{kind}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs font-bold" style={{ color: T }}>{today}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>{when}</p>
+          </div>
+        </div>
+      ))}
+
+      <div className="px-5 py-3.5 flex items-center gap-2.5" style={{ background: '#FFFBEB' }}>
+        <WifiOff className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#B45309' }} />
+        <p className="text-xs" style={{ color: '#92400E' }}>
+          <span className="font-semibold">Internet drops?</span> Results are saved on this computer
+          first and sent when the line is back. Nothing is lost.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function BillingMock() {
   const lines = [
     { label: 'OPD Consultation',        qty: '1',  amount: '₹500'   },
@@ -545,12 +600,20 @@ function Features() {
         />
 
         <FeatureRow
+          visual={<AnalyzerMock />}
+          eyebrow="Device Connectivity"
+          heading="Your analyzers type the results, not your technician"
+          body="Twenty numbers for a single blood count, read off one screen and typed into another, every time — with a transcription error waiting in each one. Uyirly connects the machines instead. Install a small program on the PC beside them, pair it with one code, and results land on the patient's record by themselves. Scanners connect the same way over DICOM, so the console pulls the day's worklist and sends the images back. Included in Growth at no extra cost — no per-instrument fee."
+          tags={['Analyzers (ASTM)', 'DICOM Worklist', 'Network · Serial · File', 'Works Offline', 'Nothing Retyped', 'No Per-Device Fee']}
+          reverse
+        />
+
+        <FeatureRow
           visual={<DiagnosticsMock />}
           eyebrow="Diagnostics & Treatment"
           heading="Lab, radiology, pharmacy — all talking to each other"
-          body="Doctors order from the visit screen. Lab enters results once — visible to everyone with access. Pharmacy dispenses with FEFO logic and live stock. OT scheduling prevents room conflicts. Blood bank tracks inventory and cross-match results."
-          tags={['Lab Orders', 'Radiology Reports', 'FEFO Dispensing', 'OT Scheduling', 'Blood Bank', 'Stock Alerts']}
-          reverse
+          body="Doctors order from the visit screen. Results are verified by a person before anything is released, then visible to everyone with access — a machine can produce a result but never publish one, which is what NABL asks for. Pharmacy dispenses with FEFO logic and live stock. OT scheduling prevents room conflicts. Blood bank tracks inventory and cross-match results."
+          tags={['Lab Orders', 'Pathologist Verification', 'Critical Value Register', 'FEFO Dispensing', 'OT Scheduling', 'Blood Bank']}
         />
 
         <FeatureRow
@@ -559,6 +622,7 @@ function Features() {
           heading="Bills that build themselves — GST-ready"
           body="Every charge flows into one combined bill, printed as a GST-compliant tax invoice with CGST/SGST and HSN. Give patients a cost estimate before admission, control discounts with approval limits, refund via credit notes, and reconcile every rupee in a cashier day-book with shift-close. Insurance claims file in-platform with full TPA tracking."
           tags={['GST Tax Invoice', 'Cost Estimates', 'Cash Book & Shift Close', 'Discount Approvals', 'Refunds / Credit Notes', 'Advance Deposits', 'Insurance / TPA']}
+          reverse
         />
 
         <FeatureRow
@@ -567,7 +631,6 @@ function Features() {
           heading="Dictate notes hands-free"
           body="Doctors can speak their clinical notes directly into the system — chief complaint, diagnosis, and clinical notes transcribe in real time. No typing while maintaining eye contact with patients. Works in OPD and IPD progress notes."
           tags={['Speech-to-Text', 'Real-time Transcription', 'OPD Notes', 'IPD Progress Notes', 'Discharge Summary', 'Chrome & Android']}
-          reverse
         />
 
         <FeatureRow
@@ -576,6 +639,7 @@ function Features() {
           heading="A patient app for families — and smart staff rosters"
           body="One family login holds every member, with records and reports across hospitals and self-service appointment booking. Behind the scenes, publish doctor OPD hours, roster nurses by nursing unit (block / floor / wing), and see shift coverage flagged against nurse-to-patient ratios."
           tags={['Family Accounts', 'Records Across Hospitals', 'Online Booking', 'Doctor OPD Hours', 'Nurse Roster', 'Nursing Units']}
+          reverse
         />
       </div>
     </section>
@@ -768,7 +832,7 @@ function Trust() {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-3" style={{ color: S9 }}>Security without compromise</h2>
             <p className="text-base max-w-lg mx-auto" style={{ color: S5 }}>
-              Compliance isn't an add-on. It's in the foundation.
+              Compliance isn’t an add-on. It’s in the foundation.
             </p>
           </div>
         </ScrollReveal>
@@ -848,8 +912,14 @@ const PLANS = [
   {
     name: 'Starter',
     price: '₹2,999',
-    desc: 'Core clinical for small clinics',
-    features: ['OPD & Appointments', 'Patient records & UHID', 'Basic billing', 'Up to 5 staff'],
+    desc: 'Clinics and single-specialty practices',
+    features: [
+      'OPD with token queue and appointments',
+      'Patient records with permanent UHID',
+      'GST tax invoices and receipts',
+      'Pharmacy with FEFO dispensing',
+      'Up to 5 staff logins',
+    ],
     href: '/signup?plan=starter',
     cta: 'Start free trial',
     highlight: false,
@@ -857,8 +927,15 @@ const PLANS = [
   {
     name: 'Growth',
     price: '₹7,999',
-    desc: 'Full suite for mid-size hospitals',
-    features: ['Everything in Starter', 'Lab, Radiology & Pharmacy', 'IPD, OT & Blood Bank', 'Insurance claims', 'Unlimited staff'],
+    desc: 'Multi-specialty hospitals and nursing homes',
+    features: [
+      'Everything in Starter',
+      'Connect your analyzers and scanners — no per-device fee',
+      'Full IPD with live ward board and daily billing',
+      'Lab, Radiology, OT and Blood Bank',
+      'Insurance and TPA cashless claims',
+      'Unlimited staff logins',
+    ],
     href: '/signup?plan=growth',
     cta: 'Start free trial',
     highlight: true,
@@ -866,12 +943,31 @@ const PLANS = [
   {
     name: 'Enterprise',
     price: 'Custom',
-    desc: 'Multi-location + custom SLA',
-    features: ['Everything in Growth', 'Multi-location', 'Custom domain', 'Priority onboarding', 'SLA guarantee'],
+    desc: 'Larger hospitals wanting a custom SLA',
+    features: [
+      'Everything in Growth',
+      'Custom domain (your-hospital.com)',
+      'Dedicated onboarding manager',
+      'Data migration from your old system',
+      'Analyzer and scanner commissioning on site',
+      'Priority phone support and 99.9% SLA',
+    ],
     href: 'mailto:contact@uyirly.com',
     cta: 'Contact us',
     highlight: false,
   },
+]
+
+// The objection this section exists to answer. Hospitals shopping for software
+// in India are used to being quoted per bed, per user, and then again for
+// implementation — so a flat number is only believable once you say plainly
+// what is NOT added to it.
+const NEVER_PAY = [
+  'Per-bed charges',
+  'Per-user or per-doctor charges',
+  'Setup or implementation fees',
+  'A fee to connect each analyzer',
+  'Charges for updates',
 ]
 
 function PricingTeaser() {
@@ -879,9 +975,30 @@ function PricingTeaser() {
     <section className="py-24 px-4 sm:px-6" style={{ background: 'linear-gradient(160deg, #f0fdfa 0%, #ffffff 50%, #ecfdf5 100%)' }}>
       <div className="max-w-6xl mx-auto">
         <ScrollReveal>
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-3" style={{ color: S9 }}>Simple, flat pricing</h2>
-            <p className="text-base" style={{ color: S5 }}>30-day free trial on all plans. No credit card required.</p>
+          <div className="text-center mb-10">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: S9 }}>
+              One flat price. However big you get.
+            </h2>
+            <p className="text-base max-w-2xl mx-auto" style={{ color: S5 }}>
+              A 60-bed hospital pays the same ₹7,999 as a 15-bed one. Add a ward, hire ten
+              nurses, connect three analyzers — the bill does not move.
+            </p>
+          </div>
+        </ScrollReveal>
+
+        {/* What is never added on top. */}
+        <ScrollReveal delay={60}>
+          <div className="rounded-2xl px-5 py-5 mb-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3"
+            style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: S4 }}>
+              What you never pay
+            </span>
+            {NEVER_PAY.map((item) => (
+              <span key={item} className="flex items-center gap-1.5 text-sm" style={{ color: S6 }}>
+                <X className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#DC2626' }} />
+                {item}
+              </span>
+            ))}
           </div>
         </ScrollReveal>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -929,9 +1046,32 @@ function PricingTeaser() {
             </ScrollReveal>
           ))}
         </div>
-        <p className="text-center mt-6 text-xs" style={{ color: S4 }}>
-          All prices exclude GST. Billed monthly.{' '}
-          <Link href="/pricing" style={{ color: T }}>Compare plans in detail →</Link>
+        {/* Risk reversal. Every line here is something a hospital owner is
+            quietly worried about before they will put their patients in. */}
+        <ScrollReveal delay={260}>
+          <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { h: '30 days, free', p: 'Full access to every module. No credit card to start.' },
+              { h: 'No lock-in', p: 'Cancel from the billing portal whenever you like. No contract, no exit fee.' },
+              { h: 'Your data is yours', p: 'Export it whenever you want, and it stays on Indian servers.' },
+              { h: 'We set it up with you', p: 'Your test list, departments and price list loaded before you go live.' },
+            ].map(({ h, p }) => (
+              <div key={h} className="rounded-xl p-4"
+                style={{ background: '#fff', border: `1px solid ${S2}` }}>
+                <p className="flex items-center gap-1.5 text-sm font-bold mb-1" style={{ color: S9 }}>
+                  <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: T }} /> {h}
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: S5 }}>{p}</p>
+              </div>
+            ))}
+          </div>
+        </ScrollReveal>
+
+        <p className="text-center mt-8 text-sm" style={{ color: S5 }}>
+          Prices exclude GST and are billed monthly.{' '}
+          <Link href="/pricing" className="font-semibold" style={{ color: T }}>
+            See everything each plan includes →
+          </Link>
         </p>
       </div>
     </section>
@@ -951,7 +1091,9 @@ const FAQS = [
   { q: 'Does it work on mobile and tablets?',
     a: 'Yes. The web app is fully responsive and works on any phone or tablet browser today. Dedicated native iOS and Android apps are coming soon, optimised for mobile workflows like bedside nursing and ward rounds.' },
   { q: 'Can we run multiple branches on one account?',
-    a: 'The Enterprise plan supports multi-location: each branch gets its own subdomain and data isolation, but a super-admin can view cross-location reports.' },
+    a: 'Not on one account today. Each branch runs as its own Uyirly account with its own subdomain, and the data stays separate — which is what most groups want anyway, since the branches bill and report independently. What we do not yet have is one login that rolls several branches into a single cross-branch report. If that is what you need, tell us before you buy rather than after.' },
+  { q: 'Do you charge extra to connect our lab analyzers?',
+    a: 'No. Analyzer and scanner connection is included in Growth, with no per-instrument fee. You install a small Windows program on the computer beside your machines and pair it with one code. One caution that is not about us: some analyzer manufacturers charge separately for the data port on their own instrument — ask your vendor while you are still negotiating the machine, not after.' },
   { q: 'How long does initial setup take?',
     a: 'Technical setup takes under 5 minutes. Going live with your first patients is typically done the same day.' },
   { q: 'What support do you provide?',
