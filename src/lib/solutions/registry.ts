@@ -490,14 +490,24 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
               'Each prescription is saved to the timeline, so a doctor sees the full medication history and can reuse a past prescription in a couple of taps.',
           },
           {
-            h3: 'Lab and radiology results',
+            h3: 'Allergies, checked at the point of prescribing',
             body:
-              'Results from the [lab](/lab-management-software) and [radiology](/radiology-information-system-software) attach to the same record, so a trend in a lab value is visible at a glance.',
+              'Allergies are recorded against the **patient**, not against a visit, so they follow every encounter instead of being invisible at the next one. Every prescription is then checked against them by name and by drug class — a recorded penicillin allergy flags amoxicillin, which is the case that actually hurts people — and against the patient’s current medication for known interactions. Warnings are graded and worded plainly, and they do not block: the prescriber decides, and the record keeps both the warning and the decision. See the [guide to getting this right](/guides/drug-allergy-interaction-checking-guide).',
           },
           {
-            h3: 'Documents and bills',
+            h3: 'Lab and radiology results',
             body:
-              'Scanned documents, discharge summaries and every bill sit on the same timeline — the whole patient in one place.',
+              'Results from the [lab](/lab-management-software) and [radiology](/radiology-information-system-software) attach to the same record, so a trend in a lab value is visible at a glance — and arrive there by themselves if your [analyzers and scanners are connected](/lab-analyzer-integration-software).',
+          },
+          {
+            h3: 'Documents, scans and bills',
+            body:
+              'Scanned documents, consent forms, insurance paperwork, discharge summaries and every bill sit on the same timeline. Files are uploaded against the patient and retrieved through signed links that expire, rather than living in a shared folder on somebody’s desktop — the whole patient in one place, without the filing cabinet moving to a hard drive.',
+          },
+          {
+            h3: 'Follow-ups that are scheduled, not remembered',
+            body:
+              'A follow-up is created from the consultation that decided on it and tracked until it happens, so “come back in two weeks” becomes something the hospital can see and act on rather than a sentence the patient half-remembers. When they return, the follow-up converts into the actual visit rather than being re-entered.',
           },
         ],
       },
@@ -2079,6 +2089,243 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     ],
     related: [
       { label: 'IPD admission & bed management', href: '/guides/ipd-admission-bed-management-guide' },
+      { label: 'IPD billing, explained', href: '/guides/ipd-billing-software-explained' },
+      { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-10-18',
+  },
+
+  'emergency-department-software': {
+    slug: 'emergency-department-software',
+    eyebrow: 'Emergency & Casualty',
+    group: GROUP_MODULE,
+    tagline: 'Register in seconds, triage on a five-level scale, and admit without typing the patient in again.',
+    metaTitle: 'Emergency Department & Casualty Software India',
+    description:
+      'Emergency department software for Indian hospitals — rapid registration, five-level triage, a live casualty board, ER charges and one-click admission into IPD.',
+    keywords: [
+      'emergency department software',
+      'casualty management software',
+      'er software hospital',
+      'triage software',
+      'emergency room management system',
+      'casualty register software',
+    ],
+    primaryKeyword: 'emergency department software',
+    h1: 'Emergency department software that does not slow the door down',
+    subhead:
+      'Casualty is the one place where software has to get out of the way. A patient arriving unconscious cannot wait for a full registration form, and a nurse deciding who is seen next cannot be reading a list sorted by arrival time. Uyirly registers in seconds, sorts by how sick people are, and carries everything forward if they are admitted.',
+    heroBullets: [
+      'Register an unknown patient in seconds and complete the details later',
+      'Five-level triage, so the board sorts by sickness and not by arrival',
+      'Charges captured as they happen, including the ER registration fee',
+      'Admit straight into a ward without re-entering the patient',
+    ],
+    sections: [
+      {
+        h2: 'What emergency department software has to do',
+        body:
+          'Casualty has a different shape from every other department. Patients arrive without appointments, often without documents and sometimes without a name. Order of treatment is decided by how unwell somebody is, not by when they walked in. And a sizeable fraction of what happens has to be carried into an admission a few minutes later.\n\nSoftware that treats the ER as OPD with a different label fails at all three.',
+      },
+      {
+        h2: 'Registration fast enough to use',
+        body:
+          'The measure of ER registration is whether staff use it during a bad night or write on paper and enter it afterwards. Anything that demands an address and an ID before treatment can begin will lose.',
+        subsections: [
+          {
+            h3: 'An unknown patient still gets a record',
+            body:
+              'A patient brought in unconscious with nobody accompanying them is registered immediately and identified later. The record exists from the first minute, which is what lets the drugs given and the tests ordered attach to something.',
+          },
+          {
+            h3: 'Arrival mode, recorded',
+            body:
+              'How the patient arrived — walk-in, ambulance, referred, brought by police — is part of the case, and it is the first thing a medico-legal question asks about.',
+          },
+          {
+            h3: 'Existing patients are found, not duplicated',
+            body:
+              'If the patient already has a UHID, the case attaches to it, so their allergies and history are there rather than starting an empty second record for the same person.',
+          },
+        ],
+      },
+      {
+        h2: 'Triage, on five levels',
+        body:
+          'The casualty board sorts by triage level, not arrival time. Uyirly uses a five-level scale, the same shape as the Emergency Severity Index that most Indian hospitals train on: level 1 is resuscitation and level 5 is non-urgent.\n\nThe point of a scale is not the numbers. It is that a nurse can re-triage a patient who has been waiting and deteriorating, and the board re-sorts by itself — which is the failure that kills people in waiting rooms.',
+        table: {
+          headers: ['Level', 'Means', 'On the board'],
+          rows: [
+            ['1', 'Resuscitation — immediate', 'Top, always'],
+            ['2', 'Emergent — minutes matter', 'Above everything below it'],
+            ['3', 'Urgent', 'Middle, ordered by wait'],
+            ['4', 'Less urgent', 'Below urgent cases'],
+            ['5', 'Non-urgent', 'Bottom, seen when the floor clears'],
+          ],
+        },
+      },
+      {
+        h2: 'The case, from door to outcome',
+        body:
+          'Every case has a status, so at any moment the board answers who is waiting, who is being treated, and who has gone where.',
+        steps: [
+          { title: 'Waiting', body: 'Registered and triaged, not yet seen. Sorted by level.' },
+          { title: 'In treatment', body: 'A doctor has taken the case, and is named on it.' },
+          { title: 'Resolved', body: 'Discharged, referred elsewhere, or admitted.' },
+          { title: 'Admitted', body: 'Carried into IPD as the same patient, with the ER charges already on the bill.' },
+        ],
+      },
+      {
+        h2: 'Money, without slowing anything down',
+        body:
+          'Casualty leaks revenue more reliably than any other department, because charges happen during an emergency and get written down afterwards if at all.\n\nUyirly captures the ER registration fee — set once, applied automatically — and lets charges be added to the case as they are used. If the patient is admitted, those charges go onto the admission bill instead of being a separate paper slip that may or may not reach the cashier. If they are discharged from casualty, the bill is already complete.',
+      },
+      {
+        h2: 'Admission without retyping',
+        body:
+          'The handover from casualty to a ward is where most systems make somebody enter the patient a second time. In Uyirly an emergency case is admitted directly: the same patient, the same record, with the ER visit, its charges and whatever was ordered already attached. What happens next is covered under [IPD admission and bed management](/guides/ipd-admission-bed-management-guide), and for a patient who goes to critical care, [ICU with NEWS scoring](/icu-management-software).',
+      },
+    ],
+    faqs: [
+      { q: 'Which plan includes the emergency module?',
+        a: 'Growth and Enterprise. Emergency sits with full IPD, which is a Growth feature.' },
+      { q: 'Can we register a patient whose name we do not know?',
+        a: 'Yes. An unidentified patient is registered immediately and the details are completed later. The record exists from the first minute so treatment and charges have something to attach to.' },
+      { q: 'What triage scale does Uyirly use?',
+        a: 'A five-level scale, the same shape as the Emergency Severity Index — level 1 resuscitation through level 5 non-urgent. The casualty board sorts by level, and re-sorts when a waiting patient is re-triaged.' },
+      { q: 'Do emergency charges reach the bill automatically?',
+        a: 'Yes. The ER registration fee is applied automatically and charges added to the case go to the patient’s bill — onto the admission bill if they are admitted, rather than a separate slip.' },
+      { q: 'Can a casualty patient be admitted without re-registering?',
+        a: 'Yes. The case is admitted directly into a ward as the same patient, carrying the ER visit and its charges with it.' },
+    ],
+    related: [
+      { label: 'Emergency triage & casualty management, explained', href: '/guides/emergency-triage-management-guide' },
+      { label: 'IPD admission & bed management', href: '/guides/ipd-admission-bed-management-guide' },
+      { label: 'ICU & critical care software', href: '/icu-management-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-10-18',
+  },
+
+  'insurance-claims-management-software': {
+    slug: 'insurance-claims-management-software',
+    eyebrow: 'Insurance & TPA Claims',
+    group: GROUP_MODULE,
+    tagline: 'Eligibility to settlement — pre-auth, enhancements, deductions, remittance reconciliation and what the TPAs still owe you.',
+    metaTitle: 'Insurance & TPA Claims Management Software India',
+    description:
+      'TPA claims management software for Indian hospitals — cashless eligibility, pre-auth, enhancements, deductions, settlement reconciliation and a live receivables view.',
+    keywords: [
+      'insurance claim management software',
+      'tpa software for hospitals',
+      'cashless claim software',
+      'hospital insurance billing software',
+      'mediclaim software hospital',
+      'tpa claim tracking',
+      'hospital receivables insurance',
+    ],
+    primaryKeyword: 'insurance claim management software',
+    h1: 'TPA claims software for hospitals that are tired of chasing',
+    subhead:
+      'For most Indian hospitals the largest single sum of money owed to them at any moment is sitting with TPAs, in claims at various stages, tracked in somebody’s spreadsheet. Uyirly runs the whole lifecycle on the same record as the admission — eligibility, pre-auth, enhancements, deductions, settlement and what is still outstanding.',
+    heroBullets: [
+      'The full lifecycle: eligibility, pre-auth, enhancement, settlement, appeal',
+      'Deductions recorded line by line, so you know what was disallowed and why',
+      'Remittance batches reconciled against the claims they actually paid',
+      'A live receivables figure instead of a spreadsheet nobody trusts',
+    ],
+    sections: [
+      {
+        h2: 'Why claims are different from billing',
+        body:
+          'A cash bill is finished when it is paid. A claim is a months-long negotiation with an organisation that has every incentive to pay less and later.\n\nIt gets raised, queried, partly approved, enhanced when the stay runs long, settled for an amount nobody predicted, with deductions that have to be argued or written off — and then the money arrives in a lump covering thirty claims at once and somebody has to work out which. Software that treats this as a bill with an insurer attached will not survive contact with a real TPA desk.',
+      },
+      {
+        h2: 'Before admission: is this patient actually covered?',
+        body:
+          'The most expensive mistake in cashless is admitting a patient on the assumption of cover that turns out not to exist, and discovering it at discharge when the family is told to pay.',
+        subsections: [
+          {
+            h3: 'Policies and TPAs held properly',
+            body:
+              'Insurers and TPAs are maintained as real records, with policies attached to patients — not a free-text field on an admission. Policy documents can be attached so the paper is where the claim is.',
+          },
+          {
+            h3: 'Eligibility decided and recorded',
+            body:
+              'Eligibility is a step with an outcome — approved, rejected, or still pending — recorded against the encounter with who decided and when. An approved eligibility commits cover, and the rest of the hospital can then act on it: a cashless-approved patient is not held at the laboratory counter waiting for cash.',
+          },
+        ],
+      },
+      {
+        h2: 'The claim, through its stages',
+        body:
+          'Every claim moves through named stages rather than existing in somebody’s head, and the history of who moved it and when is kept.',
+        steps: [
+          { title: 'Draft', body: 'Built against the encounter, with the bills it covers attached.' },
+          { title: 'Awaiting eligibility', body: 'Cover being confirmed before the claim is raised.' },
+          { title: 'Raised and submitted', body: 'Out with the TPA, with the claim and reference numbers recorded.' },
+          { title: 'Approved or rejected', body: 'With the approved amount, which is rarely the claimed amount.' },
+          { title: 'Settled', body: 'Money received, matched against what was approved.' },
+        ],
+      },
+      {
+        h2: 'The parts that spreadsheets lose',
+        body:
+          'Everything above is the easy half. These four are where hospitals actually lose money, and they are the reason a spreadsheet stops working at about forty open claims.',
+        subsections: [
+          {
+            h3: 'Enhancements',
+            body:
+              'A stay runs longer or a procedure escalates, and more cover has to be requested mid-admission. An enhancement is its own request with its own decision, attached to the claim, rather than a confusing second claim.',
+          },
+          {
+            h3: 'Deductions, itemised',
+            body:
+              'TPAs disallow things. Recording the settlement as a single short figure tells you that you lost money but not why. Deductions are kept line by line, which is what lets you see a pattern across claims and argue the next one — or appeal this one.',
+          },
+          {
+            h3: 'Remittance reconciliation',
+            body:
+              'Payment arrives as one transfer covering many claims. Uyirly holds remittance batches and lets settled claims be assigned to the batch that paid them, so a payment can be traced to the claims it discharged instead of being reconciled by hand against a bank statement.',
+          },
+          {
+            h3: 'Receivables you can believe',
+            body:
+              'Because every stage and settlement is recorded, the amount outstanding with insurers is a figure the system knows rather than one somebody assembles on a Friday. You can see it per admission, or across the hospital.',
+          },
+        ],
+      },
+      {
+        h2: 'The desk work around a claim',
+        body:
+          'A claim is also a pile of paperwork and follow-up, and that part is usually what is really failing.\n\nClaims can be assigned to an owner so there is one named person responsible. A checklist per claim holds the documents the TPA wants, ticked as they are gathered. Documents attach to the claim itself. Notes build a running history of every phone call. Tariff packages hold the rates agreed with each insurer, and bank accounts record where settlements are expected to land. Rejected claims can be appealed as a tracked step rather than a resend and a hope.',
+      },
+      {
+        h2: 'Connected to the bill, not bolted beside it',
+        body:
+          'The claim is built from the encounter’s actual bills, so what is claimed is what was charged. For an admitted patient that bill is accumulating daily rather than being assembled at discharge — see [IPD billing](/guides/ipd-billing-software-explained) — which is also what makes an enhancement request possible to justify mid-stay. The tax side of the same bill is covered under [GST billing rules](/guides/hospital-gst-billing-rules-india).',
+      },
+    ],
+    faqs: [
+      { q: 'Which plan includes insurance and TPA claims?',
+        a: 'Growth and Enterprise.' },
+      { q: 'Does it handle cashless as well as reimbursement?',
+        a: 'Yes. Eligibility is confirmed and recorded before admission for cashless cases, and an approved eligibility lifts the payment gate elsewhere in the hospital so the patient is not held up at a counter.' },
+      { q: 'Can we track enhancements for a long stay?',
+        a: 'Yes. An enhancement is requested and decided as its own step attached to the claim, rather than being raised as a confusing second claim.' },
+      { q: 'How are deductions handled?',
+        a: 'Line by line, with the reason, rather than as one net settlement figure. That is what lets you see which items a given TPA routinely disallows and argue the next claim with evidence.' },
+      { q: 'A TPA pays thirty claims in one transfer. Can we reconcile that?',
+        a: 'Yes. Remittance batches are held as records and settled claims are assigned to the batch that paid them, so a bank credit can be traced to the specific claims it discharged.' },
+      { q: 'Can we see what insurers owe us right now?',
+        a: 'Yes — a receivables figure per admission and across the hospital, derived from the claim stages and settlements rather than maintained by hand.' },
+      { q: 'Is Uyirly integrated with PMJAY or the NHA systems?',
+        a: 'No. Claims are managed inside Uyirly and submitted to the TPA through your usual channel. There is no direct electronic integration with PMJAY or the National Health Authority, and we would rather say so than imply it.' },
+    ],
+    related: [
+      { label: 'Health insurance & TPA claims, explained', href: '/guides/health-insurance-tpa-claims-guide' },
       { label: 'IPD billing, explained', href: '/guides/ipd-billing-software-explained' },
       { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
       { label: 'Pricing', href: '/pricing' },
