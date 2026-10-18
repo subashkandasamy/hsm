@@ -235,6 +235,7 @@ function ModulesGrid() {
 // ── Before / After ─────────────────────────────────────────────────────────────
 const BEFORE = [
   'Patients queuing with no idea of wait time',
+  'Analyzer values read off one screen and retyped into another',
   'Lab results on paper, lost before the doctor sees them',
   'Pharmacy dispensing without checking real-time stock',
   'Bills tallied manually at discharge — full of missed charges',
@@ -244,7 +245,8 @@ const BEFORE = [
 
 const AFTER = [
   'Token-queue OPD — patients track their number on the screen',
-  'Lab results entered once, visible to the ordering doctor live',
+  'Analyzers and scanners connected — results arrive on their own',
+  'Lab results verified once, visible to the ordering doctor live',
   'Pharmacy uses FEFO auto-dispense with low-stock alerts',
   'Bills auto-built from OPD, lab, pharmacy, and OT charges',
   'Insurance claims filed in-platform with full status tracking',

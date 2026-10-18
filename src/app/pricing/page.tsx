@@ -91,10 +91,19 @@ const PLANS: PlanDef[] = [
         items: [
           'Full IPD with ward board and daily notes',
           'Emergency triage (ESI 1–5)',
-          'Lab orders and result entry',
-          'Radiology orders and report upload',
           'OT scheduling with overlap prevention',
           'Blood bank — cross-match and issue',
+        ],
+      },
+      {
+        heading: 'Diagnostics',
+        items: [
+          'Lab orders, result entry and pathologist verification',
+          'Connect your lab analyzers — results arrive by themselves',
+          'Connect your scanners over DICOM — worklist and images',
+          'Reports grouped by NABL discipline',
+          'Critical value register with who was told, and when',
+          'Barcode tube labels, wristbands and ID cards',
         ],
       },
       {
@@ -121,7 +130,7 @@ const PLANS: PlanDef[] = [
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    tagline: 'Multi-location networks, custom SLAs, and dedicated onboarding.',
+    tagline: 'Larger hospitals wanting custom SLAs, migration and dedicated onboarding.',
     highlight: false,
     badge: null,
     cta: { label: 'Contact us', href: 'mailto:contact@uyirly.com', style: 'outline' },
@@ -129,13 +138,12 @@ const PLANS: PlanDef[] = [
       {
         heading: 'Everything in Growth, plus:',
         items: [
-          'Multi-location with cross-branch reports',
           'Custom domain (your-hospital.com)',
           'Dedicated onboarding manager',
           'Custom data migration',
           'Priority phone support',
           'Custom SLA (99.9% uptime)',
-          'Custom integrations (HL7, ABDM)',
+          'Analyzer and scanner commissioning on site',
         ],
       },
     ],
@@ -149,12 +157,15 @@ const COMPARE_ROWS: { label: string; starter: string | boolean; growth: string |
   { label: 'IPD',                      starter: 'Basic',      growth: 'Full',        enterprise: 'Full' },
   { label: 'Emergency triage',         starter: false,        growth: true,          enterprise: true },
   { label: 'Lab & Radiology',          starter: false,        growth: true,          enterprise: true },
+  { label: 'Lab analyzer connection',  starter: false,        growth: true,          enterprise: true },
+  { label: 'Scanner (DICOM) connection', starter: false,      growth: true,          enterprise: true },
+  { label: 'Critical value register',  starter: false,        growth: true,          enterprise: true },
+  { label: 'Barcode labels & wristbands', starter: false,     growth: true,          enterprise: true },
   { label: 'Pharmacy (FEFO)',          starter: true,         growth: true,          enterprise: true },
   { label: 'OT scheduling',            starter: false,        growth: true,          enterprise: true },
   { label: 'Blood bank',               starter: false,        growth: true,          enterprise: true },
   { label: 'Insurance claims',         starter: false,        growth: true,          enterprise: true },
   { label: 'WhatsApp notifications',   starter: false,        growth: true,          enterprise: true },
-  { label: 'Multi-location',           starter: false,        growth: false,         enterprise: true },
   { label: 'Custom domain',            starter: false,        growth: false,         enterprise: true },
   { label: 'Support SLA',             starter: '48h email',  growth: '12h priority', enterprise: 'Custom' },
 ]
@@ -170,6 +181,14 @@ const FAQS = [
   { q: 'Is the free trial really free?', a: 'Yes — 30 days, full access, no credit card required. You only pay when you choose to subscribe after the trial.' },
   { q: 'Can I switch plans later?', a: 'Yes, you can upgrade from Starter to Growth at any time. Billing is prorated for the remaining billing period.' },
   { q: 'Are prices inclusive of GST?', a: 'No. Prices shown are exclusive of GST. GST at 18% is added at checkout.' },
+  {
+    q: 'Do you charge extra to connect our lab analyzers?',
+    a: 'No. Analyzer connection is included in Growth at no extra cost — there is no per-instrument or per-interface fee. You download a small Windows program, install it on the computer beside your machines, and pair it with one code. One warning that has nothing to do with us: some analyzer manufacturers charge separately for the data-output module on their own instrument. Ask your vendor before you buy the machine, not after.',
+  },
+  {
+    q: 'Which analyzers and scanners can you connect?',
+    a: 'If the instrument has a data port — network, serial cable or a file export — we can connect it, which covers most of what Indian laboratories run, including Mindray and Transasia/Erba. Scanners connect over DICOM, so Uyirly can send the day’s worklist to the machine and receive the images back. What we cannot connect is an analyzer whose only output is its own built-in printer. Send us the model and we will tell you before you commit.',
+  },
   { q: 'What payment methods are accepted?', a: 'Credit card, debit card, UPI, and net banking via Razorpay. Invoices are available for corporate accounts.' },
   { q: 'Can I cancel anytime?', a: 'Yes. Cancel from the billing portal at any time. No lock-in, no cancellation fees. Remaining days on the current billing period are not refunded.' },
 ]
@@ -191,7 +210,7 @@ const jsonLd = {
       '@type': 'Product',
       name: 'Uyirly Hospital Management Software',
       description:
-        'Cloud hospital management software for Indian hospitals, nursing homes and clinics — OPD, IPD, pharmacy, lab, billing, insurance and more.',
+        'Cloud hospital management software for Indian hospitals, nursing homes and clinics — OPD, IPD, pharmacy, lab with analyzer connectivity, radiology with DICOM, billing, insurance and more.',
       brand: { '@type': 'Brand', name: 'Uyirly' },
       offers: {
         '@type': 'AggregateOffer',

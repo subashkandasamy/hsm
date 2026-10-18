@@ -11,9 +11,14 @@ export const PLAN_MODULES: Record<PlanKey, readonly string[]> = {
 }
 
 // Routes that require growth plan (prefix match)
+//
+// /settings/devices is here because it configures the analyzer and scanner
+// connectors, which only exist to feed lab and radiology — both Growth-only.
+// Without it a Starter tenant could pair a connector it has no module to use.
 export const GROWTH_ONLY_ROUTES = [
   '/ipd', '/wards', '/emergency', '/lab', '/radiology',
   '/ot', '/blood', '/insurance', '/inventory', '/staff',
+  '/settings/devices',
 ]
 
 export function planHasModule(plan: PlanKey, status: TenantStatus, moduleKey: string): boolean {

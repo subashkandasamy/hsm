@@ -101,6 +101,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
     subhead:
       'Uyirly is a cloud laboratory information management system (LIMS) that runs your diagnostic lab or hospital pathology department end to end — from the moment a sample is collected to the moment a verified report reaches the patient — with billing and patient records already connected. It’s the same lab management system a standalone pathology lab and a busy hospital lab can both run.',
     heroBullets: [
+      'Your analyzers connected — results arrive without being typed',
       'Sample tracking from collection to verified result, no lost tubes',
       'Test catalogue with reference ranges, panels and per-test pricing',
       'Auto-formatted PDF reports, delivered by WhatsApp or patient portal',
@@ -152,6 +153,55 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         ],
       },
       {
+        h2: 'Your analyzers, connected',
+        body:
+          'This is the part most laboratories ask about last and regret first. If your haematology and biochemistry analyzers are not connected, a technician reads numbers off one screen and types them into another — twenty numbers for a single blood count, every time, with a transcription error waiting in each one.\n\nUyirly connects them. You download a small Windows program, install it on the computer beside your machines, read out an eight-character code once, and give your analyzer engineer an address. After that, results appear on the patient’s record by themselves. There is nothing to set up per instrument: the machine announces what it is and Uyirly recognises it.',
+        subsections: [
+          {
+            h3: 'It keeps working when your internet does not',
+            body:
+              'The program runs in your laboratory, not in the cloud, for one reason: an analyzer transmits a result once and then forgets it. If nothing is listening at that moment, the measurement is gone for good. Every result is written to your own computer the instant it arrives — before any attempt to send it anywhere — and uploaded when the connection returns. A broadband outage costs you nothing but the delay.',
+          },
+          {
+            h3: 'A machine can produce a result. It cannot release one.',
+            body:
+              'Every analyzer result lands unverified and waits for a person in the laboratory to authorise it, and the report names who did. That is NABL 112’s own requirement, and it is the difference between automation and unattended reporting. Correct a value afterwards and the authorisation is withdrawn automatically — a result that has changed has not been checked by anybody yet.',
+          },
+          {
+            h3: 'Which analyzers we can connect',
+            body:
+              'If the machine has a data port — network, serial cable or a file export — we will connect it. That covers most of what Indian laboratories run, including Mindray and Transasia/Erba. What we cannot connect is an analyzer whose only output is its own built-in printer, and we would rather say that before you buy than after. Send us the model and we will confirm.\n\nOne caution that is not about us: some manufacturers charge separately for the data-output module on their own instrument. Ask your vendor about it while you are still negotiating the machine.',
+          },
+          {
+            h3: 'Scanners too, over DICOM',
+            body:
+              'The same program handles imaging. Your ultrasound, X-ray or CT console pulls the day’s worklist from Uyirly — so the radiographer picks the patient from a list instead of typing the name, and the study comes back matched to the right person. Images are received and stored, and can be opened in the browser without any viewer to install.',
+          },
+        ],
+      },
+      {
+        h2: 'What NABL assessors ask for',
+        body:
+          'Three of the things an assessor looks for are built in rather than bolted on, because each one is a record you cannot reconstruct later.',
+        subsections: [
+          {
+            h3: 'The critical value register',
+            body:
+              'When a result is critical, a red flag on a report is neither the communication nor the documentation NABL 112 §5.8 asks for. Uyirly opens an entry that stays open until somebody records who they telephoned, when, and how. Nothing is sent automatically — a critical result is communicated by a person picking up a phone, and pretending software did it is exactly what an assessor is looking for. If the value is corrected to something normal before the call is made, the entry is withdrawn and the reason kept.',
+          },
+          {
+            h3: 'Reports grouped by discipline',
+            body:
+              'Results print grouped under the NABL discipline that produced them — Clinical Biochemistry, Haematology, Microbiology and Serology, and the rest — rather than in the order they happened to be entered.',
+          },
+          {
+            h3: 'Barcodes that match the tube',
+            body:
+              'Tube labels carry the accession number as a scannable barcode, wristbands carry the IP number, and both print at the exact physical size the stationery expects. The sample on the bench and the record on the screen are the same object.',
+          },
+        ],
+      },
+      {
         h2: 'The order-to-report workflow',
         body:
           'Here is a test’s full journey through Uyirly — the same [lab workflow](/guides/lab-lis-workflow-guide) whether it is a walk-in or a ward order.',
@@ -171,9 +221,11 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           headers: ['', 'Paper / Excel lab', 'With Uyirly LIMS'],
           rows: [
             ['Samples', 'Handwritten labels, easy to mix up', 'Barcoded, tracked at every step'],
+            ['Analyzer results', 'Read off the machine and retyped', 'Arrive by themselves, nothing typed'],
             ['Worklist', 'No live view of what is pending', 'Live pending / in-process / verified'],
             ['Reference ranges', 'Checked by memory', 'High/low flagged automatically'],
-            ['Reports', 'Typed by hand', 'Auto-formatted letterhead PDF'],
+            ['Critical values', 'A phone call nobody wrote down', 'Open register until the call is recorded'],
+            ['Reports', 'Typed by hand', 'Auto-formatted letterhead PDF, by discipline'],
             ['Delivery', 'Patient returns for a printout', 'WhatsApp / patient portal'],
             ['Billing', 'Separate register', 'On the patient’s bill automatically'],
           ],
@@ -1423,8 +1475,8 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
       'A radiology department’s job is to turn an order into a report without anything getting lost in between. Uyirly runs that whole path — order, worklist, scan, report — on the same patient record and billing as the rest of the hospital, so a scan ordered in a consultation comes back as a report the doctor can actually see.',
     heroBullets: [
       'Order → worklist → scan → report in one flow',
-      'Modality worklist so technicians know what’s pending',
-      'Reports typed on the order, with the scan image attached',
+      'Your scanner pulls the patient list over DICOM — no retyping names',
+      'Images received from the machine and opened in the browser',
       'Billing and patient record shared with the hospital',
     ],
     sections: [
@@ -1432,6 +1484,28 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         h2: 'What a radiology information system does',
         body:
           'A RIS (radiology information system) manages the workflow and reports of a radiology department — distinct from a PACS, which stores the images themselves. The RIS is what makes sure an order becomes a worklist entry, the scan gets done, the report gets written and verified, and the result reaches the ordering doctor. Uyirly is the RIS layer: the workflow, the reporting and the billing, connected to one patient record.',
+      },
+      {
+        h2: 'Connect the scanner itself, over DICOM',
+        body:
+          'Most small hospitals never connect the machine, so the radiographer retypes the patient’s name at the console. A name typed twice is a name spelled two ways, and then a study that belongs to nobody.\n\nUyirly connects the scanner properly. You install one small Windows program on a computer in the scan room and give your engineer an AE title and an address. After that the console pulls the day’s list from Uyirly — the radiographer picks the patient instead of typing them — and the study comes back attached to the right person, with the accession number already matching.',
+        subsections: [
+          {
+            h3: 'Images come back and open in a browser',
+            body:
+              'The machine sends its images to that same program, which stores them and makes them viewable in any browser on the hospital network — nothing to install on the doctor’s PC. Links are signed and expire, so a scan cannot be forwarded to someone who should not see it.',
+          },
+          {
+            h3: 'Shown as the scanner sent it',
+            body:
+              'The viewer applies the window settings the machine recorded rather than inventing its own, and tells you plainly when a study carries a colour map or a display curve it is honouring. A scan that looks darker or brighter than the radiographer intended is a scan that can be read wrong, so the viewer would rather say what it is doing than quietly adjust.',
+          },
+          {
+            h3: 'Where the images actually live',
+            body:
+              'Straight about this: the images are stored on your own computer in the hospital, not duplicated into our cloud. That keeps large studies off your internet connection and out of a monthly bill. It also means the backup of that machine is your responsibility, and we would rather tell you now than after a disk fails. A cloud archive is on the roadmap, not in the product.',
+          },
+        ],
       },
       {
         h2: 'A worklist the technicians actually use',
@@ -1940,6 +2014,8 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
           rows: [
             ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['Lab analyzer connection', 'Included. Network, serial or file export', 'Confirm with vendor'],
+            ['Scanner connection', 'Included. DICOM worklist and images', 'Confirm with vendor'],
             ['IPD billing', 'Daily auto-billing, ready at discharge', 'Confirm with vendor'],
             ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
@@ -2037,6 +2113,8 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Clinic to hospital', 'Same platform, no migration', 'Confirm with vendor'],
             ['Pricing model', 'Flat monthly, no per-user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['Lab analyzer connection', 'Included. Network, serial or file export', 'Confirm with vendor'],
+            ['Scanner connection', 'Included. DICOM worklist and images', 'Confirm with vendor'],
             ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
           ],
@@ -2134,6 +2212,8 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Best-fit size', 'Clinics, nursing homes & hospitals', 'Confirm with vendor'],
             ['Pricing model', 'Flat monthly, no per-bed/user fees', 'Confirm with vendor'],
             ['Integration', 'One patient & one bill everywhere', 'Confirm with vendor'],
+            ['Lab analyzer connection', 'Included. Network, serial or file export', 'Confirm with vendor'],
+            ['Scanner connection', 'Included. DICOM worklist and images', 'Confirm with vendor'],
             ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
             ['Patient app', 'Family accounts, reports & bills online', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
