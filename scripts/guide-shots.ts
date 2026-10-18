@@ -332,4 +332,25 @@ export const SHOTS: Shot[] = [
     selector: 'main', wait: 3000,
   },
   { name: 'discount-approvals', path: '/billing/discount-approvals', selector: 'main', wait: 3000 },
+  // ── Device connectivity ────────────────────────────────────────────────────
+  {
+    name: 'devices-connectors',
+    path: '/settings/devices',
+    selector: 'main', wait: 3000,
+  },
+
+  // ── ICU and early warning ──────────────────────────────────────────────────
+  // The admission id is fixed by the demo seed (ICU_ADMISSION_ID), so this
+  // path does not need a placeholder and cannot be staled by a re-seed.
+  {
+    name: 'icu-critical-care',
+    path: '/ipd/a11c0000-0000-4000-8000-00000000c001',
+    steps: [{ wait: 1500 }, { clickText: 'Critical Care' }, { wait: 2000 }],
+    selector: 'main', wait: 3000,
+  },
+  {
+    name: 'ipd-deteriorating',
+    path: '/ipd',
+    selector: 'main', wait: 3500,
+  },
 ]

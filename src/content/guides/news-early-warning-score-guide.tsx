@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Screenshot from '@/components/guides/Screenshot'
 import CalloutBox from '@/components/guides/diagrams/CalloutBox'
 import StatGrid from '@/components/guides/diagrams/StatGrid'
 
@@ -105,6 +106,12 @@ export default function Guide() {
         </li>
       </ul>
 
+      <Screenshot
+        src="/guides/ipd-deteriorating.png" width={2560} height={1248}
+        alt="Inpatient list with a red Deteriorating Patients banner at the top showing one patient, Murugan Pillai, with a NEWS score of 16 marked NEWS High and a link to open the record"
+        caption="The score comes to you. A deteriorating patient sits above the ward list, not inside it."
+      />
+
       <CalloutBox tone="tip" title="The design detail that decides whether it works">
         An alert that can be dismissed will be dismissed, at three in the morning, by someone who means to
         come back to it. A worklist that stays populated until the patient improves or somebody records an
@@ -130,6 +137,11 @@ export default function Guide() {
       </p>
 
       <h2>Beyond the score: what else belongs on a critical care record</h2>
+      <Screenshot
+        src="/guides/icu-critical-care.png" width={2560} height={2274}
+        alt="Critical care tab for an ICU patient showing a High NEWS banner of 16, critical care and ventilator toggles, today's fluid intake and output totals, and an ICU flow sheet whose NEWS column reads 4 then 9 then 16 down the hours"
+        caption="The same record carries the trend, the fluid balance and the oxygen requirement. Four, then nine, then sixteen — that is the sentence a chart has to say out loud."
+      />
       <p>
         A score is one line of a much longer picture, and it is worth checking that whatever system you
         use holds the rest of it on the same record rather than on separate charts.

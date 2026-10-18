@@ -48,3 +48,6 @@ connector/node_modules/
 connector/dist/
 connector/dist-exe/
 connector/.build/
+
+# Intermediate captures from `npm run shots` — the squeezed .png is the artefact.
+public/guides/*.raw.png

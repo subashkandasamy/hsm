@@ -38,6 +38,8 @@ const DEMO_PASSWORD = 'DemoHospital#2026'
 /** The patient-portal login, which is a different account system from staff. */
 const PORTAL_EMAIL = 'family@demo.uyirly.com'
 const uuid = () => crypto.randomUUID()
+/** Fixed, so the ICU screenshots can point at it without a lookup. */
+const ICU_ADMISSION_ID = 'a11c0000-0000-4000-8000-00000000c001'
 
 const ok = (label: string, error: { message: string } | null) => {
   if (error) { console.error(`  ✗ ${label}: ${error.message}`); process.exit(1) }
@@ -302,6 +304,11 @@ async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string;
     r.name            = m.name as string
     r.category        = (m.category as string) ?? 'General'
     r.sample_type     = m.sample_type ?? null
+    // Without this every order collapsed into one tube labelled "other",
+    // because ensure_lab_samples groups by tube_type and not by sample_type.
+    // A real tenant activating from master gets it; the demo was not.
+    r.tube_type       = m.tube_type ?? null
+    r.department      = m.department ?? null
     r.unit            = m.unit ?? null
     r.ref_low         = m.ref_low ?? null
     r.ref_high        = m.ref_high ?? null
@@ -680,20 +687,38 @@ async function createAdmissions(tenantId: string, s: Seeded): Promise<void> {
 
   const f1 = bed('Female General Ward', 'F1')
   const labour = bed('Labour Room 1')
+  const icu = bed('ICU', 'ICU1') ?? all.find((b) => b.ward?.name === 'ICU')!
 
   const rows = [
     { id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Saraswathi'),
       admitting_doctor_id: doctorId(s, 'Arun Prakash'), ward_id: f1.ward_id, bed_id: f1.id,
       reason: 'Community-acquired pneumonia, needs IV antibiotics and oxygen',
       admitted_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-      status: 'admitted', billing_status: 'unbilled' },
+      status: 'admitted', billing_status: 'unbilled',
+      // Named on every row on purpose: PostgREST squares up the column set
+      // across a bulk insert, so a key present on one row arrives as NULL on
+      // the others — and both of these are NOT NULL.
+      is_critical_care: false, on_ventilator: false },
     { id: uuid(), tenant_id: tenantId, patient_id: patientId(s, 'Lakshmi'),
       admitting_doctor_id: doctorId(s, 'Lakshmi Iyer'), ward_id: labour.ward_id, bed_id: labour.id,
       reason: 'Term pregnancy in early labour',
       admitted_at: new Date(Date.now() - 6 * 3600000).toISOString(),
-      status: 'admitted', billing_status: 'unbilled' },
+      status: 'admitted', billing_status: 'unbilled',
+      is_critical_care: false, on_ventilator: false },
+    // A critical-care patient, so the ICU board and the deterioration
+    // worklist have something to show. Deliberately a patient who is
+    // getting worse rather than a stable one — a board with nothing on it
+    // demonstrates nothing.
+    { id: ICU_ADMISSION_ID, tenant_id: tenantId, patient_id: patientId(s, 'Murugan'),
+      admitting_doctor_id: doctorId(s, 'Arun Prakash'), ward_id: icu.ward_id, bed_id: icu.id,
+      reason: 'Severe community-acquired pneumonia with type 1 respiratory failure',
+      admitted_at: new Date(Date.now() - 36 * 3600000).toISOString(),
+      status: 'admitted', billing_status: 'unbilled',
+      is_critical_care: true, on_ventilator: false },
   ]
-  ok('2 admissions', (await db.from('admissions').insert(rows)).error)
+  ok('3 admissions', (await db.from('admissions').insert(rows)).error)
+
+  await createIcuObservations(tenantId, s)
 
   // An inpatient's bloods: two panels on one report, ordered the way the ward
   // orders them. Proves the analyte layer is not a urine special case and that
@@ -784,6 +809,128 @@ async function createAdmissions(tenantId: string, s: Seeded): Promise<void> {
       fetal_heart_rate: 144, bp: '120/78', pulse: 90, temp: 98.8,
       recorded_by: doctorId(s, 'Lakshmi Iyer') },
   ])).error)
+}
+
+/**
+ * Three sets of observations over twelve hours on the ICU patient, getting
+ * worse rather than better.
+ *
+ * A deterioration worklist with nobody on it proves nothing, and a stable
+ * patient proves less. The numbers below are chosen so NEWS climbs from a
+ * score that a ward would watch to one that demands a response — which is
+ * the exact transition the screenshots and the guide are about.
+ */
+async function createIcuObservations(tenantId: string, s: Seeded): Promise<void> {
+  const nurse = doctorId(s, 'Arun Prakash')
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600000).toISOString()
+
+  const rows = [
+    // Settling, but already needing oxygen.
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(12),
+      hr: 92, sbp: 118, dbp: 74, spo2: 95, rr: 20, temp: 37.8,
+      gcs_e: 4, gcs_v: 5, gcs_m: 6, gcs_total: 15, fio2: 28 },
+    // Working harder.
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(6),
+      hr: 108, sbp: 104, dbp: 66, spo2: 93, rr: 24, temp: 38.4,
+      gcs_e: 4, gcs_v: 5, gcs_m: 6, gcs_total: 15, fio2: 35 },
+    // The set that should pull somebody to the bedside.
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(1),
+      hr: 124, sbp: 96, dbp: 58, spo2: 90, rr: 28, temp: 38.9,
+      gcs_e: 3, gcs_v: 4, gcs_m: 6, gcs_total: 13, fio2: 45 },
+  ]
+  ok('3 ICU observations (deteriorating)', (await db.from('icu_observations').insert(rows)).error)
+
+  const fluids = [
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(8), direction: 'intake', category: 'IV fluid', volume_ml: 500,
+      notes: 'Normal saline' },
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(6), direction: 'output', category: 'Urine', volume_ml: 220 },
+    { id: uuid(), tenant_id: tenantId, admission_id: ICU_ADMISSION_ID, recorded_by: nurse,
+      recorded_at: hoursAgo(2), direction: 'output', category: 'Urine', volume_ml: 140 },
+  ]
+  const { error } = await db.from('icu_fluid_balance').insert(fluids)
+  // Not fatal: the column set here is the one thing in this seed most likely
+  // to drift, and a missing fluid chart should not stop the whole demo build.
+  if (error) console.warn(`  ! fluid balance skipped: ${error.message}`)
+  else console.log('  ✓ 3 fluid balance entries')
+}
+
+/**
+ * The laboratory's connected instruments.
+ *
+ * These were hand-made during development and would have vanished the next
+ * time this script ran. A demo hospital with no connected analyzers cannot
+ * show the one screen the device-connectivity guides are about, so they
+ * belong here with everything else.
+ *
+ * `last_seen_at` and `last_message_at` are set relative to now, so the
+ * settings page shows a connector that is alive rather than one that last
+ * spoke in whatever month the seed was written.
+ */
+async function createDevices(tenantId: string, s: Seeded): Promise<void> {
+  const minsAgo = (m: number) => new Date(Date.now() - m * 60000).toISOString()
+  const connectorId = 'c0113c70-0000-4000-8000-00000000de00'
+
+  ok('lab connector', (await db.from('connectors').insert({
+    id: connectorId, tenant_id: tenantId,
+    name: 'Lab front desk PC', machine_name: 'LAB-RECEPTION',
+    lan_ip: '192.168.1.42', listen_port: 5150,
+    version: '1.0.1', status: 'online',
+    last_seen_at: minsAgo(1), paired_at: new Date(Date.now() - 40 * 86400000).toISOString(),
+    created_by: doctorId(s, 'Arun Prakash'),
+  })).error)
+
+  ok('2 analyzers', (await db.from('lab_analyzers').insert([
+    { id: uuid(), tenant_id: tenantId, connector_id: connectorId,
+      fingerprint: 'mindray-bc5130-demo', manufacturer: 'Mindray', model: 'BC-5130',
+      serial_no: 'BC5130-DEMO-01', protocol: 'astm', framing: 'astm',
+      transport: 'tcp', direction: 'unidirectional', status: 'live',
+      first_seen_at: new Date(Date.now() - 40 * 86400000).toISOString(),
+      last_message_at: minsAgo(2) },
+    { id: uuid(), tenant_id: tenantId, connector_id: connectorId,
+      fingerprint: 'erba-chem5x-demo', manufacturer: 'Transasia/Erba', model: 'Chem 5x',
+      serial_no: 'CHEM5X-DEMO-01', protocol: 'astm', framing: 'astm',
+      transport: 'serial', direction: 'unidirectional', status: 'live',
+      first_seen_at: new Date(Date.now() - 38 * 86400000).toISOString(),
+      last_message_at: minsAgo(9) },
+  ])).error)
+
+  const { error } = await db.from('radiology_modalities').insert({
+    id: uuid(), tenant_id: tenantId, connector_id: connectorId,
+    ae_title: 'GE_LOGIQ_P9', modality: 'US',
+    manufacturer: 'GE Healthcare', model: 'LOGIQ P9', station_name: 'USG-ROOM-1',
+    status: 'live',
+    first_seen_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    last_study_at: minsAgo(24),
+  })
+  if (error) console.warn(`  ! radiology modality skipped: ${error.message}`)
+  else console.log('  ✓ 1 radiology modality')
+}
+
+/**
+ * Work out the tubes for every lab order the demo has.
+ *
+ * The app does this through ensure_lab_samples the moment an order is placed,
+ * but this script inserts orders straight into the table and so skipped it —
+ * leaving a demo hospital whose laboratory had orders and no specimens, and
+ * a sample-label screenshot with nothing to print. Calling the same function
+ * the app calls keeps the two in step.
+ */
+async function createLabSamples(tenantId: string): Promise<void> {
+  const { data: orders } = await db.from('lab_orders').select('id').eq('tenant_id', tenantId)
+  let made = 0
+  for (const o of orders ?? []) {
+    const { error } = await db.rpc('ensure_lab_samples', { p_order_id: o.id as string })
+    if (error) { console.warn(`  ! tubes for ${(o.id as string).slice(0, 8)}: ${error.message}`); continue }
+    made += 1
+  }
+  const { count } = await db.from('lab_samples')
+    .select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId)
+  console.log(`  ✓ tubes for ${made} lab orders (${count ?? 0} specimens)`)
 }
 
 // ── 9. The rest of a configured hospital ─────────────────────────────────────
@@ -1414,6 +1561,8 @@ async function main() {
   await createVisits(tenantId, seeded, tests)
   await createAdmissions(tenantId, seeded)
   await completeSetup(tenantId, seeded)
+  await createDevices(tenantId, seeded)
+  await createLabSamples(tenantId)
   await createToday(tenantId, seeded)
   await createIpdBilling(tenantId, seeded)
   await createFinance(tenantId, seeded)
