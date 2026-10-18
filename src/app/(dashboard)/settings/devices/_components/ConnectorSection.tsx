@@ -13,6 +13,17 @@ import {
 } from '@/app/actions/devices'
 
 /**
+ * What the connector listens on for imaging, and the name it answers to.
+ *
+ * Both are the connector's own defaults (connector/src/config.ts and
+ * dicom/server.ts). They are shown rather than stored because nothing in the
+ * product can change them yet — when that becomes configurable per connector,
+ * these move onto the row.
+ */
+const DICOM_PORT = 11112
+const DICOM_AE_TITLE = 'UYIRLY'
+
+/**
  * The lab computer that talks to the analyzers.
  *
  * One per laboratory PC. Everything a hospital has to do to connect a machine
@@ -75,9 +86,9 @@ export default function ConnectorSection({
     <section className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>Lab computers</h2>
+          <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>Connected computers</h2>
           <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-            The small program that sits in your laboratory and passes results to Uyirly.
+            The small program that sits in your hospital and passes results and images to Uyirly.
           </p>
         </div>
         <button onClick={() => { setShowCreate(true); setError('') }}
@@ -117,7 +128,7 @@ export default function ConnectorSection({
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add a lab computer">
         <div className="p-5">
           <p className="text-sm mb-4" style={{ color: '#64748B' }}>
-            Name the computer in your laboratory that the analyzers are wired to.
+            Name the computer your analyzers or scanners are wired to.
             You will get a short code to type into the installer on that machine.
           </p>
           <label className="block text-xs font-semibold mb-1.5" style={{ color: '#475569' }}>
@@ -216,15 +227,33 @@ function ConnectorCard({
               Waiting for the installer to be run on that computer.
             </p>
           ) : c.lan_ip ? (
-            // The one fact a service engineer needs. Everything else about the
+            // The facts a service engineer needs. Everything else about the
             // network is ours to worry about, not theirs.
-            <div className="mt-2 rounded-lg px-3 py-2" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#94A3B8' }}>
-                Give this to your analyzer engineer
-              </p>
-              <p className="text-sm font-mono font-semibold" style={{ color: '#0F172A' }}>
-                {c.lan_ip} : {c.listen_port}
-              </p>
+            //
+            // Two addresses, because the same program answers both: analyzers
+            // speak ASTM on the port below, scanners speak DICOM on 11112 and
+            // also need the AE title to call. Showing only the first is what
+            // left radiology engineers with nothing to type.
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-lg px-3 py-2" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#94A3B8' }}>
+                  For your analyzer engineer
+                </p>
+                <p className="text-sm font-mono font-semibold" style={{ color: '#0F172A' }}>
+                  {c.lan_ip} : {c.listen_port}
+                </p>
+              </div>
+              <div className="rounded-lg px-3 py-2" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#94A3B8' }}>
+                  For your scanner engineer
+                </p>
+                <p className="text-sm font-mono font-semibold" style={{ color: '#0F172A' }}>
+                  {c.lan_ip} : {DICOM_PORT}
+                </p>
+                <p className="text-xs font-mono mt-0.5" style={{ color: '#64748B' }}>
+                  AE title {DICOM_AE_TITLE}
+                </p>
+              </div>
             </div>
           ) : null}
 

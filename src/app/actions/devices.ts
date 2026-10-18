@@ -40,6 +40,19 @@ export interface AnalyzerRow {
   unknown_codes: number
 }
 
+export interface ModalityRow {
+  id: string
+  ae_title: string
+  modality: string | null
+  manufacturer: string | null
+  model: string | null
+  station_name: string | null
+  status: string
+  last_study_at: string | null
+  first_seen_at: string
+  studies: number
+}
+
 export interface UnknownCode {
   mapping_id: string
   analyzer_id: string
@@ -304,6 +317,59 @@ export async function setAnalyzerStatus(id: string, status: string): Promise<Sim
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'update', 'lab_analyzer', id, { status })
+  revalidatePath('/settings/devices')
+  return { success: true }
+}
+
+// ── Scanners ────────────────────────────────────────────────────────────────
+
+/**
+ * The imaging machines that have introduced themselves.
+ *
+ * Same shape as the analyzer list, and for the same reason: a scanner
+ * registers itself the first time it sends a study, and until this existed a
+ * hospital had no way to see that it had — the row went into the database and
+ * nothing in the product ever showed it. A radiology department could not tell
+ * whether its CT was connected, when it last sent anything, or how to stop it.
+ */
+export async function listModalities(): Promise<ModalityRow[]> {
+  const supabase = await createClient()
+  const [{ data: modalities }, { data: studies }] = await Promise.all([
+    supabase.from('radiology_modalities')
+      .select('id, ae_title, modality, manufacturer, model, station_name, status, last_study_at, first_seen_at')
+      .order('first_seen_at'),
+    supabase.from('radiology_studies').select('modality_id'),
+  ])
+
+  const seen = new Map<string, number>()
+  for (const st of studies ?? []) {
+    const key = st.modality_id as string | null
+    if (!key) continue
+    seen.set(key, (seen.get(key) ?? 0) + 1)
+  }
+
+  return (modalities ?? []).map((m) => ({
+    ...m,
+    studies: seen.get(m.id as string) ?? 0,
+  })) as ModalityRow[]
+}
+
+/** Move a scanner between discovered, live and paused. Mirrors setAnalyzerStatus. */
+export async function setModalityStatus(id: string, status: string): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+
+  // radiology_modalities has no quarantine state — a scanner either sends or
+  // it does not, and there is no per-code mapping to hold back for review.
+  if (!['discovered', 'live', 'paused'].includes(status)) {
+    return { success: false, error: 'Unknown status' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('radiology_modalities').update({ status }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'radiology_modality', id, { status })
   revalidatePath('/settings/devices')
   return { success: true }
 }

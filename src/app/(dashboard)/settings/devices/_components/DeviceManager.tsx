@@ -7,15 +7,20 @@ import EmptyState from '@/components/ui/EmptyState'
 import InstallerCard from './InstallerCard'
 import ConnectorSection from './ConnectorSection'
 import AnalyzerSection from './AnalyzerSection'
+import ModalitySection from './ModalitySection'
 import CodeQueue from './CodeQueue'
 import SampleQueue from './SampleQueue'
 import type {
-  ConnectorRow, AnalyzerRow, UnknownCode, UnmatchedMessage, AnalyteOption,
+  ConnectorRow, AnalyzerRow, ModalityRow, UnknownCode, UnmatchedMessage, AnalyteOption,
   ConnectorRelease,
 } from '@/app/actions/devices'
 
 /**
- * Everything to do with analyzers, in the order a person needs it.
+ * Everything to do with connected machines, in the order a person needs it.
+ *
+ * Analyzers and scanners are the same kind of thing to a hospital — a device
+ * on the network that introduces itself — and they arrive through the same
+ * program, so they are managed on one screen rather than two.
  *
  * The two queues sit at the top because they are work waiting on somebody —
  * an unrecognised code means measurements are being dropped, and an unmatched
@@ -25,10 +30,11 @@ import type {
  * Setup is below them, because it is done once and then never looked at again.
  */
 export default function DeviceManager({
-  connectors, analyzers, unknownCodes, unmatched, analytes, canManage, release,
+  connectors, analyzers, modalities, unknownCodes, unmatched, analytes, canManage, release,
 }: {
   connectors: ConnectorRow[]
   analyzers: AnalyzerRow[]
+  modalities: ModalityRow[]
   unknownCodes: UnknownCode[]
   unmatched: UnmatchedMessage[]
   analytes: AnalyteOption[]
@@ -64,6 +70,7 @@ export default function DeviceManager({
           <InstallerCard release={release} />
           <ConnectorSection connectors={connectors} onChange={refresh} />
           <AnalyzerSection analyzers={analyzers} onChange={refresh} />
+          <ModalitySection modalities={modalities} onChange={refresh} />
         </>
       )}
     </div>

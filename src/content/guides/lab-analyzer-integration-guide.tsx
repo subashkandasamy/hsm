@@ -181,8 +181,8 @@ export default function Guide() {
       <h2>What setting it up actually involves</h2>
       <Screenshot
         src="/guides/devices-connectors.png" width={2560} height={1992}
-        alt="Analyzer connection settings showing the downloadable Windows connector, a connected lab computer with the LAN address to give the analyzer engineer, and two analyzers listed as Mindray BC-5130 on ASTM over network and Transasia/Erba Chem 5x on ASTM over serial"
-        caption="One page. The address in the middle is what the analyzer engineer needs; the machines below added themselves."
+        alt="Analyzer and scanner connection settings showing the downloadable Windows connector, a connected computer giving two addresses — port 5150 for the analyzer engineer and port 11112 with AE title UYIRLY for the scanner engineer — then two analyzers on ASTM over network and serial, and a GE LOGIQ P9 ultrasound under Scanners"
+        caption="One page, one program, two doors. Analyzers speak ASTM on one port and scanners speak DICOM on another — every machine below added itself the first time it sent something."
       />
       <p>
         Less than most people expect, for a one-way link.

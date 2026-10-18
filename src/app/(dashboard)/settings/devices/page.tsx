@@ -6,7 +6,7 @@ import { hasPermission } from '@/lib/rbac'
 import PageHeader from '@/components/ui/PageHeader'
 import DeviceManager from './_components/DeviceManager'
 import {
-  listConnectors, listAnalyzers, listUnknownCodes,
+  listConnectors, listAnalyzers, listModalities, listUnknownCodes,
   listUnmatchedMessages, listAnalytes, getConnectorDownload,
 } from '@/app/actions/devices'
 
@@ -23,9 +23,10 @@ export default async function DevicesSettingsPage() {
   const canManage = hasPermission(actor.role, 'lab:manage')
   if (!canWorkQueues && !canManage) redirect('/dashboard')
 
-  const [connectors, analyzers, unknownCodes, unmatched, analytes, release] = await Promise.all([
+  const [connectors, analyzers, modalities, unknownCodes, unmatched, analytes, release] = await Promise.all([
     listConnectors(),
     listAnalyzers(),
+    listModalities(),
     listUnknownCodes(),
     listUnmatchedMessages(),
     listAnalytes(),
@@ -35,14 +36,15 @@ export default async function DevicesSettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Analyzer connection"
+        title="Analyzer &amp; scanner connection"
         subtitle={canManage
-          ? 'Connect your laboratory machines so results arrive on their own.'
+          ? 'Connect your laboratory analyzers and your scanners, so results and images arrive on their own.'
           : 'Results waiting on you before they can reach a patient.'}
       />
       <DeviceManager
         connectors={connectors}
         analyzers={analyzers}
+        modalities={modalities}
         unknownCodes={unknownCodes}
         unmatched={unmatched}
         analytes={analytes}

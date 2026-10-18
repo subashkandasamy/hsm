@@ -19,9 +19,9 @@ export default function InstallerCard({ release }: { release: ConnectorRelease |
   return (
     <section className="mb-6">
       <div className="mb-3">
-        <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>The lab program</h2>
+        <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>The connector program</h2>
         <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-          Install this once, on the computer your analyzers are wired to.
+          Install this once, on the computer your analyzers or scanners are wired to.
         </p>
       </div>
 
@@ -37,7 +37,7 @@ export default function InstallerCard({ release }: { release: ConnectorRelease |
                 Not available for download yet
               </p>
               <p className="text-xs mt-1" style={{ color: '#64748B' }}>
-                Contact us and we will send you the installer for your laboratory computer.
+                Contact us and we will send you the installer for that computer.
               </p>
             </div>
           </div>
@@ -68,10 +68,11 @@ export default function InstallerCard({ release }: { release: ConnectorRelease |
 
             <ol className="mt-4 pl-0" style={{ listStyle: 'none', counterReset: 'step' }}>
               {[
-                'Copy the downloaded file to the computer beside your analyzers, and unzip it.',
+                'Copy the downloaded file to the computer beside your machines, and unzip it.',
                 'Right-click install.ps1 and choose “Run with PowerShell”. Say yes when Windows asks for permission.',
-                'Add a lab computer below, then type its pairing code when the installer asks.',
-                'Give the address the installer prints to whoever services your analyzer.',
+                'Add a computer below, then type its pairing code when the installer asks.',
+                'Give the analyzer address below to whoever services your analyzers.',
+                'For a scanner, give your radiology engineer the DICOM address and the AE title instead — same computer, different door.',
               ].map((step, i) => (
                 <li key={i} className="flex gap-2.5 mb-2">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold"
