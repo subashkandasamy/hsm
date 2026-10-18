@@ -66,11 +66,21 @@ const PLANS: PlanDef[] = [
         ],
       },
       {
+        heading: 'Patients',
+        items: [
+          'Patient app — one family login, records across hospitals',
+          'Lab and scan reports downloadable by the patient',
+          'Appointment requests against real doctor availability',
+          'Allergy list with drug-allergy warnings at prescribing',
+        ],
+      },
+      {
         heading: 'Platform',
         items: [
           'Up to 5 staff accounts',
           'Role-based access (7 roles)',
           'Audit trail',
+          'Patient documents and file uploads',
           'Email support (48h SLA)',
         ],
       },
@@ -90,9 +100,12 @@ const PLANS: PlanDef[] = [
         heading: 'Everything in Starter, plus:',
         items: [
           'Full IPD with ward board and daily notes',
+          'ICU with NEWS early-warning and a deterioration worklist',
+          'Care team — several doctors on one admission, consults logged',
           'Emergency triage (ESI 1–5)',
           'OT scheduling with overlap prevention',
           'Blood bank — cross-match and issue',
+          'Referrals and follow-up scheduling',
         ],
       },
       {
@@ -155,7 +168,11 @@ const COMPARE_ROWS: { label: string; starter: string | boolean; growth: string |
   { label: 'Staff accounts',           starter: 'Up to 5',    growth: 'Unlimited',   enterprise: 'Unlimited' },
   { label: 'OPD & Appointments',       starter: true,         growth: true,          enterprise: true },
   { label: 'IPD',                      starter: 'Basic',      growth: 'Full',        enterprise: 'Full' },
+  { label: 'ICU & NEWS early warning', starter: false,        growth: true,          enterprise: true },
+  { label: 'Multi-doctor care team',   starter: false,        growth: true,          enterprise: true },
   { label: 'Emergency triage',         starter: false,        growth: true,          enterprise: true },
+  { label: 'Patient app & portal',     starter: true,         growth: true,          enterprise: true },
+  { label: 'Allergy & interaction checks', starter: true,     growth: true,          enterprise: true },
   { label: 'Lab & Radiology',          starter: false,        growth: true,          enterprise: true },
   { label: 'Lab analyzer connection',  starter: false,        growth: true,          enterprise: true },
   { label: 'Scanner (DICOM) connection', starter: false,      growth: true,          enterprise: true },

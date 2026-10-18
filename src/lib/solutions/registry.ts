@@ -1757,6 +1757,335 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
   },
 
   // ── Compare & alternatives (Phase 4) ──────────────────────────────────────
+  'patient-portal-software': {
+    slug: 'patient-portal-software',
+    eyebrow: 'Patient Portal & App',
+    group: GROUP_MODULE,
+    tagline: 'One phone login for the whole family — records, reports and appointment requests, at every hospital they use.',
+    metaTitle: 'Patient Portal Software & Patient App for Hospitals',
+    description:
+      'Patient portal software for Indian hospitals — one family login, lab and scan reports as PDFs, visit history and appointment requests. Included on every Uyirly plan.',
+    keywords: [
+      'patient portal software',
+      'patient portal',
+      'patient app for hospitals',
+      'hospital patient portal india',
+      'patient health records app',
+      'online lab report access',
+      'patient appointment booking software',
+    ],
+    primaryKeyword: 'patient portal software',
+    h1: 'Patient portal software your patients will actually open',
+    subhead:
+      'Most hospital patient portals are a login screen nobody uses twice. Uyirly’s is built around how an Indian family actually holds its health records — one phone number, every member of the family under it, and the records following the patient between the hospitals they use rather than being trapped in one.',
+    heroBullets: [
+      'One phone login holds the whole family — parents, children, grandparents',
+      'Records from every Uyirly hospital the family visits, in one place',
+      'Lab and scan reports downloadable as PDFs, the moment they are released',
+      'Included on every plan, including Starter — not an upsell',
+    ],
+    sections: [
+      {
+        h2: 'What patient portal software is for',
+        body:
+          'A patient portal is the patient’s own door into the hospital’s records — what was diagnosed, what was prescribed, what the last blood test said. It exists to stop two things: the second trip to the hospital just to collect a printout, and the telephone call to reception asking whether a report is ready.\n\nThe test of one is not its feature list. It is whether a patient opens it a second time. That usually comes down to whether they have to remember a password for each hospital, and whether their mother’s reports are in the same place as their own.',
+      },
+      {
+        h2: 'Built around the family, not the patient ID',
+        body:
+          'A hospital thinks in patient IDs. A family does not. The person who manages health in an Indian household is usually managing it for four or five people — an elderly parent’s medicines, a child’s vaccinations, their own test results.',
+        subsections: [
+          {
+            h3: 'One login, every member',
+            body:
+              'The account belongs to a phone number. Family members are added under it, and each one keeps their own record, their own UHID and their own reports. One login, opened once, shows all of them — no separate account per person and no password per hospital.',
+          },
+          {
+            h3: 'Records that follow the patient between hospitals',
+            body:
+              'This is the part other portals do not do. If a family uses a clinic for everyday illness and a larger hospital for anything serious, and both run Uyirly, both sets of records appear under the same login. The family stops carrying a plastic folder of old reports from one waiting room to the next, and the second doctor can be shown what the first one found.',
+          },
+          {
+            h3: 'Finding the hospital in the first place',
+            body:
+              'Patients can look up a hospital that runs Uyirly and link themselves to it, so the first visit does not depend on somebody at reception explaining how to sign up.',
+          },
+        ],
+      },
+      {
+        h2: 'What a patient can see and do',
+        body:
+          'Deliberately a short list. Everything here works today; nothing on this page describes something planned.',
+        subsections: [
+          {
+            h3: 'Visits and prescriptions',
+            body:
+              'Every consultation, with the complaint, the diagnosis and the drugs prescribed — dose, frequency and duration — so a patient at a pharmacy counter or in front of another doctor can show exactly what they were given.',
+          },
+          {
+            h3: 'Lab reports, in full',
+            body:
+              'Not a note saying the report is ready. The actual result for every measurement in the panel, with the reference range it was read against and the abnormal values marked, plus the formatted PDF to download or forward. A released report only — nothing reaches a patient until the laboratory has authorised it.',
+          },
+          {
+            h3: 'Scans and their images',
+            body:
+              'The radiologist’s report, and the scan image itself where one was captured, through a link that is signed and expires rather than a file anybody can forward.',
+          },
+          {
+            h3: 'Requesting an appointment',
+            body:
+              'Patients request a slot against a doctor’s real published availability rather than telephoning reception to be told to call back. The request reaches the hospital to confirm — it does not silently occupy a slot.',
+          },
+        ],
+      },
+      {
+        h2: 'What it does not do yet',
+        body:
+          'Said plainly, because a portal that promises more than it does gets opened once.\n\nBills are not shown in the portal today, and there is no online payment — a patient settles at the counter. Video consultation is not part of it. If either of those is what you are shopping for, say so before you buy rather than after.',
+      },
+      {
+        h2: 'Why it is on every plan',
+        body:
+          'Patient portal software is usually sold as an add-on, priced per patient or kept for the top tier. That makes no sense to us. A clinic paying ₹2,999 a month has patients who want their reports as much as a hospital paying ₹7,999 does, and a portal only becomes useful once enough of the family’s hospitals are on it. So it is included everywhere, at no extra cost, on [every plan](/pricing).',
+        table: {
+          headers: ['', 'Without a portal', 'With Uyirly'],
+          rows: [
+            ['Getting a report', 'Second trip to the hospital', 'Downloaded as a PDF when released'],
+            ['“Is my report ready?”', 'A phone call to reception', 'Visible to the patient the moment it is'],
+            ['Records for the family', 'One folder of paper per person', 'One login, every member'],
+            ['Changing hospital', 'Carry the old reports with you', 'Already there, if both use Uyirly'],
+            ['Booking', 'Telephone and wait for a callback', 'Requested against real availability'],
+            ['Price', 'Often a per-patient add-on', 'Included on every plan'],
+          ],
+        },
+      },
+    ],
+    faqs: [
+      { q: 'Is the patient portal included in every plan?',
+        a: 'Yes — Starter, Growth and Enterprise, at no extra cost and with no per-patient charge.' },
+      { q: 'Do patients need a separate account for each hospital?',
+        a: 'No. The account belongs to their phone number. Any Uyirly hospital they are a patient of appears under that one login.' },
+      { q: 'Can one login cover the whole family?',
+        a: 'Yes. Members are added under the account and each keeps their own record and UHID. It is designed for the person in the household who manages everyone else’s health.' },
+      { q: 'Can patients see results before a doctor has checked them?',
+        a: 'No. A lab or radiology order only becomes visible once it has been verified and released by the hospital. A half-entered panel is never shown.' },
+      { q: 'Can patients pay their bill online?',
+        a: 'Not today. Bills are not shown in the portal and there is no online payment — patients settle at the counter.' },
+      { q: 'Can patients book an appointment directly?',
+        a: 'They request one against the doctor’s published availability, and the hospital confirms it. It does not take a slot without the hospital agreeing.' },
+    ],
+    related: [
+      { label: 'Patient portal & family health records, explained', href: '/guides/patient-portal-family-health-records-guide' },
+      { label: 'Patient records & EMR with UHID', href: '/electronic-medical-records-software' },
+      { label: 'Hospital management software', href: '/hospital-management-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-10-18',
+  },
+
+  'lab-analyzer-integration-software': {
+    slug: 'lab-analyzer-integration-software',
+    eyebrow: 'Analyzer & Scanner Connectivity',
+    group: GROUP_MODULE,
+    tagline: 'Connect your haematology, biochemistry and imaging machines so results arrive without anyone typing them.',
+    metaTitle: 'Lab Analyzer Integration Software (LIS Interfacing) India',
+    description:
+      'Connect lab analyzers and scanners to your HMS — ASTM over network, serial or file, and DICOM worklist for imaging. Included in Uyirly Growth with no per-instrument fee.',
+    keywords: [
+      'lab analyzer integration',
+      'lis interfacing software',
+      'analyzer interfacing india',
+      'astm analyzer integration',
+      'dicom modality worklist software',
+      'connect lab analyzer to software',
+      'bidirectional lis interface',
+    ],
+    primaryKeyword: 'lab analyzer integration',
+    h1: 'Lab analyzer integration, without a per-instrument bill',
+    subhead:
+      'A blood count is twenty numbers. Read off the analyzer’s screen and typed into software, every day, by someone who is also doing three other things. Analyzer integration removes that step — and it is the single change that does most for a laboratory’s accuracy and its turnaround time.',
+    heroBullets: [
+      'Network, serial cable or file export — if it has a data port, we connect it',
+      'Scanners too, over DICOM: worklist out, images back',
+      'Keeps collecting results when your internet is down',
+      'No per-instrument fee, no interface licence from us',
+    ],
+    sections: [
+      {
+        h2: 'What analyzer integration actually is',
+        body:
+          'Analyzer integration — LIS interfacing, as vendors usually call it — is the link between the machine that measures and the software that reports. Without it a technician reads a result off one screen and types it into another. With it, the measurement travels from the instrument to the patient’s record on its own.\n\nThe argument for it is not speed. It is that a transcription step is a place where a decimal point can move, and a laboratory running two hundred samples a day is making thousands of small opportunities for that every week.',
+      },
+      {
+        h2: 'How it is set up',
+        body:
+          'One program, installed once. Not a server, not a rack, nothing that needs an IT person on staff.',
+        steps: [
+          { title: 'Download', body: 'A small Windows program from your Uyirly settings page. It installs on the computer that already sits next to your machines.' },
+          { title: 'Pair', body: 'Read out one eight-character code from the screen. That is the entire configuration — the program now knows which hospital it belongs to.' },
+          { title: 'Point the machine at it', body: 'Give your analyzer engineer the address the program shows. For a scanner, give them an AE title instead.' },
+          { title: 'Nothing else', body: 'There is no per-instrument setup. A machine announces what it is when it first speaks, and Uyirly recognises it and lists it.' },
+        ],
+      },
+      {
+        h2: 'Why the program runs in your laboratory',
+        body:
+          'It would be simpler for us to do this in the cloud. We do not, for one reason: an analyzer transmits a result once and then forgets it. If nothing is listening at that exact moment, the measurement is gone and the sample has to be run again.\n\nSo every result is written to your own computer the instant it arrives — before any attempt to send it anywhere — and uploaded when the connection returns. A broadband cut costs you the delay and nothing else. For a hospital in a town where the line goes down for an afternoon, this is the difference between integration being a convenience and being a liability.',
+      },
+      {
+        h2: 'A machine can produce a result. It cannot release one.',
+        body:
+          'Every analyzer result lands unverified and waits for a person in the laboratory to authorise it, and the report names who did. That is NABL 112’s requirement, and it is the line between automation and unattended reporting.\n\nCorrect a value afterwards and the authorisation is withdrawn by itself — a result that has changed has not been checked by anybody yet. If a corrected value was critical and the clinician had not yet been telephoned, the entry in the critical value register is withdrawn too, with the reason kept.',
+      },
+      {
+        h2: 'Which machines can be connected',
+        body:
+          'If the instrument has a data port — a network socket, a serial cable or a file export — we will connect it. That covers most of what Indian laboratories run, including Mindray and Transasia/Erba. Scanners connect over DICOM, so the console pulls the day’s worklist and sends studies back matched to the right patient.\n\nWhat we cannot connect is an analyzer whose only output is its own built-in printer, and we would rather say so before you buy than after. Send us the model and we will tell you.',
+        table: {
+          headers: ['How the machine talks', 'Typical instruments', 'Supported'],
+          rows: [
+            ['ASTM over network', 'Mindray BC-5130 and similar haematology', 'Yes'],
+            ['ASTM over serial (RS-232)', 'Mindray BC-20s, Transasia/Erba H360', 'Yes'],
+            ['File export to a folder', 'Many semi-automatic biochemistry analyzers', 'Yes'],
+            ['DICOM', 'Ultrasound, X-ray, CT consoles', 'Yes — worklist and images'],
+            ['Built-in printer only', 'Some entry-level semi-auto analyzers', 'No — cannot be connected by anyone'],
+            ['Orders sent back to the machine', 'Two-way / bidirectional interfacing', 'Not yet — on our roadmap'],
+          ],
+        },
+      },
+      {
+        h2: 'What it costs',
+        body:
+          'Nothing beyond the [Growth plan](/pricing). There is no per-instrument fee, no interface licence and no commissioning charge from us, however many machines you connect.\n\nOne caution that has nothing to do with us: some analyzer manufacturers charge separately for the data-output module on their own instrument, and it is easier to negotiate that while you are still buying the machine than afterwards. Ask the vendor before you sign.',
+      },
+    ],
+    faqs: [
+      { q: 'Do you charge per analyzer?',
+        a: 'No. Connection is included in the Growth plan with no per-instrument fee and no interface licence, however many machines you connect.' },
+      { q: 'Will it work if our internet goes down?',
+        a: 'Yes. The program runs on a computer in your laboratory and writes every result to that computer before trying to send it, so results keep being collected through an outage and upload when the line returns.' },
+      { q: 'Does Uyirly support HL7?',
+        a: 'Not today. The connector speaks ASTM for analyzers and DICOM for imaging. If your instrument only speaks HL7, tell us the model and we will say honestly whether we can connect it.' },
+      { q: 'Can Uyirly send orders to the analyzer as well?',
+        a: 'Not yet. Results travel from the machine to Uyirly; sending the test list back down to the instrument is on our roadmap and we will not claim it until it is built.' },
+      { q: 'Do we need a server in the hospital?',
+        a: 'No. It is one small program on an ordinary Windows PC — the one already sitting next to your machines is fine. It runs as a service, so it starts before anyone logs in and survives a power cut.' },
+      { q: 'What about our scanner?',
+        a: 'The same program handles DICOM. Your ultrasound or X-ray console pulls the day’s worklist from Uyirly, so the radiographer picks the patient instead of typing the name, and studies come back attached to the right person.' },
+    ],
+    related: [
+      { label: 'Lab management software (LIMS)', href: '/lab-management-software' },
+      { label: 'Radiology information system (RIS)', href: '/radiology-information-system-software' },
+      { label: 'The lab order-to-report workflow', href: '/guides/lab-lis-workflow-guide' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-10-18',
+  },
+
+  'icu-management-software': {
+    slug: 'icu-management-software',
+    eyebrow: 'ICU & Critical Care',
+    group: GROUP_MODULE,
+    tagline: 'NEWS scoring on every observation, a deterioration worklist, fluid balance and a care team on one admission.',
+    metaTitle: 'ICU Management Software with NEWS Early Warning',
+    description:
+      'ICU and critical care software for Indian hospitals — NEWS early warning scoring, a deterioration worklist, fluid balance charting and multi-doctor care teams.',
+    keywords: [
+      'icu management software',
+      'critical care software',
+      'news score software',
+      'early warning score hospital software',
+      'icu charting software',
+      'fluid balance chart software',
+    ],
+    primaryKeyword: 'icu management software',
+    h1: 'ICU software that notices before the round does',
+    subhead:
+      'The danger in a critical care unit is rarely that nobody recorded the observations. It is that they were recorded, filed, and nobody put them together until the next round. Uyirly scores every set of observations as it is entered and moves anyone deteriorating to the top of a list.',
+    heroBullets: [
+      'NEWS calculated on every observation, automatically',
+      'A live deterioration worklist instead of a chart nobody re-reads',
+      'Fluid balance in and out, on the same record',
+      'Several doctors on one admission, each visit logged',
+    ],
+    sections: [
+      {
+        h2: 'What ICU management software has to do',
+        body:
+          'An intensive care unit already generates more numbers per patient per hour than any other part of a hospital. Software that only stores them has solved the easy half of the problem. The half that matters is turning a stream of observations into the sentence a nurse needs — this patient is worse than they were four hours ago.',
+      },
+      {
+        h2: 'NEWS, on every observation',
+        body:
+          'Every set of observations — respiratory rate, oxygen saturation, blood pressure, pulse, temperature and level of consciousness — is scored with NEWS, the National Early Warning Score, as it is entered. Nobody adds it up by hand and nobody forgets to.\n\nNEWS matters because it is deliberately simple and widely taught. A score is a number a new nurse, a visiting consultant and a night duty doctor all read the same way, which is exactly what you want at three in the morning.',
+        subsections: [
+          {
+            h3: 'The deterioration worklist',
+            body:
+              'Critical care patients whose latest score is elevated appear on one list, worst first. It is not a notification that can be dismissed and forgotten — it is a worklist that stays populated until the patient improves or somebody acts.',
+          },
+          {
+            h3: 'Fluid balance',
+            body:
+              'Intake and output recorded against the same admission as the observations, so the balance and the score are read together rather than from two different charts on two different clipboards.',
+          },
+          {
+            h3: 'Ventilated patients',
+            body:
+              'An admission can be marked as on a ventilator, and FiO₂ is captured with the observations so the oxygen requirement is part of the picture rather than a note in the margin.',
+          },
+        ],
+      },
+      {
+        h2: 'A patient in ICU has more than one doctor',
+        body:
+          'This is where most hospital software quietly fails. It assumes one admitting doctor, and then an intensivist, a cardiologist and a surgeon all see the patient and only one of them is on the record.',
+        subsections: [
+          {
+            h3: 'The care team',
+            body:
+              'Several doctors can be attached to one admission, each with their role. Everyone looking at the chart can see who else is involved, rather than finding out from a nurse.',
+          },
+          {
+            h3: 'Consults, requested and tracked',
+            body:
+              'A consult is requested from within the admission and shows up on the receiving doctor’s own list. It is not a phone call that may or may not have happened.',
+          },
+          {
+            h3: 'Visits logged against the admission',
+            body:
+              'Each doctor’s visit is recorded — who came, when, and whether the visit is complete. That is the trail a discharge summary is built from, and the one an auditor asks about.',
+          },
+        ],
+      },
+      {
+        h2: 'Connected to the rest of the hospital',
+        body:
+          'An ICU bed is also the most expensive bed in the building, and a patient in it is generating lab orders, drugs and consumables continuously. Because the ICU is part of the same system as [IPD billing](/guides/ipd-billing-software-explained), the charges accumulate daily on the admission instead of being reconstructed at discharge, and the [laboratory](/lab-management-software) results that drive the decisions arrive on the same record — straight from the analyzers, if your machines are [connected](/lab-analyzer-integration-software).',
+      },
+    ],
+    faqs: [
+      { q: 'What is NEWS and why use it?',
+        a: 'NEWS is the National Early Warning Score — a standard way of turning six routine observations into a single number that indicates how unwell a patient is. It is used because it is simple, widely taught, and read the same way by everyone on the ward regardless of seniority.' },
+      { q: 'Is the score calculated automatically?',
+        a: 'Yes. It is computed from each set of observations as they are entered. Nobody adds it up by hand, so it is never skipped on a busy shift.' },
+      { q: 'Can more than one doctor be on an ICU admission?',
+        a: 'Yes. A care team of several doctors can be attached to one admission, consults can be requested and tracked, and each doctor’s visits are logged against the admission.' },
+      { q: 'Which plan includes ICU?',
+        a: 'Growth and Enterprise. ICU sits alongside full IPD, which is a Growth feature.' },
+      { q: 'Does it connect to bedside monitors?',
+        a: 'Not today. Observations are entered by nursing staff. We connect laboratory analyzers and imaging scanners, but live monitor feeds are not something we claim.' },
+    ],
+    related: [
+      { label: 'IPD admission & bed management', href: '/guides/ipd-admission-bed-management-guide' },
+      { label: 'IPD billing, explained', href: '/guides/ipd-billing-software-explained' },
+      { label: 'Multi-specialty hospital software', href: '/multi-specialty-hospital-software' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+    updated: '2026-10-18',
+  },
+
   // Neutral, nominative-fair-use comparison pages. No unverified claims about
   // the competitor; focus on Uyirly's own facts + honest evaluation criteria.
   'mocdoc-alternative': {
@@ -2199,7 +2528,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
         bullets: [
           'One patient and one bill across every department',
           'GST billing, TPA cashless claims, one record per patient',
-          'Patient app with family accounts — reports & bills online',
+          'Patient app with family accounts — records and reports online',
         ],
       },
       {
@@ -2215,7 +2544,7 @@ export const SOLUTIONS: Record<string, SolutionMeta> = {
             ['Lab analyzer connection', 'Included. Network, serial or file export', 'Confirm with vendor'],
             ['Scanner connection', 'Included. DICOM worklist and images', 'Confirm with vendor'],
             ['India fit', 'GST invoices, TPA cashless and NABH records built in. ABDM/ABHA not integrated', 'Confirm with vendor'],
-            ['Patient app', 'Family accounts, reports & bills online', 'Confirm with vendor'],
+            ['Patient app', 'Family accounts, records and reports across hospitals', 'Confirm with vendor'],
             ['Free trial', '30-day free trial, no credit card', 'Confirm with vendor'],
           ],
         },

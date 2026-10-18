@@ -459,6 +459,78 @@ function AnalyzerMock() {
   )
 }
 
+/** What the prescribing screen says back when something is wrong. */
+function SafetyMock() {
+  return (
+    <div className="hover-lift rounded-2xl overflow-hidden"
+      style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.07)' }}>
+      <div className="px-5 py-4" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <p className="text-xs font-bold" style={{ color: S9 }}>New prescription — Amoxicillin 500mg</p>
+        <p className="text-xs mt-0.5" style={{ color: S4 }}>Meena R · 41F · 2 current medications</p>
+      </div>
+
+      <div className="px-5 py-3.5 flex gap-2.5" style={{ background: '#FEF2F2', borderBottom: `1px solid ${S2}` }}>
+        <span className="mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold flex-shrink-0"
+          style={{ background: '#991B1B', color: '#fff' }}>MAJOR</span>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: '#991B1B' }}>Patient is allergic to &ldquo;Penicillin&rdquo;</p>
+          <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>Caught by drug class, not just the name</p>
+        </div>
+      </div>
+
+      <div className="px-5 py-3.5 flex gap-2.5" style={{ background: '#FFFBEB', borderBottom: `1px solid ${S2}` }}>
+        <span className="mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold flex-shrink-0"
+          style={{ background: '#B45309', color: '#fff' }}>CHECK</span>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: '#92400E' }}>Interacts with current Warfarin</p>
+          <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>Already on the patient&rsquo;s active list</p>
+        </div>
+      </div>
+
+      <div className="px-5 py-3 flex items-center justify-between">
+        <p className="text-xs" style={{ color: S5 }}>ICU board · NEWS 7 — 1 patient deteriorating</p>
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+          style={{ background: '#991B1B', color: '#fff' }}>Review now</span>
+      </div>
+    </div>
+  )
+}
+
+/** Shift coverage, read against the ratio it has to meet. */
+function RosterMock() {
+  const shifts = [
+    { unit: 'ICU · Block A',      staff: '4 nurses', ratio: '1:2', ok: true  },
+    { unit: 'Ward 2 · Floor 1',   staff: '3 nurses', ratio: '1:9', ok: false },
+    { unit: 'Maternity · Wing C', staff: '2 nurses', ratio: '1:5', ok: true  },
+  ]
+  return (
+    <div className="hover-lift rounded-2xl overflow-hidden"
+      style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.07)' }}>
+      <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: S9 }}>Night shift — tonight</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>Coverage against nurse-to-patient ratio</p>
+        </div>
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ background: '#FEF3C7', color: '#B45309' }}>
+          1 short
+        </span>
+      </div>
+      {shifts.map(({ unit, staff, ratio, ok }) => (
+        <div key={unit} className="px-5 py-3.5 flex items-center justify-between"
+          style={{ borderBottom: `1px solid ${S2}`, background: ok ? '#fff' : '#FFFBEB' }}>
+          <div>
+            <p className="text-xs font-semibold" style={{ color: S9 }}>{unit}</p>
+            <p className="text-xs mt-0.5" style={{ color: S4 }}>{staff}</p>
+          </div>
+          <span className="text-xs font-bold" style={{ color: ok ? T : '#D97706' }}>
+            {ratio} {ok ? '' : '· below target'}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function BillingMock() {
   const lines = [
     { label: 'OPD Consultation',        qty: '1',  amount: '₹500'   },
@@ -635,10 +707,27 @@ function Features() {
 
         <FeatureRow
           visual={<PatientCareMock />}
-          eyebrow="Patients & Scheduling"
-          heading="A patient app for families — and smart staff rosters"
-          body="One family login holds every member, with records and reports across hospitals and self-service appointment booking. Behind the scenes, publish doctor OPD hours, roster nurses by nursing unit (block / floor / wing), and see shift coverage flagged against nurse-to-patient ratios."
-          tags={['Family Accounts', 'Records Across Hospitals', 'Online Booking', 'Doctor OPD Hours', 'Nurse Roster', 'Nursing Units']}
+          eyebrow="Patient App"
+          heading="One login for the whole family — at every hospital you use"
+          body="Patients sign in with their phone number and see every member of the family under it: parents, children, grandparents. Their visits, prescriptions, lab reports and scans are all there, downloadable as PDFs, and they can request an appointment against a doctor's real availability instead of telephoning. If the clinic down the road also runs Uyirly, those records appear under the same login — the family stops carrying a folder of paper between hospitals."
+          tags={['One Family Login', 'Records Across Hospitals', 'Lab & Scan Reports', 'PDF Download', 'Appointment Requests', 'On Every Plan']}
+          reverse
+        />
+
+        <FeatureRow
+          visual={<SafetyMock />}
+          eyebrow="Clinical Safety"
+          heading="The system argues back before a prescription is signed"
+          body="Record a patient's allergies once and every prescription is checked against them — including by drug class, so a penicillin allergy still catches amoxicillin. New drugs are checked against what the patient is already taking. In critical care, every observation is scored with NEWS, the national early warning score, and anyone deteriorating moves to the top of a worklist instead of waiting to be noticed on a round."
+          tags={['Allergy Checking', 'Drug Interactions', 'NEWS Scoring', 'Deterioration Worklist', 'Fluid Balance', 'Critical Value Alerts']}
+        />
+
+        <FeatureRow
+          visual={<RosterMock />}
+          eyebrow="Staffing & Scheduling"
+          heading="Rosters you can check against the ratio they have to meet"
+          body="Publish doctor OPD hours so patients book against real availability. Roster nurses by nursing unit — block, floor or wing — and see each shift's coverage flagged against the nurse-to-patient ratio it is supposed to meet, before the shift starts rather than during an inspection."
+          tags={['Doctor OPD Hours', 'Nurse Roster', 'Nursing Units', 'Ratio Flagging', 'Shift Coverage', 'Attendance & HR']}
           reverse
         />
       </div>
