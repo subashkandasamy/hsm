@@ -416,8 +416,8 @@ function BillingMock() {
       style={{ background: '#fff', border: `1px solid ${S2}`, boxShadow: '0 4px 32px rgba(0,0,0,0.07)' }}>
       <div className="px-5 py-4 flex items-center justify-between" style={{ background: S1, borderBottom: `1px solid ${S2}` }}>
         <div>
-          <p className="text-xs font-bold" style={{ color: S9 }}>Invoice #BILL-2024-00183</p>
-          <p className="text-xs mt-0.5" style={{ color: S4 }}>Rajesh Kumar · UH-2024-0311 · 26 Jun 2024</p>
+          <p className="text-xs font-bold" style={{ color: S9 }}>Invoice #CITY/B2627/00183</p>
+          <p className="text-xs mt-0.5" style={{ color: S4 }}>Rajesh Kumar · CITY-UH-2026-00311 · 26 Jun 2026</p>
         </div>
         <span className="px-2.5 py-1 rounded-full text-xs font-bold"
           style={{ background: 'rgba(13,148,136,0.1)', color: T }}>Auto-generated</span>
