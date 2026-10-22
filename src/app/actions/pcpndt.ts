@@ -368,7 +368,14 @@ export async function listFormF(filters?: {
     const start = `${filters.month}-01`
     const [y, m] = filters.month.split('-').map(Number)
     const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
-    q = q.gte('procedure_date', start).lt('procedure_date', end)
+    // A draft has no procedure date yet, so filtering on that alone hides the
+    // very forms the "not finished" warning is about — the hospital would be
+    // told something needs fixing and given no way to reach it. Unfinished
+    // forms fall back to the date they were opened.
+    q = q.or(
+      `and(procedure_date.gte.${start},procedure_date.lt.${end}),`
+      + `and(procedure_date.is.null,form_date.gte.${start},form_date.lt.${end})`,
+    )
   }
 
   const { data, error } = await q

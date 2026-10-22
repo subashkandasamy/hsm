@@ -933,6 +933,78 @@ async function createLabSamples(tenantId: string): Promise<void> {
   console.log(`  ✓ tubes for ${made} lab orders (${count ?? 0} specimens)`)
 }
 
+/**
+ * Two Form F records — one filed, one still unfinished.
+ *
+ * The unfinished one is the point. A demo where everything is complete shows
+ * a tidy list; a demo with a draft in it shows the warning a hospital
+ * actually needs, which is that something is not yet fit to send and the 5th
+ * is coming.
+ */
+async function createFormF(tenantId: string, s: Seeded): Promise<void> {
+  const women = s.patients.filter((p) => ['Lakshmi', 'Kavya', 'Divya', 'Fathima'].some((n) => p.name.startsWith(n)))
+  if (women.length < 2) { console.warn('  ! Form F skipped: need two female patients'); return }
+  const [a, b] = women
+
+  const rows = [
+    {
+      id: uuid(), tenant_id: tenantId, serial_no: 'F/2627/00001', patient_id: a.id,
+      status: 'complete', form_date: '2026-10-14',
+      clinic_name: 'Uyirly Demo Hospital', clinic_address: '1 Trichy Road, Karur',
+      clinic_reg_no: 'PNDT/KRR/2024/07',
+      patient_name: a.name, patient_age_years: 26,
+      living_children_total: 1, relation_type: 'husband', relation_name: 'Senthil Kumar',
+      address_text: '12 Gandhi Street, Karur', district: 'Karur', state: 'Tamil Nadu',
+      pincode: '639001', contact_no: '9999900001',
+      referred_by_name: 'Dr. Lakshmi Iyer', referred_by_address: 'Uyirly Demo Hospital',
+      lmp: '2026-07-02',
+      performed_by_name: 'Dr. Lakshmi Iyer', performed_by_reg_no: 'TN/45821',
+      usg_indications: ['ii', 'xvii'], procedure_type: 'ultrasound',
+      declaration_obtained_on: '2026-10-14', procedure_date: '2026-10-14',
+      result_text: 'Single live intrauterine gestation. 15 weeks 2 days. Normal liquor.',
+      result_conveyed_to: 'Dr. Lakshmi Iyer', result_conveyed_on: '2026-10-14',
+      // "NA" rather than blank: the Act expects an answer in every column and
+      // a blank one is the offence, so the demo models the right habit.
+      mtp_indication: 'NA',
+      woman_declaration_signed: true, doctor_declaration_signed: true,
+      doctor_declaration_name: 'LAKSHMI IYER', doctor_declaration_reg_no: 'TN/45821',
+      scan_category: 'female_antenatal',
+      woman_thumb_impression: false, is_self_referral: false, is_invasive: false,
+    },
+    {
+      id: uuid(), tenant_id: tenantId, serial_no: 'F/2627/00002', patient_id: b.id,
+      status: 'draft', form_date: '2026-10-20',
+      clinic_name: 'Uyirly Demo Hospital', clinic_address: '1 Trichy Road, Karur',
+      clinic_reg_no: 'PNDT/KRR/2024/07',
+      patient_name: b.name, patient_age_years: 31,
+      living_children_total: 2, relation_type: 'husband', relation_name: 'Ravi Chandran',
+      address_text: '45 Bazaar Street, Karur', district: 'Karur', state: 'Tamil Nadu',
+      pincode: '639002', contact_no: '9999900002', lmp: '2026-08-10',
+      // Named even though they are false: PostgREST squares up the column set
+      // across a bulk insert, so a key present on the other row arrives as
+      // NULL here, and these are NOT NULL.
+      woman_declaration_signed: false, woman_thumb_impression: false,
+      doctor_declaration_signed: false, is_self_referral: false, is_invasive: false,
+    },
+  ]
+  ok('2 Form F records (one unfinished)', (await db.from('form_f_records').insert(rows)).error)
+
+  // Keep the serial counter past what was just inserted, so the next form a
+  // demo creates does not collide with these.
+  await db.from('form_f_seq').upsert(
+    { tenant_id: tenantId, year: 2026, last_no: 2 }, { onConflict: 'tenant_id,year' })
+
+  // Living children, for field 4 and for Report III's sex-wise classification.
+  const kids = [
+    { id: uuid(), tenant_id: tenantId, patient_id: a.id, sex: 'female', age_years: 4 },
+    { id: uuid(), tenant_id: tenantId, patient_id: b.id, sex: 'female', age_years: 7 },
+    { id: uuid(), tenant_id: tenantId, patient_id: b.id, sex: 'female', age_years: 3 },
+  ]
+  const { error } = await db.from('patient_children').insert(kids)
+  if (error) console.warn(`  ! living children skipped: ${error.message}`)
+  else console.log('  ✓ 3 living children recorded')
+}
+
 // ── 9. The rest of a configured hospital ─────────────────────────────────────
 
 /**
@@ -1563,6 +1635,7 @@ async function main() {
   await completeSetup(tenantId, seeded)
   await createDevices(tenantId, seeded)
   await createLabSamples(tenantId)
+  await createFormF(tenantId, seeded)
   await createToday(tenantId, seeded)
   await createIpdBilling(tenantId, seeded)
   await createFinance(tenantId, seeded)

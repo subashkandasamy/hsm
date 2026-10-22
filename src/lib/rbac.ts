@@ -146,6 +146,9 @@ export const NAV_CONFIG: NavGroup[] = [
     items: [
       { label: 'Laboratory',        href: '/lab',       icon: 'FlaskConical', requiredPermission: 'lab:read',        moduleKey: 'lab' },
       { label: 'Radiology',         href: '/radiology', icon: 'Scan',         requiredPermission: 'radiology:read',  moduleKey: 'radiology' },
+      // Sits beside radiology because that is where the scans are, but behind
+      // its own permission because the register holds far more than a scan does.
+      { label: 'Form F (PC&PNDT)',  href: '/pcpndt',    icon: 'ShieldCheck',  requiredPermission: 'pcpndt:record',   moduleKey: 'radiology' },
       { label: 'Pharmacy',          href: '/pharmacy',  icon: 'Pill',         requiredPermission: 'pharmacy:read',   moduleKey: 'pharmacy' },
       { label: 'Operation Theatre', href: '/ot',        icon: 'Scissors',     requiredPermission: 'ot:read',         moduleKey: 'ot' },
       { label: 'Blood Bank',        href: '/blood',     icon: 'Droplets',     requiredPermission: 'bloodbank:read',  moduleKey: 'bloodbank' },

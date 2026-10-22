@@ -353,4 +353,6 @@ export const SHOTS: Shot[] = [
     path: '/ipd',
     selector: 'main', wait: 3500,
   },
+  // ── PC&PNDT ────────────────────────────────────────────────────────────────
+  { name: 'pcpndt-register', path: '/pcpndt', selector: 'main', wait: 3000 },
 ]
