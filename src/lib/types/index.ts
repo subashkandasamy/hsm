@@ -429,7 +429,7 @@ export interface RadiologyOrder {
   priority: OrderPriority; scheduled_for: string | null
   report: string | null; image_url: string | null
   ordered_at: string; reported_at: string | null
-  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'gender'>
   test?: Pick<RadiologyCatalog, 'id' | 'name' | 'modality'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
 }

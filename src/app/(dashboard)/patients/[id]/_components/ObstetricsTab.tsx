@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { HeartPulse, Plus, Activity } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import LivingChildrenCard from './LivingChildrenCard'
+import StatutoryActions from './StatutoryActions'
 import Input from '@/components/ui/Input'
 import DateText from '@/components/ui/DateText'
 import {
@@ -97,6 +98,10 @@ export default function ObstetricsTab({ patientId, canWrite }: Props) {
           classifies her by. */}
       <LivingChildrenCard patientId={patientId} canWrite={canWrite}
         expectedLiving={active?.living ?? null} />
+
+      {/* The way in. Without this nothing in the PC&PNDT module could be
+          started at all — the registers only find and finish. */}
+      <StatutoryActions patientId={patientId} canWrite={canWrite} />
 
       {/* ANC record */}
       <GlassCard className="p-4">

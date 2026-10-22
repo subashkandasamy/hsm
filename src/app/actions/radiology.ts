@@ -269,7 +269,7 @@ export async function getRadiologyOrder(id: string): Promise<RadiologyOrder | nu
   const supabase = await createClient()
   const { data } = await supabase
     .from('radiology_orders')
-    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
+    .select('*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
     .eq('id', id).single()
   return data as unknown as RadiologyOrder | null
 }
@@ -280,7 +280,7 @@ export async function listRadiologyOrders(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('radiology_orders')
-    .select('*, patient:patients(id,full_name,uhid), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
+    .select('*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
     .order('ordered_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)

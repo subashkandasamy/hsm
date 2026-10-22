@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, RefreshCw, Scan, Settings } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -10,6 +11,7 @@ import Money from '@/components/ui/Money'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
 import { markPerformed, verifyRadiologyOrder, listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
+import { startFormF } from '@/app/actions/pcpndt'
 import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -56,6 +58,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [reportOrder, setReportOrder] = useState<RadiologyOrder | null>(null)
+  const canFormF = !!role && hasPermission(role, 'pcpndt:record')
 
   async function refresh() {
     setLoading(true)
@@ -234,6 +237,13 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                             {actionId === order.id ? 'Processing…' : 'Mark Performed'}
                           </button>
                         )}
+                        {/* A scan centre's sonologist works from this list, not
+                            from the patient file — so the Form F starts here
+                            too. Only for women: the Act is about pregnancy, and
+                            offering it on a man's knee X-ray is noise. */}
+                        {canFormF && order.patient?.gender === 'female' && (
+                          <FormFButton orderId={order.id} patientId={order.patient_id} />
+                        )}
                         {tab === 'performed' && canProcess && (
                           <button onClick={() => setReportOrder(order)}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold"
@@ -279,5 +289,34 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
         onSuccess={() => { setShowAddTest(false); refresh() }}
       />
     </div>
+  )
+}
+
+/**
+ * Opens a Form F for this scan and goes straight to it.
+ *
+ * Linked to the order, so the register can show which scan it belongs to —
+ * but a Form F does not require one, because a scan centre may see a woman
+ * who was never booked through Uyirly.
+ */
+function FormFButton({ orderId, patientId }: { orderId: string; patientId: string | null }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  if (!patientId) return null
+  return (
+    <button
+      onClick={async () => {
+        setBusy(true)
+        const res = await startFormF({ patient_id: patientId, radiology_order_id: orderId })
+        setBusy(false)
+        if (res.success) router.push(`/pcpndt/${res.id}`)
+      }}
+      disabled={busy}
+      title="Record the Form F this scan needs under the PC&PNDT Act"
+      className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+      style={{ background: 'rgba(219,39,119,0.07)', color: '#DB2777',
+               border: '1px solid rgba(219,39,119,0.25)', cursor: busy ? 'wait' : 'pointer' }}>
+      {busy ? 'Opening…' : 'Form F'}
+    </button>
   )
 }

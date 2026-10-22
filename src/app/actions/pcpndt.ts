@@ -940,3 +940,45 @@ export async function listMtpForReturn(month: string): Promise<Record<string, un
   await logAudit(actor.id, 'read', 'mtp_return', month, { rows: (data ?? []).length })
   return (data ?? []) as Record<string, unknown>[]
 }
+
+/**
+ * Where this hospital has referred antenatal patients before.
+ *
+ * A hospital sends women to the same three or four places — the district
+ * headquarters hospital, the medical college, one specialist. Offering those
+ * back is the difference between a register that gets filled and one that gets
+ * skipped when the ward is busy.
+ */
+export async function listReferralDestinations(): Promise<Array<{
+  institution: string; doctor: string | null; address: string | null
+}>> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('anc_referrals_out')
+    .select('referred_to_institution, referred_to_doctor, referred_to_address')
+    .order('referred_on', { ascending: false }).limit(60)
+
+  const seen = new Map<string, { institution: string; doctor: string | null; address: string | null }>()
+  for (const r of data ?? []) {
+    const key = (r.referred_to_institution as string ?? '').toLowerCase().trim()
+    if (!key || seen.has(key)) continue
+    seen.set(key, {
+      institution: r.referred_to_institution as string,
+      doctor: (r.referred_to_doctor as string | null) ?? null,
+      address: (r.referred_to_address as string | null) ?? null,
+    })
+  }
+  return [...seen.values()].slice(0, 8)
+}
+
+/** Referrals for one woman, for her own record. */
+export async function listReferralsForPatient(patientId: string): Promise<AncReferralRow[]> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('anc_referrals_out')
+    .select('id, patient_name, referred_on, referred_to_doctor, referred_to_institution, reason')
+    .eq('patient_id', patientId).order('referred_on', { ascending: false })
+  return (data ?? []) as AncReferralRow[]
+}
