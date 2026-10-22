@@ -180,11 +180,33 @@ export default function MonthlyReturns({
         <LinkRow label="Referrals of antenatal patients" href="/pcpndt/returns" value={referrals} />
       </Report>
 
-      <p className="text-xs text-center" style={{ color: '#94A3B8' }}>
-        Printing these onto the district&rsquo;s own forms is the next piece of work. Until then
-        these are the figures to copy onto the paper.
-      </p>
+      <GlassCard className="p-5">
+        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Print on the district&rsquo;s forms</p>
+        <p className="text-xs mt-1 mb-3" style={{ color: '#94A3B8' }}>
+          Plain sheets, laid out as the Appropriate Authority&rsquo;s paper, with the signature and
+          seal blocks where they belong. Print, sign, seal and e-mail as usual.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <PrintLink report="iii" month={month} label="Report III — deliveries" />
+          <PrintLink report="v"   month={month} label="Report V — MTP drugs" />
+        </div>
+        <p className="text-xs mt-3" style={{ color: '#94A3B8' }}>
+          Reports I, II and IV print from their own registers and are not yet laid out —
+          the figures above are what goes on those sheets meanwhile.
+        </p>
+      </GlassCard>
     </div>
+  )
+}
+
+
+function PrintLink({ report, month, label }: { report: string; month: string; label: string }) {
+  return (
+    <a href={`/pcpndt/returns/print/${report}?month=${month}`} target="_blank" rel="noreferrer"
+      className="px-3 py-2 rounded-lg text-xs font-semibold"
+      style={{ background: '#0D9488', color: '#fff', textDecoration: 'none' }}>
+      {label}
+    </a>
   )
 }
 
