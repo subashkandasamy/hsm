@@ -18,6 +18,13 @@ export interface TenantProfile {
   cin_no: string | null
   gst_no: string | null
   blood_bank_license?: string | null
+  // PC&PNDT registration, printed onto Form F and every monthly return.
+  pcpndt_reg_no?: string | null
+  pcpndt_registered_name?: string | null
+  pcpndt_registered_address?: string | null
+  pcpndt_valid_upto?: string | null
+  pcpndt_reporting_person_name?: string | null
+  pcpndt_reporting_person_phone?: string | null
   emergency_contact: string | null
   // GST tax-invoice config
   gst_enabled?: boolean
@@ -105,6 +112,13 @@ export interface Patient {
   emergency_contact_name: string | null; emergency_contact_phone: string | null
   notify_whatsapp_consent: boolean; notify_sms_consent: boolean
   aadhaar_no?: string | null
+  // Form F field 5 (W/o, D/o, S/o) and the address parts a PC&PNDT
+  // Appropriate Authority reads specifically.
+  relation_type?: 'husband' | 'wife' | 'father' | 'mother' | null
+  relation_name?: string | null
+  state?: string | null
+  district?: string | null
+  pincode?: string | null
   combined_bill_no?: string | null
   wristband_printed_at?: string | null
   created_by: string | null; created_at: string

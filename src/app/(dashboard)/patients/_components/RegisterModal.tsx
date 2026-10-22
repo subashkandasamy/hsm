@@ -24,7 +24,9 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
   const messagingEnabled = useMessagingEnabled()
   const [form, setForm] = useState({
     full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
-    address: '', blood_group: '', allergies: '',
+    address: '', state: '', district: '', pincode: '',
+    relation_type: '', relation_name: '',
+    blood_group: '', allergies: '',
     emergency_contact_name: '', emergency_contact_phone: '',
     notify_whatsapp_consent: false,
     notify_sms_consent: false,
@@ -108,6 +110,11 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
       gender: form.gender || null,
       email: form.email || null,
       address: form.address || null,
+      state: form.state || null,
+      district: form.district || null,
+      pincode: form.pincode || null,
+      relation_type: form.relation_type || null,
+      relation_name: form.relation_name || null,
       blood_group: form.blood_group || null,
       allergies: form.allergies || null,
       emergency_contact_name: form.emergency_contact_name || null,
@@ -134,7 +141,9 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     onSuccess(result.patient)
     setForm({
       full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
-      address: '', blood_group: '', allergies: '',
+      address: '', state: '', district: '', pincode: '',
+    relation_type: '', relation_name: '',
+    blood_group: '', allergies: '',
       emergency_contact_name: '', emergency_contact_phone: '',
       notify_whatsapp_consent: false, notify_sms_consent: false,
       aadhaar_no: '', no_aadhaar: false,
@@ -277,8 +286,51 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
         <FormField label="Address" htmlFor="address">
           <Textarea id="address" value={form.address}
             onChange={(e) => set('address', e.target.value)}
-            placeholder="Street, City, State…" style={{ minHeight: '3.5rem' }} />
+            placeholder="Door no, street, village / town" style={{ minHeight: '3.5rem' }} />
         </FormField>
+
+        {/* District and PIN are their own fields rather than part of the address
+            box because a PC&PNDT Appropriate Authority reads them specifically —
+            a woman travelling from another district for a scan is the pattern the
+            Act exists to notice. Door number and street stay free text above. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <FormField label="District" htmlFor="district">
+            <Input id="district" value={form.district}
+              onChange={(e) => set('district', e.target.value)} placeholder="e.g. Karur" />
+          </FormField>
+          <FormField label="State" htmlFor="state">
+            <Input id="state" value={form.state}
+              onChange={(e) => set('state', e.target.value)} placeholder="e.g. Tamil Nadu" />
+          </FormField>
+          <FormField label="PIN code" htmlFor="pincode" error={errors.pincode}>
+            <Input id="pincode" value={form.pincode} inputMode="numeric" maxLength={6}
+              onChange={(e) => set('pincode', e.target.value.replace(/\D/g, ''))}
+              placeholder="639001" />
+          </FormField>
+        </div>
+
+        {/* "W/o, D/o, S/o" — the relation line every Indian registration form has,
+            and Form F field 5 asks for by name. Optional here so a walk-in is not
+            held up; the statutory record is where it becomes compulsory. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <FormField label="Relation" htmlFor="relation_type">
+            <Select id="relation_type" value={form.relation_type}
+              onChange={(e) => set('relation_type', e.target.value)}>
+              <option value="">—</option>
+              <option value="husband">W/o — Wife of</option>
+              <option value="father">D/o or S/o — Child of (father)</option>
+              <option value="mother">Child of (mother)</option>
+              <option value="wife">H/o — Husband of</option>
+            </Select>
+          </FormField>
+          <div className="sm:col-span-2">
+            <FormField label="Name" htmlFor="relation_name">
+              <Input id="relation_name" value={form.relation_name}
+                onChange={(e) => set('relation_name', e.target.value)}
+                placeholder="Husband's / father's name" />
+            </FormField>
+          </div>
+        </div>
 
         <FormField label="Allergies" htmlFor="allergies"
           hint="Drug allergies, food allergies, environmental (comma-separated)">

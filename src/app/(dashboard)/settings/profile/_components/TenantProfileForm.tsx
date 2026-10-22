@@ -11,7 +11,7 @@ function previewPrefix(code: string, slug: string): string {
   return (src.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()) || 'HOSP'
 }
 
-type Field = { key: keyof Omit<TenantProfile, 'tenant_id' | 'updated_at' | 'logo_url'>; label: string; placeholder?: string }
+type Field = { key: keyof Omit<TenantProfile, 'tenant_id' | 'updated_at' | 'logo_url'>; label: string; placeholder?: string; type?: 'text' | 'date' }
 
 const SECTIONS: { title: string; fields: Field[] }[] = [
   {
@@ -50,6 +50,20 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
       { key: 'blood_bank_license', label: 'Blood Bank Licence No.', placeholder: 'e.g. BB/TN/2024/00123 (optional)' },
     ],
   },
+  {
+    // Printed onto Form F and onto every monthly PC&PNDT return. The name on
+    // the certificate is often not the trading name, and the form must carry
+    // the registered one — so it is asked for separately rather than assumed.
+    title: 'PC&PNDT (scan centre)',
+    fields: [
+      { key: 'pcpndt_reg_no', label: 'PC&PNDT Registration No.', placeholder: 'As printed on the certificate (optional)' },
+      { key: 'pcpndt_registered_name', label: 'Registered Name', placeholder: 'The name on the PC&PNDT certificate' },
+      { key: 'pcpndt_registered_address', label: 'Registered Address', placeholder: 'Address as registered under the Act' },
+      { key: 'pcpndt_valid_upto', label: 'Valid Up To', type: 'date' },
+      { key: 'pcpndt_reporting_person_name', label: 'Reporting Person', placeholder: 'Who signs the monthly return' },
+      { key: 'pcpndt_reporting_person_phone', label: 'Reporting Person Phone', placeholder: '10-digit mobile' },
+    ],
+  },
 ]
 
 type FormValues = Record<string, string>
@@ -60,6 +74,8 @@ function initValues(profile: TenantProfile | null): FormValues {
     'address_line1', 'address_line2', 'city', 'state', 'pincode',
     'phone1', 'phone2', 'email', 'website', 'emergency_contact',
     'cin_no', 'gst_no', 'blood_bank_license',
+    'pcpndt_reg_no', 'pcpndt_registered_name', 'pcpndt_registered_address',
+    'pcpndt_valid_upto', 'pcpndt_reporting_person_name', 'pcpndt_reporting_person_phone',
   ]
   const out: FormValues = {}
   for (const k of keys) out[k] = (profile?.[k] as string | null) ?? ''
@@ -231,11 +247,14 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
         <GlassCard key={section.title} className="p-6">
           <p className="text-sm font-semibold mb-4" style={{ color: '#0F172A' }}>{section.title}</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-            {section.fields.map(({ key, label, placeholder }) => (
+            {section.fields.map(({ key, label, placeholder, type }) => (
               <div key={key}>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>{label}</label>
                 <input
-                  type="text"
+                  // A real date input, because this one is a date column: a
+                  // mistyped string would otherwise reach Postgres and come
+                  // back as a cast error nobody can act on.
+                  type={type ?? 'text'}
                   value={values[key] ?? ''}
                   placeholder={placeholder}
                   onChange={(e) => set(key, e.target.value)}

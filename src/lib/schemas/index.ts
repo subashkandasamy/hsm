@@ -38,6 +38,21 @@ const PatientFields = z.object({
     .pipe(z.string().regex(/^(\+91)?[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number')),
   email: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  // Who the patient is "of" — Form F field 5 asks for the husband's, wife's,
+  // father's or mother's name, and the Tamil Nadu summary writes the same
+  // thing as W/o, D/o, S/o. An ordinary Indian registration field, so it is
+  // typed once here rather than again on every scan.
+  relation_type: z.enum(['husband', 'wife', 'father', 'mother']).nullable().optional(),
+  relation_name: z.string().max(200).nullable().optional(),
+  // District and pincode are the two parts of an address a PC&PNDT Appropriate
+  // Authority actually checks — a woman travelling across district lines for a
+  // scan is the pattern the Act exists to notice. The rest stays free text.
+  state: z.string().max(60).nullable().optional(),
+  district: z.string().max(60).nullable().optional(),
+  pincode: z.string()
+    .transform((v) => (v ?? '').replace(/\s/g, ''))
+    .pipe(z.string().regex(/^[1-9][0-9]{5}$/, 'Enter a valid 6-digit PIN code'))
+    .nullable().optional(),
   blood_group: z.string().nullable().optional(),
   allergies: z.string().nullable().optional(),
   emergency_contact_name: z.string().nullable().optional(),
