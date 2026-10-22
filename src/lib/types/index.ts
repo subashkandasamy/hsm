@@ -1364,6 +1364,11 @@ export type Permission =
   | 'emergency:read' | 'emergency:register' | 'emergency:triage'
   | 'lab:read' | 'lab:order' | 'lab:process' | 'lab:verify' | 'lab:manage'
   | 'radiology:read' | 'radiology:order' | 'radiology:process' | 'radiology:verify' | 'radiology:manage'
+  // Deliberately narrower than radiology. A Form F holds a woman's name,
+  // address, reproductive history and the sex of each of her living children
+  // — the exact dataset a sex-determination racket needs. Being able to look
+  // up an X-ray should not get you that.
+  | 'pcpndt:record' | 'pcpndt:report'
   | 'pharmacy:read' | 'pharmacy:dispense' | 'pharmacy:manage'
   | 'ot:read' | 'ot:schedule' | 'ot:record' | 'ot:manage'
   | 'bloodbank:read' | 'bloodbank:manage' | 'bloodbank:request' | 'bloodbank:issue' | 'bloodbank:screen' | 'bloodbank:transfuse'
