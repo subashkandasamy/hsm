@@ -149,6 +149,10 @@ export const NAV_CONFIG: NavGroup[] = [
       // Sits beside radiology because that is where the scans are, but behind
       // its own permission because the register holds far more than a scan does.
       { label: 'Form F (PC&PNDT)',  href: '/pcpndt',    icon: 'ShieldCheck',  requiredPermission: 'pcpndt:record',   moduleKey: 'radiology' },
+      // A separate Act and a separate return, so a separate entry rather than
+      // a tab — a hospital that does no terminations should not have to learn
+      // that this is hidden inside the scan register.
+      { label: 'MTP Register',      href: '/pcpndt/mtp', icon: 'ClipboardList', requiredPermission: 'pcpndt:record',  moduleKey: 'radiology' },
       { label: 'Pharmacy',          href: '/pharmacy',  icon: 'Pill',         requiredPermission: 'pharmacy:read',   moduleKey: 'pharmacy' },
       { label: 'Operation Theatre', href: '/ot',        icon: 'Scissors',     requiredPermission: 'ot:read',         moduleKey: 'ot' },
       { label: 'Blood Bank',        href: '/blood',     icon: 'Droplets',     requiredPermission: 'bloodbank:read',  moduleKey: 'bloodbank' },

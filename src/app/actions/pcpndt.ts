@@ -577,3 +577,166 @@ export async function getMtpDrugStatus(month: string): Promise<MtpDrugStatusRow[
   if (error) { console.error('[getMtpDrugStatus]', error.message); return [] }
   return (data ?? []) as MtpDrugStatusRow[]
 }
+
+// ── MTP register ────────────────────────────────────────────────────────────
+
+export interface MtpListRow {
+  id: string
+  serial_no: string
+  status: string
+  patient_name: string | null
+  procedure_date: string | null
+  gestation_weeks: number | null
+  performed_by_name: string | null
+  method: string | null
+}
+
+/**
+ * Open an MTP record, pre-filled from the pregnancy that is being terminated.
+ *
+ * The obstetric history matters more here than anywhere else in the product.
+ * Report IV asks for G, P, L, A and for the living children split by sex,
+ * because the question the Act is really asking is whether terminations
+ * cluster among women who already have daughters. Copying those numbers off
+ * the record rather than retyping them is both quicker and harder to fudge.
+ */
+export async function startMtp(input: {
+  patient_id: string
+  admission_id?: string | null
+}): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  const supabase = await createClient()
+  const [{ data: patient }, { data: anc }, { data: children }] = await Promise.all([
+    supabase.from('patients')
+      .select('id, full_name, dob, gender, phone, address, district, state, pincode, relation_type, relation_name')
+      .eq('id', input.patient_id).maybeSingle(),
+    supabase.from('anc_records')
+      .select('lmp, gravida, para, living, abortions')
+      .eq('patient_id', input.patient_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('patient_children')
+      .select('sex').eq('patient_id', input.patient_id).eq('is_living', true),
+  ])
+
+  if (!patient) return { success: false, error: 'That patient no longer exists' }
+  if (patient.gender !== 'female') {
+    return { success: false, error: 'Check the patient — an MTP record belongs to a pregnant woman' }
+  }
+
+  const { data: serial, error: serialErr } = await supabase.rpc('get_next_mtp_no')
+  if (serialErr || !serial) return { success: false, error: 'Could not allocate an MTP number' }
+
+  const kids = children ?? []
+  const age = patient.dob
+    ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
+    : null
+
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('mtp_records').insert({
+    id,
+    tenant_id: actor.tenant_id,
+    serial_no: serial as string,
+    status: 'draft',
+    patient_id: patient.id,
+    patient_name: patient.full_name,
+    patient_age_years: age,
+    relation_type: patient.relation_type ?? null,
+    relation_name: patient.relation_name ?? null,
+    address_text: patient.address ?? null,
+    district: patient.district ?? null,
+    state: patient.state ?? null,
+    pincode: patient.pincode ?? null,
+    contact_no: patient.phone ?? null,
+    lmp: anc?.lmp ?? null,
+    gravida: anc?.gravida ?? null,
+    para: anc?.para ?? null,
+    living: anc?.living ?? kids.length,
+    abortions: anc?.abortions ?? null,
+    living_male: kids.filter((c) => c.sex === 'male').length,
+    living_female: kids.filter((c) => c.sex === 'female').length,
+    admission_id: input.admission_id ?? null,
+    created_by: actor.id,
+  })
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'create', 'mtp_record', id, { serial_no: serial, patient_id: patient.id })
+  revalidatePath('/pcpndt/mtp')
+  return { success: true, id }
+}
+
+export async function saveMtpDraft(id: string, patch: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  const supabase = await createClient()
+  const { data: cur } = await supabase
+    .from('mtp_records').select('status, serial_no').eq('id', id).maybeSingle()
+  if (!cur) return { success: false, error: 'That record no longer exists' }
+  if (cur.status !== 'draft') {
+    return { success: false, error: `${cur.serial_no} is already complete` }
+  }
+
+  const { error } = await supabase.from('mtp_records').update(patch).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  revalidatePath('/pcpndt/mtp')
+  return { success: true }
+}
+
+/** The database decides whether it may be completed, and says what is missing. */
+export async function completeMtp(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('mtp_records').update({ status: 'complete', completed_by: actor.id }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'complete', 'mtp_record', id, {})
+  revalidatePath('/pcpndt/mtp')
+  return { success: true }
+}
+
+/** Reads are audited, for the same reason Form F reads are. */
+export async function listMtp(month?: string): Promise<MtpListRow[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  const supabase = await createClient()
+  let q = supabase
+    .from('mtp_records')
+    .select('id, serial_no, status, patient_name, procedure_date, gestation_weeks, performed_by_name, method')
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  if (month) {
+    const start = `${month}-01`
+    const [y, m] = month.split('-').map(Number)
+    const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+    // Same reasoning as Form F: a draft has no procedure date yet, and hiding
+    // it would hide exactly the record that still needs finishing.
+    q = q.or(
+      `and(procedure_date.gte.${start},procedure_date.lt.${end}),`
+      + `and(procedure_date.is.null,created_at.gte.${start},created_at.lt.${end})`,
+    )
+  }
+
+  const { data, error } = await q
+  if (error) { console.error('[listMtp]', error.message); return [] }
+  await logAudit(actor.id, 'read', 'mtp_register', month ?? 'all', { rows: (data ?? []).length })
+  return (data ?? []) as MtpListRow[]
+}
+
+export async function getMtp(id: string): Promise<Record<string, unknown> | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data } = await supabase.from('mtp_records').select('*').eq('id', id).maybeSingle()
+  if (!data) return null
+  await logAudit(actor.id, 'read', 'mtp_record', id, { serial_no: data.serial_no })
+  return data as Record<string, unknown>
+}
