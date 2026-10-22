@@ -355,4 +355,5 @@ export const SHOTS: Shot[] = [
   },
   // ── PC&PNDT ────────────────────────────────────────────────────────────────
   { name: 'pcpndt-register', path: '/pcpndt', selector: 'main', wait: 3000 },
+  { name: 'pcpndt-returns', path: '/pcpndt/returns', selector: 'main', wait: 3500 },
 ]

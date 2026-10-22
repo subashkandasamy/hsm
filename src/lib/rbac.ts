@@ -153,6 +153,8 @@ export const NAV_CONFIG: NavGroup[] = [
       // a tab — a hospital that does no terminations should not have to learn
       // that this is hidden inside the scan register.
       { label: 'MTP Register',      href: '/pcpndt/mtp', icon: 'ClipboardList', requiredPermission: 'pcpndt:record',  moduleKey: 'radiology' },
+      // Behind pcpndt:report, so it only appears for whoever actually files.
+      { label: 'Monthly Returns',   href: '/pcpndt/returns', icon: 'FileText',  requiredPermission: 'pcpndt:report',  moduleKey: 'radiology' },
       { label: 'Pharmacy',          href: '/pharmacy',  icon: 'Pill',         requiredPermission: 'pharmacy:read',   moduleKey: 'pharmacy' },
       { label: 'Operation Theatre', href: '/ot',        icon: 'Scissors',     requiredPermission: 'ot:read',         moduleKey: 'ot' },
       { label: 'Blood Bank',        href: '/blood',     icon: 'Droplets',     requiredPermission: 'bloodbank:read',  moduleKey: 'bloodbank' },

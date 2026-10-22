@@ -740,3 +740,153 @@ export async function getMtp(id: string): Promise<Record<string, unknown> | null
   await logAudit(actor.id, 'read', 'mtp_record', id, { serial_no: data.serial_no })
   return data as Record<string, unknown>
 }
+
+// ── The monthly pack ────────────────────────────────────────────────────────
+
+export interface MonthlyReturn {
+  month: string
+  report_i: {
+    forms_f_obtained: number
+    scans: Record<string, number>
+    scans_unmapped: number
+    invasive_procedures: Record<string, number>
+    additional_tests: Record<string, number>
+    mtp_advised: number
+  }
+  report_iii: {
+    live_male: number; live_female: number; live_total: number
+    intra_uterine_deaths: number
+    mothers_primi: number; mothers_one_daughter: number
+    mothers_two_plus_daughters: number; mothers_other: number; mothers_total: number
+    abortions_mtp: number
+  }
+  readiness: {
+    form_f_drafts: number
+    mtp_drafts: number
+    scans_unmapped_studies: number
+    tracked_drugs: number
+    referrals: number
+  }
+}
+
+/**
+ * Everything the monthly pack is counted from, for one month.
+ *
+ * Reports I and III are the two an Appropriate Authority actually analyses —
+ * the others are registers it audits against. Report I shows whether the
+ * antenatal scan count is out of line; Report III shows whether women who
+ * already have daughters are disproportionately not delivering girls. Both are
+ * computed from the registers and neither is typed anywhere, which is the only
+ * way the numbers mean anything.
+ */
+export async function getMonthlyReturn(month: string): Promise<MonthlyReturn | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('get_monthly_return_summary', { p_month: month })
+  if (error) { console.error('[getMonthlyReturn]', error.message); return null }
+
+  await logAudit(actor.id, 'read', 'pcpndt_monthly_return', month, {})
+  return data as unknown as MonthlyReturn
+}
+
+export interface AncReferralRow {
+  id: string
+  patient_name: string | null
+  referred_on: string
+  referred_to_doctor: string | null
+  referred_to_institution: string | null
+  reason: string | null
+}
+
+export async function listAncReferrals(month?: string): Promise<AncReferralRow[]> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  let q = supabase
+    .from('anc_referrals_out')
+    .select('id, patient_name, referred_on, referred_to_doctor, referred_to_institution, reason')
+    .order('referred_on', { ascending: false }).limit(300)
+  if (month) {
+    const start = `${month}-01`
+    const [y, m] = month.split('-').map(Number)
+    const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+    q = q.gte('referred_on', start).lt('referred_on', end)
+  }
+  const { data, error } = await q
+  if (error) { console.error('[listAncReferrals]', error.message); return [] }
+  return (data ?? []) as AncReferralRow[]
+}
+
+/**
+ * Record that an antenatal patient was sent elsewhere.
+ *
+ * The form asks for the doctor AND the institution, and for the qualification
+ * of whoever referred her — "sent to a bigger hospital" is not a record of
+ * anything, and a referral that cannot be traced is the gap the register
+ * exists to close.
+ */
+export async function addAncReferral(input: {
+  patient_id: string
+  referred_on: string
+  referred_to_doctor: string
+  referred_to_institution: string
+  referred_to_address?: string | null
+  reason: string
+  referred_by_name?: string | null
+  referred_by_qualification?: string | null
+  op_no?: string | null
+  ip_no?: string | null
+}): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  if (!input.referred_to_institution.trim()) {
+    return { success: false, error: 'Which hospital or centre was she referred to?' }
+  }
+  if (!input.reason.trim()) return { success: false, error: 'Why was she referred?' }
+
+  const supabase = await createClient()
+  const [{ data: patient }, { data: anc }] = await Promise.all([
+    supabase.from('patients')
+      .select('full_name, relation_name, address, phone').eq('id', input.patient_id).maybeSingle(),
+    supabase.from('anc_records')
+      .select('id, gravida, para, living, abortions')
+      .eq('patient_id', input.patient_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+
+  const { error } = await supabase.from('anc_referrals_out').insert({
+    tenant_id: actor.tenant_id,
+    patient_id: input.patient_id,
+    anc_id: anc?.id ?? null,
+    patient_name: patient?.full_name ?? null,
+    relation_name: patient?.relation_name ?? null,
+    address_text: patient?.address ?? null,
+    contact_no: patient?.phone ?? null,
+    gravida: anc?.gravida ?? null,
+    para: anc?.para ?? null,
+    living: anc?.living ?? null,
+    abortions: anc?.abortions ?? null,
+    op_no: input.op_no ?? null,
+    ip_no: input.ip_no ?? null,
+    referred_on: input.referred_on,
+    referred_to_doctor: input.referred_to_doctor.trim() || null,
+    referred_to_institution: input.referred_to_institution.trim(),
+    referred_to_address: input.referred_to_address ?? null,
+    reason: input.reason.trim(),
+    // getActorProfile carries id, role and tenant only — the referring
+    // doctor's name is asked for on the form rather than guessed from the
+    // session, since the person typing is often not the person referring.
+    referred_by_name: input.referred_by_name ?? null,
+    referred_by_qualification: input.referred_by_qualification ?? null,
+    created_by: actor.id,
+  })
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'create', 'anc_referral', input.patient_id, {
+    to: input.referred_to_institution,
+  })
+  revalidatePath('/pcpndt/returns')
+  return { success: true }
+}
