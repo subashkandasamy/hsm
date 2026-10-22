@@ -214,6 +214,12 @@ export async function startFormF(input: {
     pincode: patient.pincode ?? null,
     contact_no: patient.phone ?? null,
     lmp: anc?.lmp ?? null,
+    // Report II quotes the full obstetric history per scan, not just the
+    // living children Form F field 4 asks for. Frozen here with everything
+    // else, so a reprint years later still says what was true on the day.
+    gravida: anc?.gravida ?? null,
+    para: anc?.para ?? null,
+    abortions: anc?.abortions ?? null,
     radiology_order_id: input.radiology_order_id ?? null,
     created_by: actor.id,
   })
@@ -889,4 +895,48 @@ export async function addAncReferral(input: {
   })
   revalidatePath('/pcpndt/returns')
   return { success: true }
+}
+
+/**
+ * Full Form F rows for Report II, which is a register rather than a summary —
+ * one line per scan, so it runs to several pages in a busy month.
+ *
+ * Completed forms only. A draft is not something to put in front of an
+ * Appropriate Authority.
+ */
+export async function listFormFForReturn(month: string): Promise<Record<string, unknown>[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+  const supabase = await createClient()
+  const start = `${month}-01`
+  const [y, m] = month.split('-').map(Number)
+  const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+
+  const { data, error } = await supabase
+    .from('form_f_records').select('*')
+    .eq('status', 'complete')
+    .gte('procedure_date', start).lt('procedure_date', end)
+    .order('procedure_date').order('serial_no')
+  if (error) { console.error('[listFormFForReturn]', error.message); return [] }
+  await logAudit(actor.id, 'read', 'form_f_return', month, { rows: (data ?? []).length })
+  return (data ?? []) as Record<string, unknown>[]
+}
+
+/** Full MTP rows for Report IV, same shape of thing. */
+export async function listMtpForReturn(month: string): Promise<Record<string, unknown>[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+  const supabase = await createClient()
+  const start = `${month}-01`
+  const [y, m] = month.split('-').map(Number)
+  const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+
+  const { data, error } = await supabase
+    .from('mtp_records').select('*')
+    .eq('status', 'complete')
+    .gte('procedure_date', start).lt('procedure_date', end)
+    .order('procedure_date').order('serial_no')
+  if (error) { console.error('[listMtpForReturn]', error.message); return [] }
+  await logAudit(actor.id, 'read', 'mtp_return', month, { rows: (data ?? []).length })
+  return (data ?? []) as Record<string, unknown>[]
 }

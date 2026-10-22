@@ -187,12 +187,15 @@ export default function MonthlyReturns({
           seal blocks where they belong. Print, sign, seal and e-mail as usual.
         </p>
         <div className="flex flex-wrap gap-2">
+          <PrintLink report="i"   month={month} label="Report I — scans" />
+          <PrintLink report="ii"  month={month} label="Report II — Form F register" />
           <PrintLink report="iii" month={month} label="Report III — deliveries" />
+          <PrintLink report="iv"  month={month} label="Report IV — MTP cases" />
           <PrintLink report="v"   month={month} label="Report V — MTP drugs" />
         </div>
         <p className="text-xs mt-3" style={{ color: '#94A3B8' }}>
-          Reports I, II and IV print from their own registers and are not yet laid out —
-          the figures above are what goes on those sheets meanwhile.
+          Reports II and IV are registers, so they run to several pages in a busy month.
+          Completed records only — a draft is not something to put in front of an authority.
         </p>
       </GlassCard>
     </div>

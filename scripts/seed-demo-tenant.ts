@@ -954,6 +954,11 @@ async function createFormF(tenantId: string, s: Seeded): Promise<void> {
       clinic_reg_no: 'PNDT/KRR/2024/07',
       patient_name: a.name, patient_age_years: 26,
       living_children_total: 1, relation_type: 'husband', relation_name: 'Senthil Kumar',
+      gravida: 2, para: 1, abortions: 0,
+      // The snapshot, not just the count — Report II prints MC & FC from it,
+      // and a total of 1 beside "0 & 0" is the sort of inconsistency a demo
+      // should not be teaching anybody to produce.
+      children_snapshot: [{ sex: 'female', age_years: 4 }],
       address_text: '12 Gandhi Street, Karur', district: 'Karur', state: 'Tamil Nadu',
       pincode: '639001', contact_no: '9999900001',
       referred_by_name: 'Dr. Lakshmi Iyer', referred_by_address: 'Uyirly Demo Hospital',
@@ -978,6 +983,8 @@ async function createFormF(tenantId: string, s: Seeded): Promise<void> {
       clinic_reg_no: 'PNDT/KRR/2024/07',
       patient_name: b.name, patient_age_years: 31,
       living_children_total: 2, relation_type: 'husband', relation_name: 'Ravi Chandran',
+      gravida: 3, para: 2, abortions: 0,
+      children_snapshot: [{ sex: 'female', age_years: 7 }, { sex: 'female', age_years: 3 }],
       address_text: '45 Bazaar Street, Karur', district: 'Karur', state: 'Tamil Nadu',
       pincode: '639002', contact_no: '9999900002', lmp: '2026-08-10',
       // Named even though they are false: PostgREST squares up the column set

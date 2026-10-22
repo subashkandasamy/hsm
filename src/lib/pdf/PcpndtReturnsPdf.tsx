@@ -226,4 +226,267 @@ export function ReportVPdf({ data }: { data: ReturnsData }) {
   )
 }
 
+
+// ── Report I ────────────────────────────────────────────────────────────────
+
+const SCAN_ORDER_MALE: Array<[string, string]> = [
+  ['male_abdomen', 'Abdomen'],
+  ['male_cardiac', 'Cardiac'],
+]
+const SCAN_ORDER_FEMALE: Array<[string, string]> = [
+  ['female_general_abdomen', 'General Abdomen'],
+  ['female_antenatal', 'Antenatal'],
+  ['female_preconception', 'Pre-conception i.e. follicular studies, uterus studies'],
+  ['female_transvaginal', 'Trans vaginal studies'],
+  ['female_other', 'Other Ultrasound Studies'],
+]
+const OTHER_PROCEDURES: Array<[string, string, 'invasive' | 'test']> = [
+  ['amniocentesis', 'Amniocentesis', 'invasive'],
+  ['cvs', 'Chorionic villi biopsy', 'invasive'],
+  ['fetal_biopsy', 'Foetal skin biopsy', 'invasive'],
+  ['cordocentesis', 'Cordocentesis', 'invasive'],
+  ['other', 'Any Other', 'invasive'],
+  ['chromosomal', 'Chromosomal Studies', 'test'],
+  ['biochemical', 'Bio-Chemical Studies', 'test'],
+  ['molecular', 'Molecular Studies', 'test'],
+]
+
+export function ReportIPdf({ data }: { data: ReturnsData }) {
+  const p = data.profile
+  const r = data.reportI
+  const n = (k: string) => String(r.scans[k] ?? 0)
+  const other = (code: string, kind: 'invasive' | 'test') =>
+    String((kind === 'invasive' ? r.invasive_procedures : r.additional_tests)[code] ?? 0)
+
+  return (
+    <A4 title={`Report I ${data.month}`} landscape>
+      <View style={f.page}>
+        <Text style={{ fontSize: 9.5, textAlign: 'center' }}>
+          PRE-CONCEPTION AND PRE-NATAL DIAGNOSTIC TECHNIQUES (REGULATION AND PREVENTION OF MISUSE) ACT 1994
+        </Text>
+        <Text style={{ fontSize: 9, textAlign: 'center', marginTop: 4, marginBottom: 12 }}>
+          MONTHLY REPORT TO BE SUBMITTED TO THE APPROPRIATE AUTHORITY FOR THE MONTH OF{' '}
+          {monthName(data.month).toUpperCase()}
+        </Text>
+
+        <View style={f.headRow}>
+          <Text style={f.headCell}>No. of Form-F obtained : {r.forms_f_obtained}</Text>
+          <Text style={f.headCell}>
+            Registration No.: {p?.pcpndt_reg_no ?? ''}
+            {p?.pcpndt_valid_upto ? `    Valid up to : ${fmtDate(p.pcpndt_valid_upto)}` : ''}
+          </Text>
+        </View>
+        <View style={{ ...f.headRow, marginBottom: 10 }}>
+          <Text style={f.headCell}>Contact Phone No. {data.reportingPhone ?? p?.phone1 ?? ''}</Text>
+          <Text style={f.headCell}>Email ID: {p?.email ?? ''}</Text>
+        </View>
+
+        <Text style={{ fontSize: 9, marginBottom: 3 }}>Ultrasound Scan Procedure</Text>
+        <View style={f.table}>
+          <View style={f.tr}>
+            <Cell head width={62}>Details</Cell>
+            {SCAN_ORDER_MALE.map(([, label]) => <Cell head key={label} flex={1}>{`Male — ${label}`}</Cell>)}
+            {SCAN_ORDER_FEMALE.map(([, label]) => <Cell head key={label} flex={1}>{`Female — ${label}`}</Cell>)}
+          </View>
+          <View style={f.tr}>
+            <Cell width={62}>No. of Cases</Cell>
+            {SCAN_ORDER_MALE.map(([k]) => <Cell key={k} flex={1} align="center">{n(k)}</Cell>)}
+            {SCAN_ORDER_FEMALE.map(([k]) => <Cell key={k} flex={1} align="center">{n(k)}</Cell>)}
+          </View>
+        </View>
+
+        <Text style={{ fontSize: 9, marginTop: 12, marginBottom: 3 }}>Other Procedure Advised</Text>
+        <View style={f.table}>
+          <View style={f.tr}>
+            {OTHER_PROCEDURES.map(([, label]) => <Cell head key={label} flex={1}>{label}</Cell>)}
+            <Cell head flex={1}>No. of MTP Advised</Cell>
+          </View>
+          <View style={f.tr}>
+            {OTHER_PROCEDURES.map(([code, label, kind]) =>
+              <Cell key={label} flex={1} align="center">{other(code, kind)}</Cell>)}
+            <Cell flex={1} align="center">{String(r.mtp_advised)}</Cell>
+          </View>
+        </View>
+
+        <View style={f.footRow}>
+          <Text style={f.footCell}>Date :</Text>
+          <Text style={{ ...f.footCell, textAlign: 'right' }}>
+            Name &amp; Signature and Regn. No. of the{'\n'}Radiologist / Sonologist / Registered Medical Practitioner
+          </Text>
+        </View>
+        <Text style={{ fontSize: 9, marginTop: 20 }}>Seal :</Text>
+        <Text style={{ ...f.note, marginTop: 16 }}>
+          Note : Report should be submitted within 5th day of every month to the concerned appropriate authority.
+        </Text>
+      </View>
+    </A4>
+  )
+}
+
+// ── Report II — a register, so it runs to several pages ────────────────────
+
+/**
+ * G, P, L, A as the summary writes it.
+ *
+ * The two registers name the living count differently — Form F calls it
+ * living_children_total because field 4 is about children rather than
+ * obstetric history, while the MTP record calls it living. Both are read here,
+ * because a dash in this column is a blank column on a statutory return.
+ */
+const gpla = (r: Record<string, unknown>) =>
+  [r.gravida, r.para, r.living ?? r.living_children_total, r.abortions]
+    .map((v) => (v == null ? '-' : String(v))).join(', ')
+
+export function ReportIIPdf({ data, rows }: { data: ReturnsData; rows: Record<string, unknown>[] }) {
+  const p = data.profile
+  const addr = (r: Record<string, unknown>) =>
+    [r.address_text, r.district, r.state, r.pincode].filter(Boolean).join(', ')
+
+  return (
+    <A4 title={`Report II ${data.month}`} landscape>
+      <View style={f.page}>
+        <Text style={f.reportNo}>Report No &ndash; II</Text>
+        <Text style={f.title}>Details of Form - F</Text>
+        <View style={f.headRow}>
+          <Text style={f.headCell}>
+            Name &amp; Address of the Scan Centre : {p?.pcpndt_registered_name || p?.name || ''}
+          </Text>
+          <Text style={f.headCell}>Registration No. : {p?.pcpndt_reg_no ?? ''}</Text>
+        </View>
+        <View style={{ ...f.headRow, marginBottom: 8 }}>
+          <Text style={f.headCell}>Month : {monthName(data.month)}</Text>
+          <Text style={f.headCell}>Total No. of Form-F obtained : {rows.length}</Text>
+        </View>
+
+        <View style={f.table}>
+          <View style={f.tr} fixed>
+            <Cell head width={24}>Sl. No</Cell>
+            <Cell head width={48}>Date</Cell>
+            <Cell head width={62}>Sl. No. of Form-F</Cell>
+            <Cell head flex={1.9}>Name, (W/o, D/o, S/o), Full Address &amp; Contact No.</Cell>
+            <Cell head width={40}>Age</Cell>
+            <Cell head width={48}>LMP</Cell>
+            <Cell head width={56}>G, P, L, A</Cell>
+            <Cell head width={44}>MC &amp; FC</Cell>
+            <Cell head flex={1.2}>Reason / Purpose for the USG Procedure</Cell>
+            <Cell head flex={1.1}>Referred by whom</Cell>
+            <Cell head width={40}>GA</Cell>
+            <Cell head flex={1.2}>Result</Cell>
+            <Cell head width={56}>MTP Advised</Cell>
+          </View>
+          {rows.length === 0 ? (
+            <View style={f.tr}><Cell flex={1} align="center">No scans recorded for this month</Cell></View>
+          ) : rows.map((r, i) => {
+            const kids = (r.children_snapshot as Array<{ sex: string }> | null) ?? []
+            const mc = kids.filter((k) => k.sex === 'male').length
+            const fc = kids.filter((k) => k.sex === 'female').length
+            const indications = ((r.usg_indications as string[] | null) ?? []).join(', ')
+            return (
+              <View style={f.tr} key={String(r.id)} wrap={false}>
+                <Cell width={24} align="center">{String(i + 1)}</Cell>
+                <Cell width={48}>{fmtDate(r.procedure_date as string)}</Cell>
+                <Cell width={62}>{String(r.serial_no ?? '')}</Cell>
+                <Cell flex={1.9}>
+                  {`${r.patient_name ?? ''}, ${relationShort(r.relation_type as string)} ${r.relation_name ?? ''}, ${addr(r)}, ${r.contact_no ?? ''}`}
+                </Cell>
+                <Cell width={40} align="center">{r.patient_age_years == null ? '-' : String(r.patient_age_years)}</Cell>
+                <Cell width={48}>{r.lmp ? fmtDate(r.lmp as string) : '-'}</Cell>
+                <Cell width={56} align="center">{gpla(r)}</Cell>
+                <Cell width={44} align="center">{`${mc} & ${fc}`}</Cell>
+                <Cell flex={1.2}>{indications || '-'}</Cell>
+                <Cell flex={1.1}>{String(r.referred_by_name ?? (r.is_self_referral ? 'Self-referral' : '-'))}</Cell>
+                <Cell width={40} align="center">
+                  {r.weeks_of_pregnancy == null ? '-' : `${r.weeks_of_pregnancy}w`}
+                </Cell>
+                <Cell flex={1.2}>{String(r.result_text ?? '-')}</Cell>
+                <Cell width={56} align="center">{mtpAdvised(r.mtp_indication as string | null)}</Cell>
+              </View>
+            )
+          })}
+        </View>
+
+        <FormFoot />
+      </View>
+    </A4>
+  )
+}
+
+// ── Report IV ───────────────────────────────────────────────────────────────
+
+export function ReportIVPdf({ data, rows }: { data: ReturnsData; rows: Record<string, unknown>[] }) {
+  return (
+    <A4 title={`Report IV ${data.month}`} landscape>
+      <View style={f.page}>
+        <Text style={f.reportNo}>Report No &ndash; IV</Text>
+        <Text style={f.title}>Details of MTP / Abortion Cases</Text>
+        <FormHead data={data} hospitalLabel="Name &amp; Address of the Private Hospital" />
+
+        <View style={f.table}>
+          <View style={f.tr} fixed>
+            <Cell head width={24}>Sl. No</Cell>
+            <Cell head flex={1.9}>Name, Husband&rsquo;s Name &amp; Complete Postal Address of the Pregnant Women</Cell>
+            <Cell head width={62}>Contact Number</Cell>
+            <Cell head width={58}>G, P, L, A</Cell>
+            <Cell head width={58}>Living Children MC, FC, T</Cell>
+            <Cell head width={48}>LMP</Cell>
+            <Cell head width={50}>Weeks (GA per USG)</Cell>
+            <Cell head flex={1.1}>IP No &amp; Date of Admission / Discharge</Cell>
+            <Cell head flex={1}>Dr.&rsquo;s Name, who done the procedure</Cell>
+            <Cell head flex={1.2}>Reason for MTP / Abortion</Cell>
+          </View>
+          {rows.length === 0 ? (
+            <View style={f.tr}><Cell flex={1} align="center">No terminations recorded for this month</Cell></View>
+          ) : rows.map((r, i) => {
+            const mc = (r.living_male as number | null) ?? 0
+            const fc = (r.living_female as number | null) ?? 0
+            return (
+              <View style={f.tr} key={String(r.id)} wrap={false}>
+                <Cell width={24} align="center">{String(i + 1)}</Cell>
+                <Cell flex={1.9}>
+                  {`${r.patient_name ?? ''}, ${r.relation_name ?? ''}, ${[r.address_text, r.district, r.state, r.pincode].filter(Boolean).join(', ')}`}
+                </Cell>
+                <Cell width={62}>{String(r.contact_no ?? '-')}</Cell>
+                <Cell width={58} align="center">{gpla(r)}</Cell>
+                <Cell width={58} align="center">{`${mc}, ${fc}, ${mc + fc}`}</Cell>
+                <Cell width={48}>{r.lmp ? fmtDate(r.lmp as string) : '-'}</Cell>
+                <Cell width={50} align="center">
+                  {r.gestation_weeks == null ? '-' : String(r.gestation_weeks)}
+                </Cell>
+                <Cell flex={1.1}>
+                  {`${r.ip_no ?? '-'}${r.admitted_on ? `, ${fmtDate(r.admitted_on as string)}` : ''}${r.discharged_on ? ` – ${fmtDate(r.discharged_on as string)}` : ''}`}
+                </Cell>
+                <Cell flex={1}>{String(r.performed_by_name ?? '-')}</Cell>
+                <Cell flex={1.2}>{String(r.reason_text ?? '-')}</Cell>
+              </View>
+            )
+          })}
+        </View>
+
+        <FormFoot />
+        <Text style={f.note}>Case sheets are preserved for two years, as the form requires.</Text>
+      </View>
+    </A4>
+  )
+}
+
+/** The form writes the relation as W/o, D/o or S/o rather than spelling it out. */
+function relationShort(t: string | null): string {
+  if (t === 'husband') return 'W/o'
+  if (t === 'father') return 'D/o'
+  if (t === 'mother') return 'C/o'
+  if (t === 'wife') return 'H/o'
+  return ''
+}
+
+/**
+ * The Act expects "NA" written where there is no indication, so the presence
+ * of text is not the test — the same trap that had the register flagging every
+ * compliant form.
+ */
+function mtpAdvised(v: string | null): string {
+  if (!v) return 'Not Advised'
+  const t = v.trim().toLowerCase().replace(/[.\s/]/g, '')
+  return ['na', 'nil', 'no', 'none', 'notapplicable', '-'].includes(t) ? 'Not Advised' : 'Advised'
+}
+
 export { monthName, fmtDate }

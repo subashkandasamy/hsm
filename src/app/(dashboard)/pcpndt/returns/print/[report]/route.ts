@@ -3,8 +3,12 @@ import { redirect } from 'next/navigation'
 import { getActorProfile } from '@/lib/server-utils'
 import { hasPermission } from '@/lib/rbac'
 import { createClient } from '@/lib/supabase/server'
-import { getMonthlyReturn, getMtpDrugStatus } from '@/app/actions/pcpndt'
-import { ReportIIIPdf, ReportVPdf, type ReturnsData } from '@/lib/pdf/PcpndtReturnsPdf'
+import {
+  getMonthlyReturn, getMtpDrugStatus, listFormFForReturn, listMtpForReturn,
+} from '@/app/actions/pcpndt'
+import {
+  ReportIPdf, ReportIIPdf, ReportIIIPdf, ReportIVPdf, ReportVPdf, type ReturnsData,
+} from '@/lib/pdf/PcpndtReturnsPdf'
 import { renderPdfResponse } from '@/lib/pdf/render'
 import type { TenantProfile } from '@/lib/types'
 
@@ -27,10 +31,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
   const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7)
 
   const supabase = await createClient()
-  const [summary, drugs, { data: profile }] = await Promise.all([
+  // Reports II and IV are registers rather than summaries — one line per scan
+  // or per termination — so their rows are fetched only when asked for.
+  const needsForms = report.toLowerCase() === 'ii'
+  const needsMtp   = report.toLowerCase() === 'iv'
+  const [summary, drugs, { data: profile }, formRows, mtpRows] = await Promise.all([
     getMonthlyReturn(month),
     getMtpDrugStatus(month),
     supabase.from('tenant_profiles').select('*').maybeSingle(),
+    needsForms ? listFormFForReturn(month) : Promise.resolve([]),
+    needsMtp ? listMtpForReturn(month) : Promise.resolve([]),
   ])
   if (!summary) return new Response('No register for that month', { status: 404 })
 
@@ -46,7 +56,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
   }
 
   const docs: Record<string, React.ReactElement> = {
+    i:   createElement(ReportIPdf,   { data }),
+    ii:  createElement(ReportIIPdf,  { data, rows: formRows }),
     iii: createElement(ReportIIIPdf, { data }),
+    iv:  createElement(ReportIVPdf,  { data, rows: mtpRows }),
     v:   createElement(ReportVPdf,   { data }),
   }
   const doc = docs[report.toLowerCase()]
