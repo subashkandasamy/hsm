@@ -420,3 +420,160 @@ export async function countIncompleteForMonth(month: string): Promise<number> {
     .gte('form_date', start).lt('form_date', end)
   return count ?? 0
 }
+
+// ── Monthly-return setup ────────────────────────────────────────────────────
+
+export interface ScanBucketRow {
+  id: string
+  name: string
+  modality: string | null
+  body_part: string | null
+  pcpndt_bucket: string | null
+}
+
+/**
+ * Every ultrasound study the hospital offers, with the column of the monthly
+ * scan count it lands in.
+ *
+ * Report I counts all ultrasound, not only the scans that generated a Form F —
+ * it has columns for male abdomen and cardiac work, which no pregnant woman
+ * produces. So the mapping cannot be inferred from the register and has to be
+ * stated once per study.
+ */
+export async function listScanBuckets(): Promise<ScanBucketRow[]> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('radiology_catalog')
+    .select('id, name, modality, body_part, pcpndt_bucket')
+    .order('modality').order('name')
+  if (error) { console.error('[listScanBuckets]', error.message); return [] }
+  return (data ?? []) as ScanBucketRow[]
+}
+
+export async function setScanBucket(id: string, bucket: string | null): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('radiology_catalog').update({ pcpndt_bucket: bucket || null }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'radiology_catalog', id, { pcpndt_bucket: bucket })
+  revalidatePath('/pcpndt/setup')
+  return { success: true }
+}
+
+export interface TrackedDrugRow {
+  id: string
+  drug_master_id: string | null
+  report_label: string
+  opening_qty: number
+  opening_as_of: string
+  is_active: boolean
+}
+
+export async function listTrackedDrugs(): Promise<TrackedDrugRow[]> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('mtp_tracked_drugs')
+    .select('id, drug_master_id, report_label, opening_qty, opening_as_of, is_active')
+    .order('report_label')
+  if (error) { console.error('[listTrackedDrugs]', error.message); return [] }
+  return (data ?? []) as TrackedDrugRow[]
+}
+
+/**
+ * Put a drug on the monthly stock return.
+ *
+ * The opening quantity is the stock the hospital held on the day it starts
+ * counting. It matters more than it looks: every month afterwards walks
+ * forward from it, so a wrong opening is a wrong closing for ever, and the
+ * closing balance is what an inspector compares against the shelf.
+ */
+export async function addTrackedDrug(input: {
+  drug_master_id: string
+  report_label: string
+  opening_qty: number
+  opening_as_of: string
+}): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+
+  if (!input.report_label.trim()) {
+    return { success: false, error: 'What should the report call this drug?' }
+  }
+  if (!Number.isFinite(input.opening_qty) || input.opening_qty < 0) {
+    return { success: false, error: 'Opening stock cannot be negative' }
+  }
+  if (!input.opening_as_of) {
+    return { success: false, error: 'From which date is that opening stock correct?' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('mtp_tracked_drugs').insert({
+    tenant_id: actor.tenant_id,
+    drug_master_id: input.drug_master_id,
+    report_label: input.report_label.trim(),
+    opening_qty: Math.round(input.opening_qty),
+    opening_as_of: input.opening_as_of,
+  })
+  if (error) {
+    // The unique index is per tenant per drug, and "duplicate key" is not a
+    // sentence anybody at a hospital should have to interpret.
+    if (error.code === '23505') return { success: false, error: 'That drug is already on the return' }
+    return { success: false, error: error.message }
+  }
+
+  await logAudit(actor.id, 'create', 'mtp_tracked_drug', input.drug_master_id, {
+    label: input.report_label, opening: input.opening_qty,
+  })
+  revalidatePath('/pcpndt/setup')
+  return { success: true }
+}
+
+export async function removeTrackedDrug(id: string): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+  const supabase = await createClient()
+  const { error } = await supabase.from('mtp_tracked_drugs').delete().eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'delete', 'mtp_tracked_drug', id, {})
+  revalidatePath('/pcpndt/setup')
+  return { success: true }
+}
+
+/** Drugs a hospital might put on the return — searched against the shared catalogue. */
+export async function searchDrugsForReturn(q: string): Promise<Array<{ id: string; name: string }>> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  if (q.trim().length < 2) return []
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('drug_master').select('id, name').ilike('name', `%${q.trim()}%`).limit(20)
+  return (data ?? []) as Array<{ id: string; name: string }>
+}
+
+export interface MtpDrugStatusRow {
+  tracked_id: string
+  report_label: string
+  opening_qty: number
+  purchased_qty: number
+  invoice_refs: string
+  suppliers: string
+  total_qty: number
+  used_qty: number
+  closing_qty: number
+}
+
+/** Report V for one month, computed from what the pharmacy actually did. */
+export async function getMtpDrugStatus(month: string): Promise<MtpDrugStatusRow[]> {
+  await requirePermission((await getActorProfile()).role, 'pcpndt:record')
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('get_mtp_drug_status', { p_month: month })
+  if (error) { console.error('[getMtpDrugStatus]', error.message); return [] }
+  return (data ?? []) as MtpDrugStatusRow[]
+}

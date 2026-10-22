@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { HeartPulse, Plus, Activity } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import LivingChildrenCard from './LivingChildrenCard'
 import Input from '@/components/ui/Input'
 import DateText from '@/components/ui/DateText'
 import {
@@ -90,6 +91,11 @@ export default function ObstetricsTab({ patientId, canWrite }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Who she already has. Above the ANC record on purpose: it is the
+          first thing Form F asks about and the thing the monthly return
+          classifies her by. */}
+      <LivingChildrenCard patientId={patientId} canWrite={canWrite} />
+
       {/* ANC record */}
       <GlassCard className="p-4">
         <div className="flex items-center justify-between mb-3">
