@@ -996,6 +996,20 @@ async function createFormF(tenantId: string, s: Seeded): Promise<void> {
   ]
   ok('2 Form F records (one unfinished)', (await db.from('form_f_records').insert(rows)).error)
 
+  // One drug on the monthly stock return, so Report V has a line and the
+  // dispense trigger has something to recognise. The district form names
+  // brands rather than molecules, hence the label.
+  const { data: dm } = await db.from('drug_batches')
+    .select('drug_master_id').eq('tenant_id', tenantId).not('drug_master_id', 'is', null).limit(1).maybeSingle()
+  if (dm?.drug_master_id) {
+    const { error } = await db.from('mtp_tracked_drugs').insert({
+      id: uuid(), tenant_id: tenantId, drug_master_id: dm.drug_master_id,
+      report_label: 'Tab. Combokit', opening_qty: 12, opening_as_of: '2026-09-01',
+    })
+    if (error) console.warn(`  ! MTP drug tracking skipped: ${error.message}`)
+    else console.log('  ✓ 1 drug on the MTP stock return')
+  }
+
   // Keep the serial counter past what was just inserted, so the next form a
   // demo creates does not collide with these.
   await db.from('form_f_seq').upsert(

@@ -31,6 +31,11 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
     phone:                   barePhone(patient.phone ?? ''),
     email:                   patient.email ?? '',
     address:                 patient.address ?? '',
+    district:                patient.district ?? '',
+    state:                   patient.state ?? '',
+    pincode:                 patient.pincode ?? '',
+    relation_type:           patient.relation_type ?? '',
+    relation_name:           patient.relation_name ?? '',
     blood_group:             patient.blood_group ?? '',
     allergies:               patient.allergies ?? '',
     emergency_contact_name:  patient.emergency_contact_name ?? '',
@@ -67,6 +72,11 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
       gender:                  form.gender || null,
       email:                   form.email || null,
       address:                 form.address || null,
+      district:                form.district || null,
+      state:                   form.state || null,
+      pincode:                 form.pincode || null,
+      relation_type:           form.relation_type || null,
+      relation_name:           form.relation_name || null,
       blood_group:             form.blood_group || null,
       allergies:               form.allergies || null,
       emergency_contact_name:  form.emergency_contact_name || null,
@@ -163,8 +173,48 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
         <FormField label="Address" htmlFor="address">
           <Textarea id="address" value={form.address}
             onChange={(e) => set('address', e.target.value)}
-            placeholder="Street, City, State…" style={{ minHeight: '3.5rem' }} />
+            placeholder="Door no, street, village / town" style={{ minHeight: '3.5rem' }} />
         </FormField>
+
+        {/* Added to registration for the statutory returns, and needed here
+            too — most of these are learned on a later visit, not at the
+            counter, so an edit screen without them means they never get
+            recorded at all. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <FormField label="District" htmlFor="district">
+            <Input id="district" value={form.district}
+              onChange={(e) => set('district', e.target.value)} placeholder="e.g. Karur" />
+          </FormField>
+          <FormField label="State" htmlFor="state">
+            <Input id="state" value={form.state}
+              onChange={(e) => set('state', e.target.value)} placeholder="e.g. Tamil Nadu" />
+          </FormField>
+          <FormField label="PIN code" htmlFor="pincode">
+            <Input id="pincode" value={form.pincode} inputMode="numeric" maxLength={6}
+              onChange={(e) => set('pincode', e.target.value.replace(/\D/g, ''))}
+              placeholder="639001" />
+          </FormField>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <FormField label="Relation" htmlFor="relation_type">
+            <Select id="relation_type" value={form.relation_type}
+              onChange={(e) => set('relation_type', e.target.value)}>
+              <option value="">—</option>
+              <option value="husband">W/o — Wife of</option>
+              <option value="father">D/o or S/o — Child of (father)</option>
+              <option value="mother">Child of (mother)</option>
+              <option value="wife">H/o — Husband of</option>
+            </Select>
+          </FormField>
+          <div className="sm:col-span-2">
+            <FormField label="Name" htmlFor="relation_name">
+              <Input id="relation_name" value={form.relation_name}
+                onChange={(e) => set('relation_name', e.target.value)}
+                placeholder="Husband's / father's name" />
+            </FormField>
+          </div>
+        </div>
 
         <FormField label="Allergies" htmlFor="allergies"
           hint="Drug allergies, food allergies, environmental (comma-separated)">

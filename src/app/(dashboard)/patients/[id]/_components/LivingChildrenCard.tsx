@@ -20,9 +20,17 @@ import {
  *
  * So this is a list, not a number. A count would satisfy neither form.
  */
-export default function LivingChildrenCard({ patientId, canWrite }: {
+export default function LivingChildrenCard({ patientId, canWrite, expectedLiving }: {
   patientId: string
   canWrite: boolean
+  /**
+   * What the ANC record says she has. Used only to notice a disagreement —
+   * the ANC form asks for a count, this card asks which sex each one is, and
+   * the monthly return needs the second. A count of two with nothing listed
+   * here is a Form F field 4 that will be wrong weeks from now, when the
+   * sonologist has a patient on the couch and no time to chase it.
+   */
+  expectedLiving?: number | null
 }) {
   const [children, setChildren] = useState<PatientChild[]>([])
   const [adding, setAdding] = useState(false)
@@ -88,7 +96,20 @@ export default function LivingChildrenCard({ patientId, canWrite }: {
         </p>
       )}
 
-      {children.length === 0 && !adding && (
+      {expectedLiving != null && expectedLiving > children.length && (
+        <div className="mb-3 p-2.5 rounded-lg" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+          <p className="text-xs" style={{ color: '#92400E' }}>
+            Her antenatal record says <strong>{expectedLiving} living
+            {expectedLiving === 1 ? ' child' : ' children'}</strong>, and {children.length === 0
+              ? 'none are listed here'
+              : `only ${children.length} ${children.length === 1 ? 'is' : 'are'} listed here`}.
+            Form F asks for each one&rsquo;s sex and age, so add them now rather than leaving it to
+            whoever is mid-scan later.
+          </p>
+        </div>
+      )}
+
+      {children.length === 0 && !adding && expectedLiving == null && (
         <p className="text-xs" style={{ color: '#94A3B8' }}>
           None recorded. A woman with no living children is &ldquo;primi&rdquo; on the return —
           but that has to be recorded rather than assumed from an empty list.

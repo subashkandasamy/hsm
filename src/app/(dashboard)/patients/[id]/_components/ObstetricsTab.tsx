@@ -58,6 +58,7 @@ export default function ObstetricsTab({ patientId, canWrite }: Props) {
     setBusy(true)
     const res = await createAnc(patientId, {
       lmp: start.lmp || null, gravida: intOrNull(start.gravida ?? ''), para: intOrNull(start.para ?? ''),
+      living: intOrNull(start.living ?? ''),
       abortions: intOrNull(start.abortions ?? ''), blood_group: start.blood_group || null,
       high_risk: start.high_risk === 'yes', high_risk_notes: start.high_risk_notes || null,
     })
@@ -94,7 +95,8 @@ export default function ObstetricsTab({ patientId, canWrite }: Props) {
       {/* Who she already has. Above the ANC record on purpose: it is the
           first thing Form F asks about and the thing the monthly return
           classifies her by. */}
-      <LivingChildrenCard patientId={patientId} canWrite={canWrite} />
+      <LivingChildrenCard patientId={patientId} canWrite={canWrite}
+        expectedLiving={active?.living ?? null} />
 
       {/* ANC record */}
       <GlassCard className="p-4">
@@ -112,7 +114,10 @@ export default function ObstetricsTab({ patientId, canWrite }: Props) {
         {showStart && !active && (
           <div className="rounded-xl p-3 mb-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
             <div><label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>LMP</label><Input type="date" value={start.lmp ?? ''} onChange={(e) => setStart((s) => ({ ...s, lmp: e.target.value }))} /></div>
-            {[['gravida', 'Gravida'], ['para', 'Para'], ['abortions', 'Abortions'], ['blood_group', 'Blood group']].map(([k, l]) => (
+            {/* Living was missing from this form while the labour ward panel
+                displayed G P A L — so it always read "L–". It is also the
+                figure Form F field 4 and the monthly return are built on. */}
+            {[['gravida', 'Gravida'], ['para', 'Para'], ['living', 'Living'], ['abortions', 'Abortions'], ['blood_group', 'Blood group']].map(([k, l]) => (
               <div key={k}><label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>{l}</label><Input value={start[k] ?? ''} onChange={(e) => setStart((s) => ({ ...s, [k]: e.target.value }))} /></div>
             ))}
             <div className="col-span-2"><label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>High-risk notes</label><Input value={start.high_risk_notes ?? ''} onChange={(e) => setStart((s) => ({ ...s, high_risk: 'yes', high_risk_notes: e.target.value }))} placeholder="Leave blank if none" /></div>
