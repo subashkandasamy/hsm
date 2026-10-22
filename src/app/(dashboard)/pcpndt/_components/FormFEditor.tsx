@@ -157,6 +157,34 @@ export default function FormFEditor({ record, options }: {
           <FormField label="Contact number (6)"><Input value={str('contact_no')} disabled={locked}
             onChange={(e) => set('contact_no', e.target.value)} /></FormField>
         </Grid>
+
+        {/* The monthly summary quotes G, P, L, A for every scan. These come
+            from her antenatal record when she has one here — but most women
+            having a scan do not: referred from outside, a walk-in, or the scan
+            is her first contact with the hospital. The form cannot depend on
+            another record existing, so they are asked for here. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <FormField label="Gravida (G)">
+            <Input type="number" min={0} value={num('gravida')} disabled={locked}
+              onChange={(e) => set('gravida', e.target.value === '' ? null : Number(e.target.value))} />
+          </FormField>
+          <FormField label="Para (P)">
+            <Input type="number" min={0} value={num('para')} disabled={locked}
+              onChange={(e) => set('para', e.target.value === '' ? null : Number(e.target.value))} />
+          </FormField>
+          <FormField label="Living (L)">
+            <Input type="number" min={0} value={num('living_children_total')} disabled={locked}
+              onChange={(e) => set('living_children_total', e.target.value === '' ? null : Number(e.target.value))} />
+          </FormField>
+          <FormField label="Abortions (A)">
+            <Input type="number" min={0} value={num('abortions')} disabled={locked}
+              onChange={(e) => set('abortions', e.target.value === '' ? null : Number(e.target.value))} />
+          </FormField>
+        </div>
+        <p className="text-xs" style={{ color: '#94A3B8' }}>
+          Zero is a real answer to any of these. Leaving one blank is what the monthly summary
+          prints as a dash, and a blank column on a statutory return is the offence itself.
+        </p>
         <FormField label="Full postal address (6)">
           <Textarea value={str('address_text')} disabled={locked}
             onChange={(e) => set('address_text', e.target.value)} style={{ minHeight: '3rem' }} />
