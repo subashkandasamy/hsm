@@ -84,6 +84,11 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
     )
     .slice(0, 5)
 
+  const activeHref = tabs
+    .map((t) => t.href)
+    .filter((h) => pathname === h || (h !== '/dashboard' && pathname.startsWith(`${h}/`)))
+    .sort((a, b) => b.length - a.length)[0] ?? null
+
   if (tabs.length === 0) return null
 
   return (
@@ -93,8 +98,10 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
     >
       <div className="flex items-center h-16">
         {tabs.map((tab) => {
-          const isActive = pathname === tab.href ||
-            (tab.href !== '/dashboard' && pathname.startsWith(tab.href))
+          // Longest match wins, as in the sidebar. These tabs are all top-level
+          // so none can nest inside another, but the trailing slash still
+          // matters: without it /billings would light up Billing.
+          const isActive = tab.href === activeHref
           return (
             <Link
               key={tab.href}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   LayoutDashboard, Users, CalendarDays, FlaskConical, Pill,
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
@@ -53,6 +53,28 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname()
 
+  /**
+   * The one nav entry that should look selected.
+   *
+   * Highlighting every item whose href is a prefix of the path lit up two rows
+   * at once wherever one section sits inside another — Form F alongside the MTP
+   * Register, Billing alongside Estimates and the Cash Book, Emergency
+   * alongside the Accident Register.
+   *
+   * So the longest match wins, and only that one is active. A detail page still
+   * highlights its parent, because nothing deeper matches it: /pcpndt/<id>
+   * belongs to Form F, while /pcpndt/mtp belongs to the MTP Register.
+   *
+   * The trailing slash in the prefix test matters — without it a future
+   * /billings would light up Billing.
+   */
+  const activeHref = useMemo(() => {
+    const hrefs = NAV_CONFIG.flatMap((g) => g.items.map((i) => i.href))
+    return hrefs
+      .filter((h) => pathname === h || (h !== '/dashboard' && pathname.startsWith(`${h}/`)))
+      .sort((a, b) => b.length - a.length)[0] ?? null
+  }, [pathname])
+
   useEffect(() => { onClose?.() }, [pathname])
 
   useEffect(() => {
@@ -83,8 +105,7 @@ export default function Sidebar({
               )}
               <ul className="space-y-0.5">
                 {visibleItems.map((item) => {
-                  const isActive = pathname === item.href ||
-                    (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                  const isActive = item.href === activeHref
 
                   const isLocked = !!(
                     item.moduleKey &&
