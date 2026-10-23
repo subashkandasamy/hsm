@@ -192,6 +192,7 @@ export default function MonthlyReturns({
           <PrintLink report="iii" month={month} label="Report III — deliveries" />
           <PrintLink report="iv"  month={month} label="Report IV — MTP cases" />
           <PrintLink report="v"   month={month} label="Report V — MTP drugs" />
+          <PrintLink report="referral" month={month} label="Referrals of antenatal patients" />
         </div>
         <p className="text-xs mt-3" style={{ color: '#94A3B8' }}>
           Reports II and IV are registers, so they run to several pages in a busy month.

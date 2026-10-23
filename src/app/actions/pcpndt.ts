@@ -419,11 +419,17 @@ export async function countIncompleteForMonth(month: string): Promise<number> {
   const [y, m] = month.split('-').map(Number)
   const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
 
+  // The same window the register lists by — procedure date when it is set,
+  // the date the form was opened while it is not. Counting by one and listing
+  // by the other tells a hospital to fix something it cannot find.
   const { count } = await supabase
     .from('form_f_records')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'draft')
-    .gte('form_date', start).lt('form_date', end)
+    .or(
+      `and(procedure_date.gte.${start},procedure_date.lt.${end}),`
+      + `and(procedure_date.is.null,form_date.gte.${start},form_date.lt.${end})`,
+    )
   return count ?? 0
 }
 
@@ -856,7 +862,8 @@ export async function addAncReferral(input: {
   const supabase = await createClient()
   const [{ data: patient }, { data: anc }] = await Promise.all([
     supabase.from('patients')
-      .select('full_name, relation_name, address, phone').eq('id', input.patient_id).maybeSingle(),
+      .select('full_name, relation_name, address, district, state, pincode, phone')
+      .eq('id', input.patient_id).maybeSingle(),
     supabase.from('anc_records')
       .select('id, gravida, para, living, abortions')
       .eq('patient_id', input.patient_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -869,6 +876,10 @@ export async function addAncReferral(input: {
     patient_name: patient?.full_name ?? null,
     relation_name: patient?.relation_name ?? null,
     address_text: patient?.address ?? null,
+    // District especially: the sheet prints it and the authority reads it.
+    district: patient?.district ?? null,
+    state: patient?.state ?? null,
+    pincode: patient?.pincode ?? null,
     contact_no: patient?.phone ?? null,
     gravida: anc?.gravida ?? null,
     para: anc?.para ?? null,
@@ -981,4 +992,21 @@ export async function listReferralsForPatient(patientId: string): Promise<AncRef
     .select('id, patient_name, referred_on, referred_to_doctor, referred_to_institution, reason')
     .eq('patient_id', patientId).order('referred_on', { ascending: false })
   return (data ?? []) as AncReferralRow[]
+}
+
+/** Full referral rows for the referral return. */
+export async function listReferralsForReturn(month: string): Promise<Record<string, unknown>[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:report')
+  const supabase = await createClient()
+  const start = `${month}-01`
+  const [y, m] = month.split('-').map(Number)
+  const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+  const { data, error } = await supabase
+    .from('anc_referrals_out').select('*')
+    .gte('referred_on', start).lt('referred_on', end)
+    .order('referred_on')
+  if (error) { console.error('[listReferralsForReturn]', error.message); return [] }
+  await logAudit(actor.id, 'read', 'referral_return', month, { rows: (data ?? []).length })
+  return (data ?? []) as Record<string, unknown>[]
 }

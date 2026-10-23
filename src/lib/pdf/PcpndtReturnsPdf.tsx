@@ -489,4 +489,81 @@ function mtpAdvised(v: string | null): string {
   return ['na', 'nil', 'no', 'none', 'notapplicable', '-'].includes(t) ? 'Not Advised' : 'Advised'
 }
 
+
+// ── Referral of antenatal patients ─────────────────────────────────────────
+//
+// The seventh sheet, and the only one in the pack with no report number. It
+// records women sent on to another registered centre — a trail that otherwise
+// ends the moment she walks out, which is exactly the gap the Act cares about.
+
+export function ReferralReturnPdf({ data, rows }: {
+  data: ReturnsData; rows: Record<string, unknown>[]
+}) {
+  const p = data.profile
+  return (
+    <A4 title={`ANC referrals ${data.month}`} landscape>
+      <View style={f.page}>
+        <Text style={{ ...f.title, fontSize: 12, marginBottom: 14 }}>
+          Referral of Ante-Natal Patient to other Registered Centres
+        </Text>
+
+        <View style={f.headRow}>
+          <Text style={f.headCell}>
+            Name &amp; Address of the Hospital : {p?.pcpndt_registered_name || p?.name || ''}
+          </Text>
+          <Text style={f.headCell}>
+            Name &amp; Contact No. of Reporting Person: {data.reportingPerson ?? ''}
+            {data.reportingPhone ? `, ${data.reportingPhone}` : ''}
+          </Text>
+        </View>
+        <Text style={{ ...f.month, textAlign: 'left', marginBottom: 8 }}>
+          Reporting Month: {monthName(data.month)}
+        </Text>
+
+        <View style={f.table}>
+          <View style={f.tr} fixed>
+            <Cell head width={30}>S.No</Cell>
+            <Cell head flex={1.8}>Name &amp; Address of the AN Patient</Cell>
+            <Cell head width={70}>Contact No</Cell>
+            <Cell head width={72}>Gravida, Para, Living Child, Abortion (G, P, L, A)</Cell>
+            <Cell head width={88}>IP No (or) OP No. &amp; Date of Referral</Cell>
+            <Cell head flex={1.3}>Referred to (Dr. name with Institution Address)</Cell>
+            <Cell head flex={1.1}>Reason for Referral</Cell>
+            <Cell head flex={1}>Referred by (Dr. Name with Qualification)</Cell>
+          </View>
+          {rows.length === 0 ? (
+            <View style={f.tr}>
+              <Cell flex={1} align="center">No antenatal patients referred this month</Cell>
+            </View>
+          ) : rows.map((r, i) => (
+            <View style={f.tr} key={String(r.id)} wrap={false}>
+              <Cell width={30} align="center">{String(i + 1)}</Cell>
+              <Cell flex={1.8}>
+                {[r.patient_name, r.relation_name ? `W/o ${r.relation_name}` : null,
+                  r.address_text, r.district, r.state, r.pincode]
+                  .filter(Boolean).join(', ')}
+              </Cell>
+              <Cell width={70}>{String(r.contact_no ?? '-')}</Cell>
+              <Cell width={72} align="center">{gpla(r)}</Cell>
+              <Cell width={88}>
+                {`${r.ip_no || r.op_no || '-'}, ${fmtDate(r.referred_on as string)}`}
+              </Cell>
+              <Cell flex={1.3}>
+                {[r.referred_to_doctor, r.referred_to_institution, r.referred_to_address]
+                  .filter(Boolean).join(', ') || '-'}
+              </Cell>
+              <Cell flex={1.1}>{String(r.reason ?? '-')}</Cell>
+              <Cell flex={1}>
+                {[r.referred_by_name, r.referred_by_qualification].filter(Boolean).join(', ') || '-'}
+              </Cell>
+            </View>
+          ))}
+        </View>
+
+        <FormFoot />
+      </View>
+    </A4>
+  )
+}
+
 export { monthName, fmtDate }
