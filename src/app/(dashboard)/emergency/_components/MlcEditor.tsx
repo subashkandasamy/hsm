@@ -180,11 +180,23 @@ export default function MlcEditor({ record, options, intimations }: {
               or their family wants. This entry cannot be signed until one is recorded.
             </p>
           </div>
-          <button onClick={() => setIntimating(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
-            style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}>
-            <Plus className="w-3 h-3" /> Record an intimation
-          </button>
+          <div className="flex gap-2 flex-shrink-0">
+            {/*
+              Printable before the entry is signed, because that is the real
+              order of events: the letter goes across, then it is recorded, then
+              the examination is finished and the entry signed.
+            */}
+            <a href={`/print/mlc/${record.id as string}/intimation`} target="_blank" rel="noopener"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', textDecoration: 'none' }}>
+              <Printer className="w-3 h-3" /> Print the letter
+            </a>
+            <button onClick={() => setIntimating(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: '#DC2626', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Plus className="w-3 h-3" /> Record an intimation
+            </button>
+          </div>
         </div>
 
         {intimations.length === 0 ? (
@@ -588,11 +600,6 @@ export default function MlcEditor({ record, options, intimations }: {
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold"
             style={{ background: '#0D9488', color: '#fff', textDecoration: 'none' }}>
             <Printer className="w-4 h-4" /> Accident register — three copies
-          </a>
-          <a href={`/print/mlc/${record.id as string}/intimation`} target="_blank" rel="noopener"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium"
-            style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', textDecoration: 'none' }}>
-            <Printer className="w-4 h-4" /> Intimation to the police
           </a>
         </div>
       )}

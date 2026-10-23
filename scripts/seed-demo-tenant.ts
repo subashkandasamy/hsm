@@ -1026,7 +1026,95 @@ async function createFormF(tenantId: string, s: Seeded): Promise<void> {
   else console.log('  ✓ 3 living children recorded')
 }
 
-// ── 9. The rest of a configured hospital ─────────────────────────────────────
+
+/**
+ * One medico-legal case, start to finish.
+ *
+ * The road traffic accident already in the emergency board is exactly what the
+ * accident register is for, so it gets the entry rather than a fresh patient
+ * being invented for it. Seeded complete, with the police informed, because a
+ * demo should show what a correctly handled medico-legal case looks like — the
+ * second half of the module (an uninformed case shouting from the board) is
+ * then one click away for anybody who wants to see it.
+ *
+ * Note the order: the entry goes in as a draft, the intimation next, and only
+ * then is it signed. The completeness gate refuses to sign an entry with the
+ * police uninformed, and the seed is held to that rule like any other caller —
+ * service_role is exempted from the edit lock, never from the gate.
+ */
+async function createMlc(tenantId: string, s: Seeded): Promise<void> {
+  const { data: ec } = await db.from('emergency_cases')
+    .select('id, patient_id, arrived_at')
+    .eq('tenant_id', tenantId).eq('arrival_mode', 'ambulance')
+    .limit(1).maybeSingle()
+  if (!ec) { console.warn('  ! medico-legal case skipped: no ambulance arrival in the ER'); return }
+
+  const { error: flagErr } = await db.from('emergency_cases')
+    .update({ is_mlc: true }).eq('id', ec.id)
+  if (flagErr) { console.warn(`  ! medico-legal flag skipped: ${flagErr.message}`); return }
+
+  const arrived = ec.arrived_at as string
+  const occurred = new Date(new Date(arrived).getTime() - 35 * 60000).toISOString()
+  const vishal = s.patients.find((p) => p.name.startsWith('Vishal'))
+  const id = uuid()
+
+  const { error: draftErr } = await db.from('mlc_records').insert({
+    id, tenant_id: tenantId, ar_no: 'AR/2627/00001', status: 'draft',
+    emergency_case_id: ec.id, patient_id: ec.patient_id,
+    patient_name: vishal?.name ?? 'Vishal Menon', patient_age: 29, patient_sex: 'male',
+    patient_address: '27 Nehru Street, Vangal, Karur, Tamil Nadu, 639002',
+    mr_no: null,
+    identification_mark_1: 'Linear scar 2cm over the left eyebrow',
+    identification_mark_2: 'Mole on the right forearm, dorsal aspect',
+    brought_by_name: 'Selvaraj Murugan', brought_by_relation: 'Neighbour',
+    brought_by_address: '31 Nehru Street, Vangal, Karur', brought_by_phone: '9999900031',
+    mlc_types: ['rta'],
+    alleged_cause: 'States he was riding a two-wheeler towards Karur on Trichy Road when a '
+      + 'car turned across him near the old bus stand. He fell to his left. No loss of '
+      + 'consciousness, no vomiting. Brought by a neighbour in the 108 ambulance.',
+    place_of_occurrence: 'Trichy Road, near the old bus stand, Karur',
+    occurred_at: occurred, arrived_at: arrived,
+    vehicle_numbers: 'TN 47 BX 4412 (two-wheeler, patient) — car number not known',
+    injury_natures: ['laceration', 'abrasion'],
+    injury_details: '1. Lacerated wound 5cm x 1cm x muscle deep over the dorsal aspect of the '
+      + 'left forearm, 8cm below the elbow, bleeding, margins irregular, fresh.\n'
+      + '2. Multiple abrasions 2cm to 6cm over the left knee and left hip, with embedded '
+      + 'grit, fresh.',
+    injury_grade: 'simple',
+    smell_of_alcohol: false, conscious_state: 'Conscious, oriented, GCS 15',
+    first_aid_given: 'Wound toilet and suturing of the forearm wound under local anaesthesia, '
+      + '7 sutures. Abrasions cleaned and dressed. Inj TT 0.5ml IM given. X-ray left forearm '
+      + 'ordered — no fracture seen.',
+    dying_declaration_needed: false,
+    examined_by_name: 'Dr. Arun Prakash', examined_by_reg_no: 'TN/52140',
+    disposal: 'treated_discharged', disposal_note: 'Reviewed in 48 hours for dressing',
+  })
+  if (draftErr) { console.warn(`  ! medico-legal entry skipped: ${draftErr.message}`); return }
+
+  const { error: intErr } = await db.from('mlc_police_intimations').insert({
+    id: uuid(), tenant_id: tenantId, mlc_id: id,
+    station_name: 'Karur Town Police Station',
+    officer_name: 'Rajendran', officer_rank: 'SI', officer_phone: '9999900077',
+    method: 'telephone',
+    intimated_at: new Date(new Date(arrived).getTime() + 15 * 60000).toISOString(),
+    intimated_by_name: 'Dr. Arun Prakash',
+    acknowledgement_ref: 'GD 214/2026',
+    notes: 'Informed on the station duty line; a constable attended within the hour.',
+  })
+  if (intErr) { console.warn(`  ! police intimation skipped: ${intErr.message}`); return }
+
+  // The gate runs here. If anything above is missing, this is where it says so.
+  const { error: signErr } = await db.from('mlc_records')
+    .update({ status: 'complete', completed_at: new Date().toISOString() }).eq('id', id)
+  if (signErr) { console.warn(`  ! signing the medico-legal entry failed: ${signErr.message}`); return }
+
+  await db.from('mlc_seq').upsert(
+    { tenant_id: tenantId, year: 2026, last_no: 1 }, { onConflict: 'tenant_id,year' })
+
+  ok('1 medico-legal case, signed, police informed', null)
+}
+
+// ── 9. The rest of a configured hospital ──────────────────────────────────
 
 /**
  * The setup checklist on the dashboard is real: it counts rows. Rather than
@@ -1661,6 +1749,7 @@ async function main() {
   await createIpdBilling(tenantId, seeded)
   await createFinance(tenantId, seeded)
   await createRestOfHospital(tenantId, seeded)
+  await createMlc(tenantId, seeded)
   await createSpecialtiesAndRota(tenantId, seeded)
   await createPortalFamily(tenantId, seeded)
   await createGeneralStore(tenantId, seeded)
