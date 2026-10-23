@@ -88,6 +88,9 @@ export async function registerEmergency(
     arrival_mode: parsed.data.arrival_mode ?? null,
     complaint:    parsed.data.complaint ?? null,
     status:       'waiting',
+    // Flagged at registration, before anybody has had time to fill a register
+    // entry. The duty to inform the police starts now, not when the form does.
+    is_mlc:       parsed.data.is_mlc ?? false,
   })
   if (error) return { success: false, error: error.message }
 
@@ -105,6 +108,7 @@ export async function registerEmergency(
   await logAudit(actor.id, 'register', 'emergency_case', caseId, {
     triage_level: parsed.data.triage_level,
     patient_id: patientId,
+    is_mlc: parsed.data.is_mlc ?? false,
   })
   return { success: true, caseId, patientId }
 }
@@ -238,6 +242,22 @@ export async function getExistingEmergencyVisit(caseId: string): Promise<string 
     .limit(1)
     .maybeSingle()
   return (visit?.id as string | undefined) ?? null
+}
+
+/**
+ * The patient on a casualty case, and nothing else.
+ *
+ * The medico-legal board panel is built from get_mlc_pending, which carries
+ * the case but not the patient. One narrow read beats widening that function's
+ * return for a single caller.
+ */
+export async function getCasePatient(caseId: string): Promise<string | null> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'emergency:read')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('emergency_cases').select('patient_id').eq('id', caseId).maybeSingle()
+  return (data?.patient_id as string | undefined) ?? null
 }
 
 export async function resolveEmergency(

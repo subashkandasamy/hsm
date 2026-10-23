@@ -328,6 +328,8 @@ export interface EmergencyCase {
   id: string; patient_id: string; triage_level: TriageLevel; arrival_mode: string | null
   complaint: string | null; attended_by: string | null; status: EmergencyCaseStatus
   outcome: string | null; arrived_at: string
+  /** Marked medico-legal at registration. The accident register entry follows. */
+  is_mlc?: boolean
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>
   attendant?: Pick<Profile, 'id' | 'full_name'>
 }

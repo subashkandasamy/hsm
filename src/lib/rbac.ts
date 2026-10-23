@@ -139,6 +139,10 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Ward Board',   href: '/wards',        icon: 'LayoutGrid',      requiredPermission: 'ipd:read',        moduleKey: 'ipd' },
       { label: 'IPD',          href: '/ipd',          icon: 'BedDouble',       requiredPermission: 'ipd:read',        moduleKey: 'ipd' },
       { label: 'Emergency',    href: '/emergency',    icon: 'Siren',           requiredPermission: 'emergency:read',  moduleKey: 'emergency' },
+      // Its own entry rather than a tab inside Emergency: the register outlives
+      // the casualty visit by years, and a police requisition arriving in 2029
+      // should not have to be answered by reopening last night's board.
+      { label: 'Accident Register', href: '/emergency/mlc', icon: 'Gavel',      requiredPermission: 'emergency:read',  moduleKey: 'emergency' },
     ],
   },
   {

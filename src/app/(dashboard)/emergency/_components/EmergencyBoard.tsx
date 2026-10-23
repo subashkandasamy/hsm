@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee, Gavel } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -16,6 +16,8 @@ import {
   resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit, getExistingEmergencyVisit,
 } from '@/app/actions/emergency'
 import ErChargesModal from './ErChargesModal'
+import MlcPendingPanel from './MlcPendingPanel'
+import { setCaseMlc, type MlcPendingRow } from '@/app/actions/mlc'
 import { admitPatient, hasActiveAdmission } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
 import RegisterEmergencyModal from './RegisterEmergencyModal'
@@ -54,9 +56,11 @@ interface Props {
   admitAdvancePercentage?: number
   erTariffs?: ProcedureTariff[]
   initialRecent?: EmergencyCase[]
+  /** Medico-legal cases with the police uninformed or the register unsigned. */
+  initialMlcPending?: MlcPendingRow[]
 }
 
-export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50, erTariffs = [], initialRecent = [] }: Props) {
+export default function EmergencyBoard({ initialCases, wardOptions, doctors, admitTariffs = [], admitGeneralTariffPrice, admitAdvancePercentage = 50, erTariffs = [], initialRecent = [], initialMlcPending = [] }: Props) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
   const [cases, setCases] = useState<EmergencyCase[]>(initialCases)
@@ -99,6 +103,19 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
   }
 
   const [consultingId, setConsultingId] = useState<string | null>(null)
+
+  // Marking a case medico-legal after the fact. The commonest route in
+  // practice: the desk records "fall at home", and the doctor examining the
+  // patient does not believe it. The duty starts at that moment, not at
+  // registration, so the board has to let it be said late.
+  const [mlcFlagId, setMlcFlagId] = useState<string | null>(null)
+  async function flagMlc(ec: EmergencyCase) {
+    setMlcFlagId(ec.id)
+    await setCaseMlc(ec.id, true)
+    setMlcFlagId(null)
+    refresh()
+    router.refresh()
+  }
 
   // Attend + doctor assign modal
   const [attendCase_, setAttendCase] = useState<EmergencyCase | null>(null)
@@ -196,6 +213,13 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
         }
       />
 
+      {/*
+        What the hospital still owes on its medico-legal cases. Renders nothing
+        when there is nothing outstanding, and sits above the board because
+        these duties are the only time-bound ones on this screen.
+      */}
+      <MlcPendingPanel initial={initialMlcPending} />
+
       {/* Triage legend */}
       <div className="flex items-center gap-x-3 gap-y-1.5 mb-5 flex-wrap">
         {([1, 2, 3, 4, 5] as TriageLevel[]).map((level) => (
@@ -284,9 +308,21 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                       </span>
                     </div>
                     {/* Status badge on second line to avoid inline crowding */}
-                    <div className="mt-1">
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                       <StatusBadge status={STATUS_MAP[ec.status] ?? 'pending'}
                         label={ec.status.replace('_', ' ')} />
+                      {/*
+                        Marked on the card itself, not only in the panel above:
+                        whoever picks this case up next needs to know it is
+                        medico-legal before they touch the patient, because it
+                        changes what they must record and preserve.
+                      */}
+                      {ec.is_mlc && (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: 'rgba(220,38,38,0.08)', color: '#B91C1C', border: '1px solid #FECACA' }}>
+                          <Gavel className="w-3 h-3" /> Medico-legal
+                        </span>
+                      )}
                     </div>
 
                     {/* Complaint */}
@@ -337,6 +373,15 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: openingAdmitId === ec.id ? 'not-allowed' : 'pointer', opacity: openingAdmitId === ec.id ? 0.6 : 1 }}>
                           {openingAdmitId === ec.id ? 'Checking…' : 'Admit to IPD'}
                         </button>
+                        {!ec.is_mlc && (
+                          <button onClick={() => flagMlc(ec)} disabled={mlcFlagId === ec.id}
+                            title="Accident, assault, burns, poisoning, self-harm, or injuries that do not match the history"
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                            style={{ background: '#fff', color: '#B91C1C', border: '1px solid #FECACA', cursor: 'pointer' }}>
+                            <Gavel className="w-3 h-3" />
+                            {mlcFlagId === ec.id ? 'Marking…' : 'Medico-legal'}
+                          </button>
+                        )}
                         <button onClick={() => setChargesCase(ec)}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ml-auto"
                           style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>

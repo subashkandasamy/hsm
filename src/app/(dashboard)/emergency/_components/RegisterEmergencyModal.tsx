@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Gavel } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
@@ -10,6 +10,7 @@ import Textarea from '@/components/ui/Textarea'
 import GlassCard from '@/components/ui/GlassCard'
 import { registerEmergency } from '@/app/actions/emergency'
 import { searchPatients } from '@/app/actions/patients'
+import { suggestMlc } from '@/lib/mlc'
 import type { Patient, TriageLevel } from '@/lib/types'
 
 const TRIAGE_LABELS = {
@@ -51,8 +52,18 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
   const [arrivalMode, setArrivalMode] = useState<'walk_in' | 'ambulance' | 'referral' | ''>('')
   const [complaint, setComplaint] = useState('')
 
+  // Medico-legal. Suggested from the complaint, decided by the person at the
+  // desk. Derived rather than synchronised: until they touch the box it follows
+  // what they are typing, and from the moment they touch it their answer stands
+  // even if they then edit the complaint. A suggestion that keeps re-ticking
+  // itself over somebody's decision is worse than no suggestion.
+  const [mlcChoice, setMlcChoice] = useState<boolean | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const mlcHint = suggestMlc({ complaint, arrivalMode })
+  const isMlc = mlcChoice ?? mlcHint.suggested
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) { setPatientResults([]); return }
@@ -81,6 +92,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
       triage_level: triageLevel,
       arrival_mode: arrivalMode || null,
       complaint:    complaint.trim() || null,
+      is_mlc:       isMlc,
     })
 
     setLoading(false)
@@ -90,6 +102,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
     setUnknown(false); setPatientQuery(''); setSelectedPatient(null)
     setProvName(''); setProvGender(''); setProvAge('')
     setTriageLevel(3); setArrivalMode(''); setComplaint('')
+    setMlcChoice(null)
     onSuccess()
   }
 
@@ -229,6 +242,43 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
           <Textarea value={complaint} onChange={(e) => setComplaint(e.target.value)}
             placeholder="Brief description of presenting complaint…" style={{ minHeight: '3.5rem' }} />
         </FormField>
+
+        {/*
+          The medico-legal question, asked every time.
+
+          Not automatic: the duty under BNSS s.397 rests on the treating doctor
+          personally and no keyword list can carry it for them. But it is asked
+          out loud, with the reason showing, because the common failure in a
+          casualty is not filling the form badly — it is nobody thinking of the
+          question at all.
+        */}
+        <div className="rounded-xl px-3 py-3"
+          style={{
+            background: isMlc ? 'rgba(220,38,38,0.05)' : 'rgba(248,250,252,0.8)',
+            border: `1px solid ${isMlc ? '#FECACA' : '#E2E8F0'}`,
+          }}>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={isMlc}
+              onChange={(e) => setMlcChoice(e.target.checked)}
+              className="w-4 h-4 rounded mt-0.5 flex-shrink-0" style={{ accentColor: '#DC2626' }} />
+            <span>
+              <span className="text-sm font-semibold flex items-center gap-1.5" style={{ color: '#0F172A' }}>
+                <Gavel className="w-3.5 h-3.5" style={{ color: isMlc ? '#DC2626' : '#94A3B8' }} />
+                Medico-legal case
+              </span>
+              <span className="text-xs block mt-0.5" style={{ color: '#64748B' }}>
+                {mlcHint.reason
+                  ?? 'Accident, assault, burns, poisoning, self-harm, a bite, or anything the police must be told about.'}
+              </span>
+            </span>
+          </label>
+          {isMlc && (
+            <p className="text-xs mt-2 pl-7" style={{ color: '#B91C1C' }}>
+              The police must be informed immediately, and an accident register entry
+              started. Both appear on the board against this case until they are done.
+            </p>
+          )}
+        </div>
 
         {error && <div className="text-sm rounded-xl px-3 py-2"
           style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}

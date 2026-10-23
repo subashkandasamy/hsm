@@ -304,6 +304,9 @@ export const EmergencyRegisterSchema = z.object({
   triage_level: z.number().int().min(1).max(5),
   arrival_mode: z.enum(['walk_in', 'ambulance', 'referral']).nullable().optional(),
   complaint: z.string().nullable().optional(),
+  // Marked medico-legal at the desk. A decision, not paperwork — the register
+  // entry follows, and this flag is what makes its absence visible.
+  is_mlc: z.boolean().optional().default(false),
 })
 
 // ---- Phase 3: Lab ----

@@ -8,7 +8,7 @@ import {
   Receipt, UserCog, ClipboardList, Settings, Building2, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus, Warehouse, Bell,
   ToggleLeft, CreditCard, BadgeDollarSign, Lock, CalendarClock, Gift, Rocket, FileText, BookOpen, Percent,
-  PanelLeftClose, PanelLeftOpen, Microscope, ShieldCheck,
+  PanelLeftClose, PanelLeftOpen, Microscope, ShieldCheck, Gavel,
   type LucideProps,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
@@ -23,7 +23,7 @@ const ICON_MAP: Record<string, IconComp> = {
   Receipt, UserCog, ClipboardList, Settings, Stethoscope,
   LayoutGrid, BedDouble, Siren, Scan, Scissors, Droplets, ShieldPlus,
   Bell, Warehouse, ToggleLeft, CreditCard, Building2, BadgeDollarSign, CalendarClock, Gift, Rocket, FileText, BookOpen, Percent,
-  Microscope, ShieldCheck,
+  Microscope, ShieldCheck, Gavel,
 }
 
 function NavIcon({ name }: { name: string }) {

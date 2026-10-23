@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 import { listEmergencyCases, listRecentEmergencyCases } from '@/app/actions/emergency'
+import { listMlcPending } from '@/app/actions/mlc'
 import { getWardBoard } from '@/app/actions/wards'
 import { createClient } from '@/lib/supabase/server'
 import { getActorProfile } from '@/lib/server-utils'
@@ -10,9 +11,10 @@ import { DOCTOR_FILTER } from '@/lib/doctors'
 export default async function EmergencyPage() {
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
 
-  const [cases, recent, erTariffsRes, board, doctorsRes, tariffsRes, generalRes, tenantRes] = await Promise.all([
+  const [cases, recent, mlcPending, erTariffsRes, board, doctorsRes, tariffsRes, generalRes, tenantRes] = await Promise.all([
     listEmergencyCases(true),
     listRecentEmergencyCases(7),
+    listMlcPending(),
     supabase.from('procedure_tariffs').select('*').eq('is_active', true).eq('category', 'emergency').order('name'),
     getWardBoard(),
     supabase.from('profiles').select('id, full_name').or(DOCTOR_FILTER).eq('is_active', true),
@@ -35,6 +37,7 @@ export default async function EmergencyPage() {
     <EmergencyBoard
       initialCases={cases}
       initialRecent={recent}
+      initialMlcPending={mlcPending}
       erTariffs={(erTariffsRes.data ?? []) as ProcedureTariff[]}
       wardOptions={wardOptions}
       doctors={(doctorsRes.data ?? []) as { id: string; full_name: string }[]}
