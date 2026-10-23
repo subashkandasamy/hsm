@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee, Gavel } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee, Gavel, Send } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -17,6 +17,7 @@ import {
 } from '@/app/actions/emergency'
 import ErChargesModal from './ErChargesModal'
 import MlcPendingPanel from './MlcPendingPanel'
+import ReferPatientModal from '@/components/clinical/ReferPatientModal'
 import { setCaseMlc, type MlcPendingRow } from '@/app/actions/mlc'
 import { admitPatient, hasActiveAdmission } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
@@ -108,6 +109,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
   // practice: the desk records "fall at home", and the doctor examining the
   // patient does not believe it. The duty starts at that moment, not at
   // registration, so the board has to let it be said late.
+  const [referCase, setReferCase] = useState<EmergencyCase | null>(null)
   const [mlcFlagId, setMlcFlagId] = useState<string | null>(null)
   async function flagMlc(ec: EmergencyCase) {
     setMlcFlagId(ec.id)
@@ -373,6 +375,18 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: openingAdmitId === ec.id ? 'not-allowed' : 'pointer', opacity: openingAdmitId === ec.id ? 0.6 : 1 }}>
                           {openingAdmitId === ec.id ? 'Checking…' : 'Admit to IPD'}
                         </button>
+                        {/*
+                          A casualty refers more patients than any other
+                          department, and almost always in a hurry. Raising the
+                          letter is separate from resolving the case, because the
+                          letter has to be written before the patient leaves and
+                          the case is often resolved afterwards.
+                        */}
+                        <button onClick={() => setReferCase(ec)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                          style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
+                          <Send className="w-3 h-3" /> Refer out
+                        </button>
                         {!ec.is_mlc && (
                           <button onClick={() => flagMlc(ec)} disabled={mlcFlagId === ec.id}
                             title="Accident, assault, burns, poisoning, self-harm, or injuries that do not match the history"
@@ -406,6 +420,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
             )
           })}
         </div>
+      )}
+
+      {referCase?.patient?.id && (
+        <ReferPatientModal
+          open={!!referCase} onClose={() => setReferCase(null)}
+          onSaved={() => { setReferCase(null); refresh() }}
+          patientId={referCase.patient.id}
+          emergencyCaseId={referCase.id} source="emergency" />
       )}
 
       {/* Register modal */}

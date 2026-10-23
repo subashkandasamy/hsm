@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
-  Plus, ArrowRightLeft, LogOut, Receipt, Printer,
+  Plus, ArrowRightLeft, LogOut, Receipt, Printer, Send,
   Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -16,6 +16,8 @@ import Textarea from '@/components/ui/Textarea'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import Modal from '@/components/ui/Modal'
+import ReferPatientModal from '@/components/clinical/ReferPatientModal'
+import ReferralsOutCard from '@/components/clinical/ReferralsOutCard'
 import Money from '@/components/ui/Money'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -111,6 +113,8 @@ export default function AdmissionDetail({
   // Transfer
   const [showWristband, setShowWristband] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [showRefer, setShowRefer] = useState(false)
+  const [referralsKey, setReferralsKey] = useState(0)
   const [showBloodRequest, setShowBloodRequest] = useState(false)
   const [transferWardId, setTransferWardId] = useState('')
   const [transferBedId, setTransferBedId] = useState('')
@@ -346,6 +350,19 @@ export default function AdmissionDetail({
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                   <ArrowRightLeft className="w-4 h-4" /> Transfer
                 </button>
+                {/*
+                  Beside Transfer, because they are the same decision pointed
+                  at two different places: Transfer moves the patient to
+                  another ward here, Refer sends them to another hospital. A
+                  referred inpatient is the case that matters most — they leave
+                  with the letter in hand, and everything the receiving doctor
+                  knows comes from it.
+                */}
+                <button onClick={() => setShowRefer(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
+                  style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
+                  <Send className="w-4 h-4" /> Refer Out
+                </button>
                 {canRequestBlood && (
                   <button onClick={() => setShowBloodRequest(true)}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
@@ -495,6 +512,9 @@ export default function AdmissionDetail({
           )}
 
           {/* Post-discharge follow-up booking */}
+          {/* Reprintable afterwards, which is when it is usually needed. */}
+          <ReferralsOutCard admissionId={adm.id} refreshKey={referralsKey} />
+
           {adm.status === 'discharged' && canWrite && adm.patient && (
             <FollowUpCard patientId={adm.patient_id} doctorId={adm.admitting_doctor_id} source="ipd" admissionId={adm.id} reason={adm.reason || undefined} />
           )}
@@ -743,6 +763,11 @@ export default function AdmissionDetail({
       )}
 
 {/* Transfer modal */}
+      <ReferPatientModal
+        open={showRefer} onClose={() => setShowRefer(false)}
+        onSaved={() => { setReferralsKey((n) => n + 1); router.refresh() }}
+        patientId={adm.patient_id} admissionId={adm.id} source="ipd" />
+
       <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Patient">
         <div className="space-y-4">
           <p className="text-sm" style={{ color: '#475569' }}>

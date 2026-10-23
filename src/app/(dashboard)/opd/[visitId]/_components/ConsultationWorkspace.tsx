@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, Droplet, AlertTriangle, ChevronDown, ChevronRight,
   Activity, FileText, Pill, CheckCircle, Plus, Trash2, Save, Lock,
-  FlaskConical, Scan, BedDouble, Printer, Loader2,
+  FlaskConical, Scan, BedDouble, Printer, Loader2, Send,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -33,6 +33,8 @@ import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import DoseCheckPanel from '@/components/ui/DoseCheckPanel'
 import FollowUpCard from './FollowUpCard'
+import ReferPatientModal from '@/components/clinical/ReferPatientModal'
+import ReferralsOutCard from '@/components/clinical/ReferralsOutCard'
 import ExaminationPanel from './ExaminationPanel'
 import SendToPatientButton from '@/components/ui/SendToPatientButton'
 import { sendPrescriptionNotification } from '@/app/actions/notifications'
@@ -176,6 +178,8 @@ export default function ConsultationWorkspace({
 
   // Admit to IPD
   const [showAdmit, setShowAdmit] = useState(false)
+  const [showRefer, setShowRefer] = useState(false)
+  const [referralsKey, setReferralsKey] = useState(0)
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -1049,6 +1053,9 @@ export default function ConsultationWorkspace({
             </GlassCard>
           )}
 
+          {/* Reprintable afterwards, which is when it is usually needed. */}
+          <ReferralsOutCard visitId={visit.id} refreshKey={referralsKey} />
+
           {/* Follow-up appointment */}
           {isDoctor && !isClosed && (
             <FollowUpCard patientId={patient.id} doctorId={visit.doctor_id} source="opd" visitId={visit.id} reason={consult.diagnosis || undefined} />
@@ -1078,6 +1085,21 @@ export default function ConsultationWorkspace({
                 Admit to IPD
               </button>
               )}
+              {/*
+                Beside Admit, because they are the two ways a consultation ends
+                when the patient cannot simply go home: kept here, or sent on.
+              */}
+              <button
+                type="button"
+                onClick={() => setShowRefer(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.18)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.1)' }}
+              >
+                <Send className="w-4 h-4" />
+                Refer Out
+              </button>
               <button
                 onClick={() => setShowClose(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
@@ -1138,6 +1160,11 @@ export default function ConsultationWorkspace({
           onClose={() => setViewRadOrder(null)}
         />
       )}
+
+      <ReferPatientModal
+        open={showRefer} onClose={() => setShowRefer(false)}
+        onSaved={() => setReferralsKey((n) => n + 1)}
+        patientId={visit.patient_id} visitId={visit.id} source="opd" />
 
       {showAdmit && (
         <AdmitModal
