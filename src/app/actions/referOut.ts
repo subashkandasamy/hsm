@@ -189,7 +189,10 @@ export async function prepareReferral(input: {
       // would say it. 'every_x_hours' is the only one that needs the number.
       const FREQ: Record<string, string> = {
         stat: 'STAT', daily: 'once daily', twice_daily: 'twice daily',
-        thrice_daily: 'three times daily', sos: 'SOS', continuous: 'continuous infusion',
+        thrice_daily: 'three times daily', sos: 'SOS',
+        // Oxygen runs continuously but is not an infusion, and a letter that
+        // calls it one reads as though nobody checked it.
+        continuous: m.type === 'oxygen' ? 'continuous' : 'continuous infusion',
       }
       if (m.frequency_type === 'every_x_hours') {
         bits.push(m.frequency_hours ? `every ${m.frequency_hours} hours` : 'at fixed intervals')
@@ -205,26 +208,44 @@ export async function prepareReferral(input: {
   }
 
   // ── From a casualty case ─────────────────────────────────────────────────
+  let erVisitId: string | null = null
   if (input.emergency_case_id) {
     const { data: ec } = await supabase
       .from('emergency_cases')
-      .select('complaint, arrived_at').eq('id', input.emergency_case_id).maybeSingle()
+      .select('patient_id, complaint, arrived_at').eq('id', input.emergency_case_id).maybeSingle()
     if (ec) {
       draft.doa = (ec.arrived_at as string | null) ?? null
+      // The triage complaint, until the consultation says something better.
       draft.diagnosis = (ec.complaint as string | null) ?? null
+
+      // A casualty case that has been consulted has an emergency visit behind
+      // it, carrying the diagnosis, the vitals, the prescription and the tests
+      // ordered. Without this the letter from casualty said only what the desk
+      // typed at triage — which is the one department where the patient is
+      // least likely to be able to fill the gaps themselves.
+      const since = new Date(new Date(ec.arrived_at as string).getTime() - 5 * 60_000).toISOString()
+      const { data: v } = await supabase
+        .from('visits').select('id')
+        .eq('patient_id', ec.patient_id).eq('type', 'emergency')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      erVisitId = (v?.id as string | undefined) ?? null
     }
   }
 
   // ── From a consultation ──────────────────────────────────────────────────
-  const visitId = input.visit_id
+  const visitId = input.visit_id ?? erVisitId
   if (visitId) {
     const { data: visit } = await supabase
       .from('visits')
       .select('diagnosis, complaint, notes, vitals, visit_date')
       .eq('id', visitId).maybeSingle()
     if (visit) {
-      draft.diagnosis = draft.diagnosis
-        || (visit.diagnosis as string | null) || (visit.complaint as string | null) || null
+      // The doctor's diagnosis outranks whatever triage typed, which is why
+      // this overwrites rather than falls back. An admission reason still
+      // wins over both, because by then somebody has reviewed it.
+      draft.diagnosis = (visit.diagnosis as string | null)
+        || draft.diagnosis || (visit.complaint as string | null) || null
       draft.vitals_text = draft.vitals_text
         || vitalsLine(visit.vitals as Record<string, unknown> | null)
       if (!draft.doa) draft.doa = (visit.visit_date as string | null) ?? null
@@ -371,6 +392,36 @@ export async function createReferral(input: {
   revalidatePath('/emergency')
   if (input.admission_id) revalidatePath(`/ipd/${input.admission_id}`)
   return { success: true, id }
+}
+
+/**
+ * Which casualty cases already have a letter, and which letter.
+ *
+ * The board needs this to offer a reprint. A referral written in casualty was
+ * otherwise printable only in the seconds after it was written — and casualty
+ * is where a letter is most likely to leave without the patient, or leave with
+ * them and never reach the file.
+ */
+export async function listCaseReferrals(
+  caseIds: string[],
+): Promise<Record<string, { id: string; ref_no: string }>> {
+  if (caseIds.length === 0) return {}
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'patients:read')
+
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('referrals_out')
+    .select('id, ref_no, emergency_case_id, referred_at')
+    .in('emergency_case_id', caseIds)
+    .order('referred_at', { ascending: false })
+
+  const out: Record<string, { id: string; ref_no: string }> = {}
+  for (const r of (data ?? []) as Array<{ id: string; ref_no: string; emergency_case_id: string }>) {
+    // Newest first, so the first one seen for a case is the one to offer.
+    if (!out[r.emergency_case_id]) out[r.emergency_case_id] = { id: r.id, ref_no: r.ref_no }
+  }
+  return out
 }
 
 export async function getReferral(id: string): Promise<Record<string, unknown> | null> {

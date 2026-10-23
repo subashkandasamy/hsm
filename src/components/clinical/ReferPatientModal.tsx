@@ -97,6 +97,13 @@ export default function ReferPatientModal({
     return () => { live = false }
   }, [open, patientId, visitId, admissionId, emergencyCaseId])
 
+  // The two the letter genuinely cannot go without, named the way the fields
+  // are labelled so they can be found by eye.
+  const missing = [
+    !(toInstitution.trim() || toDoctor.trim()) ? 'the hospital or doctor being referred to' : null,
+    !reason.trim() ? 'why they are being referred' : null,
+  ].filter(Boolean) as string[]
+
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!draft) return
@@ -281,6 +288,19 @@ export default function ReferPatientModal({
               style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>
           )}
 
+          {/*
+            A greyed-out button that does not say why is the commonest way a
+            form wastes somebody's time, and this one is long enough that the
+            two fields it is waiting for scroll off the top of the modal. So it
+            names them, and says they are above.
+          */}
+          {missing.length > 0 && (
+            <p className="text-xs rounded-xl px-3 py-2"
+              style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+              Still needed, at the top of this form: {missing.join(' and ')}.
+            </p>
+          )}
+
           <div className="flex gap-3 justify-end pt-1">
             <button type="button" onClick={close}
               className="px-4 py-2 rounded-xl text-sm font-medium"
@@ -288,12 +308,12 @@ export default function ReferPatientModal({
               Cancel
             </button>
             <button type="submit"
-              disabled={saving || !reason.trim() || !(toInstitution.trim() || toDoctor.trim())}
+              disabled={saving || missing.length > 0}
               className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold"
               style={{
-                background: saving || !reason.trim() || !(toInstitution.trim() || toDoctor.trim())
-                  ? '#94A3B8' : '#0D9488',
+                background: saving || missing.length > 0 ? '#94A3B8' : '#0D9488',
                 color: '#fff', border: 'none',
+                cursor: saving || missing.length > 0 ? 'not-allowed' : 'pointer',
               }}>
               <Send className="w-4 h-4" /> {saving ? 'Writing…' : 'Write the letter'}
             </button>

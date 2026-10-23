@@ -18,6 +18,7 @@ import {
 import ErChargesModal from './ErChargesModal'
 import MlcPendingPanel from './MlcPendingPanel'
 import ReferPatientModal from '@/components/clinical/ReferPatientModal'
+import { listCaseReferrals } from '@/app/actions/referOut'
 import { setCaseMlc, type MlcPendingRow } from '@/app/actions/mlc'
 import { admitPatient, hasActiveAdmission } from '@/app/actions/ipd'
 import type { EmergencyCase, TriageLevel, ProcedureTariff } from '@/lib/types'
@@ -111,6 +112,9 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
   // registration, so the board has to let it be said late.
   const [referCase, setReferCase] = useState<EmergencyCase | null>(null)
   const [mlcKey, setMlcKey] = useState(0)
+  // Which cases already have a referral letter, so the card can offer a
+  // reprint. Keyed by case id.
+  const [caseReferrals, setCaseReferrals] = useState<Record<string, { id: string; ref_no: string }>>({})
   const [mlcFlagId, setMlcFlagId] = useState<string | null>(null)
   async function flagMlc(ec: EmergencyCase) {
     setMlcFlagId(ec.id)
@@ -145,8 +149,21 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
     // registered as medico-legal must appear there in the same breath as it
     // appears on the board.
     setMlcKey((n) => n + 1)
+    setCaseReferrals(await listCaseReferrals([...data, ...closed].map((c) => c.id)))
     setLoading(false)
   }
+
+  // On first paint too — a letter written yesterday must be reprintable today
+  // without touching anything first.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      const m = await listCaseReferrals([...cases, ...recent].map((c) => c.id))
+      if (live) setCaseReferrals(m)
+    })()
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleAttend() {
     if (!attendCase_) return
@@ -272,6 +289,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                   style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
                   <Printer className="w-3 h-3" /> {ec.status === 'referred' ? 'Referral note' : ec.status === 'discharged' ? 'Discharge note' : 'Case sheet'}
                 </a>
+                {caseReferrals[ec.id] && (
+                  <a href={`/print/referral/${caseReferrals[ec.id].id}`} target="_blank" rel="noopener"
+                    title={caseReferrals[ec.id].ref_no}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
+                    <Printer className="w-3 h-3" /> Referral letter
+                  </a>
+                )}
                 <button onClick={() => setChargesCase(ec)}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
                   style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
@@ -411,6 +436,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
                           <Printer className="w-3 h-3" /> Case sheet
                         </a>
+                        {caseReferrals[ec.id] && (
+                          <a href={`/print/referral/${caseReferrals[ec.id].id}`} target="_blank" rel="noopener"
+                            title={caseReferrals[ec.id].ref_no}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                            style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
+                            <Printer className="w-3 h-3" /> Referral letter
+                          </a>
+                        )}
                         <button
                           onClick={() => { setResolveCase(ec); setResolveType(''); setOutcomeNote('') }}
                           className="px-3 py-1.5 rounded-lg text-xs font-medium"
@@ -430,7 +463,14 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
       {referCase?.patient?.id && (
         <ReferPatientModal
           open={!!referCase} onClose={() => setReferCase(null)}
-          onSaved={() => { setReferCase(null); refresh() }}
+          /*
+            Refresh the board, but do NOT close the modal. Closing it here
+            unmounted the confirmation step, so a letter written from casualty
+            was saved and then vanished with no chance to print it — the one
+            screen where the paper has to leave with the patient. The modal
+            closes when the user takes the print, or says Later.
+          */
+          onSaved={() => refresh()}
           patientId={referCase.patient.id}
           emergencyCaseId={referCase.id} source="emergency" />
       )}
