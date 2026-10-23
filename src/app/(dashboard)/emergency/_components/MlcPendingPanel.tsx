@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Gavel, Clock, ShieldAlert, FileText } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
@@ -22,7 +22,20 @@ import { useIsReadOnly } from '@/context/ReadOnlyContext'
  * no statutory grace period to count down to — "immediately" has already
  * passed. The number is there to be uncomfortable.
  */
-export default function MlcPendingPanel({ initial }: { initial: MlcPendingRow[] }) {
+export default function MlcPendingPanel({ initial, refreshKey }: {
+  initial: MlcPendingRow[]
+  /**
+   * Bumped by the parent whenever something happened that could change this
+   * list — a case registered, a case flagged medico-legal after the fact.
+   *
+   * Needed because the rows start as a snapshot of the server's data, and a
+   * snapshot does not move. Registering a medico-legal case refreshed the board
+   * beneath this panel while the panel itself went on showing the list as it
+   * was when the page loaded, which is the opposite of what a panel about
+   * outstanding duties is for.
+   */
+  refreshKey?: unknown
+}) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
   const [rows, setRows] = useState(initial)
@@ -35,6 +48,17 @@ export default function MlcPendingPanel({ initial }: { initial: MlcPendingRow[] 
     setRows(await listMlcPending())
     start(() => router.refresh())
   }
+
+  // Re-read whenever the parent says something changed. The state is set after
+  // the await, never in the effect body, so this does not cascade a render.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      const r = await listMlcPending()
+      if (live) setRows(r)
+    })()
+    return () => { live = false }
+  }, [refreshKey])
 
   async function openEntry(row: MlcPendingRow) {
     if (row.mlc_id) { router.push(`/emergency/mlc/${row.mlc_id}`); return }

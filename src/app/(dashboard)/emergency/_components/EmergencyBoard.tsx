@@ -110,6 +110,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
   // patient does not believe it. The duty starts at that moment, not at
   // registration, so the board has to let it be said late.
   const [referCase, setReferCase] = useState<EmergencyCase | null>(null)
+  const [mlcKey, setMlcKey] = useState(0)
   const [mlcFlagId, setMlcFlagId] = useState<string | null>(null)
   async function flagMlc(ec: EmergencyCase) {
     setMlcFlagId(ec.id)
@@ -140,6 +141,10 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
     const [data, closed] = await Promise.all([listEmergencyCases(true), listRecentEmergencyCases(7)])
     setCases(data)
     setRecent(closed)
+    // The outstanding panel reads its own list; tell it to look again. A case
+    // registered as medico-legal must appear there in the same breath as it
+    // appears on the board.
+    setMlcKey((n) => n + 1)
     setLoading(false)
   }
 
@@ -220,7 +225,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
         when there is nothing outstanding, and sits above the board because
         these duties are the only time-bound ones on this screen.
       */}
-      <MlcPendingPanel initial={initialMlcPending} />
+      <MlcPendingPanel initial={initialMlcPending} refreshKey={mlcKey} />
 
       {/* Triage legend */}
       <div className="flex items-center gap-x-3 gap-y-1.5 mb-5 flex-wrap">
