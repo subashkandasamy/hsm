@@ -102,8 +102,13 @@ export default function CodeQueue({
   }
 
   function ignore(c: UnknownCode) {
+    setError('')
     startTransition(async () => {
-      await ignoreAnalyzerCode(c.mapping_id)
+      // The result was thrown away, so a refusal — no permission, a row
+      // somebody else already answered — looked exactly like a working
+      // button that did nothing.
+      const res = await ignoreAnalyzerCode(c.mapping_id)
+      if (!res.success) { setError(res.error); return }
       onChange()
     })
   }
