@@ -180,6 +180,22 @@ If the DR panel software speaks DICOM, this works today with no new code: point
 it at the connector's DICOM port. Confirm first, because it may be the cheapest
 win in the building.
 
+**Proved 24 Oct 2026, not assumed.** The claim had been made twice before
+anybody checked it. `connector/test/dicom-worklist.test.ts` stands up the real
+server and queries it with a real DICOM client: C-ECHO answered, the full
+worklist returned, a CT console correctly not shown the X-ray list, an empty
+list returned as a success rather than a failure (a machine that gets an error
+here often stops asking until somebody restarts it), and every field a console
+writes into the image present — accession, hospital number, name, sex, date of
+birth, and the modality and start time **inside the scheduled step sequence**,
+which is where a console reads them. Putting those at the top level instead
+shows an empty worklist on the machine while the query itself looks successful.
+
+It also turned up that `associationReleaseRequested` was not implemented, so
+the library logged an ERROR every time a machine hung up — which, for a
+department polling the worklist every few seconds, is a log full of errors
+produced by nothing going wrong. Fixed.
+
 ### Phase 5 — the PC-based and movable devices
 
 Spirometry, TMT and ECG produce PDFs rather than results. Watched folder, filed

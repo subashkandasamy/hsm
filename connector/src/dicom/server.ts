@@ -198,6 +198,20 @@ export async function startDicom(
       this.sendAssociationAccept()
     }
 
+    /**
+     * The machine is finished and is hanging up.
+     *
+     * Not optional, although it looks it: without this the library logs
+     * "associationReleaseRequested method must be implemented" as an ERROR on
+     * every single query, before releasing anyway. A radiology department
+     * polls the worklist every few seconds, so the log fills with errors
+     * produced by nothing going wrong — and a log that is always full of
+     * errors is a log nobody reads when something is.
+     */
+    associationReleaseRequested() {
+      this.sendAssociationReleaseResponse()
+    }
+
     /** Every engineer tries this first. Answering it proves the wiring. */
     cEchoRequest(request: requests.CEchoRequest, callback: (r: responses.CEchoResponse) => void) {
       log.info(`DICOM echo from ${this.callingAe} — answered`)
