@@ -196,6 +196,18 @@ the library logged an ERROR every time a machine hung up — which, for a
 department polling the worklist every few seconds, is a log full of errors
 produced by nothing going wrong. Fixed.
 
+**Images proved too** (`connector/test/dicom-store.test.ts`). Four images across
+two series, each sent on its own association the way a scanner sends them,
+arrive as **one study** — not four. That is the property that matters: a
+connector that counted them separately would give the hospital forty entries for
+one chest X-ray and nothing would match the order. The study is reported with
+its accession number, instance count, both series and their descriptions, the
+sending machine's AE title and model, and the disk it occupies.
+
+It also demonstrates the gap in §6: the images are on the connector's disk and
+**only the description travels**. That is the design, and it is the thing with
+no second copy.
+
 ### Phase 5 — the PC-based and movable devices
 
 Spirometry, TMT and ECG produce PDFs rather than results. Watched folder, filed
