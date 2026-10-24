@@ -156,15 +156,22 @@ export class AstmLink {
 
       // Not framed at all. Some analyzers open a socket and write plain record
       // lines. Take a whole line if we have one, otherwise wait for more.
+      //
+      // The terminator is put back on. flush() joins with '' because a FRAMED
+      // record arrives carrying its own CR, and without one here every record
+      // ran into the next: an analyzer that simply dumps ASTM produced a
+      // single unsplittable line, and a parser that splits on newlines found
+      // one header and no results. Every measurement in the message was lost,
+      // and the test only checked that a code appeared somewhere in the text.
       const nl = this.buf.indexOf(LF)
       if (nl < 0) {
         const cr = this.buf.indexOf(CR)
         if (cr < 0) return
-        this.assembled.push(this.buf.subarray(0, cr).toString('latin1'))
+        this.assembled.push(`${this.buf.subarray(0, cr).toString('latin1')}\r`)
         this.buf = this.buf.subarray(cr + 1)
         continue
       }
-      this.assembled.push(this.buf.subarray(0, nl).toString('latin1').replace(/\r$/, ''))
+      this.assembled.push(`${this.buf.subarray(0, nl).toString('latin1').replace(/\r$/, '')}\r`)
       this.buf = this.buf.subarray(nl + 1)
     }
   }

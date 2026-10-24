@@ -33,6 +33,7 @@ import { startSerial } from './transports/serial.js'
  *   uyirly-connector --pair CODE     pair without prompting
  *   uyirly-connector --status        what is waiting, and where the files are
  *   uyirly-connector --check         diagnose everything, and say how to fix it
+ *   uyirly-connector --capture       record what an unknown analyzer sends
  */
 
 const DEFAULT_SERVER = process.env.UYIRLY_SERVER ?? 'https://demo.uyirly.com'
@@ -48,6 +49,20 @@ async function main(): Promise<void> {
 
   const queue = new Queue(path.join(dataDir(), 'queue'))
   await queue.init()
+
+  // Standing in a laboratory with an instrument nobody has connected before.
+  // Deliberately above the pairing checks: a capture needs no account, which
+  // is the whole reason it is useful on a first visit.
+  if (args.includes('--capture')) {
+    const { runCapture } = await import('./capture.js')
+    await runCapture({
+      port: Number(flag('--port') ?? 5150),
+      outDir: flag('--out') ?? path.join(process.cwd(), 'capture'),
+      serialPath: flag('--serial'),
+      baudRate: flag('--baud') ? Number(flag('--baud')) : undefined,
+    })
+    return
+  }
 
   // Everything a support call opens with, in one screen somebody can photograph.
   if (args.includes('--check')) {

@@ -396,8 +396,17 @@ stops everything silently.
 1. **Photograph every back panel.** It answers more than any datasheet.
 2. **Find the LIS menu** on each — *Setup → Communication / Host / LIS*. A machine
    can have a serial socket that is only for service. Note the baud rate.
-3. **Capture an hour of traffic** with a laptop and a ₹500 USB-to-serial adapter.
-   That turns unknown machines into known ones and the rest can be done remotely.
+3. **Capture an hour of traffic** with a laptop and a ₹500 USB-to-serial adapter:
+
+   ```
+   uyirly-connector --capture                          # network machines
+   uyirly-connector --capture --serial COM3 --baud 9600
+   ```
+
+   Needs no account and uploads nothing. Every message is saved to its own file;
+   bring the files home and run `npm run verify:hl7 <file>` to see what the
+   machine actually said. That turns unknown instruments into library entries
+   and the rest can be done remotely.
 4. **Identify the electrolyte analyzer and the Aspen BG Plus** properly.
 5. **Ask whether the DR software has DICOM settings.**
 6. **Daily volume per machine**, which decides everything about order.

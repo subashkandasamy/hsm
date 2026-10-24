@@ -160,6 +160,15 @@ test('accepts an analyzer that sends no handshake at all', () => {
   h.link.push(Buffer.from([EOT]))
   assert.equal(h.messages.length, 1)
   assert.match(h.messages[0], /GLU/)
+
+  // The records must still be separable. This used to pass while every record
+  // ran into the next, because it only looked for the code: the server splits
+  // on newlines, so one joined line is a header with no results and the whole
+  // message is silently lost.
+  const records = h.messages[0].split('\n').filter(Boolean)
+  assert.equal(records.length, 2, `expected two records, got ${JSON.stringify(records)}`)
+  assert.ok(records[0].startsWith('H|'), 'the header is its own record')
+  assert.ok(records[1].startsWith('R|'), 'and the result is its own')
 })
 
 test('a dropped line still delivers what was received', () => {

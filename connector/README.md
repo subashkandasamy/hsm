@@ -33,6 +33,23 @@ uyirly-connector                       # then just run it
 uyirly-connector --status              # what is waiting, and where
 ```
 
+## Capturing from a machine nobody has connected before
+
+```
+uyirly-connector --capture                          # listen on 5150
+uyirly-connector --capture --serial COM3 --baud 9600
+uyirly-connector --capture --port 5151 --out ./karur
+```
+
+Pairs with nothing, uploads nothing, needs no account — which is the point on a
+first visit. Point the analyzer at the laptop, run one sample, and every
+complete message is written to its own file and printed.
+
+It saves raw text and names the protocol, and stops there. Parsing happens back
+at base (`npm run verify:hl7 <file>` in the application repo), where it can be
+corrected without anybody flying back. A capture tool that quietly mis-parsed a
+machine would send us home with the wrong answer and no way to know.
+
 Pairing swaps the short code for a real token, writes it to disk, and the code
 dies. Nobody copies or stores a token.
 
