@@ -114,8 +114,10 @@ What blocked it was our parser.
 - Everything downstream — mapping, quarantine, idempotency, sample matching —
   is unchanged and shared.
 - `connector/src/astm-link.ts` gained MLLP framing (below).
-- Still to do: **replay the messages already stored and marked unparsed.** They
-  were kept for exactly this.
+- Replay already exists per message (`retryMessage`, from Settings → Analyzers),
+  which is what would have rescued any HL7 stored before the parser landed.
+  There are none to rescue: `analyzer_messages` is empty, because no analyzer
+  has ever connected.
 
 **Three things learned the hard way, worth keeping:**
 
@@ -316,16 +318,25 @@ affects patient safety.
 | **Delivery means acknowledged** | A message is only removed from the queue when the server says it has it. |
 | **Database** | Supabase managed Postgres, `ap-south-1`. |
 
-The HL7 messages already stored and marked unparsed are the proof this works:
-they were kept precisely so they could be replayed when the parser arrived.
+**Nothing has ever been stored.** `analyzer_messages` is empty — no analyzer has
+yet connected to any tenant, so none of the above has been exercised against a
+real instrument. The mechanism is built and tested; it has not been proved by
+use. Say it that way to a hospital.
 
 ### The three gaps
 
-**1. Nothing tells anyone an analyzer went quiet.** We record `last_message_at`
-and show it on a settings page. There is no alert. Over a cable a dead link is
-rare; over Wi-Fi it is the main failure mode, and a result transmitted into a
-dead link is gone — recoverable from the instrument's own memory, but only if
-somebody notices. **This should ship before any wireless hospital goes live.**
+**1. ~~Nothing tells anyone an analyzer went quiet.~~ Done 24 Oct 2026.** A bar
+on the laboratory worklist names any `live` analyzer that has sent nothing for
+four hours — on the worklist rather than in settings, because it is a message
+for whoever is running the bench and nobody opens settings until something has
+already gone wrong. It says what to do about it, too: anything measured while
+the link was down is in the machine's own memory and must be sent again.
+
+Silent outside 08:00–21:00 IST. A lab that closes at eight has every analyzer
+quiet by midnight, and a warning that is always on is a warning nobody reads.
+
+The rule lives in `src/lib/lab/silent.ts`, apart from the query, so it can be
+tested without a hospital or a clock: `npm run verify:lab-alerts`.
 
 **2. DICOM images never leave the lab PC.** The connector sends the study's
 details to the server and tells the hospital *"the images are on this computer

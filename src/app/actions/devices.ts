@@ -2,6 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+// A 'use server' module may only export async functions — the RSC transform
+// turns every export into a server action, and a re-exported type becomes a
+// missing one at runtime while the typechecker stays happy. Importers take
+// SilentAnalyzer from lib/lab/silent directly.
+import { selectSilent, type AnalyzerPulse, type SilentAnalyzer } from '@/lib/lab/silent'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
@@ -294,6 +299,30 @@ export async function listAnalyzers(): Promise<AnalyzerRow[]> {
     ...a,
     unknown_codes: pending.get(a.id as string) ?? 0,
   })) as AnalyzerRow[]
+}
+
+/**
+ * Live analyzers that have gone quiet.
+ *
+ * An analyzer transmits once and forgets. Our disk-first guarantee only begins
+ * when the message REACHES the connector — so if the link is down at that
+ * moment the result is gone. It is recoverable from the instrument's own
+ * memory, but only if somebody notices, and nothing told them.
+ *
+ * Over a cable a dead link is rare. Over Wi-Fi, which is how a hospital with
+ * machines in three rooms will connect them, it is the main failure mode. This
+ * is the difference between a system that is reliable and one that quietly
+ * stopped working on Tuesday.
+ *
+ * The rule itself lives in lib/lab/silent.ts so it can be tested without a
+ * hospital, a clock or a login.
+ */
+export async function listSilentAnalyzers(hours = 4): Promise<SilentAnalyzer[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lab_analyzers')
+    .select('id, manufacturer, model, fingerprint, transport, status, last_message_at')
+  return selectSilent((data ?? []) as AnalyzerPulse[], hours, new Date())
 }
 
 /**

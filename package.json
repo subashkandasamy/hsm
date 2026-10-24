@@ -12,7 +12,8 @@
     "shots": "tsx scripts/capture-guide-shots.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "verify:barcodes": "tsx scripts/verify-barcodes.ts && PRINTER_DPI=300 tsx scripts/verify-barcodes.ts",
-    "verify:hl7": "tsx scripts/verify-hl7.ts"
+    "verify:hl7": "tsx scripts/verify-hl7.ts",
+    "verify:lab-alerts": "tsx scripts/verify-lab-alerts.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

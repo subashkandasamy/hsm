@@ -10,6 +10,8 @@ import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
 import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog, labOrdersAwaitingPayment, listOpenCriticalResults, type OpenCritical } from '@/app/actions/lab'
 import CriticalResultsBar from './CriticalResultsBar'
+import SilentAnalyzerBar from './SilentAnalyzerBar'
+import type { SilentAnalyzer } from '@/lib/lab/silent'
 import type { LabOrder, LabTestCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
@@ -39,12 +41,13 @@ interface Props {
   reported: LabOrder[]
   awaitingPayment?: string[]
   critical?: OpenCritical[]
+  silentAnalyzers?: SilentAnalyzer[]
   catalog: LabTestCatalog[]
 }
 
 type TabKey = 'collect' | 'results' | 'verify' | 'reported'
 
-export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting, critical: initCritical }: Props) {
+export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting, critical: initCritical, silentAnalyzers = [] }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order')
@@ -185,6 +188,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
 
       {/* Above everything. A potassium of 6.8 is not something to find by browsing. */}
       <CriticalResultsBar items={critical} canAct={canProcess} onDone={refresh} />
+      {/* Below the critical bar: a wrong result is more urgent than a missing one. */}
+      <SilentAnalyzerBar items={silentAnalyzers} />
 
       {catalog.length === 0 && <SetupNudge message="Add your lab tests to start ordering" />}
 
