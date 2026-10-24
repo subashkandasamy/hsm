@@ -37,6 +37,10 @@ export interface CaptureOptions {
   outDir: string
   serialPath?: string
   baudRate?: number
+  /** Also listen for scanners, and answer their worklist with a test patient. */
+  dicom?: boolean
+  dicomPort?: number
+  dicomAeTitle?: string
 }
 
 /** ASTM or HL7, from the first record that carries a name. Nothing more. */
@@ -116,6 +120,55 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
   })
 
   server.listen(opts.port)
+
+  // ── Scanners ─────────────────────────────────────────────────────────────
+  //
+  // A console proves itself in two steps and both can be done in the room:
+  // C-ECHO says the network path is open, and a worklist query says the
+  // machine can be driven from a list instead of a keyboard. So the worklist
+  // answers with one obviously-fake patient — if that name appears on the
+  // X-ray console's screen, radiology is finished bar the account.
+  if (opts.dicom) {
+    const { startDicom } = await import('./dicom/server.js')
+    const scheduled = new Date().toISOString()
+    await startDicom(
+      {
+        dicomPort: opts.dicomPort ?? 11112,
+        dicomAeTitle: opts.dicomAeTitle ?? 'UYIRLY',
+      } as unknown as import('./config.js').Config,
+      {
+        getWorklist: async (modality) => {
+          console.log(`  → a scanner asked for the worklist${modality ? ` (${modality})` : ''}`)
+          return [{
+            accessionNumber: 'TEST-0001',
+            patientId: 'TEST-0001',
+            patientName: 'Uyirly Test Patient',
+            patientBirthDate: '1990-01-01',
+            patientSex: 'O',
+            modality: modality ?? null,
+            // Plain ASCII: DICOM's default character set has no em dash, and a
+            // console renders one as mojibake, which makes a working
+            // connection look broken to the person judging it.
+            studyDescription: 'CONNECTION TEST - do not scan a patient',
+            scheduledFor: scheduled,
+            referringPhysician: null,
+          }]
+        },
+        onStudyComplete: (study) => {
+          n += 1
+          console.log(`\n── study ${n} ───────────────────────────────────────────`)
+          console.log(`  from      ${study.aeTitle}${study.model ? ` (${study.model})` : ''}`)
+          console.log(`  accession ${study.accessionNumber ?? '(none — the console typed it by hand)'}`)
+          console.log(`  patient   ${study.patientNameRaw ?? '?'}  ${study.patientIdRaw ?? ''}`)
+          console.log(`  images    ${study.instanceCount} in ${study.series.length} series, `
+            + `${(study.sizeBytes / 1048576).toFixed(1)} MB`)
+          console.log(`  saved     ${study.storagePath}`)
+        },
+      },
+    )
+    console.log(`  Listening on port ${opts.dicomPort ?? 11112} as "${opts.dicomAeTitle ?? 'UYIRLY'}" for scanners.`)
+    console.log('  Their worklist will show one patient called "Uyirly Test Patient".')
+  }
 
   // ── Serial ───────────────────────────────────────────────────────────────
   if (opts.serialPath) {

@@ -60,6 +60,9 @@ async function main(): Promise<void> {
       outDir: flag('--out') ?? path.join(process.cwd(), 'capture'),
       serialPath: flag('--serial'),
       baudRate: flag('--baud') ? Number(flag('--baud')) : undefined,
+      dicom: args.includes('--dicom'),
+      dicomPort: flag('--dicom-port') ? Number(flag('--dicom-port')) : undefined,
+      dicomAeTitle: flag('--ae'),
     })
     return
   }

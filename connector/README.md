@@ -36,10 +36,22 @@ uyirly-connector --status              # what is waiting, and where
 ## Capturing from a machine nobody has connected before
 
 ```
-uyirly-connector --capture                          # listen on 5150
+uyirly-connector --capture                          # analyzers, on 5150
 uyirly-connector --capture --serial COM3 --baud 9600
+uyirly-connector --capture --dicom                  # and scanners, on 11112
 uyirly-connector --capture --port 5151 --out ./karur
 ```
+
+With `--dicom`, a scanner's worklist query is answered with one obviously-fake
+patient called **Uyirly Test Patient**. If that name appears on the X-ray
+console's screen, the whole radiology path is proved in the room — the console
+can be driven from a list instead of a keyboard — and any images it then sends
+are saved and described on screen.
+
+**Serial needs a source run.** `serialport` is a native module and is not inside
+the single-file executable, so `--serial` works from `npm run dev` or
+`npx tsx src/index.ts`, not from `uyirly-connector.exe`. Network and scanner
+capture work from either.
 
 Pairs with nothing, uploads nothing, needs no account — which is the point on a
 first visit. Point the analyzer at the laptop, run one sample, and every
