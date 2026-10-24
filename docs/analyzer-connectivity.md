@@ -163,6 +163,22 @@ when a second hospital refuses to buy hardware.
 
 ### Phase 3 — the device library
 
+**Mapping made survivable, 24 Oct 2026.** A new haematology analyzer arrives
+with two dozen unknown codes at once, and answering each from a dropdown — in a
+laboratory, on a computer that is not yours — is how a five minute job becomes
+an afternoon and a mis-click. Each row now opens with a guess already in the
+box, labelled with how sure it is, and one button confirms every code the
+machine and the catalogue spell identically.
+
+The line it does not cross: **only identical codes are offered in bulk.** An
+alias (HB, TLC, PCV) is shown and still agreed to one at a time, because "CA"
+is calcium on an electrolyte analyzer and a tumour marker on an immunoassay,
+and only the person beside the machine knows which sent it. Nothing is ever
+written without somebody pressing Confirm.
+
+`npm run verify:analyte-suggestions`. Against a real H360 vocabulary: 9 codes,
+5 exact and bulk-confirmable, 3 flagged as guesses, 1 left alone.
+
 Each instrument needs its codes mapped to our analytes once, globally. The second
 hospital with an H360 then configures nothing.
 

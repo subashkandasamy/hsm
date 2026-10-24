@@ -447,6 +447,44 @@ export async function mapAnalyzerCode(
   return { success: true }
 }
 
+/**
+ * Confirm several code mappings at once.
+ *
+ * Only ever called with the codes an instrument and the catalogue already
+ * spell the same way — the screen decides that, and a looser guess is never
+ * included. Twenty-four dropdowns in a laboratory, on somebody else's
+ * computer, is how a five minute job becomes an afternoon and a mis-click.
+ *
+ * Each is still written as 'confirmed', because a person pressed the button
+ * having read the list. Nothing here is automatic.
+ */
+export async function mapAnalyzerCodes(
+  pairs: Array<{ mappingId: string; analyteId: string }>,
+): Promise<{ success: true; mapped: number } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:process')
+  if (!pairs.length) return { success: false, error: 'Nothing to confirm' }
+
+  const supabase = await createClient()
+  let mapped = 0
+  for (const { mappingId, analyteId } of pairs) {
+    if (!mappingId || !analyteId) continue
+    // One at a time rather than an upsert: these rows already exist, the list
+    // is short, and a partial failure should leave the ones that worked
+    // mapped rather than rolling the lot back for one bad id.
+    const { error } = await supabase.from('analyzer_mappings')
+      .update({ analyte_id: analyteId, source: 'confirmed' })
+      .eq('id', mappingId)
+    if (!error) mapped += 1
+  }
+
+  await logAudit(actor.id, 'update', 'analyzer_mapping', null, { bulk: true, mapped })
+  revalidatePath('/settings/devices')
+  return mapped > 0
+    ? { success: true, mapped }
+    : { success: false, error: 'None of those could be saved' }
+}
+
 /** Some codes are genuinely not ours to record — internal flags, QC channels. */
 export async function ignoreAnalyzerCode(mappingId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
