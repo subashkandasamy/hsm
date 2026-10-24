@@ -35,6 +35,14 @@ export interface AstmResult {
   unit: string | null
   /** The instrument's own flag: N normal, H high, L low, and vendor variants. */
   abnormalFlag: string | null
+  /**
+   * The standard identifier, where the machine sent one beside its own name.
+   *
+   * An Erba H360 reports MCV as `787-2^MCV^LN` — a LOINC number, the name,
+   * and the coding system. The number is the stable identity and the name is
+   * what a technician recognises, so both are kept.
+   */
+  standardCode?: string | null
 }
 
 export interface AstmMessage {

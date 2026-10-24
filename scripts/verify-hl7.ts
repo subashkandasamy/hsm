@@ -59,6 +59,47 @@ console.log('\nAn Erba H360 result message')
   check(!m.warnings.some((w) => /histogram/i.test(w)), 'histograms are skipped silently', m.warnings)
 }
 
+// Verbatim from the first real analyzer ever connected: an Erba H360 in a
+// hospital in Karur, 24 October 2026. Everything before this was invented.
+const H360_REAL = [
+  'MSH|^~\\&|H360|Erba|||20261024145102||ORU^R01|20261024_145013_946|P|2.3.1||||||UNICODE',
+  'PID|1||||^9999999999',
+  'PV1|1',
+  'OBR|1||1115|01001^Automated CBC',
+  'OBX|17|NM|787-2^MCV^LN||79.7|fL|82.0-100.0|L~A|||F',
+  'OBX|18|NM|785-6^MCH^LN||29.0|pg|27.0-34.0|~N|||F',
+  'OBX|19|NM|786-4^MCHC^LN||36.4|g/dL|32.0-36.0|H|||F',
+].join('\r')
+
+console.log('\nThe real H360, as it actually transmits')
+{
+  const m = parseHl7(H360_REAL)
+  check(m.fingerprint === 'H360^Erba', 'identified as H360^Erba', m.fingerprint)
+  check(m.sampleId === '1115', 'sample id from OBR-3', m.sampleId)
+
+  // The whole point. 787-2 means nothing to a technician; MCV does.
+  check(m.results.map((r) => r.code).join(',') === 'MCV,MCH,MCHC',
+    'LOINC-coded results are named, not numbered', m.results.map((r) => r.code))
+  check(m.results[0]?.standardCode === '787-2',
+    'and the LOINC number is kept beside it', m.results[0]?.standardCode)
+
+  const mcv = m.results.find((r) => r.code === 'MCV')
+  check(mcv?.value === '79.7' && mcv?.unit === 'fL', 'value and unit', mcv)
+  check(mcv?.abnormalFlag === 'L',
+    'a repeated flag L~A gives L, not the whole string', mcv?.abnormalFlag)
+
+  const mch = m.results.find((r) => r.code === 'MCH')
+  check(mch?.abnormalFlag === null || mch?.abnormalFlag === '',
+    'an empty leading flag ~N does not become a stray value', mch?.abnormalFlag)
+}
+
+console.log('\nA machine that sends its own vocabulary is untouched')
+{
+  const m = parseHl7('MSH|^~\\&|BC|X|A|B|2026||ORU^R01|1|P|2.3\rOBX|1|NM|WBC^White Blood Cells^L||8.4|10*3/uL||N|||F')
+  check(m.results[0]?.code === 'WBC', 'a plain mnemonic stays the code', m.results[0]?.code)
+  check(!m.results[0]?.standardCode, 'and carries no standard code', m.results[0]?.standardCode)
+}
+
 // The trap that looks like it works: MSH is numbered differently from every
 // other segment, so reading MSH-3 as index 3 silently returns the receiver.
 console.log('\nThe MSH off-by-one')

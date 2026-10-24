@@ -172,10 +172,26 @@ export function parseHl7(raw: string): AstmMessage {
         const valueType = (clean(f[2]) ?? '').toUpperCase()
         if (NOT_A_RESULT.has(valueType)) break
 
-        // OBX-3 is the observation identifier: id^text^system. Some vendors
-        // send the code bare, some put the useful one second.
+        // OBX-3 is the observation identifier: id^text^system.
+        //
+        // A real Erba H360 sends `787-2^MCV^LN` — a LOINC number, the name,
+        // and the coding system. Taking the first component would record two
+        // dozen measurements as 787-2, 785-6, 786-4, leaving a technician to
+        // work out which is which from a catalogue they do not have.
+        //
+        // So when the identifier is a standard code rather than the machine's
+        // own mnemonic, the NAME is used as the code and the number is kept
+        // beside it. Where a machine sends its own vocabulary — WBC, HGB —
+        // nothing changes.
         const id = comps(f[3])
-        const code = clean(id[0]) ?? clean(id[3]) ?? clean(f[3])
+        const first = clean(id[0])
+        const text = clean(id[1])
+        const system = (clean(id[2]) ?? '').toUpperCase()
+        const isStandard = system === 'LN' || system === 'LOINC'
+          || (!!first && /^\d+-\d+$/.test(first))
+
+        const code = (isStandard ? text ?? first : first) ?? clean(f[3])
+        const standardCode = isStandard ? first : null
         const value = clean(f[5])
 
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }
@@ -188,11 +204,14 @@ export function parseHl7(raw: string): AstmMessage {
 
         const result: AstmResult = {
           code,
+          standardCode,
           // A repeat separator in a value means several answers to one
           // question; the first is the reportable one.
           value: value.split(d.repeat)[0],
           unit: clean(comps(f[6])[0]),
-          abnormalFlag: clean(f[8]),
+          // Flags repeat too: the H360 sends `L~A` for a low result on an
+          // abnormal sample. The first is the one about this measurement.
+          abnormalFlag: clean((clean(f[8]) ?? '').split(d.repeat)[0]),
         }
         out.results.push(result)
         break
