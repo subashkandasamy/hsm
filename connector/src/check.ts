@@ -66,6 +66,10 @@ export async function runCheck(config: Config | null): Promise<number> {
   const diskLine = await checkImageDisk()
   if (diskLine) lines.push(diskLine)
 
+  // ── Anyone knocking who cannot get in ────────────────────────────────────
+  const knocking = await checkHalfOpen(config.listenPort)
+  if (knocking) lines.push(knocking)
+
   // ── Cables ───────────────────────────────────────────────────────────────
   lines.push(await checkSerial(config))
 
@@ -320,6 +324,43 @@ async function checkImageDisk(): Promise<Line | null> {
     }
   }
   return { state: 'ok', label: 'Room for scans', detail: `${free} free, scans using ${used}` }
+}
+
+/**
+ * An analyzer that is trying to reach us and failing.
+ *
+ * The connector cannot see this for itself: a half-open connection never
+ * reaches the application, so a machine stuck mid-handshake looks identical
+ * to one nobody switched on. Everything the connector knows about itself says
+ * healthy while a technician runs sample after sample into nothing.
+ *
+ * Worth a line of its own because it is invisible from every other direction,
+ * and because the cause is nearly always the same one: the two are on
+ * different networks and our reply has nowhere to go.
+ */
+async function checkHalfOpen(port: number): Promise<Line | null> {
+  const { findHalfOpen } = await import('./half-open.js')
+  const found = await findHalfOpen(port, lanIp())
+  if (!found.length) return null
+
+  const worst = found.find((f) => f.differentNetwork) ?? found[0]
+  const who = found.map((f) => f.remoteIp).join(', ')
+
+  if (worst.differentNetwork) {
+    return {
+      state: 'bad', label: 'An analyzer cannot get in',
+      detail: `${who} is trying to reach this computer and cannot complete the connection`,
+      fix: `It is on a different network — this computer is ${lanIp()}. `
+        + 'Put both on the same network: change the analyzer\'s own IP address to match '
+        + 'this one, or give this computer a second address on the analyzer\'s network.',
+    }
+  }
+  return {
+    state: 'warn', label: 'An analyzer cannot get in',
+    detail: `${who} is trying to reach this computer and cannot complete the connection`,
+    fix: 'They are on the same network, so this is more likely a firewall between them, '
+      + 'or a cable or switch dropping the reply.',
+  }
 }
 
 /**

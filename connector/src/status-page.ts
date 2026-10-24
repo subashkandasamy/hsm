@@ -1,6 +1,7 @@
 import http from 'node:http'
 import os from 'node:os'
 import { lanIp, dataDir, type Config } from './config.js'
+import type { HalfOpen } from './half-open.js'
 import { Queue } from './queue.js'
 import { log } from './log.js'
 import { VERSION } from './version.js'
@@ -62,8 +63,13 @@ export function startStatusPage(
       oldest = pending[0]?.receivedAt ?? null
     } catch { /* shown as unknown below */ }
 
+    // Who is knocking and cannot get in. Cached, because the page refreshes
+    // itself and asking the operating system every few seconds for something
+    // that changes slowly is pointless.
+    const knocking = await halfOpenCached(config.listenPort)
+
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end(render(config, state, waiting, oldest))
+    res.end(render(config, state, waiting, oldest, knocking))
   })
 
   server.on('error', (e) => {
@@ -118,7 +124,28 @@ function ago(d: Date | string | null): string {
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-function render(config: Config, state: LiveState, waiting: number, oldest: string | null): string {
+/**
+ * Analyzers stuck mid-handshake, asked for at most once every fifteen seconds.
+ *
+ * A half-open connection never reaches this program, so without this the page
+ * says "Working" while a machine two feet away fails on every sample. That is
+ * what happened in Karur: the analyzer on 10.0.0.101, the computer on
+ * 192.168.1.54, and nothing on this page to suggest anything was wrong.
+ */
+let knockCache: { at: number; rows: HalfOpen[] } = { at: 0, rows: [] }
+async function halfOpenCached(port: number): Promise<HalfOpen[]> {
+  if (Date.now() - knockCache.at < 15_000) return knockCache.rows
+  try {
+    const { findHalfOpen } = await import('./half-open.js')
+    knockCache = { at: Date.now(), rows: await findHalfOpen(port, lanIp()) }
+  } catch {
+    knockCache = { at: Date.now(), rows: [] }
+  }
+  return knockCache.rows
+}
+
+function render(config: Config, state: LiveState, waiting: number, oldest: string | null,
+                knocking: HalfOpen[] = []): string {
   const ip = lanIp()
   const address = `${ip ?? "this computer's IP"} : ${config.listenPort}`
 
@@ -128,12 +155,24 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
 
   // One headline, because a technician should not have to read a table to
   // learn whether to worry.
-  const good = state.tcpBound && !disk?.refusing
+  // An analyzer that cannot complete a connection is a failure, however
+  // healthy everything else looks. Saying "Working" over the top of it is
+  // what sent a hospital hunting in the wrong place for an afternoon.
+  const blocked = knocking.length > 0
+  const good = state.tcpBound && !disk?.refusing && !blocked
   const headline = good ? 'Working'
+    : blocked ? 'An analyzer cannot get in'
     : disk?.refusing ? 'Disk almost full — scans are being refused'
     : 'Not receiving from network analyzers'
   const detail = good
     ? `Connected to ${config.hospital ?? config.serverUrl}`
+    : blocked
+      ? `${knocking.map((k) => k.remoteIp).join(', ')} is trying to reach this computer `
+        + 'and cannot complete the connection.'
+        + (knocking.some((k) => k.differentNetwork)
+          ? ` It is on a different network — this computer is ${ip}. `
+            + 'Put both on the same network.'
+          : ' They are on the same network, so look at a firewall or switch between them.')
     : disk?.refusing
       ? `Only ${humanBytes(disk.freeBytes)} left on this computer. Free space or move old studies off it.`
       : `Port ${config.listenPort} could not be opened — another program may be using it`
