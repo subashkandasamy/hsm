@@ -48,10 +48,11 @@ console's screen, the whole radiology path is proved in the room — the console
 can be driven from a list instead of a keyboard — and any images it then sends
 are saved and described on screen.
 
-**Serial needs a source run.** `serialport` is a native module and is not inside
-the single-file executable, so `--serial` works from `npm run dev` or
-`npx tsx src/index.ts`, not from `uyirly-connector.exe`. Network and scanner
-capture work from either.
+**Serial needs the driver beside the program.** `serialport` is a native module
+and cannot be baked into a single-file executable, so it ships in a
+`node_modules` folder next to it and is loaded at runtime. Keep the unzipped
+files together — the installer copies the folder along with the exe. Without it
+the program still runs; only serial is unavailable, and `--check` says so.
 
 Pairs with nothing, uploads nothing, needs no account — which is the point on a
 first visit. Point the analyzer at the laptop, run one sample, and every
@@ -71,14 +72,18 @@ entire setup.
 
 ## What it connects to
 
-| Transport | Used by | Notes |
+| Transport | Used by | How it is switched on |
 |---|---|---|
-| **Network (TCP)** | Mindray BC-5130, most modern machines | The analyzer connects to us |
-| **Serial (RS-232)** | Mindray BC-20s, Transasia/Erba H360 | Reconnects when a cable is knocked |
-| **Watched folder** | Biochemistry analyzers that only write files | Waits until the file stops growing |
+| **Network (TCP)** | Erba H360, iChroma II, most modern machines | Nothing — point the analyzer at this computer |
+| **Serial (RS-232)** | Erba Chem 5x, ECL 105, Laura Smart, electrolyte analyzers | `--add-serial COM3 --baud 9600` |
+| **Watched folder** | Analyzers whose only output is a file | `--add-folder "D:\LabResults"` |
+| **DICOM** | X-ray, CT, ultrasound | Nothing — point the console at this computer |
 
 Nothing is configured per instrument. Whatever connects gets the same
 handshake, and the server identifies the machine from the message it sends.
+
+`--ports` lists the serial ports this computer can see, and `--devices` what it
+is currently listening to.
 
 ## Where things are
 

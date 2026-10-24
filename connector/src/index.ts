@@ -34,6 +34,12 @@ import { startSerial } from './transports/serial.js'
  *   uyirly-connector --status        what is waiting, and where the files are
  *   uyirly-connector --check         diagnose everything, and say how to fix it
  *   uyirly-connector --capture       record what an unknown analyzer sends
+ *   uyirly-connector --devices       what this computer is listening to
+ *   uyirly-connector --ports         serial ports this computer can see
+ *   uyirly-connector --add-serial COM3 --baud 9600
+ *   uyirly-connector --remove-serial COM3
+ *   uyirly-connector --add-folder "D:\LabResults"
+ *   uyirly-connector --remove-folder "D:\LabResults"
  */
 
 const DEFAULT_SERVER = process.env.UYIRLY_SERVER ?? 'https://demo.uyirly.com'
@@ -49,6 +55,25 @@ async function main(): Promise<void> {
 
   const queue = new Queue(path.join(dataDir(), 'queue'))
   await queue.init()
+
+  // Cables and folders. Before these existed, config.serial and
+  // config.watchFolders were written once at pairing as empty arrays and
+  // never again — so two of the three transports were built, tested, listed
+  // in the README, and unreachable without hand-editing config.json on a
+  // laboratory PC.
+  if (args.includes('--devices') || args.includes('--ports')
+      || args.some((a) => /^--(add|remove)-(serial|folder)$/.test(a))) {
+    const cli = await import('./devices-cli.js')
+    if (args.includes('--ports'))          { process.exitCode = await cli.listPorts(); return }
+    if (args.includes('--devices'))        { process.exitCode = await cli.listDevices(); return }
+    if (args.includes('--add-serial'))     {
+      process.exitCode = await cli.addSerial(flag('--add-serial') ?? '', Number(flag('--baud') ?? 9600))
+      return
+    }
+    if (args.includes('--remove-serial'))  { process.exitCode = await cli.removeSerial(flag('--remove-serial') ?? ''); return }
+    if (args.includes('--add-folder'))     { process.exitCode = await cli.addFolder(flag('--add-folder') ?? ''); return }
+    if (args.includes('--remove-folder'))  { process.exitCode = await cli.removeFolder(flag('--remove-folder') ?? ''); return }
+  }
 
   // Standing in a laboratory with an instrument nobody has connected before.
   // Deliberately above the pairing checks: a capture needs no account, which
@@ -172,11 +197,11 @@ async function main(): Promise<void> {
   })
   stoppers.push(() => dicom.close())
 
-  for (const folder of config.watchFolders) {
+  for (const folder of config.watchFolders ?? []) {
     stoppers.push(startFolderWatch(folder, (raw, src) => void receive(raw, src)))
   }
 
-  for (const s of config.serial) {
+  for (const s of config.serial ?? []) {
     stoppers.push(await startSerial(s.path, s.baudRate, (raw, src) => void receive(raw, src)))
   }
 

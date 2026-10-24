@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { createWriteStream, promises as fs } from 'node:fs'
+import { createWriteStream, readFileSync, promises as fs } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -62,9 +62,12 @@ async function main() {
     await inject(hostNode, path.join(OUT, `uyirly-connector${ext}`), blob, process.platform)
   }
 
+  if (wantHost) await copySerialRuntime(process.platform)
+
   if (wantWin) {
     const nodeExe = await fetchNode('win32', 'x64')
     await inject(nodeExe, path.join(OUT, 'uyirly-connector.exe'), blob, 'win32')
+    await copySerialRuntime('win32')
     await writeInstaller()
     await makeZip()
   }
@@ -74,6 +77,74 @@ async function main() {
     const s = await fs.stat(path.join(OUT, f))
     console.log(`  ${f.padEnd(28)} ${(s.size / 1048576).toFixed(1)} MB`)
   }
+}
+
+/**
+ * The serial driver, copied to sit beside the executable.
+ *
+ * serialport is a native module and cannot go inside a single-file build, so
+ * it travels next to it in a node_modules folder and is loaded at runtime
+ * (see transports/serial.ts). Without this the executable can only ever talk
+ * to analyzers on the network — which is most of a laboratory's machines
+ * missing, since RS-232 is still the only port on a great many of them.
+ *
+ * Cross-packaging works because @serialport/bindings-cpp ships prebuilt
+ * binaries for every platform inside the npm package, so a Windows build can
+ * be assembled on a Mac. Only the target's prebuild is copied; carrying
+ * Android and Linux into a hospital's download is pointless weight.
+ */
+async function copySerialRuntime(platform) {
+  const SRC = path.join(HERE, 'node_modules')
+  const DEST = path.join(OUT, 'node_modules')
+
+  // Everything serialport needs at run time. node-addon-api is deliberately
+  // absent: it is C++ headers used when compiling from source, and we ship a
+  // prebuilt binary.
+  const walk = (name, seen = new Set()) => {
+    if (seen.has(name) || name === 'node-addon-api') return seen
+    let pkg
+    try { pkg = JSON.parse(readFileSync(path.join(SRC, name, 'package.json'), 'utf8')) }
+    catch { return seen }
+    seen.add(name)
+    for (const dep of Object.keys(pkg.dependencies ?? {})) walk(dep, seen)
+    return seen
+  }
+  const packages = [...walk('serialport')]
+  if (!packages.length) {
+    console.log('  ! serialport is not installed — the build will have no serial support')
+    return
+  }
+
+  // The prebuild folder for this target, as node-gyp-build names them.
+  const keep = platform === 'win32' ? 'win32-x64'
+    : platform === 'darwin' ? 'darwin-x64+arm64'
+    : 'linux-x64'
+
+  await fs.rm(DEST, { recursive: true, force: true })
+  for (const name of packages) {
+    await fs.cp(path.join(SRC, name), path.join(DEST, name), {
+      recursive: true,
+      filter: (src) => {
+        const rel = path.relative(SRC, src)
+        const m = rel.match(/prebuilds[/\\]([^/\\]+)/)
+        return !m || m[1] === keep
+      },
+    })
+  }
+
+  const size = await dirSize(DEST)
+  console.log(`Serial driver copied beside the executable `
+    + `(${packages.length} packages, ${keep}, ${(size / 1048576).toFixed(1)} MB)`)
+}
+
+async function dirSize(dir) {
+  let total = 0
+  for (const e of await fs.readdir(dir, { withFileTypes: true, recursive: true })) {
+    if (e.isFile()) {
+      try { total += (await fs.stat(path.join(e.parentPath ?? e.path, e.name))).size } catch {}
+    }
+  }
+  return total
 }
 
 /** One script, because that is what SEA takes. */
@@ -162,18 +233,25 @@ async function makeZip() {
   const zipName = `uyirly-lab-connector-windows.zip`
   const zipPath = path.join(OUT, zipName)
   await fs.rm(zipPath, { force: true })
-  const members = ['uyirly-connector.exe', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt']
-    .map((f) => path.join(OUT, f))
+  // node_modules holds the serial driver and must keep its shape, so the
+  // archive is no longer completely flat. The four files a person needs are
+  // still at the top of it.
+  // Bare names, zipped from inside dist-exe. They used to be absolute paths
+  // that -j flattened away; with -r the full build path went into every entry
+  // name instead, so a hospital unzipping it got
+  // Users/<developer>/Desktop/... before reaching the program.
+  const members = ['uyirly-connector.exe', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt', 'node_modules']
 
   if (process.platform === 'win32') {
     // Windows has no `zip`. Compress-Archive is built in, and the build runs
     // here on a CI runner testing the install.
     execFileSync('powershell', ['-NoProfile', '-Command',
       `Compress-Archive -Path ${members.map((m) => `'${m}'`).join(',')} -DestinationPath '${zipPath}' -Force`,
-    ], { stdio: 'inherit' })
+    ], { stdio: 'inherit', cwd: OUT })
   } else {
-    // -j so the archive is flat: a hospital unzips it and sees four files.
-    execFileSync('zip', ['-j', '-q', zipPath, ...members], { stdio: 'inherit' })
+    // -r rather than -j: the four files stay at the top and node_modules
+    // keeps its structure, which it must to be loadable.
+    execFileSync('zip', ['-r', '-q', zipPath, ...members], { stdio: 'inherit', cwd: OUT })
   }
 
   const { size } = await fs.stat(zipPath)
@@ -272,6 +350,19 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 Copy-Item "$PSScriptRoot\\uyirly-connector.exe" $exe -Force
+
+# The serial driver travels beside the program, not inside it: it is a native
+# module and cannot be baked into a single file. Leaving it behind in the
+# unzip folder is the same as not shipping it, and the failure is silent until
+# somebody plugs in a cable months later.
+$modules = "$PSScriptRoot\\node_modules"
+if (Test-Path $modules) {
+  Copy-Item $modules "$destDir\\node_modules" -Recurse -Force
+  Write-Host "Serial support installed"
+} else {
+  Write-Host "No serial driver in this download - network analyzers only" -ForegroundColor Yellow
+}
+
 Write-Host "Installed to $exe"
 
 # Pair now, while there is a person here to type the code.

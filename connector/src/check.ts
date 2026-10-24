@@ -66,6 +66,9 @@ export async function runCheck(config: Config | null): Promise<number> {
   const diskLine = await checkImageDisk()
   if (diskLine) lines.push(diskLine)
 
+  // ── Cables ───────────────────────────────────────────────────────────────
+  lines.push(await checkSerial(config))
+
   // ── Anything stuck on this machine ───────────────────────────────────────
   lines.push(await checkQueue())
 
@@ -317,6 +320,42 @@ async function checkImageDisk(): Promise<Line | null> {
     }
   }
   return { state: 'ok', label: 'Room for scans', detail: `${free} free, scans using ${used}` }
+}
+
+/**
+ * Serial analyzers, and whether this build can actually talk to one.
+ *
+ * Worth its own line because the failure is silent and late: a hospital sets
+ * up a COM port, nothing ever arrives, and the only clue is an error in a log
+ * nobody opens. Three states are worth telling apart — no cable configured
+ * (fine, most machines are on the network), a cable configured but no driver
+ * (broken, and fixable by unzipping the download properly), and working.
+ */
+async function checkSerial(config: Config): Promise<Line> {
+  const ports = config.serial ?? []
+  const { loadSerialPort } = await import('./transports/serial.js')
+  const driver = await loadSerialPort()
+
+  if (!ports.length) {
+    return driver
+      ? { state: 'ok', label: 'Serial analyzers', detail: 'none set up; a cable can be added' }
+      : {
+          state: 'ok', label: 'Serial analyzers',
+          detail: 'none set up, and no serial driver on this computer',
+          fix: 'Only needed for analyzers on a cable. Add one with --add-serial COM3.',
+        }
+  }
+
+  const list = ports.map((p) => `${p.path} at ${p.baudRate}`).join(', ')
+  if (!driver) {
+    return {
+      state: 'bad', label: 'Serial analyzers',
+      detail: `${list} — but the serial driver could not be loaded, so nothing is being read`,
+      fix: 'The node_modules folder from the download must sit beside the program. '
+        + 'Unzip it again, keeping the files together, and reinstall.',
+    }
+  }
+  return { state: 'ok', label: 'Serial analyzers', detail: list }
 }
 
 async function checkQueue(): Promise<Line> {
