@@ -61,6 +61,11 @@ const ALIASES: Record<string, string[]> = {
   P_LCR: ['plcr'],
   P_LCC: ['plcc'],
   RDW_SD:['rdwsd'],
+  // Anaemia discriminant indices. A haematology analyzer that calculates them
+  // marks them research-use-only; whether to report them is the hospital's
+  // decision, so they are offered like any other code and confirmed by hand.
+  MENTZER:['mentzr', 'mentzer', 'mentzerindex'],
+  RDWI:  ['rdwi'],
   // A 3-part differential reports granulocytes and mid cells rather than the
   // five populations. Mapping them onto neutrophils and monocytes is the
   // convention every laboratory running one of these already uses — offered
