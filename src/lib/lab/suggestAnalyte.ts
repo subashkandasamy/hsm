@@ -51,8 +51,24 @@ const ALIASES: Record<string, string[]> = {
   MCV:   ['mcv'],
   MCH:   ['mch'],
   MCHC:  ['mchc'],
-  RDW:   ['rdw', 'rdwcv', 'rdwsd'],
+  RDW:   ['rdw'],
   MPV:   ['mpv'],
+  // Platelet and red-cell indices, from the first real haematology analyzer
+  // we connected. Every modern cell counter reports them.
+  PCT:   ['pct', 'plateletcrit'],
+  PDW_CV:['pdwcv', 'pdw'],
+  PDW_SD:['pdwsd'],
+  P_LCR: ['plcr'],
+  P_LCC: ['plcc'],
+  RDW_SD:['rdwsd'],
+  // A 3-part differential reports granulocytes and mid cells rather than the
+  // five populations. Mapping them onto neutrophils and monocytes is the
+  // convention every laboratory running one of these already uses — offered
+  // as a guess, never confirmed in bulk, because it is a clinical judgement.
+  NEUT_PCT: ['granpercent', 'gran'],
+  NEUT_ABS: ['granabs'],
+  MONO_PCT: ['midpercent', 'mid'],
+  MONO_ABS: ['midabs'],
   LYMPH: ['lym', 'lymph', 'lympercent', 'lymphocytes', 'lymphocyte'],
   NEUT:  ['neut', 'gran', 'granpercent', 'granulocytes', 'neutrophils'],
   MONO:  ['mono', 'mid', 'midpercent', 'monocytes'],
