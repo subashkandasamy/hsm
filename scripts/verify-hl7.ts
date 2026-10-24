@@ -1,0 +1,144 @@
+/**
+ * The HL7 parser, checked against the messages a real analyzer sends.
+ *
+ *   npm run verify:hl7
+ *
+ * Written as a script rather than a unit test for the same reason the barcode
+ * check is: the thing being verified is a claim about the physical world — that
+ * we can read what an Erba H360 puts on the wire — and the value is in being
+ * able to run it against a captured message from a new hospital's machine
+ * without setting up a test framework first.
+ *
+ * To check a real capture: save it to a file and
+ *
+ *   npx tsx scripts/verify-hl7.ts path/to/capture.hl7
+ */
+
+import { readFileSync } from 'node:fs'
+import { parseHl7 } from '../src/lib/lab/hl7'
+import { parseAstm, detectProtocol } from '../src/lib/lab/astm'
+
+let failed = 0
+function check(ok: boolean, label: string, detail?: unknown) {
+  if (!ok) failed++
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${!ok && detail !== undefined ? `  — got ${JSON.stringify(detail)}` : ''}`)
+}
+
+// A 3-part differential result, shaped the way an Erba H360 sends one: results
+// and histograms in the same message, the laboratory's barcode in OBR-3.
+const H360 = [
+  'MSH|^~\\&|H360|ERBA|UYIRLY|KMC|20261024120000||ORU^R01|9|P|2.3.1',
+  'PID|1||DEMO-UH-2026-00007||KUMAR^RAVI||19900101|M',
+  'OBR|1|P-77|2610240017|CBC^Complete Blood Count|||20261024115500',
+  'OBX|1|NM|WBC^White Blood Cells||11.96|10*3/uL|4.0-11.0|H|||F',
+  'OBX|2|NM|LYM%^Lymphocyte percent||19.5|%|20-40|L|||F',
+  'OBX|3|NM|GRAN%^Granulocyte percent||76.7|%|50-70|H|||F',
+  'OBX|4|NM|RBC^Red Blood Cells||5.08|10*6/uL|4.5-5.5|N|||F',
+  'OBX|5|NM|HGB^Haemoglobin||15.0|g/dL|13-17|N|||F',
+  'OBX|6|NM|PLT^Platelets||288|10*3/uL|150-450|N|||F',
+  // The histograms. Not measurements.
+  'OBX|7|NA|WBC_HISTO^WBC histogram||0^1^4^19^57^93^61^22^5^1||||||F',
+  'OBX|8|ED|RBC_SCATTER^Scattergram||^image^PNG^Base64^iVBORw0KGgo=||||||F',
+].join('\r')
+
+console.log('\nAn Erba H360 result message')
+{
+  check(detectProtocol(H360) === 'hl7', 'recognised as HL7', detectProtocol(H360))
+  const m = parseHl7(H360)
+  check(m.fingerprint === 'H360^ERBA', 'instrument identified from MSH-3 and MSH-4', m.fingerprint)
+  check(m.model === 'H360', 'model', m.model)
+  check(m.manufacturer === 'ERBA', 'manufacturer', m.manufacturer)
+  check(m.sampleId === '2610240017', "sample id is the laboratory's number (OBR-3), not the placer's", m.sampleId)
+  check(m.patientName === 'RAVI KUMAR', 'patient name, given name first', m.patientName)
+  check(m.results.length === 6, 'six results — the histograms are not results', m.results.length)
+  check(!m.results.some((r) => /HISTO|SCATTER/.test(r.code)), 'no histogram leaked into the results',
+    m.results.map((r) => r.code))
+  const wbc = m.results.find((r) => r.code === 'WBC')
+  check(wbc?.value === '11.96' && wbc?.unit === '10*3/uL' && wbc?.abnormalFlag === 'H',
+    'WBC carries value, unit and the high flag', wbc)
+  check(!m.warnings.some((w) => /histogram/i.test(w)), 'histograms are skipped silently', m.warnings)
+}
+
+// The trap that looks like it works: MSH is numbered differently from every
+// other segment, so reading MSH-3 as index 3 silently returns the receiver.
+console.log('\nThe MSH off-by-one')
+{
+  const m = parseHl7('MSH|^~\\&|SENDER|SENDFAC|RECEIVER|RECFAC|20261024||ORU^R01|1|P|2.3\rOBX|1|NM|X||1||||||F')
+  check(m.model === 'SENDER', 'MSH-3 is the sender, not the receiver', m.model)
+  check(m.manufacturer === 'SENDFAC', 'MSH-4 is the sending facility', m.manufacturer)
+}
+
+console.log('\nAn instrument that chose different delimiters')
+{
+  // MSH-1 declares the field separator. An instrument is entitled to pick any
+  // character, and the standard says to read it rather than assume a pipe.
+  const m = parseHl7('MSH!@~\\&!CHEM5X!ERBA!LIS!H!2026!!ORU@R01!1!P!2.3\rOBX!1!NM!GLU@Glucose!!98!mg/dL!70-110!N!!!F')
+  check(m.fingerprint === 'CHEM5X^ERBA', 'identified despite a non-standard field separator', m.fingerprint)
+  check(m.results[0]?.code === 'GLU' && m.results[0]?.value === '98', 'result read with the declared delimiters', m.results[0])
+}
+
+console.log('\nEscaped delimiters inside values')
+{
+  const m = parseHl7('MSH|^~\\&|A|B|C|D|2026||ORU^R01|1|P|2.3\rOBX|1|NM|WBC||8.4|10\\S\\9/L||N|||F')
+  check(m.results[0]?.unit === '10^9/L', 'an escaped component separator is restored', m.results[0]?.unit)
+}
+
+console.log('\nThings a real machine does on a bad day')
+{
+  const m = parseHl7([
+    'MSH|^~\\&|A|B|C|D|2026||ORU^R01|1|P|2.3',
+    'OBX|1|NM|HGB||||||||F',              // no value — a short draw
+    'OBX|2|NM|||5.5|||||F',               // no code
+    'OBX|3|NM|K^Potassium||4.1~4.2|mmol/L||N|||F',  // a repeated value
+  ].join('\r'))
+  check(m.results.length === 1, 'only the usable result is kept', m.results.map((r) => r.code))
+  check(m.results[0]?.value === '4.1', 'the first of a repeated value is the reportable one', m.results[0]?.value)
+  check(m.warnings.some((w) => /HGB/.test(w)), 'a missing value is warned about, not hidden', m.warnings)
+  check(m.warnings.some((w) => /no test code/i.test(w)), 'a result with no code is warned about', m.warnings)
+}
+
+console.log('\nSpecimen id in SPM, as HL7 2.5 puts it')
+{
+  const m = parseHl7([
+    'MSH|^~\\&|A|B|C|D|2026||ORU^R01|1|P|2.5',
+    'OBR|1|||CBC',
+    'SPM|1|2610240099||BLD',
+    'OBX|1|NM|WBC||8.4|10*3/uL||N|||F',
+  ].join('\r'))
+  check(m.sampleId === '2610240099', 'falls back to SPM when OBR carried no id', m.sampleId)
+}
+
+console.log('\nA message that is not a result')
+{
+  const m = parseHl7('MSH|^~\\&|A|B|C|D|2026||ACK^R01|1|P|2.3\rMSA|AA|1')
+  check(m.warnings.some((w) => /not a result message/i.test(w)), 'an acknowledgement is called out', m.warnings)
+}
+
+console.log('\nASTM still parses (nothing was broken on the way past)')
+{
+  const astm = 'H|\\^&|||BC-5130^Mindray|||||||P|1\rP|1||||PATIENT\rO|1|2609230004||^^^CBC\rR|1|^^^WBC|8.4|10*9/L||N\rL|1|N'
+  check(detectProtocol(astm) === 'astm', 'still recognised as ASTM', detectProtocol(astm))
+  const m = parseAstm(astm)
+  check(m.fingerprint === 'BC-5130^Mindray', 'ASTM fingerprint unchanged', m.fingerprint)
+  check(m.results[0]?.value === '8.4', 'ASTM result unchanged', m.results[0])
+}
+
+// A captured message from a real machine, when one is passed in.
+const file = process.argv[2]
+if (file) {
+  console.log(`\nCapture: ${file}`)
+  const raw = readFileSync(file, 'utf8')
+  const proto = detectProtocol(raw)
+  console.log(`  protocol: ${proto ?? 'unrecognised'}`)
+  const m = proto === 'hl7' ? parseHl7(raw) : parseAstm(raw)
+  console.log(`  instrument: ${m.fingerprint ?? '(did not identify itself)'}`)
+  console.log(`  sample: ${m.sampleId ?? '(none)'}`)
+  console.log(`  results: ${m.results.length}`)
+  for (const r of m.results) {
+    console.log(`     ${r.code.padEnd(12)} ${String(r.value).padEnd(10)} ${r.unit ?? ''} ${r.abnormalFlag ?? ''}`)
+  }
+  if (m.warnings.length) console.log(`  warnings:\n${m.warnings.map((w) => '     ' + w).join('\n')}`)
+}
+
+console.log(failed === 0 ? '\nAll checks passed.\n' : `\n${failed} FAILED\n`)
+process.exit(failed ? 1 : 0)

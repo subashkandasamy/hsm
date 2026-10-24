@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { parseAstm, detectProtocol } from './astm'
+import { parseHl7 } from './hl7'
 
 type Svc = ReturnType<typeof createServiceClient>
 
@@ -54,16 +55,18 @@ export async function processMessage(
   },
 ): Promise<IngestOutcome> {
   // ── Parse ────────────────────────────────────────────────────────────────
+  //
+  // Both parsers return the same shape, so the protocol is a detail of how the
+  // numbers arrived rather than of what they mean. Everything below this point
+  // is shared.
   const protocol = detectProtocol(raw)
-  if (protocol !== 'astm') {
-    const error = protocol === 'hl7'
-      ? 'HL7 is not parsed yet — the message is stored and can be replayed once it is'
-      : 'Could not tell what protocol this is'
+  if (protocol === null) {
+    const error = 'Could not tell what protocol this is'
     await svc.from('analyzer_messages').update({ status: 'failed', error }).eq('id', messageId)
     return { status: 'stored', protocol, error }
   }
 
-  const parsed = parseAstm(raw)
+  const parsed = protocol === 'hl7' ? parseHl7(raw) : parseAstm(raw)
 
   // ── Which instrument? ────────────────────────────────────────────────────
   //
@@ -112,7 +115,9 @@ export async function processMessage(
         fingerprint,
         manufacturer: parsed.manufacturer ?? lib?.manufacturer ?? null,
         model: parsed.model ?? lib?.model ?? null,
-        protocol: 'astm', transport: transportOf(source), status: 'discovered',
+        // What it actually spoke, not an assumption. A hospital tracing a
+        // silent analyzer needs this to be true.
+        protocol, transport: transportOf(source), status: 'discovered',
       })
 
       // Seed this hospital's code map from the library, where we have one.

@@ -29,6 +29,24 @@
  * Deliberately lenient about everything that is not safety: frame numbers are
  * not checked in sequence, and a machine that simply dumps text with no
  * handshake at all still works, because some do.
+ *
+ * ── MLLP, for the machines that speak HL7 ──────────────────────────────────
+ *
+ * Newer instruments do not use the ASTM handshake at all. They open a socket
+ * and send HL7 wrapped in MLLP — <VT> message <FS><CR> — and expect an HL7
+ * acknowledgement back.
+ *
+ * This matters more than it looks. Without MLLP the bytes fall through to the
+ * unframed path, where nothing marks the end of a message, so it is only
+ * released on the idle timeout: fifteen seconds late, and if a second sample
+ * is sent inside that window **both patients' results are concatenated into
+ * one message**. That is precisely the failure this class exists to prevent.
+ *
+ * The Erba H360 is the instrument that forced this. It sends HL7 over MLLP,
+ * and its own "Communication Acknowledgement" setting is normally turned off
+ * because it cannot read a standard ACK — but we send one regardless, because
+ * an instrument waiting for an acknowledgement that never comes stalls, and
+ * sending one costs nothing.
  */
 
 export const ENQ = 0x05
@@ -40,6 +58,9 @@ export const ETB = 0x17
 export const EOT = 0x04
 export const CR = 0x0d
 export const LF = 0x0a
+/** MLLP: <VT> message <FS><CR>. How HL7 is framed on a TCP socket. */
+export const VT = 0x0b
+export const FS = 0x1c
 
 export interface LinkEvents {
   /** A complete transmission, as text, ready to be queued. */
@@ -112,6 +133,18 @@ export class AstmLink {
         continue
       }
 
+      // MLLP: everything up to <FS><CR> is one complete HL7 message, and the
+      // end marker is explicit — no idle timeout, no risk of two samples
+      // running together.
+      if (b === VT) {
+        const end = this.findMllpEnd()
+        if (end < 0) return                      // message still arriving
+        const body = this.buf.subarray(1, end).toString('latin1')
+        this.buf = this.buf.subarray(end + (this.buf[end + 1] === CR ? 2 : 1))
+        this.emitHl7(body)
+        continue
+      }
+
       if (b === STX) {
         const end = this.findFrameEnd()
         if (end < 0) return                      // frame still arriving
@@ -134,6 +167,53 @@ export class AstmLink {
       this.assembled.push(this.buf.subarray(0, nl).toString('latin1').replace(/\r$/, ''))
       this.buf = this.buf.subarray(nl + 1)
     }
+  }
+
+  /** Index of the <FS> that ends an MLLP message, or -1 while it arrives. */
+  private findMllpEnd(): number {
+    for (let i = 1; i < this.buf.length; i++) if (this.buf[i] === FS) return i
+    return -1
+  }
+
+  /**
+   * One HL7 message, complete.
+   *
+   * Released immediately rather than appended to `assembled`, because MLLP
+   * said where it ended and waiting would only risk the next one joining it.
+   */
+  private emitHl7(body: string): void {
+    this.clearIdle()
+    const text = body.replace(/\r/g, '\n').trim()
+    if (!text) return
+    this.events.onMessage(text)
+    this.events.send(this.hl7Ack(text))
+  }
+
+  /**
+   * An HL7 acknowledgement, wrapped in MLLP.
+   *
+   * MSA|AA means "accepted". It is echoed against the message control id from
+   * MSH-10 so the instrument can match it to what it sent; an instrument that
+   * cannot read our ACK ignores it, which is the H360's documented behaviour
+   * and harmless. Not sending one at all is what makes a machine stall.
+   */
+  private hl7Ack(message: string): Buffer {
+    const msh = message.split('\n').find((l) => l.startsWith('MSH')) ?? ''
+    const sep = msh[3] ?? '|'
+    const f = msh.split(sep)
+    // MSH is numbered from its own separator, so MSH-10 is index 9.
+    const controlId = (f[9] ?? '').trim() || '1'
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+    const ack = [
+      ['MSH', '^~\\&', 'UYIRLY', 'CONNECTOR', f[2] ?? '', f[3] ?? '',
+       stamp, '', 'ACK', controlId, 'P', (f[11] ?? '2.3').trim() || '2.3'].join('|'),
+      ['MSA', 'AA', controlId].join('|'),
+    ].join('\r')
+    return Buffer.concat([
+      Buffer.from([VT]),
+      Buffer.from(ack, 'latin1'),
+      Buffer.from([CR, FS, CR]),
+    ])
   }
 
   /**

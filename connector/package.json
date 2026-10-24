@@ -13,7 +13,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/link.test.ts && tsx test/disk.test.ts && tsx test/render.test.ts && tsx test/link.auth.test.ts",
+    "test": "tsx test/link.test.ts && tsx test/mllp.test.ts && tsx test/disk.test.ts && tsx test/render.test.ts && tsx test/link.auth.test.ts",
     "package": "node build.mjs",
     "package:win": "node build.mjs --win",
     "package:all": "node build.mjs --all"
