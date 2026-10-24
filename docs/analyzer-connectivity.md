@@ -41,7 +41,7 @@ Two consequences worth holding on to:
 | **Aspen BG Plus** | Blood gas + electrolytes, cartridge | **4 USB only** — no LAN or RS-232 found | Not stated anywhere | [listing](https://www.hospitalstore.com/aspen-blood-gas-analyzer) — distributor, not manufacturer |
 | **Electrolyte analyzer** | Na, K, iCa, pH, HCO₃, Cl | Unknown | Unknown | — |
 | **Bionet CardioTouch 3000** | 12-channel ECG, **movable** | **LAN + USB**, Wi-Fi optional | BMS-Plus → JPEG/BMP/XML/**PDF** | [Bionet](https://bionetus.com/medical/ecg-spirometer/cardiotouch-3000-12-channel-electrocardiograph/) |
-| **ADONIS + ECORAD/DROP/MediLite** | X-ray generator + DR panel PC | PC on a network | DICOM, to be confirmed | — |
+| **ADONIS + ECORAD/DROP/MediLite** | X-ray generator + DR panel PC | PC on a network | **DICOM — confirmed working 24 Oct 2026.** The console is `DROCConfig`; worklist settings are under Networks → Worklist | site visit |
 | **RMS Helios** | Spirometry (PFT) | Windows PC | PDF export | — |
 | **RMS TMT** | Treadmill test | Windows PC | PDF export | — |
 
@@ -65,7 +65,7 @@ useful fact in this document. See §4.
 ## 3. What our connector can do today
 
 `connector/` is a program the hospital runs on one of its own PCs. It is built
-and published (v1.0.1). The architecture that matters:
+and published (**v1.0.7**). The architecture that matters:
 
 ```
 analyzer → handshake → DISK → uploader → Uyirly
@@ -81,9 +81,9 @@ disk write is retry logic and can fail safely.
 |---|---|---|
 | **TCP** (port 5150) | Works | Several analyzers concurrently, one link per connection, records never interleaved |
 | **MLLP** (HL7 framing) | Works, added 24 Oct 2026 | `<VT> message <FS><CR>`, released on the end marker, HL7 `MSA\|AA` sent back |
-| **Serial (RS-232)** | Code written, **not in the shipped exe** | `serialport` is a native module and is `external` in `build.mjs`; the dynamic import fails gracefully |
+| **Serial (RS-232)** | **Ships** since v1.0.2 | `serialport` is a native module and cannot be baked into a single file, so it travels *beside* the exe and the installer copies it. One COM port per machine, added with `--add-serial COM3 --baud 9600` |
 | **Watched folder** | Works | Waits until a file stops growing |
-| **DICOM** | Works | C-STORE, C-FIND worklist, C-ECHO |
+| **DICOM** | Works, **proved on real hardware 24 Oct 2026** | C-STORE, C-FIND worklist, C-ECHO. See §4 Phase 4 for the three things only a real console revealed |
 
 Server side: raw stored before parsing, idempotent by message hash, tenant from
 the connector token. Analyzers move `discovered → quarantine → live → paused`.
@@ -93,7 +93,32 @@ the parser against a realistic H360 message and the ways a real instrument
 misbehaves; pass it a captured file to inspect a new machine's traffic.
 
 **The device library holds exactly one machine**, a Mindray BC-5130, and it is
-not yet verified against a real unit.
+not yet verified against a real unit. The H360's vocabulary was mapped by hand
+against a real transmission on 24 Oct 2026 and should be promoted into the
+library so the second hospital with one configures nothing.
+
+### Where each of this hospital's machines stands
+
+One connector on one PC serves all of these at once — different protocols and
+different transports do not conflict.
+
+| Machine | Route | State |
+|---|---|---|
+| Erba H360 | LAN, HL7/MLLP → 5150 | **Proved on the real instrument, 24 Oct 2026** |
+| ADONIS / DROC | DICOM → 11112 | **Worklist proved on the real console, 24 Oct 2026** |
+| Erba Chem 5x | RS-232 | Supported, never tested on hardware |
+| Erba ECL 105 | RS-232 or TCP | Supported, never tested on hardware |
+| Erba Laura Smart | RS-232 | Supported, never tested on hardware |
+| Electrolyte analyzer | Probably RS-232 | Brand still unidentified — see §2 |
+| Boditech iChroma II | Ethernet | Protocol unstated by the manufacturer. Capture before promising |
+| Bionet CardioTouch 3000 | LAN/USB | Exports PDF/XML, not a result stream → watched folder |
+| RMS Helios, RMS TMT | Windows PC | PDF → watched folder |
+| Aspen BG Plus | 4 × USB | **May have no LIS output at all.** Confirm at the back panel |
+
+**The catch is ports, not software.** Four machines are RS-232 and a PC has at
+most one serial socket, so this needs either a USB-to-serial adapter per machine
+(≈ ₹500, and Windows renumbers COM ports after a reboot) or one serial-to-
+Ethernet device server — see Phase 2.
 
 ---
 
@@ -158,8 +183,11 @@ cable, and does not care that Windows renumbers COM ports after a reboot.
 dependency for the hospital that will not buy a box. More packaging work and a
 larger installer.
 
-Do **(a)** for the first hospital because it is buyable this week, and **(b)**
-when a second hospital refuses to buy hardware.
+**(b) shipped in v1.0.2** — the serial driver travels beside the exe and the
+installer copies it, so no hospital is blocked on buying a box. **(a) is still
+the recommendation for this hospital**: four adapters on one PC is four cables
+to knock and four COM numbers Windows may reshuffle on a reboot, where a device
+server makes all four arrive through the TCP door that is already proved.
 
 ### Phase 3 — the device library
 
@@ -223,6 +251,46 @@ sending machine's AE title and model, and the disk it occupies.
 It also demonstrates the gap in §6: the images are on the connector's disk and
 **only the description travels**. That is the design, and it is the thing with
 no second copy.
+
+**Proved against the hospital's own X-ray console, 24 Oct 2026.** An E-COM
+DROC console queried the connector and the worklist came back with both
+patients — correct names, UHIDs and accession numbers. Three defects showed
+themselves that every test had passed over:
+
+1. **Modality is not a top-level key in a worklist query.** It lives inside
+   `ScheduledProcedureStepSequence`. We read the top level, found nothing, and
+   treated every query as unfiltered — so the X-ray console was handed an
+   obstetric ultrasound two rows above the chest it was waiting for.
+2. **The console's grid reads `StudyDescription`, `StudyDate` and `StudyTime`
+   from the top level**, not from the scheduled step. With only the copies
+   inside the step it listed two patients and no examination: the technologist
+   could see who, but had to go back to the paper slip to learn which scan.
+   Send both.
+3. **It queries by several things in turn, its own AE title among them** —
+   "all worklist items assigned to this modality: DROC". Once the filter
+   actually worked, taking that literally would have emptied the department's
+   list behind a screen that looks like it is working. An unrecognised code is
+   a misunderstanding, not a filter, and must hide nobody.
+
+**Why the test suite missed all three:** it sent `Modality` in *both* places at
+once, asking more politely than any real console does. A test that is gentler
+than the world verifies nothing. It now queries the way DROC does and fails
+without the fix.
+
+**Two things worth knowing on the next site visit:**
+
+- **`Verify Connection` writes a log file** (`Diagnosis_Worklist<date>.log`)
+  that echoes back the IP, port and both AE titles it actually used. Read that
+  before anything else — it caught a `192.168.2.106` where only the third octet
+  was wrong, which had been invisible on the settings screen.
+- **The connector has no heartbeat.** `connectors.last_seen_at` moves only when
+  it uploads a result, uploads a study, or answers a worklist query, so a stale
+  timestamp is positive proof that no query arrived. It was how we established
+  the console was never reaching us at all.
+
+A machine now appears in Uyirly the moment it *asks* for its worklist, rather
+than when it first sends an image — the query is the earliest proof it can
+reach us, and an installation is exactly when somebody wants to know.
 
 ### Phase 5 — the PC-based and movable devices
 
@@ -362,10 +430,15 @@ affects patient safety.
 | **Delivery means acknowledged** | A message is only removed from the queue when the server says it has it. |
 | **Database** | Supabase managed Postgres, `ap-south-1`. |
 
-**Nothing has ever been stored.** `analyzer_messages` is empty — no analyzer has
-yet connected to any tenant, so none of the above has been exercised against a
-real instrument. The mechanism is built and tested; it has not been proved by
-use. Say it that way to a hospital.
+**First real traffic, 24 Oct 2026.** `analyzer_messages` holds its first stored
+message: a complete CBC from the hospital's own H360, caught while the lab PC
+had no internet, held on disk, and uploaded when the line came back. The whole
+chain has now been exercised once, end to end, on real hardware — install,
+pair, receive offline, upload, map 24 unknown codes, and check every value
+against the analyzer's own screen.
+
+Once, on one instrument. That is the honest claim: the mechanism is proved, the
+*library* is not. Say it that way to a hospital.
 
 ### The three gaps
 
@@ -452,7 +525,9 @@ stops everything silently.
    machine actually said. That turns unknown instruments into library entries
    and the rest can be done remotely.
 4. **Identify the electrolyte analyzer and the Aspen BG Plus** properly.
-5. **Ask whether the DR software has DICOM settings.**
+5. ~~Ask whether the DR software has DICOM settings.~~ **Answered: DROCConfig →
+   Networks → Worklist.** Photograph the tab before changing it, and read the
+   `Diagnosis_Worklist` log after pressing Verify Connection.
 6. **Daily volume per machine**, which decides everything about order.
 
 ---
