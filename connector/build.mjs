@@ -46,6 +46,22 @@ const wantWin = args.includes('--win') || args.includes('--all')
 const wantHost = args.includes('--all') || !wantWin
 
 async function main() {
+  // The version is written in two files — package.json, which the publish
+  // script reads, and src/version.ts, which the connector reports to the
+  // server. They drift silently: a hospital downloads 1.0.2 while the
+  // settings screen shows every connector still running 1.0.1, and nobody
+  // can tell from a support call what is actually installed.
+  const pkgVersion = JSON.parse(readFileSync(path.join(HERE, 'package.json'), 'utf8')).version
+  const srcVersion = /VERSION = '([^']+)'/.exec(
+    readFileSync(path.join(HERE, 'src/version.ts'), 'utf8'))?.[1]
+  if (pkgVersion !== srcVersion) {
+    console.error(`\n  Version mismatch: package.json says ${pkgVersion}, `
+      + `src/version.ts says ${srcVersion}.`)
+    console.error('  Set both to the same number before building.\n')
+    process.exit(1)
+  }
+  console.log(`Building version ${pkgVersion}`)
+
   await fs.mkdir(OUT, { recursive: true })
   await fs.mkdir(BUILD, { recursive: true })
 
