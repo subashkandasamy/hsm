@@ -108,6 +108,23 @@ async function main(): Promise<void> {
     assert.equal(String(step.ScheduledProcedureStepStartDate), '20261024')
     assert.match(String(step.ScheduledProcedureStepStartTime), /^1030/, 'start time in IST')
     assert.equal(String(step.ScheduledProcedureStepID), 'RAD-2610-0042')
+
+    // ...and the same facts again at the top level, because the E-COM console
+    // draws its "Study Description" and "Study Date Time" columns from there.
+    // With only the copies inside the step it listed two patients and no
+    // examination — the technologist could see who, but not which scan.
+    assert.equal(String(d.StudyDescription), 'Chest PA', 'the examination, where the grid reads it')
+    assert.equal(String(d.StudyDate), '20261024')
+    assert.match(String(d.StudyTime), /^1030/, 'study time in IST')
+  })
+
+  await test('a console that sends the modality at the top level still filters', async () => {
+    // Not every console puts it in the scheduled step. Answering only one of
+    // the two places is how this broke the first time.
+    const got = await find('CT', 'top')
+    assert.equal(askedFor, 'CT', 'a top-level Modality must still reach the handler')
+    assert.equal(got.length, 1)
+    assert.equal(String(got[0].AccessionNumber), 'RAD-2610-0043')
   })
 
   await test('an empty list is a success, not a failure', async () => {
@@ -117,12 +134,23 @@ async function main(): Promise<void> {
     assert.equal(got.length, 0)
   })
 
-  async function find(modality: string | null): Promise<Array<Record<string, unknown>>> {
+  /**
+   * Query the way a console really does: Modality inside the scheduled step
+   * and nowhere else.
+   *
+   * This used to send it at the top level as well, and that is precisely why
+   * this file passed for weeks while an E-COM console in Karur was handed the
+   * ultrasound list. A test that asks more politely than the real thing
+   * verifies nothing. `topLevel` exists only to prove we still tolerate the
+   * consoles that do put it in both places.
+   */
+  async function find(modality: string | null,
+                      where: 'step' | 'top' = 'step'): Promise<Array<Record<string, unknown>>> {
     const client = new Client()
     const req = CFindRequest.createWorklistFindRequest(
-      modality
-        ? { ScheduledProcedureStepSequence: [{ Modality: modality }], Modality: modality }
-        : {},
+      !modality ? {}
+        : where === 'top' ? { Modality: modality }
+        : { ScheduledProcedureStepSequence: [{ Modality: modality }] },
     )
     const out: Array<Record<string, unknown>> = []
     req.on('response', (r: { getStatus: () => number; getDataset: () => { getElements: () => Record<string, unknown> } | undefined }) => {

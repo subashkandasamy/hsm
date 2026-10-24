@@ -72,6 +72,16 @@ export function toDicomModality(slug: string | null | undefined): string | null 
 }
 
 /**
+ * Every code we are prepared to filter on. Built from the tables above rather
+ * than written out again, so adding a modality in one place is enough.
+ */
+const KNOWN = new Set<string>([
+  ...Object.values(TO_DICOM),
+  ...Object.keys(EQUIVALENT),
+  ...Object.values(EQUIVALENT).flat(),
+])
+
+/**
  * Would a machine announcing `asked` expect to be given work scheduled as
  * `scheduled`? Generous on purpose: a worklist that hides a patient because of
  * a code mismatch sends a technologist back to typing names by hand, which is
@@ -82,6 +92,12 @@ export function modalityMatches(scheduled: string | null, asked: string | null):
   if (!scheduled) return true        // we do not know, so do not hide it
   const a = asked.toUpperCase()
   const s = scheduled.toUpperCase()
+  // A value we have never heard of is not a filter, it is a misunderstanding,
+  // and acting on it would empty the list. The E-COM console asks by its own
+  // AE title among other things — "Modality: DROC" — and taking that literally
+  // would hide every patient in the department behind a blank screen, which is
+  // far worse than showing one ultrasound too many.
+  if (!KNOWN.has(a)) return true
   if (a === s) return true
   return (EQUIVALENT[s] ?? [s]).includes(a) || (EQUIVALENT[a] ?? [a]).includes(s)
 }

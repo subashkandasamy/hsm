@@ -1,6 +1,6 @@
 {
   "name": "uyirly-lab-connector",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Sits on a laboratory PC, takes what the analyzers say, and gets it to Uyirly without losing anything.",
   "type": "module",
@@ -23,7 +23,7 @@
     "for the same reason Playwright is: nothing here should ever be installed",
     "on the production server. This is a program a hospital runs on its own PC.",
     "",
-    "serialport is optional because it is a native module \u2014 it cannot be baked",
+    "serialport is optional because it is a native module — it cannot be baked",
     "into a single-file executable, and a connector whose analyzers are all on",
     "the network must still run without it."
   ],

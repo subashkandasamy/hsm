@@ -113,6 +113,27 @@ function toDicomName(full: string): string {
 }
 
 /**
+ * Which kind of work the machine is asking for.
+ *
+ * In a worklist query Modality is not a top-level key: it lives inside
+ * ScheduledProcedureStepSequence, because what has a modality is the step, not
+ * the patient. Reading it from the top level finds nothing, every query looks
+ * unfiltered, and the X-ray console is handed the ultrasound list too — which
+ * is exactly what a DX console in Karur showed, an obstetric ultrasound two
+ * rows above the chest it was waiting for.
+ *
+ * Still tolerant of the top level: some consoles put it in both places, and a
+ * query that asks twice should not be harder to answer than one that asks once.
+ */
+function askedModality(query: Record<string, unknown>): string | null {
+  const sps = query.ScheduledProcedureStepSequence
+  const step = Array.isArray(sps) ? sps[0] as Record<string, unknown> | undefined : undefined
+  const fromStep = typeof step?.Modality === 'string' ? step.Modality : null
+  const fromTop = typeof query.Modality === 'string' ? query.Modality : null
+  return (fromStep || fromTop || '').trim() || null
+}
+
+/**
  * A study arrives as a stream of individual images over minutes, with no
  * message to say it has finished — DICOM has no "that was the last one". So
  * each study is held open and considered complete once it has been quiet for a
@@ -224,7 +245,7 @@ export async function startDicom(
                  callback: (r: responses.CFindResponse[]) => void) {
       const query = (request.getDataset()?.getElements() ?? {}) as Record<string, unknown>
       // A machine usually asks only for its own kind of work.
-      const asked = (query.Modality as string) || null
+      const asked = askedModality(query)
 
       handlers.getWorklist(asked).then((items) => {
         log.info(`Worklist asked by ${this.callingAe}`
@@ -242,6 +263,14 @@ export async function startDicom(
             StudyInstanceUID: '',
             RequestedProcedureID: w.accessionNumber,
             RequestedProcedureDescription: w.studyDescription ?? '',
+            // Not worklist keys, and sent anyway. The E-COM console's grid
+            // reads its "Study Description" and "Study Date Time" columns from
+            // the top level, so with only the scheduled-step copies below it
+            // showed two names and no examination — the technologist could see
+            // who, but had to go back to the paper slip to learn which scan.
+            StudyDescription: w.studyDescription ?? '',
+            StudyDate: toDicomDate(w.scheduledFor),
+            StudyTime: toDicomTime(w.scheduledFor),
             ReferringPhysicianName: w.referringPhysician ? toDicomName(w.referringPhysician) : '',
             // The scheduled step is a sequence, and a console reads the
             // modality and time from inside it rather than the top level.
