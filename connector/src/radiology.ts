@@ -20,14 +20,36 @@ import { VERSION } from './version.js'
  * lasts longer.
  */
 
-export async function fetchWorklist(config: Config, modality: string | null): Promise<WorklistItem[]> {
+/**
+ * Who we are, on every call.
+ *
+ * The version used to travel only in the body of a lab result upload, which
+ * meant a computer wired to a scanner and nothing else reported its version
+ * once, at pairing, and never again. After an upgrade Uyirly went on showing
+ * the old number and went on offering an upgrade that had already happened.
+ * A header costs nothing and no future call can forget it.
+ */
+function headers(config: Config): Record<string, string> {
+  return {
+    authorization: `Bearer ${config.token}`,
+    'x-connector-version': VERSION,
+  }
+}
+
+export async function fetchWorklist(
+  config: Config, modality: string | null, callingAe: string | null = null,
+): Promise<WorklistItem[]> {
   const base = config.serverUrl.replace(/\/$/, '')
-  const url = `${base}/api/device/radiology/worklist${modality ? `?modality=${encodeURIComponent(modality)}` : ''}`
+  const q = new URLSearchParams()
+  if (modality) q.set('modality', modality)
+  // So the machine shows up in Uyirly on the strength of having asked.
+  if (callingAe) q.set('ae', callingAe)
+  const url = `${base}/api/device/radiology/worklist${q.size ? `?${q}` : ''}`
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 12_000)
     const res = await fetch(url, {
-      headers: { authorization: `Bearer ${config.token}` },
+      headers: headers(config),
       signal: controller.signal,
     })
     clearTimeout(timer)
@@ -64,7 +86,7 @@ export async function reportStudy(config: Config, study: ReceivedStudy): Promise
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${config.token}`,
+          ...headers(config),
         },
         body: JSON.stringify({ ...study, version: VERSION }),
         signal: controller.signal,
@@ -111,7 +133,7 @@ export async function fetchViewerKey(config: Config): Promise<string | null> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 12_000)
       const res = await fetch(url, {
-        headers: { authorization: `Bearer ${config.token}` },
+        headers: headers(config),
         signal: controller.signal,
       })
       clearTimeout(timer)

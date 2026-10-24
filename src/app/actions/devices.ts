@@ -54,6 +54,7 @@ export interface ModalityRow {
   station_name: string | null
   status: string
   last_study_at: string | null
+  last_worklist_at: string | null
   first_seen_at: string
   studies: number
 }
@@ -365,7 +366,7 @@ export async function listModalities(): Promise<ModalityRow[]> {
   const supabase = await createClient()
   const [{ data: modalities }, { data: studies }] = await Promise.all([
     supabase.from('radiology_modalities')
-      .select('id, ae_title, modality, manufacturer, model, station_name, status, last_study_at, first_seen_at')
+      .select('id, ae_title, modality, manufacturer, model, station_name, status, last_study_at, last_worklist_at, first_seen_at')
       .order('first_seen_at'),
     supabase.from('radiology_studies').select('modality_id'),
   ])

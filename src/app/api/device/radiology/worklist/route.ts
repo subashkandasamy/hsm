@@ -45,10 +45,39 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const wantModality = url.searchParams.get('modality')?.toUpperCase() ?? null
+  const callingAe = url.searchParams.get('ae')?.trim() || null
 
+  // The version travels as a header on every device call. It used to be sent
+  // only in the body of a lab result upload, so a computer wired to a scanner
+  // and nothing else reported its version once, at pairing, and never again —
+  // and Uyirly went on offering an upgrade that had already been installed.
+  const reported = request.headers.get('x-connector-version')?.trim() || null
+
+  const now = new Date().toISOString()
   await svc.from('connectors')
-    .update({ last_seen_at: new Date().toISOString(), status: 'online' })
+    .update({ last_seen_at: now, status: 'online', ...(reported ? { version: reported } : {}) })
     .eq('id', connector.id)
+
+  // A machine that asks for its worklist has announced itself as surely as one
+  // that sends images, and a hospital should not have to take a picture before
+  // its scanner appears in Uyirly. `last_study_at` stays null until it does —
+  // the screen then says it has been seen but has sent nothing yet, which is
+  // the honest and more useful thing to show during an installation.
+  if (callingAe) {
+    const { data: known } = await svc.from('radiology_modalities')
+      .select('id').eq('tenant_id', connector.tenant_id).eq('ae_title', callingAe).maybeSingle()
+    if (known) {
+      await svc.from('radiology_modalities')
+        .update({ last_worklist_at: now, ...(wantModality ? { modality: wantModality } : {}) })
+        .eq('id', known.id)
+    } else {
+      await svc.from('radiology_modalities').insert({
+        tenant_id: connector.tenant_id, connector_id: connector.id,
+        ae_title: callingAe, modality: wantModality, status: 'discovered',
+        last_worklist_at: now,
+      })
+    }
+  }
 
   // Anything not yet performed. A scan scheduled for tomorrow is on the list
   // too, because a patient who turns up early should not be turned away for

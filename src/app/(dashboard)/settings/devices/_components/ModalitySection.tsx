@@ -74,7 +74,15 @@ export default function ModalitySection({
                     <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
                       {modalityLabel(m.modality)}
                       {m.station_name ? ` · ${m.station_name}` : ''}
-                      {m.last_study_at ? ` · last study ${timeAgo(m.last_study_at)}` : ' · nothing received yet'}
+                      {m.last_study_at
+                        ? ` · last study ${timeAgo(m.last_study_at)}`
+                        // Two different situations, and the difference is the
+                        // useful part during an installation: a machine that
+                        // asks for its worklist has proved it can reach us,
+                        // and only the images are still to come.
+                        : m.last_worklist_at
+                          ? ` · asked for its worklist ${timeAgo(m.last_worklist_at)} · no images yet`
+                          : ' · nothing received yet'}
                     </p>
 
                     <p className="text-xs mt-1 font-mono" style={{ color: '#64748B' }}>

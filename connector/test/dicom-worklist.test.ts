@@ -42,11 +42,13 @@ async function main(): Promise<void> {
   console.log('\nDICOM worklist')
 
   let askedFor: string | null | undefined
+  let askedBy: string | null | undefined
   const server = await startDicom(
     { dicomPort: PORT, dicomAeTitle: 'UYIRLY' } as unknown as Config,
     {
-      getWorklist: async (modality) => {
+      getWorklist: async (modality, callingAe) => {
         askedFor = modality
+        askedBy = callingAe
         return modality ? PATIENTS.filter((p) => p.modality === modality) : PATIENTS
       },
       onStudyComplete: () => {},
@@ -125,6 +127,14 @@ async function main(): Promise<void> {
     assert.equal(askedFor, 'CT', 'a top-level Modality must still reach the handler')
     assert.equal(got.length, 1)
     assert.equal(String(got[0].AccessionNumber), 'RAD-2610-0043')
+  })
+
+  await test('the machine that asked is named, so it can appear in Uyirly', async () => {
+    // Without this a scanner stays invisible until the day somebody takes a
+    // picture with it — which is backwards, because the worklist query is the
+    // earliest proof it can reach us at all.
+    await find(null)
+    assert.equal(askedBy, 'CONSOLE', 'the calling AE title must reach the handler')
   })
 
   await test('an empty list is a success, not a failure', async () => {

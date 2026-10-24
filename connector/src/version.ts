@@ -6,4 +6,4 @@
  * while the connector kept reporting the old number to the server — and the
  * settings screen would then show a version nobody is running.
  */
-export const VERSION = '1.0.6'
+export const VERSION = '1.0.7'

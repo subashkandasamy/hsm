@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   // Scanners. Same program, another port — a hospital installs one thing
   // whether its machines are analyzers, scanners or both.
   const dicom = await startDicom(config, {
-    getWorklist: (modality) => fetchWorklist(config, modality),
+    getWorklist: (modality, ae) => fetchWorklist(config, modality, ae),
     onStudyComplete: (study) => {
       live.lastMessageAt = new Date()
       live.receivedCount += 1

@@ -137,8 +137,10 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
         dicomAeTitle: opts.dicomAeTitle ?? 'UYIRLY',
       } as unknown as import('./config.js').Config,
       {
-        getWorklist: async (modality) => {
-          console.log(`  → a scanner asked for the worklist${modality ? ` (${modality})` : ''}`)
+        getWorklist: async (modality, callingAe) => {
+          console.log(`  → a scanner asked for the worklist${callingAe ? ` (${callingAe}` : ''}`
+            + `${modality ? `${callingAe ? ', ' : ' ('}${modality}` : ''}`
+            + `${callingAe || modality ? ')' : ''}`)
           return [{
             accessionNumber: 'TEST-0001',
             patientId: 'TEST-0001',

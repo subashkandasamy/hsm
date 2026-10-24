@@ -70,8 +70,14 @@ export async function POST(request: Request) {
   const studyUid = (body.studyInstanceUid ?? '').trim()
   if (!studyUid) return json(400, { error: 'studyInstanceUid is required' })
 
+  // Sent as a header by every device call, so an upgrade is reflected here
+  // whatever the connector happens to be wired to.
+  const reported = request.headers.get('x-connector-version')?.trim() || null
   await svc.from('connectors')
-    .update({ last_seen_at: new Date().toISOString(), status: 'online' })
+    .update({
+      last_seen_at: new Date().toISOString(), status: 'online',
+      ...(reported ? { version: reported } : {}),
+    })
     .eq('id', connector.id)
 
   // ── Which machine? ───────────────────────────────────────────────────────

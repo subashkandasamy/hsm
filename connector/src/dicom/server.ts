@@ -41,7 +41,7 @@ type Dimse = typeof import('dcmjs-dimse')
 
 interface Handlers {
   /** Today's list, already shaped for DICOM by the caller. */
-  getWorklist: (modality: string | null) => Promise<WorklistItem[]>
+  getWorklist: (modality: string | null, callingAe: string | null) => Promise<WorklistItem[]>
   /** Called once a study has gone quiet, with everything held on disk. */
   onStudyComplete: (study: ReceivedStudy) => void
 }
@@ -247,7 +247,12 @@ export async function startDicom(
       // A machine usually asks only for its own kind of work.
       const asked = askedModality(query)
 
-      handlers.getWorklist(asked).then((items) => {
+      // The calling AE goes with it. A machine asking for its worklist has
+      // announced itself just as surely as one sending images, and until now
+      // we threw that away — so a scanner stayed invisible in Uyirly until the
+      // day somebody took a picture with it.
+      handlers.getWorklist(asked, this.callingAe === 'UNKNOWN' ? null : this.callingAe)
+        .then((items) => {
         log.info(`Worklist asked by ${this.callingAe}`
           + `${asked ? ` for ${asked}` : ''} — ${items.length} patient(s) sent`)
 

@@ -62,8 +62,12 @@ export async function GET(request: Request) {
       .in('status', ['unmatched', 'unmapped', 'failed']),
   ])
 
+  const reported = request.headers.get('x-connector-version')?.trim() || null
   await svc.from('connectors')
-    .update({ last_seen_at: new Date().toISOString() })
+    .update({
+      last_seen_at: new Date().toISOString(),
+      ...(reported ? { version: reported } : {}),
+    })
     .eq('id', connector.id)
 
   return json(200, {
