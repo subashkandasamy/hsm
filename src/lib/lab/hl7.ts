@@ -172,6 +172,20 @@ export function parseHl7(raw: string): AstmMessage {
         const valueType = (clean(f[2]) ?? '').toUpperCase()
         if (NOT_A_RESULT.has(valueType)) break
 
+        // How the machine was set up, not what it measured.
+        //
+        // An H360 reports its take mode, blood mode, test mode, reference
+        // group and a free-text remark as observations, typed IS and coded in
+        // the vendor's own private table. They are configuration — "CBC+3DIFF",
+        // "General", "W" — and every one of them would otherwise land in a
+        // technician's queue asking what it measures.
+        //
+        // Narrow on purpose: IS is HL7's type for a code from a user-defined
+        // table, and a coding system numbered 99-something is by definition
+        // local to the vendor. A measurement is neither. The raw message is
+        // stored regardless, so a machine that surprises us can be replayed.
+        if (valueType === 'IS' && /^99/.test((clean(comps(f[3])[2]) ?? ''))) break
+
         // OBX-3 is the observation identifier: id^text^system.
         //
         // A real Erba H360 sends `787-2^MCV^LN` — a LOINC number, the name,
@@ -187,11 +201,19 @@ export function parseHl7(raw: string): AstmMessage {
         const first = clean(id[0])
         const text = clean(id[1])
         const system = (clean(id[2]) ?? '').toUpperCase()
-        const isStandard = system === 'LN' || system === 'LOINC'
-          || (!!first && /^\d+-\d+$/.test(first))
 
-        const code = (isStandard ? text ?? first : first) ?? clean(f[3])
-        const standardCode = isStandard ? first : null
+        // An identifier made only of digits says nothing to anybody: it is a
+        // LOINC number (787-2) or the vendor's own channel (11003), and in
+        // both cases the name sits beside it. A real H360 sends
+        // `11003^PCT^99MRC` and `6690-2^WBC^LN` in the same message.
+        //
+        // Where the identifier is already a mnemonic — WBC, HGB — it stays,
+        // because the text beside it is usually a long description nobody
+        // wants as a code.
+        const numeric = !!first && /^[\d-]+$/.test(first)
+        const code = (numeric ? text ?? first : first) ?? clean(f[3])
+        // Kept only when it is a real standard, not a vendor channel number.
+        const standardCode = (system === 'LN' || system === 'LOINC') ? first : null
         const value = clean(f[5])
 
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }

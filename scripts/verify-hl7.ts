@@ -93,6 +93,35 @@ console.log('\nThe real H360, as it actually transmits')
     'an empty leading flag ~N does not become a stray value', mch?.abnormalFlag)
 }
 
+console.log('\nThe H360 also reports how it was set up')
+{
+  // Verbatim again. These are configuration, not measurements, and every one
+  // of them would otherwise reach a technician as "what does this measure?"
+  const m = parseHl7([
+    'MSH|^~\\&|H360|Erba|||20261024145102||ORU^R01|1|P|2.3.1',
+    'OBR|1||1115|01001^Automated CBC',
+    'OBX|1|IS|02001^Take Mode^99MRC||O||||||F',
+    'OBX|2|IS|02002^Blood Mode^99MRC||W||||||F',
+    'OBX|3|IS|02003^Test Mode^99MRC||CBC+3DIFF||||||F',
+    'OBX|6|IS|03001^Ref Group^99MRC||General||||||F',
+    'OBX|7|NM|6690-2^WBC^LN||18.77|10*3/uL|3.50-9.50|H~A|||F',
+    'OBX|25|NM|11003^PCT^99MRC||0.435|%|0.108-0.282|H~A|||F',
+  ].join('\r'))
+
+  const codes = m.results.map((r) => r.code)
+  check(!codes.some((c) => /Mode|Group|^0\d{4}$/.test(c)),
+    'take mode, blood mode, test mode and ref group are not measurements', codes)
+  check(codes.includes('WBC'), 'the actual result is kept', codes)
+  check(codes.includes('PCT'),
+    "a vendor's own channel number is named too — 11003 is PCT", codes)
+  check(m.results.find((r) => r.code === 'PCT')?.standardCode == null,
+    'and a private channel number is not recorded as a standard code',
+    m.results.find((r) => r.code === 'PCT')?.standardCode)
+  check(m.results.find((r) => r.code === 'WBC')?.standardCode === '6690-2',
+    'while a real LOINC number is', m.results.find((r) => r.code === 'WBC')?.standardCode)
+  check(m.results.length === 2, 'two measurements out of six observations', codes)
+}
+
 console.log('\nA machine that sends its own vocabulary is untouched')
 {
   const m = parseHl7('MSH|^~\\&|BC|X|A|B|2026||ORU^R01|1|P|2.3\rOBX|1|NM|WBC^White Blood Cells^L||8.4|10*3/uL||N|||F')
