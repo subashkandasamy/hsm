@@ -41,6 +41,12 @@ const BUILD = path.join(HERE, '.build')
 // part of what we ship and should change deliberately.
 const NODE_VERSION = process.env.NODE_TARGET ?? 'v22.20.0'
 
+// What we are shipping. The installer writes it beside the program so the
+// next upgrade can say what it is replacing without running the old build.
+// main() still checks it against package.json before anything is written.
+const VERSION = /VERSION = '([^']+)'/.exec(
+  readFileSync(path.join(HERE, 'src/version.ts'), 'utf8'))?.[1]
+
 const args = process.argv.slice(2)
 const wantWin = args.includes('--win') || args.includes('--all')
 const wantHost = args.includes('--all') || !wantWin
@@ -52,8 +58,7 @@ async function main() {
   // settings screen shows every connector still running 1.0.1, and nobody
   // can tell from a support call what is actually installed.
   const pkgVersion = JSON.parse(readFileSync(path.join(HERE, 'package.json'), 'utf8')).version
-  const srcVersion = /VERSION = '([^']+)'/.exec(
-    readFileSync(path.join(HERE, 'src/version.ts'), 'utf8'))?.[1]
+  const srcVersion = VERSION
   if (pkgVersion !== srcVersion) {
     console.error(`\n  Version mismatch: package.json says ${pkgVersion}, `
       + `src/version.ts says ${srcVersion}.`)
@@ -404,22 +409,42 @@ async function writePs1(file, body) {
  */
 async function writeInstaller() {
   await writeCmd()
-  await writePs1(path.join(OUT, 'install.ps1'), `# Uyirly Lab Connector - install
+  await writePs1(path.join(OUT, 'install.ps1'), `# Uyirly Lab Connector - install or upgrade
 # Right-click this file and choose "Run with PowerShell (as Administrator)".
 #
-# It asks for the pairing code, or you can supply it:
+# Run it on a computer that already has the connector and it upgrades in
+# place: no pairing code, no questions, nothing to set up again.
+#
+# For a first install it asks for the pairing code, or you can supply it:
 #   .\\install.ps1 -Code K7MQ-3RXW -Server https://yourhospital.uyirly.com
+#
+# -Repair pairs again on a computer that is already set up, for the one case
+# that needs it: moving this connector to a different hospital.
 param(
   [string]$Code,
   [string]$Server,
+  [switch]$Repair,
   # Skips the firewall rule and the startup task. Only for testing the rest.
   [switch]$NoService
 )
 
 $ErrorActionPreference = 'Stop'
+$version = '${VERSION}'
 $name    = 'UyirlyLabConnector'
 $destDir = "$env:ProgramFiles\\Uyirly\\Connector"
 $exe     = "$destDir\\uyirly-connector.exe"
+
+# ── Install or upgrade? ────────────────────────────────────────────────────
+#
+# The answer is on disk. Settings live in ProgramData and the program lives in
+# Program Files, which is the whole reason an upgrade can be this simple: the
+# pairing, the analyzer mappings and anything still queued are in the folder
+# this script never touches.
+#
+# Deciding it here rather than asking means the engineer with the screwdriver
+# cannot get it wrong, and nobody has to find a pairing code to install a fix.
+$configFile = "$env:ProgramData\\Uyirly\\Connector\\config.json"
+$upgrade = (Test-Path $configFile) -and (-not $Repair) -and (-not $Code)
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
       ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -431,8 +456,42 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
   exit 1
 }
 
+# What was here before, read from a file rather than asked of the program.
+# Older builds do not know --version, and an unrecognised flag makes the
+# connector fall through to starting up in the foreground - so asking would
+# hang the installer on exactly the computers an upgrade is for.
+$stamp = "$destDir\\version.txt"
+$was = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { $null }
+
+if ($upgrade) {
+  Write-Host ""
+  Write-Host "Upgrading the connector that is already on this computer." -ForegroundColor Cyan
+  Write-Host "Its pairing, analyzer settings and anything not yet sent are kept."
+  Write-Host ""
+}
+
+# Windows will not let us overwrite a running program, and the connector runs
+# as a scheduled task from boot. Stopping it first is what makes an upgrade an
+# upgrade instead of an "access is denied" and a puzzled engineer.
+schtasks /End /TN $name 2>$null | Out-Null
+# The task ends asynchronously; a copy started too soon still hits the lock.
+for ($i = 0; $i -lt 20; $i++) {
+  if (-not (Get-Process -Name 'uyirly-connector' -ErrorAction SilentlyContinue)) { break }
+  Start-Sleep -Milliseconds 250
+}
+Stop-Process -Name 'uyirly-connector' -Force -ErrorAction SilentlyContinue
+
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-Copy-Item "$PSScriptRoot\\uyirly-connector.exe" $exe -Force
+try {
+  Copy-Item "$PSScriptRoot\\uyirly-connector.exe" $exe -Force
+} catch {
+  Write-Host ""
+  Write-Host "Could not replace the program file - it is still running." -ForegroundColor Red
+  Write-Host "Restart this computer and run this again. Nothing has been changed."
+  Write-Host ""
+  Start-Sleep -Seconds 20
+  exit 1
+}
 
 # The serial driver travels beside the program, not inside it: it is a native
 # module and cannot be baked into a single file. Leaving it behind in the
@@ -446,9 +505,13 @@ if (Test-Path $modules) {
   Write-Host "No serial driver in this download - network analyzers only" -ForegroundColor Yellow
 }
 
+Set-Content -Path "$destDir\\version.txt" -Value $version -Encoding ASCII
 Write-Host "Installed to $exe"
 
-# Pair now, while there is a person here to type the code.
+# Pair now, while there is a person here to type the code. Skipped on an
+# upgrade: this computer is already paired, and asking again would mean
+# somebody has to go and make a code before they can install a fix.
+if (-not $upgrade) {
 if (-not $Code)   { $Code   = Read-Host "Pairing code from Settings -> Analyzers" }
 if (-not $Server) { $Server = Read-Host "Hospital web address (e.g. https://yourhospital.uyirly.com)" }
 & $exe --pair $Code --server $Server --pair-only
@@ -459,6 +522,7 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "  - check this computer can open $Server in a browser"
   Write-Host ""
   exit 1
+}
 }
 
 if ($NoService) {
@@ -529,10 +593,25 @@ $link.Save()
 Write-Host "Put a shortcut on the desktop: Uyirly Lab Connector"
 
 Write-Host ""
-Write-Host "Done. The connector is running and will start with Windows." -ForegroundColor Green
+if ($upgrade) {
+  $now = $version
+  # Say the numbers out loud. The commonest doubt after an upgrade is whether
+  # the new file actually took, and "it looked like it worked" is not an answer
+  # anyone can act on from three hundred kilometres away.
+  if ($was -and $now -and ($was -ne $now)) {
+    Write-Host "Done. Upgraded from $was to $now." -ForegroundColor Green
+  } elseif ($now) {
+    Write-Host "Done. Running version $now." -ForegroundColor Green
+  } else {
+    Write-Host "Done. The connector is running again." -ForegroundColor Green
+  }
+  Write-Host "Nothing to set up - it kept its pairing and its settings."
+} else {
+  Write-Host "Done. The connector is running and will start with Windows." -ForegroundColor Green
+}
 & $exe --check
 Write-Host ""
-Write-Host "Give the address above to your analyzer engineer."
+if (-not $upgrade) { Write-Host "Give the address above to your analyzer engineer." }
 `)
 
   await writePs1(path.join(OUT, 'uninstall.ps1'), `# Uyirly Lab Connector - remove
@@ -574,6 +653,17 @@ TO INSTALL
 
   Windows may warn that the publisher is unknown. Choose "More info" and then
   "Run anyway" — the file is not yet code-signed.
+
+TO UPGRADE
+  Exactly the same: download the new version and double-click install.cmd.
+
+  It sees the connector is already here and upgrades it. No pairing code, no
+  questions. It keeps the pairing, the analyzer settings, and any results that
+  have not been sent yet. Do NOT uninstall first — that is how a queue of
+  results waiting for the internet gets stranded.
+
+  It prints the old and new version numbers when it finishes, so you can see
+  the new one took.
 
 TO CONNECT AN ANALYZER
   Give that address to whoever services your analyzer. They enter it as the

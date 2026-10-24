@@ -68,7 +68,8 @@ export default function DeviceManager({
       {canManage && (
         <>
           <InstallerCard release={release} />
-          <ConnectorSection connectors={connectors} onChange={refresh} />
+          <ConnectorSection connectors={connectors} onChange={refresh}
+            latestVersion={release?.version ?? null} />
           <AnalyzerSection analyzers={analyzers} onChange={refresh} />
           <ModalitySection modalities={modalities} onChange={refresh} />
         </>

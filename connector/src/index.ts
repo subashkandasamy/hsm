@@ -11,6 +11,7 @@ import { fetchWorklist, reportStudy, fetchViewerKey } from './radiology.js'
 import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
+import { VERSION } from './version.js'
 
 /**
  * The Uyirly Lab Connector.
@@ -89,6 +90,14 @@ async function main(): Promise<void> {
       dicomPort: flag('--dicom-port') ? Number(flag('--dicom-port')) : undefined,
       dicomAeTitle: flag('--ae'),
     })
+    return
+  }
+
+  // Which build is actually on this computer. The installer asks before it
+  // replaces anything, so an upgrade can say "1.0.4 is now 1.0.5" rather than
+  // leaving a hospital to guess whether the new file took.
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log(VERSION)
     return
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "uyirly-lab-connector",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "Sits on a laboratory PC, takes what the analyzers say, and gets it to Uyirly without losing anything.",
   "type": "module",

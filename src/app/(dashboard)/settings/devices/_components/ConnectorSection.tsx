@@ -24,6 +24,27 @@ const DICOM_PORT = 11112
 const DICOM_AE_TITLE = 'UYIRLY'
 
 /**
+ * Is `running` an older build than `latest`?
+ *
+ * Compared part by part as numbers, because as strings "1.0.10" sorts before
+ * "1.0.9" and a hospital would be told to upgrade to something older than
+ * what it has. Anything that does not look like a version at all is treated
+ * as up to date: a badge that nags without cause teaches people to ignore it.
+ */
+function isOlder(running: string, latest: string): boolean {
+  const parse = (v: string) => v.trim().replace(/^v/, '').split('.').map(Number)
+  const a = parse(running)
+  const b = parse(latest)
+  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    if (x !== y) return x < y
+  }
+  return false
+}
+
+/**
  * The lab computer that talks to the analyzers.
  *
  * One per laboratory PC. Everything a hospital has to do to connect a machine
@@ -31,10 +52,12 @@ const DICOM_AE_TITLE = 'UYIRLY'
  * an address. No tokens, no configuration files, no ports to reason about.
  */
 export default function ConnectorSection({
-  connectors, onChange,
+  connectors, onChange, latestVersion,
 }: {
   connectors: ConnectorRow[]
   onChange: () => void
+  /** The newest published build, so a card can say when it is behind. */
+  latestVersion?: string | null
 }) {
   const [isPending, startTransition] = useTransition()
   const [showCreate, setShowCreate] = useState(false)
@@ -116,7 +139,7 @@ export default function ConnectorSection({
       ) : (
         <div className="grid gap-3">
           {connectors.map((c) => (
-            <ConnectorCard key={c.id} connector={c}
+            <ConnectorCard key={c.id} connector={c} latestVersion={latestVersion}
               onRegenerate={() => handleRegenerate(c)}
               onRevoke={() => setRevoking(c)}
               onDelete={() => setDeleting(c)}
@@ -185,9 +208,10 @@ export default function ConnectorSection({
 }
 
 function ConnectorCard({
-  connector: c, onRegenerate, onRevoke, onDelete, busy,
+  connector: c, latestVersion, onRegenerate, onRevoke, onDelete, busy,
 }: {
   connector: ConnectorRow
+  latestVersion?: string | null
   onRegenerate: () => void
   onRevoke: () => void
   onDelete: () => void
@@ -203,6 +227,13 @@ function ConnectorCard({
   // One that is working has to be disconnected first, so results never stop
   // arriving as a side effect of tidying up.
   const removable = revoked || !setUp
+
+  // Behind the published build. Worth saying, because the version a hospital
+  // is running is invisible from here otherwise and a fix nobody installs is
+  // a fix nobody has — we spent an afternoon in Karur before realising the
+  // laboratory PC was two builds old.
+  const behind = !revoked && setUp && !!c.version && !!latestVersion
+    && isOlder(c.version, latestVersion)
 
   return (
     <GlassCard className="p-4">
@@ -263,6 +294,15 @@ function ConnectorCard({
               : 'Never heard from'}
             {c.version ? ` · v${c.version}` : ''}
           </p>
+
+          {behind && (
+            <p className="text-xs mt-1.5 rounded-md px-2 py-1 inline-block"
+               style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+              Version {latestVersion} is available. Download it below and run
+              install.cmd on that computer — it upgrades in place and keeps
+              everything, including results not yet sent.
+            </p>
+          )}
         </div>
 
         <div className="flex gap-1.5 flex-shrink-0">
