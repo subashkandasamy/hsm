@@ -115,6 +115,7 @@ export default function AdmissionDetail({
   const [showTransfer, setShowTransfer] = useState(false)
   const [showRefer, setShowRefer] = useState(false)
   const [referralsKey, setReferralsKey] = useState(0)
+  const [editReferral, setEditReferral] = useState<string | null>(null)
   const [showBloodRequest, setShowBloodRequest] = useState(false)
   const [transferWardId, setTransferWardId] = useState('')
   const [transferBedId, setTransferBedId] = useState('')
@@ -358,7 +359,7 @@ export default function AdmissionDetail({
                   with the letter in hand, and everything the receiving doctor
                   knows comes from it.
                 */}
-                <button onClick={() => setShowRefer(true)}
+                <button onClick={() => { setEditReferral(null); setShowRefer(true) }}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                   <Send className="w-4 h-4" /> Refer Out
@@ -513,7 +514,8 @@ export default function AdmissionDetail({
 
           {/* Post-discharge follow-up booking */}
           {/* Reprintable afterwards, which is when it is usually needed. */}
-          <ReferralsOutCard admissionId={adm.id} refreshKey={referralsKey} />
+          <ReferralsOutCard admissionId={adm.id} refreshKey={referralsKey}
+            onEdit={(id) => { setEditReferral(id); setShowRefer(true) }} />
 
           {adm.status === 'discharged' && canWrite && adm.patient && (
             <FollowUpCard patientId={adm.patient_id} doctorId={adm.admitting_doctor_id} source="ipd" admissionId={adm.id} reason={adm.reason || undefined} />
@@ -764,9 +766,10 @@ export default function AdmissionDetail({
 
 {/* Transfer modal */}
       <ReferPatientModal
-        open={showRefer} onClose={() => setShowRefer(false)}
+        open={showRefer} onClose={() => { setShowRefer(false); setEditReferral(null) }}
         onSaved={() => { setReferralsKey((n) => n + 1); router.refresh() }}
-        patientId={adm.patient_id} admissionId={adm.id} source="ipd" />
+        patientId={adm.patient_id} admissionId={adm.id} source="ipd"
+        referralId={editReferral} />
 
       <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Patient">
         <div className="space-y-4">

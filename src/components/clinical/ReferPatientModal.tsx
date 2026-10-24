@@ -8,7 +8,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import {
-  prepareReferral, createReferral,
+  prepareReferral, createReferral, updateReferral, getReferral,
   type ReferralDraft, type ReferralSource,
 } from '@/app/actions/referOut'
 
@@ -31,6 +31,7 @@ import {
  */
 export default function ReferPatientModal({
   open, onClose, onSaved, patientId, visitId, admissionId, emergencyCaseId, source,
+  referralId = null,
 }: {
   open: boolean
   onClose: () => void
@@ -40,8 +41,21 @@ export default function ReferPatientModal({
   admissionId?: string | null
   emergencyCaseId?: string | null
   source: ReferralSource
+  /**
+   * An existing letter to correct, rather than a new one to write.
+   *
+   * Everything comes back exactly as it was saved and the letter keeps its own
+   * reference number. Issuing a second letter instead would leave two numbers
+   * for one patient going to one hospital, and nobody able to say which one
+   * they are holding.
+   */
+  referralId?: string | null
 }) {
   const [draft, setDraft] = useState<ReferralDraft | null>(null)
+  // Set when correcting a letter that has already been printed, so the page
+  // can say it was revised rather than silently replacing what the patient
+  // is carrying.
+  const [printedAt, setPrintedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +92,42 @@ export default function ReferPatientModal({
     if (!open) return
     let live = true
     void (async () => {
+      // Correcting one: everything comes back as it was saved.
+      if (referralId) {
+        const r = await getReferral(referralId)
+        if (!live) return
+        setLoading(false)
+        if (!r) { setError('That letter no longer exists'); return }
+        const str = (k: string) => (r[k] as string | null) ?? ''
+        setDraft({
+          patient_id: (r.patient_id as string) ?? patientId,
+          patient_name: (r.patient_name as string | null) ?? null,
+          patient_age: (r.patient_age as number | null) ?? null,
+          patient_sex: (r.patient_sex as string | null) ?? null,
+          address_text: (r.address_text as string | null) ?? null,
+          contact_no: (r.contact_no as string | null) ?? null,
+          mr_no: (r.mr_no as string | null) ?? null,
+          op_no: (r.op_no as string | null) ?? null,
+          ip_no: (r.ip_no as string | null) ?? null,
+          doa: (r.doa as string | null) ?? null,
+          diagnosis: null, investigations_done: null, treatment_given: null,
+          vitals_text: null, referred_by_name: null,
+          source: (r.source as ReferralSource) ?? source,
+        })
+        setPrintedAt((r.first_printed_at as string | null) ?? null)
+        setToInstitution(str('to_institution')); setToDoctor(str('to_doctor'))
+        setToDepartment(str('to_department')); setToAddress(str('to_address'))
+        setReason(str('reason'))
+        setDiagnosis(str('diagnosis')); setInvestigations(str('investigations_done'))
+        setTreatment(str('treatment_given')); setCondition(str('condition_at_referral'))
+        setVitals(str('vitals_text'))
+        setTransport(str('transport')); setAccompaniedBy(str('accompanied_by'))
+        setTransportNote(str('transport_note'))
+        setByName(str('referred_by_name')); setByQual(str('referred_by_qualification'))
+        setByRegNo(str('referred_by_reg_no'))
+        return
+      }
+
       const d = await prepareReferral({
         patient_id: patientId,
         visit_id: visitId ?? null,
@@ -95,7 +145,7 @@ export default function ReferPatientModal({
       setByName(d.referred_by_name ?? '')
     })()
     return () => { live = false }
-  }, [open, patientId, visitId, admissionId, emergencyCaseId])
+  }, [open, referralId, patientId, visitId, admissionId, emergencyCaseId, source])
 
   // The two the letter genuinely cannot go without, named the way the fields
   // are labelled so they can be found by eye.
@@ -108,6 +158,29 @@ export default function ReferPatientModal({
     e.preventDefault()
     if (!draft) return
     setSaving(true); setError(null)
+
+    if (referralId) {
+      const u = await updateReferral(referralId, {
+        diagnosis: diagnosis || null,
+        investigations_done: investigations || null,
+        treatment_given: treatment || null,
+        condition_at_referral: condition || null,
+        vitals_text: vitals || null,
+        reason,
+        to_institution: toInstitution || null, to_doctor: toDoctor || null,
+        to_department: toDepartment || null, to_address: toAddress || null,
+        transport: transport || null, accompanied_by: accompaniedBy || null,
+        transport_note: transportNote || null,
+        referred_by_name: byName || null, referred_by_qualification: byQual || null,
+        referred_by_reg_no: byRegNo || null,
+      })
+      setSaving(false)
+      if (!u.success) { setError(u.error); return }
+      setSavedId(referralId)
+      onSaved?.(referralId)
+      return
+    }
+
     const r = await createReferral({
       patient_id: draft.patient_id,
       visit_id: visitId ?? null,
@@ -143,7 +216,7 @@ export default function ReferPatientModal({
   // Closing resets, so reopening on another patient never shows the last one's
   // details for a frame.
   function close() {
-    setDraft(null); setLoading(true); setSavedId(null); setError(null)
+    setDraft(null); setLoading(true); setSavedId(null); setError(null); setPrintedAt(null)
     setToInstitution(''); setToDoctor(''); setToDepartment(''); setToAddress('')
     setReason(''); setDiagnosis(''); setInvestigations(''); setTreatment('')
     setCondition(''); setVitals('')
@@ -154,13 +227,23 @@ export default function ReferPatientModal({
 
   if (savedId) {
     return (
-      <Modal open={open} onClose={close} title="Referral letter ready" maxWidth="28rem">
+      <Modal open={open} onClose={close}
+        title={referralId ? 'Referral letter corrected' : 'Referral letter ready'} maxWidth="28rem">
         <div className="space-y-4">
           <p className="text-sm" style={{ color: '#475569' }}>
-            The letter has been written and numbered. Print it and give it to the patient
-            or whoever is travelling with them — it is what the receiving doctor will treat
-            them on.
+            {referralId
+              ? 'The letter has been corrected and keeps its own number.'
+              : 'The letter has been written and numbered. Print it and give it to the patient '
+                + 'or whoever is travelling with them — it is what the receiving doctor will '
+                + 'treat them on.'}
           </p>
+          {referralId && printedAt && (
+            <p className="text-xs rounded-xl px-3 py-2"
+              style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+              A copy was already printed. The patient may be carrying the old one, so the
+              reprint says it was revised — give them the new copy if you can.
+            </p>
+          )}
           <div className="flex gap-3 justify-end">
             <button onClick={close}
               className="px-4 py-2 rounded-xl text-sm font-medium"
@@ -180,7 +263,9 @@ export default function ReferPatientModal({
   }
 
   return (
-    <Modal open={open} onClose={close} title="Refer this patient elsewhere" maxWidth="40rem">
+    <Modal open={open} onClose={close}
+      title={referralId ? 'Correct this referral letter' : 'Refer this patient elsewhere'}
+      maxWidth="40rem">
       {loading ? (
         <p className="text-sm py-6 text-center" style={{ color: '#94A3B8' }}>Gathering the details…</p>
       ) : (

@@ -1,5 +1,6 @@
 import { createElement } from 'react'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
+import { markReferralPrinted } from '@/app/actions/referOut'
 import { ReferralLetterPdf, type ReferralLetterData } from '@/lib/pdf/ReferralLetterPdf'
 import { loadLogo } from '@/lib/pdf/parts'
 import { fileSafe, renderPdfResponse } from '@/lib/pdf/render'
@@ -22,6 +23,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const supabase = await createClient()
   const { data: rec } = await supabase.from('referrals_out').select('*').eq('id', id).maybeSingle()
   if (!rec) return new Response('Referral not found', { status: 404 })
+
+  // Note that a copy has left the building, the first time only. A later
+  // correction then has something to supersede.
+  await markReferralPrinted(id)
 
   const profile = await getTenantProfile()
   const logo = await loadLogo(profile?.logo_url)

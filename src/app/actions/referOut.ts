@@ -25,6 +25,8 @@ import type { Permission } from '@/lib/types'
  * is prosecuted over its contents.
  */
 
+type SimpleResult = { success: true } | { success: false; error: string }
+
 export type ReferralSource = 'opd' | 'ipd' | 'emergency' | 'other'
 
 export interface ReferralDraft {
@@ -422,6 +424,97 @@ export async function listCaseReferrals(
     if (!out[r.emergency_case_id]) out[r.emergency_case_id] = { id: r.id, ref_no: r.ref_no }
   }
   return out
+}
+
+/**
+ * Correct a letter that has already been written.
+ *
+ * In place, keeping its own reference number. The alternative — a second
+ * letter for the same referral — leaves two numbers for one patient going to
+ * one hospital and nobody able to say which they are holding.
+ *
+ * Not restricted once printed. The receiving doctor treats the patient on the
+ * sheet in their hand, and a doctor who realises the diagnosis was wrong must
+ * be able to correct it. What the reprint then does is say so.
+ */
+export async function updateReferral(
+  id: string,
+  patch: {
+    diagnosis?: string | null
+    investigations_done?: string | null
+    treatment_given?: string | null
+    condition_at_referral?: string | null
+    vitals_text?: string | null
+    reason: string
+    to_doctor?: string | null
+    to_institution?: string | null
+    to_department?: string | null
+    to_address?: string | null
+    transport?: string | null
+    accompanied_by?: string | null
+    transport_note?: string | null
+    referred_by_name?: string | null
+    referred_by_qualification?: string | null
+    referred_by_reg_no?: string | null
+  },
+): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'patients:write')
+
+  if (!patch.reason?.trim()) {
+    return { success: false, error: 'Say why the patient is being referred' }
+  }
+  if (!patch.to_institution?.trim() && !patch.to_doctor?.trim()) {
+    return { success: false, error: 'Name the hospital or the doctor the patient is going to' }
+  }
+
+  const supabase = await createClient()
+  const { data: before } = await supabase
+    .from('referrals_out').select('ref_no, first_printed_at').eq('id', id).maybeSingle()
+  if (!before) return { success: false, error: 'That letter no longer exists' }
+
+  const { error } = await supabase.from('referrals_out').update({
+    diagnosis: patch.diagnosis || null,
+    investigations_done: patch.investigations_done || null,
+    treatment_given: patch.treatment_given || null,
+    condition_at_referral: patch.condition_at_referral || null,
+    vitals_text: patch.vitals_text || null,
+    reason: patch.reason.trim(),
+    to_doctor: patch.to_doctor?.trim() || null,
+    to_institution: patch.to_institution?.trim() || null,
+    to_department: patch.to_department?.trim() || null,
+    to_address: patch.to_address?.trim() || null,
+    transport: patch.transport || null,
+    accompanied_by: patch.accompanied_by?.trim() || null,
+    transport_note: patch.transport_note?.trim() || null,
+    referred_by_name: patch.referred_by_name?.trim() || null,
+    referred_by_qualification: patch.referred_by_qualification?.trim() || null,
+    referred_by_reg_no: patch.referred_by_reg_no?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  // Worth noting in the audit whether a copy was already out, because that is
+  // the edit somebody may later ask about.
+  await logAudit(actor.id, 'update', 'referral', id, {
+    ref_no: before.ref_no, after_printing: !!before.first_printed_at,
+  })
+  revalidatePath('/emergency')
+  return { success: true }
+}
+
+/**
+ * Note that a copy has left the building.
+ *
+ * Stamped by the print route the first time only, so a later edit can say
+ * when the copy it supersedes was issued. Reprints do not move it.
+ */
+export async function markReferralPrinted(id: string): Promise<void> {
+  const supabase = await createClient()
+  await supabase.from('referrals_out')
+    .update({ first_printed_at: new Date().toISOString() })
+    .eq('id', id).is('first_printed_at', null)
 }
 
 export async function getReferral(id: string): Promise<Record<string, unknown> | null> {

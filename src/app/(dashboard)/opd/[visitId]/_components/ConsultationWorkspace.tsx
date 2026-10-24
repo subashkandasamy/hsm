@@ -180,6 +180,7 @@ export default function ConsultationWorkspace({
   const [showAdmit, setShowAdmit] = useState(false)
   const [showRefer, setShowRefer] = useState(false)
   const [referralsKey, setReferralsKey] = useState(0)
+  const [editReferral, setEditReferral] = useState<string | null>(null)
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -1054,7 +1055,8 @@ export default function ConsultationWorkspace({
           )}
 
           {/* Reprintable afterwards, which is when it is usually needed. */}
-          <ReferralsOutCard visitId={visit.id} refreshKey={referralsKey} />
+          <ReferralsOutCard visitId={visit.id} refreshKey={referralsKey}
+            onEdit={(id) => { setEditReferral(id); setShowRefer(true) }} />
 
           {/* Follow-up appointment */}
           {isDoctor && !isClosed && (
@@ -1091,7 +1093,7 @@ export default function ConsultationWorkspace({
               */}
               <button
                 type="button"
-                onClick={() => setShowRefer(true)}
+                onClick={() => { setEditReferral(null); setShowRefer(true) }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
                 style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(13,148,136,0.18)' }}
@@ -1162,9 +1164,10 @@ export default function ConsultationWorkspace({
       )}
 
       <ReferPatientModal
-        open={showRefer} onClose={() => setShowRefer(false)}
+        open={showRefer} onClose={() => { setShowRefer(false); setEditReferral(null) }}
         onSaved={() => setReferralsKey((n) => n + 1)}
-        patientId={visit.patient_id} visitId={visit.id} source="opd" />
+        patientId={visit.patient_id} visitId={visit.id} source="opd"
+        referralId={editReferral} />
 
       {showAdmit && (
         <AdmitModal

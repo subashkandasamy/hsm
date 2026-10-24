@@ -53,6 +53,8 @@ export interface ReferralLetterData {
   referred_by_name: string | null
   referred_by_qualification: string | null
   referred_by_reg_no: string | null
+  updated_at?: string | null
+  first_printed_at?: string | null
 }
 
 const SEX: Record<string, string> = { male: 'Male', female: 'Female', other: 'Other', unknown: 'Unknown' }
@@ -80,6 +82,11 @@ export function ReferralLetterPdf({ data, profile, logo }: {
   // refer somebody.
   const caseOf = data.diagnosis?.trim() || data.reason?.trim() || null
 
+  // Only a change made AFTER a copy went out is worth announcing. Correcting
+  // a letter before anybody has seen it is just writing it.
+  const revised = !!(data.first_printed_at && data.updated_at
+    && new Date(data.updated_at).getTime() > new Date(data.first_printed_at).getTime())
+
   return (
     <A4 title={`Referral letter ${data.patient_name ?? ''}`}>
       <PageChrome hospital={hospital}
@@ -87,6 +94,24 @@ export function ReferralLetterPdf({ data, profile, logo }: {
       <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand title="REFERRAL LETTER" numberLabel="Ref No" number={data.ref_no}
         date={fmtDate(data.referred_at) ?? ''} />
+
+      {/*
+        Said plainly when a copy is already out in the world.
+
+        The patient may be carrying the earlier sheet and the receiving doctor
+        treats them on whichever one they are handed. Two letters with the
+        same number and nothing to tell them apart is the problem; one line
+        solves it, and a locking scheme would only stop a doctor correcting
+        something they have realised is wrong.
+      */}
+      {revised ? (
+        <View style={{ marginTop: 6, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#FFFBEB', borderLeftWidth: 2, borderLeftColor: '#B45309' }}>
+          <Text style={{ fontSize: 8.5, color: '#78350F' }}>
+            <Text style={{ fontWeight: 700 }}>Revised {fmtDateTime(data.updated_at)}. </Text>
+            This supersedes the copy issued on {fmtDateTime(data.first_printed_at)}.
+          </Text>
+        </View>
+      ) : null}
 
       {/* The address block. A letter, so it is addressed. */}
       <View style={{ marginTop: 10 }}>

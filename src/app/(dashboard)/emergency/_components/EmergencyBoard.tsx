@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee, Gavel, Send } from 'lucide-react'
+import { Plus, RefreshCw, Clock, ClipboardList, Printer, IndianRupee, Gavel, Send, Pencil } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -111,6 +111,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
   // patient does not believe it. The duty starts at that moment, not at
   // registration, so the board has to let it be said late.
   const [referCase, setReferCase] = useState<EmergencyCase | null>(null)
+  const [editReferral, setEditReferral] = useState<string | null>(null)
   const [mlcKey, setMlcKey] = useState(0)
   // Which cases already have a referral letter, so the card can offer a
   // reprint. Keyed by case id.
@@ -412,7 +413,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           letter has to be written before the patient leaves and
                           the case is often resolved afterwards.
                         */}
-                        <button onClick={() => setReferCase(ec)}
+                        <button onClick={() => { setEditReferral(null); setReferCase(ec) }}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
                           style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', cursor: 'pointer' }}>
                           <Send className="w-3 h-3" /> Refer out
@@ -437,12 +438,23 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                           <Printer className="w-3 h-3" /> Case sheet
                         </a>
                         {caseReferrals[ec.id] && (
-                          <a href={`/print/referral/${caseReferrals[ec.id].id}`} target="_blank" rel="noopener"
-                            title={caseReferrals[ec.id].ref_no}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
-                            style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
-                            <Printer className="w-3 h-3" /> Referral letter
-                          </a>
+                          <>
+                            <a href={`/print/referral/${caseReferrals[ec.id].id}`} target="_blank" rel="noopener"
+                              title={caseReferrals[ec.id].ref_no}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                              style={{ background: '#F0FDFA', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)' }}>
+                              <Printer className="w-3 h-3" /> Referral letter
+                            </a>
+                            {/* Correcting it keeps its number, rather than
+                                issuing a second letter for the same journey. */}
+                            <button
+                              onClick={() => { setEditReferral(caseReferrals[ec.id].id); setReferCase(ec) }}
+                              title={`Correct ${caseReferrals[ec.id].ref_no}`}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                              style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                              <Pencil className="w-3 h-3" /> Edit
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={() => { setResolveCase(ec); setResolveType(''); setOutcomeNote('') }}
@@ -462,7 +474,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
 
       {referCase?.patient?.id && (
         <ReferPatientModal
-          open={!!referCase} onClose={() => setReferCase(null)}
+          open={!!referCase} onClose={() => { setReferCase(null); setEditReferral(null) }}
           /*
             Refresh the board, but do NOT close the modal. Closing it here
             unmounted the confirmation step, so a letter written from casualty
@@ -472,7 +484,8 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
           */
           onSaved={() => refresh()}
           patientId={referCase.patient.id}
-          emergencyCaseId={referCase.id} source="emergency" />
+          emergencyCaseId={referCase.id} source="emergency"
+          referralId={editReferral} />
       )}
 
       {/* Register modal */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Printer, Send } from 'lucide-react'
+import { Printer, Send, Pencil } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import { listReferrals, type ReferralRow } from '@/app/actions/referOut'
 
@@ -18,13 +18,15 @@ import { listReferrals, type ReferralRow } from '@/app/actions/referOut'
  * referred anybody precisely nothing.
  */
 export default function ReferralsOutCard({
-  admissionId, visitId, patientId, refreshKey,
+  admissionId, visitId, patientId, refreshKey, onEdit,
 }: {
   admissionId?: string | null
   visitId?: string | null
   patientId?: string | null
   /** Change this to re-read after writing a new letter. */
   refreshKey?: unknown
+  /** Correct an existing letter rather than write another one. */
+  onEdit?: (referralId: string) => void
 }) {
   const [rows, setRows] = useState<ReferralRow[]>([])
 
@@ -65,6 +67,13 @@ export default function ReferralsOutCard({
                 {r.reason ? ` · ${r.reason}` : ''}
               </p>
             </div>
+            {onEdit && (
+              <button onClick={() => onEdit(r.id)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
+                style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+            )}
             <a href={`/print/referral/${r.id}`} target="_blank" rel="noopener"
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
               style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', textDecoration: 'none' }}>
