@@ -256,7 +256,7 @@ async function makeZip() {
   // that -j flattened away; with -r the full build path went into every entry
   // name instead, so a hospital unzipping it got
   // Users/<developer>/Desktop/... before reaching the program.
-  const members = ['uyirly-connector.exe', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt', 'node_modules']
+  const members = ['uyirly-connector.exe', 'install.cmd', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt', 'node_modules']
 
   if (process.platform === 'win32') {
     // Windows has no `zip`. Compress-Archive is built in, and the build runs
@@ -328,6 +328,67 @@ async function fetchNode(platform, arch) {
  * order mark. Without one, every non-ASCII character in the file is mangled,
  * which at best corrupts a message and at worst breaks a string literal.
  */
+/**
+ * What a person actually double-clicks.
+ *
+ * Three problems with telling a hospital to right-click a .ps1, all of which
+ * cost a real install in Karur:
+ *
+ *   PowerShell's execution policy refuses unsigned scripts, and on a managed
+ *   hospital PC it is often set by Group Policy, where no flag the user can
+ *   type will override it. A .cmd file is not a script by that definition and
+ *   is never blocked.
+ *
+ *   "Run with PowerShell" closes the window the instant the script ends —
+ *   including when it fails — so the person sees a flash and nothing else.
+ *   There is no way to read the error that just scrolled past.
+ *
+ *   And the script needs Administrator, which right-clicking does not give
+ *   it, so it exits immediately on a line nobody can read.
+ *
+ * So this elevates itself, bypasses the policy for its own child process
+ * only, and waits for a keypress at the end whether it worked or not.
+ */
+async function writeCmd() {
+  const body = [
+    '@echo off',
+    'setlocal',
+    'title Uyirly Lab Connector - install',
+    '',
+    'rem Administrator, or nothing below works: the firewall rules and the',
+    'rem startup task both need it. Re-launch ourselves elevated rather than',
+    'rem failing with a message nobody can read.',
+    'net session >nul 2>&1',
+    'if %errorlevel% neq 0 (',
+    '  echo Asking for administrator permission...',
+    '  powershell -NoProfile -Command "Start-Process -FilePath \'%~f0\' -Verb RunAs"',
+    '  exit /b',
+    ')',
+    '',
+    'cd /d "%~dp0"',
+    '',
+    'rem Windows blocks everything that came out of a downloaded zip until it',
+    'rem is unblocked, and the symptom is the script simply not running.',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Recurse | Unblock-File" >nul 2>&1',
+    '',
+    'rem -ExecutionPolicy Bypass applies to this one child process only. It',
+    'rem changes nothing on the computer and needs no policy to be relaxed.',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*',
+    '',
+    'echo.',
+    'if %errorlevel% neq 0 (',
+    '  echo Install did not finish. The message above says why.',
+    ') else (',
+    '  echo Done.',
+    ')',
+    'echo.',
+    'rem The whole point: the window stays so the result can be read.',
+    'pause',
+  ].join('\r\n')
+  // CRLF and no BOM: cmd.exe is old and particular about both.
+  await fs.writeFile(path.join(OUT, 'install.cmd'), body + '\r\n', 'latin1')
+}
+
 async function writePs1(file, body) {
   await fs.writeFile(file, '\ufeff' + body, 'utf8')
 }
@@ -342,6 +403,7 @@ async function writePs1(file, body) {
  * restarts itself if it stops — which is the whole of what a laboratory needs.
  */
 async function writeInstaller() {
+  await writeCmd()
   await writePs1(path.join(OUT, 'install.ps1'), `# Uyirly Lab Connector - install
 # Right-click this file and choose "Run with PowerShell (as Administrator)".
 #
@@ -361,7 +423,12 @@ $exe     = "$destDir\\uyirly-connector.exe"
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
       ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-  Write-Host "Please run this as Administrator." -ForegroundColor Red; exit 1
+  Write-Host ""
+  Write-Host "This needs Administrator permission." -ForegroundColor Red
+  Write-Host "Close this and double-click install.cmd instead - it asks for permission itself."
+  Write-Host ""
+  Start-Sleep -Seconds 20
+  exit 1
 }
 
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
@@ -385,7 +452,14 @@ Write-Host "Installed to $exe"
 if (-not $Code)   { $Code   = Read-Host "Pairing code from Settings -> Analyzers" }
 if (-not $Server) { $Server = Read-Host "Hospital web address (e.g. https://yourhospital.uyirly.com)" }
 & $exe --pair $Code --server $Server --pair-only
-if ($LASTEXITCODE -ne 0) { Write-Host "Pairing failed. Nothing was scheduled." -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ""
+  Write-Host "Pairing failed - nothing else was set up." -ForegroundColor Red
+  Write-Host "  - the code lasts one hour, so make a fresh one if it is older"
+  Write-Host "  - check this computer can open $Server in a browser"
+  Write-Host ""
+  exit 1
+}
 
 if ($NoService) {
   Write-Host "Skipping firewall and startup task (-NoService)."
@@ -487,10 +561,16 @@ BEFORE YOU START
   8-character pairing code.
 
 TO INSTALL
-  1. Right-click install.ps1 and choose "Run with PowerShell".
-     Choose Yes when it asks for administrator permission.
-  2. Type the pairing code when asked.
+  1. Double-click install.cmd
+     Choose Yes when Windows asks for administrator permission.
+  2. Type the pairing code when asked, then your hospital's web address.
   3. Write down the address it prints, for example  192.168.1.14 : 5150
+
+  The window stays open when it finishes, so you can read the result.
+
+  (install.ps1 is the same thing without the wrapper. Use install.cmd -
+  some computers refuse to run .ps1 files at all, and the .cmd works
+  around that.)
 
   Windows may warn that the publisher is unknown. Choose "More info" and then
   "Run anyway" — the file is not yet code-signed.
