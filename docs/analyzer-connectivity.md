@@ -62,9 +62,22 @@ search:
 - **Shamruthi Diagnosticss**, Karur — the local stockist, carrying Transasia,
   Chemleon, Arkray among others — 98421 57774
 
-Ask for the model and whether it has a host/LIS port. These ISE analyzers are
-near-universally RS-232, but **its back panel is the one that was never
-photographed** — the only instrument in the building still missing that shot.
+**It has no data ports at all** — checked at the hospital on 25 Oct 2026.
+No DB9, no USB, no LAN. These ISE analyzers are near-universally RS-232, and
+this one is the exception. **It cannot be connected and should not be promised
+to anybody.** It stays a paper instrument.
+
+**But the same results have another way in.** The Aspen BG Plus measures the
+identical panel — Na, K, iCa, pH, HCO₃, Cl — and it has both RJ45 and DB9. So
+electrolytes are not blocked by this machine; they are blocked only if the
+laboratory insists on running them *here*. **Ask the technologist which machine
+they actually run a Na/K order on.** If the answer is "either", connect the
+Aspen and the Chem-leon stops mattering.
+
+That question is worth asking at every hospital. An instrument that cannot
+talk is only a problem when nothing else in the building measures the same
+thing, and a laboratory usually has more overlap than its equipment list
+suggests.
 
 **~~The Aspen BG Plus may have no LIS output at all.~~ Wrong, and a good lesson.**
 Every online listing showed USB and nothing else, so this note said the machine
@@ -147,7 +160,7 @@ different transports do not conflict.
 | Aspen BG Plus | **Ethernet** → 5150 | Cable reaches it today. Protocol unknown |
 | Erba Chem 5x | USB-B `PC` → likely a COM port | Plain USB printer cable, no adapter. Confirm with `--ports` |
 | Erba Laura Smart | **True RS-232** (`HOST` DB9) | The only instrument here needing an adapter and a null modem |
-| Electrolyte analyzer | Unknown | Brand still unidentified — see §2 |
+| Chem-leon electrolyte | **None — no data ports at all** | Cannot be connected. The Aspen BG Plus measures the same panel; route electrolytes through it |
 | Boditech iChroma II | Ethernet | Has the port and an IP screen, but the destination is not on it — see below |
 | Bionet CardioTouch 3000 | LAN/USB | Exports PDF/XML, not a result stream → watched folder |
 | RMS Helios, RMS TMT | Windows PC | PDF → watched folder |
@@ -585,9 +598,10 @@ stops everything silently.
    bring the files home and run `npm run verify:hl7 <file>` to see what the
    machine actually said. That turns unknown instruments into library entries
    and the rest can be done remotely.
-4. **Identify the electrolyte analyzer** properly — still the only unknown
-   instrument in the building. (The Aspen BG Plus was identified by its back
-   panel on 24 Oct 2026: it has Ethernet and serial after all.)
+4. ~~Identify the electrolyte analyzer.~~ **Done, and the answer was "no ports
+   at all".** Which is worth knowing as a possible outcome: ask early whether
+   another instrument in the building measures the same analytes, because that
+   is the thing that decides whether a dead end matters.
 5. ~~Ask whether the DR software has DICOM settings.~~ **Answered: DROCConfig →
    Networks → Worklist.** Photograph the tab before changing it, and read the
    `Diagnosis_Worklist` log after pressing Verify Connection.
