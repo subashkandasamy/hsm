@@ -34,6 +34,17 @@ vendor payables or payroll until asked.
 uses Tally, but this is a product for the whole country and the next hospital's
 CA will use something else — or nothing but a spreadsheet. See §6a.
 
+**Per-bill and daily-consolidated are both offered**, chosen at export time
+rather than decided for the hospital. Costs almost nothing if the register
+stays granular — see §6a.
+
+**It must be readable inside Uyirly, not only downloadable.** Today the only
+way to see any of this is a Download button on the Admin Dashboard. That is
+also precisely how the defect in §4 survived: nothing on screen showed the same
+numbers, so an export that returned an empty file looked no different from one
+that worked. **What you download is what you are looking at** — one query
+behind both, so a broken export becomes a visibly broken screen.
+
 ---
 
 ## 1. It is four requests, not one
@@ -269,6 +280,17 @@ exists in their company (`Sales`, `Receipt`, `Payment`, `Journal`), debit and
 credit by `ISDEEMEDPOSITIVE`, and debits must equal credits or the whole voucher
 is rejected into an Exceptions report.
 
+### Consolidation is a rendering, not a dataset
+
+Per-bill or daily-consolidated is offered as a choice at export time (§0), and
+it is cheap **provided the register itself always stays per-bill**. Consolidation
+is then a grouping applied on the way out, by the renderer, and never a second
+stored dataset that can drift from the first.
+
+The default should be consolidated for same-day OPD, for the ledger-count reason
+below. An accountant who wants every bill as its own voucher — usually for an
+audit year rather than a routine month — ticks the box.
+
 One detail there is unusually well aligned with §0's decision.
 `BILLALLOCATIONS.LIST` carries a `BILLTYPE` — `New Ref` opens an outstanding
 against a bill, `Agst Ref` closes it. **A Sales voucher with `New Ref` and a
@@ -312,19 +334,28 @@ department, billed by department, outstanding, and — once Phase 3 lands —
 expenses and net. Printable on a letterhead. This is what the owner hands the
 accountant each evening, and the thing he was actually describing.
 
-**Phase 2 — the range and the register.** Everything in Phase 1 over any date
-range, plus the canonical **sales & receipts register** of §6a — the dataset
-every export is rendered from. Doctor-wise revenue lands here, because it needs
-a different join per revenue type and should not hold up Phase 1. Must reuse
-`getCollectionSummary` so the numbers never disagree with the Cash Book.
+**Phase 2 — the register, on screen.** The canonical **sales & receipts
+register** of §6a — the dataset every export is rendered from — shown in Uyirly
+over any date range, filterable by department, doctor, payment mode and
+collected-versus-pending, with the totals above the table. Doctor-wise revenue
+lands here, because it needs a different join per revenue type and should not
+hold up Phase 1. Must reuse `getCollectionSummary` so the numbers never
+disagree with the Cash Book.
 
-**Phase 3 — CSV / Excel export.** The register, downloadable. Universal, and
+This is the phase that matters most, and not for the reason it looks. A number
+somebody can see is a number somebody will check — §4's export was wrong for an
+unknown length of time because no screen anywhere showed what it should have
+contained.
+
+**Phase 3 — CSV / Excel download.** The register the user is currently looking
+at, as a file — same query, same filters, no second code path. Universal, and
 the only format that serves a CA with no package at all. Includes the ledger
 mapping screen, since that is needed by every exporter and not just one.
 
 **Phase 4 — Tally XML.** The common case, built on Phase 3's dataset and
-mapping. Sales with `New Ref`, Receipt with `Agst Ref`, consolidated daily for
-same-day OPD so patients never become ledgers.
+mapping. Sales with `New Ref`, Receipt with `Agst Ref`, and the per-bill /
+daily-consolidated toggle from §0, defaulting to consolidated for same-day OPD
+so patients never become ledgers.
 
 **Phase 5 — the tax pack.** Exempt vs taxable split, inpatient vs outpatient
 pharmacy, room rent against the ₹5,000 test, HSN summary. Built *with* a real
@@ -348,11 +379,10 @@ are recorded in §0. What remains:
    speculatively. The second format is decided by the second hospital that asks,
    not by market-share estimates — and the estimates we have are all from vendor
    blogs anyway.
-2. **Does the owner's auditor want per-bill or daily-consolidated vouchers?**
-   §6a argues for consolidated on same-day OPD. Worth confirming with the one
-   accountant we can actually reach before it is built for everybody.
-3. **What does the hospital call its income heads?** The ledger-mapping screen
+2. **What does the hospital call its income heads?** The ledger-mapping screen
    needs a sensible default list, and the fastest way to get one that is not
    invented is to look at their existing Tally chart of accounts.
 
 Question 2 is the one to ask while there is still a hospital visit in progress.
+A photograph of their chart of accounts is worth more than any amount of
+guessing at what to call a default.
