@@ -45,6 +45,53 @@ numbers, so an export that returned an empty file looked no different from one
 that worked. **What you download is what you are looking at** — one query
 behind both, so a broken export becomes a visibly broken screen.
 
+**Two pages, not one.** A dashboard for the owner and a separate Accounts &
+Reports page for the accountant. See §0a.
+
+---
+
+## 0a. Why it splits into two pages
+
+Agreed 25 Oct 2026. They look like one feature and are two products, because
+they serve two people with different jobs and different rhythms.
+
+| | Dashboard | Accounts & Reports |
+|---|---|---|
+| Who | The owner | The accountant |
+| When | Glances, daily | Sits down, monthly |
+| Question | *Is today normal?* | *What exactly happened?* |
+| Shape | Visual, comparative, no filters | Tabular, filtered, exportable |
+
+Built as one page it becomes a dashboard carrying fourteen filter dropdowns the
+owner never touches, attached to a report less capable than the accountant
+needs. The CSV dropdown currently on the Admin Dashboard is reports-page
+furniture standing in the wrong room, and should move.
+
+**The trap: do not make the dashboard a smaller version of the report.** If it
+shows the same totals with fewer rows it has earned nothing. A dashboard's job
+is the question a table cannot answer:
+
+> ₹48,000 today means nothing on its own.
+> ₹48,000 today against ₹41,000 for an average Saturday is a fact he can act on.
+
+Comparison and trend belong to the dashboard — this month against last, a
+doctor up, a department down, collections sliding away from billing. Totals
+belong to the report.
+
+**Day, month and year are groupings, not stored shapes** — the same principle
+as per-bill versus consolidated. The register stays per-bill and the period is
+applied on the way out, so adding "year" later costs nothing.
+
+**Both must read `getCollectionSummary`.** It already exists so that Billing,
+the Dashboard and the Cash Book never disagree. The day the dashboard says
+₹48,000 and the report says ₹47,300, neither number is ever trusted again, and
+that cannot be undone by fixing it afterwards.
+
+**And the accountant should land on the Accounts page.** Today
+`dashboard/page.tsx` routes `role === 'admin' || role === 'accountant'` to the
+same `AdminDashboard`, so an accountant is shown bed occupancy and footfall.
+They have `billing:read` and no use for either.
+
 ---
 
 ## 1. It is four requests, not one
@@ -329,7 +376,7 @@ Ordered by value per unit of work, which is not the order the request implies.
 **Phase 0 — the lie.** Fix the `created_at` bug in `exportReport` and
 `listClaimSettlementPayments`. Hours. Do it first and alone.
 
-**Phase 1 — one honest day.** A day-end sheet: collected by mode, collected by
+**Phase 1 — one honest day**, on the new Accounts page (§0a).  A day-end sheet: collected by mode, collected by
 department, billed by department, outstanding, and — once Phase 3 lands —
 expenses and net. Printable on a letterhead. This is what the owner hands the
 accountant each evening, and the thing he was actually describing.
@@ -361,7 +408,11 @@ so patients never become ledgers.
 pharmacy, room rent against the ₹5,000 test, HSN summary. Built *with* a real
 CA looking at it, not from blog posts — including this document's §5.
 
-**Phase 6 — the 269ST warning.** Cash per patient per IST day, flagged before
+**Phase 6 — the owner's dashboard.** Comparison and trend, per §0a: this
+period against the last, by department and doctor, collections against billings.
+Replaces the four flat tiles and takes the CSV dropdown off that screen.
+
+**Phase 7 — the 269ST warning.** Cash per patient per IST day, flagged before
 the receipt is printed rather than after.
 
 **Waiting list — petty cash.** §0. One table, one screen, daily. Picked up when
