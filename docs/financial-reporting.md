@@ -547,10 +547,12 @@ Ordered by value per unit of work, which is not the order the request implies.
 plus `npm run verify:schema-refs` so the silent-zero class cannot return.
 Phase 1 is now unblocked.
 
-**Phase 1 — one honest day**, on the new Accounts page (§0a).  A day-end sheet: collected by mode, collected by
-department, billed by department, outstanding, and — once Phase 3 lands —
-expenses and net. Printable on a letterhead. This is what the owner hands the
-accountant each evening, and the thing he was actually describing.
+**~~Phase 1 — one honest day.~~ Done 25 Oct 2026, `d7f4f9d`.** `/accounts`:
+collected by payment mode, billed by department reconciling line by line down
+to the bill total, and yet-to-collect split by whether the bill was raised that
+day. Any day selectable, printable, and the accountant lands there instead of
+the clinical dashboard. Every figure checked against an independent SQL query
+rather than against a green build.
 
 **Phase 2 — the register, on screen.** The canonical **sales & receipts
 register** of §6a — the dataset every export is rendered from — shown in Uyirly
