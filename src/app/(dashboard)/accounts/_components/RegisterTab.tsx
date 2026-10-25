@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, Search, FileText, Receipt } from 'lucide-react'
+import { Loader2, Search, FileText, Receipt, Download } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import EmptyState from '@/components/ui/EmptyState'
-import { getSalesRegister } from '@/app/actions/accounts'
+import { getSalesRegister, exportRegisterCsv } from '@/app/actions/accounts'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import type { SalesRegister, CashMovement, CashSummary } from '@/lib/types'
 import { SOURCE_LABEL, METHOD_LABEL, money } from './labels'
@@ -35,7 +35,39 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
   const [sales, setSales] = useState<SalesRegister | null>(null)
   const [cash, setCash]   = useState<{ movements: CashMovement[]; summary: CashSummary } | null>(null)
   const [busy, setBusy]   = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * What is downloaded is what is on screen — same action, same filters.
+   *
+   * The export the Admin dashboard used to carry was a separate query nobody
+   * could see the output of, and it downloaded an empty file for months
+   * without anyone noticing. One path means a broken file is a visibly broken
+   * table.
+   */
+  async function download() {
+    setDownloading(true); setError(null)
+    try {
+      const { filename, csv } = await exportRegisterCsv({
+        book, from, to,
+        source: source || null, doctorId: doctorId || null, status,
+      })
+      // The byte-order mark, as bytes rather than as a character in the
+      // string. Without it Excel on Windows reads the file in the system
+      // codepage and every ₹ and every Tamil name becomes mojibake — on the
+      // one machine the accountant actually uses. It is written here because
+      // a leading U+FEFF put on the string server-side never arrives: it is
+      // stripped in transit, which was found by logging the first code point.
+      const BOM = new Uint8Array([0xEF, 0xBB, 0xBF])
+      const url = URL.createObjectURL(new Blob([BOM, csv], { type: 'text/csv;charset=utf-8' }))
+      const a = document.createElement('a')
+      a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError((e as Error).message || 'Could not build that file')
+    } finally { setDownloading(false) }
+  }
 
   async function run(b: Book = book) {
     setBusy(true); setError(null)
@@ -117,6 +149,19 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
             style={{ background: '#0D9488', border: 'none', minHeight: '42px', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             Show
+          </button>
+
+          <button onClick={download} disabled={downloading || (book === 'sales' ? !sales : !cash)}
+            title={(book === 'sales' ? !sales : !cash) ? 'Show the register first' : 'Download what is on screen'}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+            style={{
+              background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0',
+              minHeight: '42px',
+              cursor: downloading || (book === 'sales' ? !sales : !cash) ? 'not-allowed' : 'pointer',
+              opacity: downloading || (book === 'sales' ? !sales : !cash) ? 0.5 : 1,
+            }}>
+            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            CSV
           </button>
         </div>
       </GlassCard>

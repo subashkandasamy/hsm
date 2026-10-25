@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input'
 import { getDayEndSheet } from '@/app/actions/accounts'
 import type { DayEndSheet } from '@/lib/types'
 import RegisterTab from './RegisterTab'
+import LedgersTab from './LedgersTab'
 import { SOURCE_LABEL, METHOD_LABEL, money } from './labels'
 
 /**
@@ -43,13 +44,14 @@ function Row({ label, value, muted, strong, negative, border }: {
   )
 }
 
-export default function DayEndClient({ today, monthStart, initialSheet, hospitalName }: {
+export default function DayEndClient({ today, monthStart, initialSheet, hospitalName, canManage }: {
   today: string
   monthStart: string
   initialSheet: DayEndSheet
   hospitalName: string
+  canManage: boolean
 }) {
-  const [tab, setTab]     = useState<'day' | 'register'>('day')
+  const [tab, setTab]     = useState<'day' | 'register' | 'ledgers'>('day')
   const [date, setDate]   = useState(today)
   const [sheet, setSheet] = useState(initialSheet)
   const [busy, setBusy]   = useState(false)
@@ -72,26 +74,28 @@ export default function DayEndClient({ today, monthStart, initialSheet, hospital
     <div>
       <PageHeader
         title="Accounts"
-        subtitle={tab === 'day'
-          ? 'Day-end sheet — what came in, what was raised, what is owed'
-          : 'Register — every bill and every receipt, over any range'}
+        subtitle={
+          tab === 'day' ? 'Day-end sheet — what came in, what was raised, what is owed'
+          : tab === 'register' ? 'Register — every bill and every receipt, over any range'
+          : 'Ledger names — what your accountant calls each of these in their books'
+        }
         actions={
           <div className="flex items-center gap-2 no-print">
             {tab === 'day' && (
               <Input type="date" value={date} max={today}
                      onChange={(e) => load(e.target.value)} />
             )}
-            <button onClick={() => window.print()}
+            {tab !== 'ledgers' && <button onClick={() => window.print()}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
                     style={{ background: '#0D9488', border: 'none', minHeight: '44px', cursor: 'pointer' }}>
               <Printer className="w-4 h-4" /> Print
-            </button>
+            </button>}
           </div>
         }
       />
 
       <div className="flex gap-1 mb-4 no-print p-1 rounded-xl w-fit" style={{ background: '#F1F5F9' }}>
-        {([['day', 'Day end'], ['register', 'Register']] as const).map(([k, label]) => (
+        {([['day', 'Day end'], ['register', 'Register'], ['ledgers', 'Ledger names']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className="px-4 py-2 rounded-lg text-sm font-semibold"
             style={{
@@ -106,6 +110,7 @@ export default function DayEndClient({ today, monthStart, initialSheet, hospital
       </div>
 
       {tab === 'register' && <RegisterTab today={today} monthStart={monthStart} />}
+      {tab === 'ledgers' && <LedgersTab canManage={canManage} />}
 
       {tab === 'day' && error && (
         <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm"

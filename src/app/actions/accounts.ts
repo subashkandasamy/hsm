@@ -2,10 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collections'
 import { istDate, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
-import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow } from '@/lib/types'
+import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping } from '@/lib/types'
+import { getMovementsInRange } from '@/app/actions/cashRegister'
 
 /**
  * One day of money, as an accountant reads it.
@@ -199,7 +200,9 @@ export async function getSalesRegister(params: {
 
   const from = istDayStartISO(params.from)
   const to   = istDayEndISO(params.to)
-  const cap  = Math.min(params.limit ?? 500, 2000)
+  // A screen shows a page; a file holds everything. The ceiling exists only
+  // so one mistyped date cannot pull a decade into memory.
+  const cap  = Math.min(params.limit ?? 500, 20000)
 
   let q = supabase.from('bills')
     .select(`id, bill_no, created_at, billing_date, subtotal, discount, tax, round_off,
@@ -352,4 +355,144 @@ export async function getSalesRegister(params: {
       .sort((a, b) => a.name.localeCompare(b.name)),
     sources: [...new Set(all.flatMap((r) => r.sources.map((s) => s.source)))].sort(),
   }
+}
+
+// ── Ledger names ────────────────────────────────────────────────────────────
+
+/**
+ * What this hospital calls each income head and each payment method.
+ *
+ * Needed by every export and owned by none of them. A CSV an accountant opens
+ * in Excel wants the ledger name in a column just as much as a Tally voucher
+ * wants it in a tag, and neither can be guessed: there is no universal chart
+ * of accounts, and a name that does not already exist in the company's books
+ * is a rejected import whatever the software.
+ */
+export async function getLedgerMappings(): Promise<LedgerMapping[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('ledger_mappings').select('kind, key, ledger_name').order('kind').order('key')
+  if (error) throw new Error(`Could not read ledger names: ${error.message}`)
+  return (data ?? []) as LedgerMapping[]
+}
+
+export async function saveLedgerMapping(params: {
+  kind: 'source' | 'method'; key: string; ledgerName: string
+}): Promise<{ success: boolean; error?: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:manage')
+  const supabase = await createClient()
+
+  const name = params.ledgerName.trim()
+  // Clearing the box removes the mapping rather than storing an empty name —
+  // an empty ledger is worse than none, because an exporter would write it out
+  // and the import would fail on a blank.
+  if (!name) {
+    const { error } = await supabase.from('ledger_mappings').delete()
+      .eq('tenant_id', actor.tenant_id).eq('kind', params.kind).eq('key', params.key)
+    return error ? { success: false, error: error.message } : { success: true }
+  }
+
+  const { error } = await supabase.from('ledger_mappings').upsert({
+    tenant_id: actor.tenant_id, kind: params.kind, key: params.key,
+    ledger_name: name, updated_at: new Date().toISOString(),
+  }, { onConflict: 'tenant_id,kind,key' })
+  return error ? { success: false, error: error.message } : { success: true }
+}
+
+// ── The file ────────────────────────────────────────────────────────────────
+
+/**
+ * The register the accountant is looking at, as a file.
+ *
+ * Same functions, same filters — the rows are produced by `getSalesRegister`
+ * and `getMovementsInRange`, not by a second query shaped for export. That is
+ * not tidiness: the reason the old "Daily Collection" CSV could download an
+ * empty file for months is that nothing on screen showed what it should have
+ * contained, so there was nothing to notice. What is downloaded here is what
+ * was read.
+ *
+ * CSV rather than a vendor format, because the next hospital's auditor will
+ * not use the same package as this one's, and a spreadsheet is the only thing
+ * every package imports — and the only thing that works for an accountant who
+ * has no package at all.
+ */
+export async function exportRegisterCsv(params: {
+  book: 'sales' | 'receipts'
+  from: string
+  to: string
+  source?: string | null
+  doctorId?: string | null
+  status?: 'all' | 'unpaid' | 'paid'
+}): Promise<{ filename: string; csv: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+
+  const ledgers = await getLedgerMappings()
+  const ledgerOf = (kind: 'source' | 'method', key: string) =>
+    ledgers.find((l) => l.kind === kind && l.key === key)?.ledger_name ?? ''
+
+  const stamp = `${params.from}_to_${params.to}`
+
+  if (params.book === 'sales') {
+    // A high ceiling rather than the screen's: a file is read by a machine or
+    // an accountant scrolling, and truncating it silently would be the same
+    // fault as the empty download it replaces.
+    const reg = await getSalesRegister({ ...params, limit: 20000 })
+    const head = [
+      'Date', 'Bill No', 'Patient', 'UHID', 'Doctor', 'Departments', 'Ledger',
+      'Subtotal', 'Discount', 'Tax', 'Round Off', 'Total', 'Received', 'Owed', 'Status',
+    ]
+    const rows = reg.rows.map((r) => {
+      // The ledger follows the biggest line on the bill. A bill spanning
+      // departments has no single income head, and inventing a split here
+      // would be a rule nobody asked for — the department column still shows
+      // every one of them.
+      const main = r.sources[0]?.source ?? ''
+      return [
+        r.date, r.billNo, r.patientName, r.uhid, r.doctorName,
+        r.sources.map((s) => s.source).join(' + '),
+        ledgerOf('source', main),
+        r.subtotal, r.discount, r.tax, r.roundOff, r.total, r.paid, r.balance, r.status,
+      ]
+    })
+    return { filename: `sales-register_${stamp}.csv`, csv: toCsv(head, rows) }
+  }
+
+  const { movements } = await getMovementsInRange({ from: params.from, to: params.to })
+  const head = ['Date', 'Time', 'Reference', 'Patient', 'Kind', 'Method', 'Ledger', 'Received By', 'Amount']
+  const rows = movements.map((m) => [
+    istDate(m.time),
+    new Date(m.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
+    m.reference, m.patientName, m.kind, m.method, ledgerOf('method', m.method),
+    m.cashierName, m.amount,
+  ])
+  return { filename: `receipts-register_${stamp}.csv`, csv: toCsv(head, rows) }
+}
+
+/**
+ * Rows to a file a spreadsheet will open without argument.
+ *
+ * The BOM is not decoration: without it Excel on Windows reads the file as
+ * the system codepage, and every ₹ and every Tamil name in it turns to
+ * mojibake on the one machine the accountant actually uses.
+ */
+function toCsv(head: string[], rows: Array<Array<string | number>>): string {
+  const cell = (v: string | number): string => {
+    if (typeof v === 'number') return String(v)
+    const t = v.replace(/"/g, '""')
+    return /[",\n\r]/.test(t) ? `"${t}"` : t
+  }
+  // No byte-order mark here, although Excel on Windows needs one. A leading
+  // U+FEFF does not survive the trip: it is stripped somewhere between this
+  // string literal and the browser — measured, not assumed, by logging the
+  // first code point on arrival, which was `D`. So the mark is written as
+  // actual bytes where the file is assembled, in RegisterTab.
+  //
+  // CRLF because the file is for a spreadsheet, and Excel is the one reader
+  // that still minds.
+  return [head, ...rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n'
 }

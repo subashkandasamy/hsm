@@ -1809,3 +1809,10 @@ export interface SalesRegister {
   doctors: Array<{ id: string; name: string }>
   sources: string[]
 }
+
+export interface LedgerMapping {
+  kind: 'source' | 'method'
+  /** A `bill_items.source` for income, or a payment method for receipts. */
+  key: string
+  ledger_name: string
+}
