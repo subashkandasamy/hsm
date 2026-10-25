@@ -40,17 +40,31 @@ Two consequences worth holding on to:
 | **Erba Laura Smart** | Urine strips | `HOST` = **DB9**, USB-B, `BCR` = **2 × USB-A** for barcode readers | LIS/HIS | [Erba](https://www.erbalachema.com/en/products-and-solutions/urine-analysis/urine-analyzer-laura-smart/) + the unit itself |
 | **Aspen BG Plus** | Blood gas + electrolytes, cartridge | **RJ45 Ethernet**, DB9, 4 × USB-A — *back panel photographed 24 Oct 2026* | Not stated anywhere; the ports exist | the unit itself |
 | **Electrolyte analyzer** | Na, K, iCa, pH, HCO₃, Cl | Unknown | Unknown | — |
-| **Bionet CardioTouch 3000** | 12-channel ECG, **movable** | **LAN + USB**, Wi-Fi optional | BMS-Plus → JPEG/BMP/XML/**PDF** | [Bionet](https://bionetus.com/medical/ecg-spirometer/cardiotouch-3000-12-channel-electrocardiograph/) |
+| **Bionet CardioTouch 3000** | 12-channel ECG, **movable** | **RJ45 confirmed on the unit**, USB, Wi-Fi optional | BMS-Plus → JPEG/BMP/XML/**PDF**. Has a **`NETWORK` button on the front panel** and lists a barcode reader — built to push somewhere, so better than a watched folder may suggest | [Bionet](https://bionetus.com/medical/ecg-spirometer/cardiotouch-3000-12-channel-electrocardiograph/) + the unit itself |
 | **ADONIS + ECORAD/DROP/MediLite** | X-ray generator + DR panel PC | PC on a network | **DICOM — confirmed working 24 Oct 2026.** The console is `DROCConfig`; worklist settings are under Networks → Worklist | site visit |
 | **RMS Helios** | Spirometry (PFT) | Windows PC | PDF export | — |
 | **RMS TMT** | Treadmill test | Windows PC | PDF export | — |
 
 ### Notes that cost us time to learn
 
-**The electrolyte analyzer has no identifiable maker.** The sticker reads
-"Serviced & maintained by Chem-leon Diagnostics" — that is the service company,
-not the manufacturer. These ISE analyzers are near-universally RS-232, but the
-brand has to come off the back panel before anything is ordered.
+**The electrolyte analyzer is badged Chem-leon.** The service sticker reads
+"Serviced & maintained by Chem-leon Diagnostics Pvt. Ltd.", which looked like
+a service company obscuring a manufacturer — but **the instrument's own display
+says `Chem-leon`** above `Ready for Analysis / Na K iCa pH HCO3 Cl`. They brand
+the firmware, so they are a rebrander, not merely a maintainer. The OEM behind
+it is still unknown, and the sticker's own *Instrument Model* and *Instrument
+Serial Number* fields are **both blank**.
+
+Two phone routes, both photographed in the laboratory and faster than any
+search:
+
+- **Chem-leon Diagnostics** — +91 8098103833, serviceatcdpl@gmail.com
+- **Shamruthi Diagnosticss**, Karur — the local stockist, carrying Transasia,
+  Chemleon, Arkray among others — 98421 57774
+
+Ask for the model and whether it has a host/LIS port. These ISE analyzers are
+near-universally RS-232, but **its back panel is the one that was never
+photographed** — the only instrument in the building still missing that shot.
 
 **~~The Aspen BG Plus may have no LIS output at all.~~ Wrong, and a good lesson.**
 Every online listing showed USB and nothing else, so this note said the machine
