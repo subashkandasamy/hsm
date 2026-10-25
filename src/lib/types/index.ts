@@ -1816,3 +1816,22 @@ export interface LedgerMapping {
   key: string
   ledger_name: string
 }
+
+export interface OwnerDayMetric {
+  key: string
+  count: number
+  /** Average of the four previous same weekdays — a hospital's week is not flat. */
+  usualForThisWeekday: number
+}
+
+export interface OwnerDay {
+  date: string
+  collected: DayEndSheet['collected'] & { usualForThisWeekday: number }
+  billed: DayEndSheet['billed']
+  outstanding: DayEndSheet['outstanding']
+  /** Thirty days of net cash in, quiet days included as zero. */
+  trend: Array<{ day: string; amount: number }>
+  activity: OwnerDayMetric[]
+  beds: { total: number; occupied: number; percent: number }
+  attention: { staleBills: number; staleAmount: number; lowStock: number }
+}

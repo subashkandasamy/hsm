@@ -26,66 +26,6 @@ function todayRange() {
 // IST day — matches mv_daily_footfall_by_tenant, which buckets by Asia/Kolkata.
 const today = (): string => istToday()
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
-// KPI tiles read from materialized views via the read replica (≤5 min stale).
-// Pending bills stay live because financial counts need to be accurate.
-
-export async function getAdminDashboard(): Promise<AdminKPIs> {
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'dashboard:read')
-
-  const tid = actor.tenant_id
-  const rd  = getReadClient()
-  const day = today()
-  const primary = await createClient()
-  const { from, to } = istDayBoundsISO(istToday())
-
-  const [bedRes, footfallRes, lowStockRes, collection, { data: pendingRows }] = await Promise.all([
-    // Operational tiles from materialized views (≤5 min stale is fine here)
-    rd.from('mv_bed_occupancy_by_tenant')
-      .select('total_beds, occupied_beds')
-      .eq('tenant_id', tid)
-      .maybeSingle(),
-    rd.from('mv_daily_footfall_by_tenant')
-      .select('total_footfall')
-      .eq('tenant_id', tid)
-      .eq('day', day)
-      .maybeSingle(),
-    rd.from('mv_lowstock_alerts_by_tenant')
-      .select('low_stock_count')
-      .eq('tenant_id', tid)
-      .maybeSingle(),
-
-    // Financial tiles are computed LIVE for accuracy (never stale).
-    // Today's revenue = actual money collected today (same basis as the Cash Book).
-    getCollectionSummary(primary, tid, from, to),
-    // Pending bills = live unpaid/partial bills. A consolidated IPD bill wraps
-    // bills that already exist, so without this filter the owner's outstanding
-    // figure counts the same money twice — see getBillingStats, which had the
-    // same gap.
-    primary.from('bills').select('total, paid').in('status', ['unpaid', 'partial'])
-      .or(SERVICE_BILLS_ONLY),
-  ])
-
-  const todayRevenue       = collection.total
-  const revenuePayments    = collection.billPayments
-  const revenueAdvances    = collection.advances
-  const totalBeds          = Number(bedRes.data?.total_beds   ?? 0)
-  const occupiedBeds       = Number(bedRes.data?.occupied_beds ?? 0)
-  const bedOccupancy       = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
-  const todayFootfall      = Number(footfallRes.data?.total_footfall ?? 0)
-  const lowStockCount      = Number(lowStockRes.data?.low_stock_count ?? 0)
-  const pending            = (pendingRows ?? []) as Array<{ total: number; paid: number }>
-  const pendingBillsCount  = pending.length
-  const pendingBillsTotal  = pending.reduce((s, b) => s + Math.max(0, Number(b.total) - Number(b.paid)), 0)
-
-  return {
-    todayRevenue, revenuePayments, revenueAdvances,
-    bedOccupancy, totalBeds, occupiedBeds,
-    todayFootfall, pendingBillsCount, pendingBillsTotal, lowStockCount,
-  }
-}
-
 // ── Doctor ────────────────────────────────────────────────────────────────────
 
 export async function getDoctorDashboard(): Promise<DoctorKPIs> {

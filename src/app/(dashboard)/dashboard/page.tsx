@@ -3,10 +3,11 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCachedUser } from '@/lib/supabase/cached-user'
 import {
-  getAdminDashboard, getDoctorDashboard,
-  getReceptionistDashboard, getPharmacistDashboard,
+  getDoctorDashboard, getReceptionistDashboard, getPharmacistDashboard,
 } from '@/app/actions/dashboard'
-import AdminDashboard from './_components/AdminDashboard'
+import { getOwnerDay } from '@/app/actions/accounts'
+import { istToday } from '@/lib/istDate'
+import OwnerDashboard from './_components/OwnerDashboard'
 import DoctorDashboard from './_components/DoctorDashboard'
 import ReceptionistDashboard from './_components/ReceptionistDashboard'
 import PharmacistDashboard from './_components/PharmacistDashboard'
@@ -33,7 +34,8 @@ export default async function DashboardPage({
   if (role === 'accountant') redirect('/accounts')
 
   if (role === 'admin') {
-    const kpis = await getAdminDashboard().catch(() => null)
+    const today = istToday()
+    const day = await getOwnerDay(today).catch(() => null)
     // Setup guide is an admin responsibility only.
     const setup = role === 'admin' ? await getSetupProgress().catch(() => null) : null
     // First login after signup (magic link adds ?welcome=1): send a brand-new
@@ -45,7 +47,7 @@ export default async function DashboardPage({
       <>
         {setup && <SetupProgressCard progress={setup} />}
         <ReferralTeaser />
-        <AdminDashboard kpis={kpis} />
+        {day && <OwnerDashboard today={today} initial={day} />}
       </>
     )
   }

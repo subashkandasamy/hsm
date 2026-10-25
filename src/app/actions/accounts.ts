@@ -1,11 +1,12 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getReadClient } from '@/lib/supabase/read-replica'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collections'
-import { istDate, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
-import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping } from '@/lib/types'
+import { istDate, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
 
@@ -622,5 +623,164 @@ export async function exportTallyXml(params: {
     xml,
     sales: sales.length,
     receipts: receipts.length,
+  }
+}
+
+// ── The owner's day ─────────────────────────────────────────────────────────
+
+/**
+ * How the hospital ran on a given day, for the person who owns it.
+ *
+ * Deliberately not the Accounts register with fewer rows. A table answers
+ * *what exactly happened*; this answers *is today normal*, which is the only
+ * question somebody glancing at a screen on the way past is actually asking.
+ * That is why almost every figure carries a comparison: ₹48,200 on its own is
+ * a digit, and ₹48,200 against an average Saturday of ₹51,000 is something to
+ * act on.
+ *
+ * The money comes from `getDayEndSheet` rather than being computed again, so
+ * the owner's screen and the accountant's sheet can never disagree. The one
+ * time a hospital is shown two answers to the same question it stops
+ * believing either, and that cannot be undone by fixing it afterwards.
+ *
+ * **The comparison is the same weekday, averaged over the four before it.**
+ * A hospital's week is not flat — an OPD Saturday looks nothing like a
+ * Tuesday — so comparing against yesterday or against a rolling mean would
+ * report a difference that is only the day of the week.
+ */
+export async function getOwnerDay(date: string): Promise<OwnerDay> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'dashboard:read')
+  const supabase = await createClient()
+  const { from, to } = istDayBoundsISO(date)
+
+  // The four previous same-weekdays, for every comparison on the screen.
+  const priorDays = [7, 14, 21, 28].map((n) => istAddDays(date, -n))
+
+  // ── The materialized views need the service client, and their own filter ──
+  //
+  // They are granted to service_role alone, because a materialized view cannot
+  // carry row-level security: it aggregates every tenant in the database into
+  // one table and reachability is the only boundary there is. Reading one
+  // through the ordinary client returns nothing — silently, unless the error
+  // is checked, which is why every one of these is checked below.
+  //
+  // And because the service client bypasses RLS, `tenant_id` has to be filtered
+  // here by hand. Leaving it off does not fail; it quietly mixes other
+  // hospitals' numbers into this one's.
+  const rd = getReadClient()
+
+  const [sheet, trendRes, counts, priorCounts, beds, attention] = await Promise.all([
+    getDayEndSheet(date),
+    rd.from('mv_daily_revenue_by_tenant')
+      .select('day, total_amount')
+      .eq('tenant_id', actor.tenant_id)
+      .gte('day', istAddDays(date, -29)).lte('day', date)
+      .order('day'),
+    countsFor(supabase, actor.tenant_id, from, to),
+    Promise.all(priorDays.map(async (d) => {
+      const b = istDayBoundsISO(d)
+      return countsFor(supabase, actor.tenant_id, b.from, b.to)
+    })),
+    rd.from('mv_bed_occupancy_by_tenant')
+      .select('total_beds, occupied_beds').eq('tenant_id', actor.tenant_id).maybeSingle(),
+    attentionFor(supabase, rd, actor.tenant_id, date),
+  ])
+
+  if (trendRes.error) throw new Error(`Could not read the trend: ${trendRes.error.message}`)
+  if (beds.error) throw new Error(`Could not read bed occupancy: ${beds.error.message}`)
+
+  // Days with no money have no row in the view, so the series is filled in —
+  // a line that skips its quiet days draws a hospital busier than it was.
+  const byDay = new Map((trendRes.data ?? []).map((r) => [r.day as string, Number(r.total_amount)]))
+  const trend: Array<{ day: string; amount: number }> = []
+  for (let i = 29; i >= 0; i--) {
+    const d = istAddDays(date, -i)
+    trend.push({ day: d, amount: byDay.get(d) ?? 0 })
+  }
+
+  const priorCollected = priorDays.map((d) => byDay.get(d) ?? 0)
+  const avg = (xs: number[]) => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0
+
+  const totalBeds = Number(beds.data?.total_beds ?? 0)
+  const occupied  = Number(beds.data?.occupied_beds ?? 0)
+
+  return {
+    date,
+    collected:   { ...sheet.collected, usualForThisWeekday: avg(priorCollected) },
+    billed:      sheet.billed,
+    outstanding: sheet.outstanding,
+    trend,
+    activity: (Object.keys(counts) as Array<keyof DayCounts>).map((k) => ({
+      key: k,
+      count: counts[k],
+      usualForThisWeekday: avg(priorCounts.map((p) => p[k])),
+    })),
+    beds: { total: totalBeds, occupied, percent: totalBeds ? Math.round((occupied / totalBeds) * 100) : 0 },
+    attention,
+  }
+}
+
+interface DayCounts {
+  consultations: number
+  emergency: number
+  admissions: number
+  discharges: number
+  labTests: number
+  scans: number
+  surgeries: number
+}
+
+/** What the hospital did in a window — the activity half of the picture. */
+async function countsFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string, from: string, to: string,
+): Promise<DayCounts> {
+  const head = { count: 'exact' as const, head: true }
+  const [appt, er, adm, dis, lab, rad, ot] = await Promise.all([
+    supabase.from('appointments').select('id', head).eq('tenant_id', tenantId).gte('scheduled_at', from).lt('scheduled_at', to),
+    supabase.from('emergency_cases').select('id', head).eq('tenant_id', tenantId).gte('arrived_at', from).lt('arrived_at', to),
+    supabase.from('admissions').select('id', head).eq('tenant_id', tenantId).gte('admitted_at', from).lt('admitted_at', to),
+    supabase.from('admissions').select('id', head).eq('tenant_id', tenantId).gte('discharged_at', from).lt('discharged_at', to),
+    // Items, not orders: one order routinely carries several tests, and a lab
+    // that ran forty orders of three tests did not run forty tests.
+    supabase.from('lab_order_items').select('id', head).eq('tenant_id', tenantId).gte('created_at', from).lt('created_at', to),
+    supabase.from('radiology_orders').select('id', head).eq('tenant_id', tenantId).gte('ordered_at', from).lt('ordered_at', to),
+    supabase.from('ot_schedules').select('id', head).eq('tenant_id', tenantId).gte('scheduled_start', from).lt('scheduled_start', to),
+  ])
+  return {
+    consultations: appt.count ?? 0,
+    emergency:     er.count ?? 0,
+    admissions:    adm.count ?? 0,
+    discharges:    dis.count ?? 0,
+    labTests:      lab.count ?? 0,
+    scans:         rad.count ?? 0,
+    surgeries:     ot.count ?? 0,
+  }
+}
+
+/** The two things worth interrupting an owner for. */
+async function attentionFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rd: ReturnType<typeof getReadClient>,
+  tenantId: string,
+  date: string,
+): Promise<OwnerDay['attention']> {
+  const cutoff = istDayStartISO(istAddDays(date, -30))
+  const [stale, stock] = await Promise.all([
+    supabase.from('bills').select('total, paid')
+      .in('status', ['unpaid', 'partial']).lt('created_at', cutoff).or(SERVICE_BILLS_ONLY),
+    // Service-role client, so the tenant filter is ours to apply.
+    rd.from('mv_lowstock_alerts_by_tenant')
+      .select('low_stock_count').eq('tenant_id', tenantId).maybeSingle(),
+  ])
+  if (stale.error) throw new Error(`Could not read unpaid bills: ${stale.error.message}`)
+  if (stock.error) throw new Error(`Could not read stock alerts: ${stock.error.message}`)
+  const rows = (stale.data ?? []) as Array<{ total: number; paid: number }>
+  const owed = rows.reduce((s, b) => s + Math.max(0, Number(b.total) - Number(b.paid)), 0)
+  return {
+    staleBills: rows.length,
+    staleAmount: round2(owed),
+    lowStock: Number(stock.data?.low_stock_count ?? 0),
   }
 }
