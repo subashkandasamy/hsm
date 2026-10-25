@@ -35,10 +35,10 @@ Two consequences worth holding on to:
 |---|---|---|---|---|
 | **Erba H360** | Haematology, **3-part** diff | **4 USB + 1 LAN**. No RS-232 | **HL7 over TCP/IP** | [brochure](https://product.erbamannheim.com/upload/docs/1019059489-H%20360%204%20page%20Brochure%20(05-2019).pdf), [Erba India](https://erba.velocitabrandconsultants.com/product/by-product-segment/hematology/h-360/) |
 | **Boditech iChroma II** | Immunoassay (TSH, troponin, HbA1c, CRP) | USB + **Ethernet** + SD. **Wi-Fi/Bluetooth dongle optional** | "LIS/HIS compatible", protocol unstated | [spec sheet](https://ethitech.co.za/wp-content/uploads/2019/05/iChroma-II.pdf) |
-| **Erba ECL 105** | Coagulation — PT/INR, APTT, D-dimer | **RS-232C**, 2 USB (A + B) | Bidirectional TCP/IP & RS-232 | [spec](https://product.erbamannheim.com/upload/docs/1408391036-Erba%20ECL%20105%20_%20V02.pdf) |
-| **Erba Chem 5x** | Semi-auto biochemistry | USB, **RS-232** | Bidirectional LIS | [Erba India](https://erba.velocitabrandconsultants.com/product/clinical-chemistry/chem-5x-semi-automated-clinical-chemistry-analyzer/) |
-| **Erba Laura Smart** | Urine strips | **RS-232 or USB**, barcode port | LIS/HIS | [Erba](https://www.erbalachema.com/en/products-and-solutions/urine-analysis/urine-analyzer-laura-smart/) |
-| **Aspen BG Plus** | Blood gas + electrolytes, cartridge | **4 USB only** — no LAN or RS-232 found | Not stated anywhere | [listing](https://www.hospitalstore.com/aspen-blood-gas-analyzer) — distributor, not manufacturer |
+| **Erba ECL 105** | Coagulation — PT/INR, APTT, D-dimer | **RJ45 Ethernet**, COM (DB9), USB A + B — *back panel photographed 24 Oct 2026* | Bidirectional TCP/IP & RS-232 | [spec](https://product.erbamannheim.com/upload/docs/1408391036-Erba%20ECL%20105%20_%20V02.pdf) + the unit itself |
+| **Erba Chem 5x** | Semi-auto biochemistry | `PC` = **USB-B**, EXT PRINTER (USB-A), EXT K/B (PS/2). **No DB9 on the unit** | Bidirectional LIS, almost certainly over a USB-to-serial bridge | [Erba India](https://erba.velocitabrandconsultants.com/product/clinical-chemistry/chem-5x-semi-automated-clinical-chemistry-analyzer/) + the unit itself |
+| **Erba Laura Smart** | Urine strips | `HOST` = **DB9**, USB-B, `BCR` = **2 × USB-A** for barcode readers | LIS/HIS | [Erba](https://www.erbalachema.com/en/products-and-solutions/urine-analysis/urine-analyzer-laura-smart/) + the unit itself |
+| **Aspen BG Plus** | Blood gas + electrolytes, cartridge | **RJ45 Ethernet**, DB9, 4 × USB-A — *back panel photographed 24 Oct 2026* | Not stated anywhere; the ports exist | the unit itself |
 | **Electrolyte analyzer** | Na, K, iCa, pH, HCO₃, Cl | Unknown | Unknown | — |
 | **Bionet CardioTouch 3000** | 12-channel ECG, **movable** | **LAN + USB**, Wi-Fi optional | BMS-Plus → JPEG/BMP/XML/**PDF** | [Bionet](https://bionetus.com/medical/ecg-spirometer/cardiotouch-3000-12-channel-electrocardiograph/) |
 | **ADONIS + ECORAD/DROP/MediLite** | X-ray generator + DR panel PC | PC on a network | **DICOM — confirmed working 24 Oct 2026.** The console is `DROCConfig`; worklist settings are under Networks → Worklist | site visit |
@@ -52,9 +52,32 @@ Two consequences worth holding on to:
 not the manufacturer. These ISE analyzers are near-universally RS-232, but the
 brand has to come off the back panel before anything is ordered.
 
-**The Aspen BG Plus may have no LIS output at all.** Every listing shows USB and
-nothing else. Before promising a hospital anything about blood gases, look at
-the back of the unit and ask what the lab does with the results today.
+**~~The Aspen BG Plus may have no LIS output at all.~~ Wrong, and a good lesson.**
+Every online listing showed USB and nothing else, so this note said the machine
+might have no way out. The back panel has an **RJ45 socket and a DB9** beside
+the USB ports. A distributor's listing is an advertisement, not a specification,
+and **the only reliable source for what a machine can do is the back of the
+machine.** Photograph it before writing anything down.
+
+**Four back panels, four corrections.** Every one of these instruments differed
+from what the paperwork implied:
+
+- **ECL 105** — has Ethernet. An earlier reading of this table assumed its
+  "TCP/IP" claim was unreachable because the ports column listed only RS-232.
+  It was the ports column that was wrong.
+- **Chem 5x** — has no DB9 at all. Its LIS port is `PC`, a USB-B socket, which
+  on this class of instrument is a USB-to-serial bridge: it should appear on
+  Windows as an ordinary COM port over a plain USB printer cable, with no
+  adapter and no null modem. Confirm with `--ports` before and after plugging
+  it in.
+- **Laura Smart** — `HOST` is a true DB9, and it has **two `BCR` ports** for
+  barcode readers, so it can read our tube labels directly.
+- **Aspen BG Plus** — above.
+
+**So only one instrument in this laboratory actually needs RS-232 hardware**,
+the Laura Smart, and two more can be reached with the cable already in the
+building. The serial-to-Ethernet device server is a smaller purchase than §Phase 2
+assumed, and less urgent.
 
 **The H360's only data port is the LAN port.** This was counter-intuitive — a
 machine of this class would historically be serial — and it is the single most
@@ -106,19 +129,32 @@ different transports do not conflict.
 |---|---|---|
 | Erba H360 | LAN, HL7/MLLP → 5150 | **Proved on the real instrument, 24 Oct 2026** |
 | ADONIS / DROC | DICOM → 11112 | **Worklist proved on the real console, 24 Oct 2026** |
-| Erba Chem 5x | RS-232 | Supported, never tested on hardware |
-| Erba ECL 105 | RS-232 or TCP | Supported, never tested on hardware |
-| Erba Laura Smart | RS-232 | Supported, never tested on hardware |
-| Electrolyte analyzer | Probably RS-232 | Brand still unidentified — see §2 |
-| Boditech iChroma II | Ethernet | Protocol unstated by the manufacturer. Capture before promising |
+| Erba ECL 105 | **Ethernet** → 5150 | Cable reaches it today. Next to test |
+| Aspen BG Plus | **Ethernet** → 5150 | Cable reaches it today. Protocol unknown |
+| Erba Chem 5x | USB-B `PC` → likely a COM port | Plain USB printer cable, no adapter. Confirm with `--ports` |
+| Erba Laura Smart | **True RS-232** (`HOST` DB9) | The only instrument here needing an adapter and a null modem |
+| Electrolyte analyzer | Unknown | Brand still unidentified — see §2 |
+| Boditech iChroma II | Ethernet | Has the port and an IP screen, but the destination is not on it — see below |
 | Bionet CardioTouch 3000 | LAN/USB | Exports PDF/XML, not a result stream → watched folder |
 | RMS Helios, RMS TMT | Windows PC | PDF → watched folder |
-| Aspen BG Plus | 4 × USB | **May have no LIS output at all.** Confirm at the back panel |
 
-**The catch is ports, not software.** Four machines are RS-232 and a PC has at
-most one serial socket, so this needs either a USB-to-serial adapter per machine
-(≈ ₹500, and Windows renumbers COM ports after a reboot) or one serial-to-
-Ethernet device server — see Phase 2.
+**The catch was thought to be serial ports; it is not.** Only the Laura Smart
+needs an adapter and a null modem cable. The rest are reachable with a network
+cable or a USB cable that costs nothing.
+
+### On the iChroma II
+
+Its *Communication* menu offers PC, Bluetooth, Ethernet, WIFI and Online. The
+**Ethernet** screen sets only the analyzer's own address — DHCP or manual IP,
+netmask, DNS, gateway — and has an *Ethernet Test* button. **There is no host
+address on it.** The destination is most likely under *PC*; that screen has not
+been photographed yet.
+
+Two further things from the manual (OPM-IR2-EN Rev.08): across 60 pages there
+is no host IP field, no port and no protocol named, and results are sent
+**when an operator selects them and taps send**, not automatically. The second
+point changes the workflow — a failed send is visible to a person standing
+there, which makes this the one instrument where Wi-Fi is reasonably safe.
 
 ---
 
@@ -170,8 +206,15 @@ instrument waiting for one that never comes stalls.
 
 ### Phase 2 — the serial machines
 
-Four instruments are RS-232: Chem 5x, ECL 105, Laura Smart, and the electrolyte
-analyzer. Two ways in, and they are not exclusive:
+**Revised 24 Oct 2026, after photographing the back panels.** This section was
+written believing four instruments were RS-232. One is: the **Laura Smart**.
+The **ECL 105** and the **Aspen BG Plus** have Ethernet, the **Chem 5x** has a
+USB-B `PC` port rather than a DB9, and the electrolyte analyzer is still
+unidentified. See §2.
+
+That reorders the work. The cable already in the building reaches two more
+instruments, and the device server below is a convenience rather than a
+prerequisite. Two ways in, and they are not exclusive:
 
 **(a) A serial-to-Ethernet device server.** One box, 4–8 serial ports in, one
 network port out, each port opening a TCP connection to the connector. It makes
@@ -510,7 +553,11 @@ stops everything silently.
 
 ## 8. What to collect on the next visit
 
-1. **Photograph every back panel.** It answers more than any datasheet.
+1. **Photograph every back panel.** It answers more than any datasheet — and
+   on 24 Oct 2026 it corrected *four* instruments at once, in both directions:
+   two machines had Ethernet that no listing mentioned, and one had no serial
+   port at all where the paperwork promised one. Do this before planning
+   anything or buying anything.
 2. **Find the LIS menu** on each — *Setup → Communication / Host / LIS*. A machine
    can have a serial socket that is only for service. Note the baud rate.
 3. **Capture an hour of traffic** with a laptop and a ₹500 USB-to-serial adapter:
@@ -524,7 +571,9 @@ stops everything silently.
    bring the files home and run `npm run verify:hl7 <file>` to see what the
    machine actually said. That turns unknown instruments into library entries
    and the rest can be done remotely.
-4. **Identify the electrolyte analyzer and the Aspen BG Plus** properly.
+4. **Identify the electrolyte analyzer** properly — still the only unknown
+   instrument in the building. (The Aspen BG Plus was identified by its back
+   panel on 24 Oct 2026: it has Ethernet and serial after all.)
 5. ~~Ask whether the DR software has DICOM settings.~~ **Answered: DROCConfig →
    Networks → Worklist.** Photograph the tab before changing it, and read the
    `Diagnosis_Worklist` log after pressing Verify Connection.
