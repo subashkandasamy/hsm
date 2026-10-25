@@ -585,7 +585,19 @@ somebody can see is a number somebody will check — §4's export was wrong for 
 unknown length of time because no screen anywhere showed what it should have
 contained.
 
-**Phase 3 — CSV / Excel download.** The register the user is currently looking
+**~~Phase 3 — CSV / Excel download.~~ Done 25 Oct 2026.** The register the
+accountant is looking at, as a file — same functions, same filters, no second
+code path. Plus **Ledger names**, a third tab mapping each income head and
+payment method to what the hospital's own books call it. Blank leaves the
+column empty rather than guessing, because a wrong ledger name fails at the
+import rather than in the file.
+
+The byte-order mark had to be written as bytes client-side: a leading U+FEFF
+added server-side does not survive the trip, which was established by logging
+the first code point on arrival rather than assumed. Without it Excel on
+Windows mojibakes every ₹ and every Tamil name.
+
+~~**Phase 3 — CSV / Excel download.**~~ The register the user is currently looking
 at, as a file — same query, same filters, no second code path. Universal, and
 the only format that serves a CA with no package at all. Includes the ledger
 mapping screen, since that is needed by every exporter and not just one.
