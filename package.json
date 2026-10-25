@@ -15,6 +15,7 @@
     "verify:hl7": "tsx scripts/verify-hl7.ts",
     "verify:lab-alerts": "tsx scripts/verify-lab-alerts.ts",
     "verify:worklist": "tsx scripts/verify-worklist.ts",
+    "verify:schema-refs": "tsx scripts/verify-schema-refs.ts",
     "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts"
   },
   "dependencies": {

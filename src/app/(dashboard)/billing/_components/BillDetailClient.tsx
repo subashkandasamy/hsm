@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Printer, Download, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
@@ -119,6 +120,10 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   const [adjLoading, setAdjLoading]     = useState(false)
   const [adjNotice, setAdjNotice]       = useState<string | null>(null)
   const [decideBusy, setDecideBusy]     = useState(false)
+  // Browser dialogs are not used in this product: they cannot be styled, they
+  // block the tab, and on a ward tablet they are easy to dismiss by accident.
+  const [actionError, setActionError]   = useState<string | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
 
   // Refund / credit note
   const [showRefund, setShowRefund]     = useState(false)
@@ -188,10 +193,11 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   }
 
   async function handleCancel() {
-    if (!confirm('Cancel this bill? All source charges will be reverted to unbilled.')) return
+    setConfirmCancel(false)
+    setActionError(null)
     setLoading(true)
     const res = await cancelBill(bill.id)
-    if (!res.success) { alert(res.error); setLoading(false); return }
+    if (!res.success) { setActionError(res.error ?? 'Could not cancel this bill'); setLoading(false); return }
     await refresh()
     setLoading(false)
   }
@@ -235,7 +241,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
     setDecideBusy(true)
     const r = approve ? await approveDiscountRequest(pendingDiscount.id) : await rejectDiscountRequest(pendingDiscount.id)
     setDecideBusy(false)
-    if (!r.success) { alert(r.error); return }
+    if (!r.success) { setActionError(r.error ?? 'Could not record that decision'); return }
     router.refresh()
     await refresh()
   }
@@ -380,7 +386,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
 
           {canManage && isMutable && !hasNonAdvancePayments && (
             <button
-              onClick={handleCancel}
+              onClick={() => setConfirmCancel(true)}
               disabled={loading}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
               style={{ border: '1px solid #FECACA', color: '#EF4444', minHeight: '40px' }}
@@ -397,6 +403,22 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
           {adjNotice}
         </div>
       )}
+
+      {actionError && (
+        <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
+          {actionError}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        onConfirm={handleCancel}
+        title="Cancel this bill?"
+        description="Every charge on it goes back to unbilled and can be put on another bill. The bill itself is kept, marked cancelled."
+        confirmLabel="Cancel bill"
+        loading={loading}
+      />
 
       {/* Discount pending approval */}
       {pendingDiscount && (

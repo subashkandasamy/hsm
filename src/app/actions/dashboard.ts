@@ -6,13 +6,21 @@ import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/c
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
-import { istAddDays, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import { istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import { listPendingPrescriptions, getAlerts } from '@/app/actions/pharmacy'
 
+/**
+ * Today, as the hospital means it.
+ *
+ * This used to build a day from the server's own clock, which on Vercel is
+ * UTC — so "today" began at 05:30 IST. Everything a doctor or receptionist did
+ * on the night shift was counted against the previous day, and the tiles
+ * disagreed with the Cash Book and with mv_daily_footfall_by_tenant, both of
+ * which bucket by Asia/Kolkata.
+ */
 function todayRange() {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-  const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString()
-  return { start, end }
+  const day = istToday()
+  return { start: istDayStartISO(day), end: istDayEndISO(day) }
 }
 
 // IST day — matches mv_daily_footfall_by_tenant, which buckets by Asia/Kolkata.
@@ -51,8 +59,12 @@ export async function getAdminDashboard(): Promise<AdminKPIs> {
     // Financial tiles are computed LIVE for accuracy (never stale).
     // Today's revenue = actual money collected today (same basis as the Cash Book).
     getCollectionSummary(primary, tid, from, to),
-    // Pending bills = live unpaid/partial bills.
-    primary.from('bills').select('total, paid').in('status', ['unpaid', 'partial']),
+    // Pending bills = live unpaid/partial bills. A consolidated IPD bill wraps
+    // bills that already exist, so without this filter the owner's outstanding
+    // figure counts the same money twice — see getBillingStats, which had the
+    // same gap.
+    primary.from('bills').select('total, paid').in('status', ['unpaid', 'partial'])
+      .or('bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund,consolidated)'),
   ])
 
   const todayRevenue       = collection.total
@@ -123,20 +135,28 @@ export async function getPharmacistDashboard(): Promise<PharmacistKPIs> {
   await requirePermission((await getActorProfile()).role, 'dashboard:read')
   const supabase = await createClient()
 
-  const [pendingRes, stockRes] = await Promise.all([
-    supabase.from('prescriptions').select('id').eq('status', 'active').limit(500),
-    supabase.from('drug_batches').select('qty_remaining, expiry_date').gt('qty_remaining', 0),
+  // Both tiles are the Pharmacy page's own figures, not a second opinion.
+  //
+  // They used to be computed here from `prescriptions.status`, `qty_remaining`
+  // and `expiry_date` — none of which exist. PostgREST rejected both queries,
+  // the errors were never read, and the two tiles on this dashboard read zero
+  // for every pharmacy in the product. A pharmacist with eighty expiring
+  // batches was told there were none.
+  //
+  // Even with the column names corrected they would have been wrong: the
+  // thresholds here were "< 10 units" and 90 days, where the Pharmacy page
+  // uses each drug's own reorder level and 30 days. A tile that disagrees
+  // with the screen it links to is its own kind of lie, so these now call the
+  // same functions that page does and count what comes back.
+  const [pending, alerts] = await Promise.all([
+    listPendingPrescriptions(),
+    getAlerts(),
   ])
 
-  const batches = (stockRes.data ?? []) as Array<{ qty_remaining: number; expiry_date: string | null }>
-  const soon = istAddDays(istToday(), 90)
-  const nearExpiryCount = batches.filter((b) => b.expiry_date && b.expiry_date <= soon).length
-  const lowStockCount   = batches.filter((b) => b.qty_remaining < 10).length
-
   return {
-    pendingPrescriptions: pendingRes.data?.length ?? 0,
-    lowStockCount,
-    nearExpiryCount,
+    pendingPrescriptions: pending.length,
+    lowStockCount:        alerts.lowStock.length,
+    nearExpiryCount:      alerts.nearExpiry.length,
   }
 }
 
@@ -157,16 +177,21 @@ export async function exportReport(params: {
   let csv = ''
 
   if (params.type === 'daily_collection') {
-    const { data } = await rd
+    // received_at, not created_at — payments has no created_at column, so this
+    // query was rejected outright and the file downloaded with a header row
+    // and nothing under it.
+    const { data, error } = await rd
       .from('payments')
-      .select('created_at, amount, method, bill_id')
+      .select('received_at, amount, method, bill_id, bill:bills(bill_no)')
       .eq('tenant_id', actor.tenant_id)
-      .gte('created_at', from)
-      .lte('created_at', to)
-      .order('created_at')
-    csv = 'Date,Amount,Method,Bill ID\n' +
-      (data ?? []).map((r) =>
-        `${r.created_at?.slice(0, 10)},${r.amount},${r.method},${r.bill_id}`
+      .gte('received_at', from)
+      .lte('received_at', to)
+      .order('received_at')
+    if (error) throw new Error(`Daily collection export failed: ${error.message}`)
+    type Row = { received_at: string; amount: number; method: string; bill_id: string; bill: { bill_no: string } | null }
+    csv = 'Date,Amount,Method,Bill No\n' +
+      ((data ?? []) as unknown as Row[]).map((r) =>
+        `${istDate(r.received_at)},${r.amount},${r.method},${csvCell(r.bill?.bill_no ?? r.bill_id)}`
       ).join('\n')
   }
 
@@ -175,18 +200,22 @@ export async function exportReport(params: {
       rd.from('appointments').select('scheduled_at, status')
         .eq('tenant_id', actor.tenant_id)
         .gte('scheduled_at', from).lte('scheduled_at', to).order('scheduled_at'),
-      rd.from('emergency_cases').select('created_at')
+      // arrived_at, not created_at: emergency_cases has no created_at, so this
+      // half silently returned nothing and every day reported zero ER cases.
+      rd.from('emergency_cases').select('arrived_at')
         .eq('tenant_id', actor.tenant_id)
-        .gte('created_at', from).lte('created_at', to),
+        .gte('arrived_at', from).lte('arrived_at', to),
     ])
+    if (apptRes.error) throw new Error(`Footfall export failed: ${apptRes.error.message}`)
+    if (erRes.error) throw new Error(`Footfall export failed: ${erRes.error.message}`)
     const byDay: Record<string, { appointments: number; emergency: number }> = {}
     for (const a of (apptRes.data ?? [])) {
-      const d = (a.scheduled_at as string).slice(0, 10)
+      const d = istDate(a.scheduled_at as string)
       byDay[d] = byDay[d] ?? { appointments: 0, emergency: 0 }
       byDay[d].appointments++
     }
     for (const e of (erRes.data ?? [])) {
-      const d = (e.created_at as string).slice(0, 10)
+      const d = istDate(e.arrived_at as string)
       byDay[d] = byDay[d] ?? { appointments: 0, emergency: 0 }
       byDay[d].emergency++
     }
@@ -195,37 +224,48 @@ export async function exportReport(params: {
   }
 
   else if (params.type === 'bed_occupancy') {
-    const { data } = await rd
+    const { data, error } = await rd
       .from('admissions')
       .select('admitted_at, discharged_at, bed:beds(ward:wards(name))')
       .eq('tenant_id', actor.tenant_id)
       .gte('admitted_at', from)
       .lte('admitted_at', to)
       .order('admitted_at')
+    if (error) throw new Error(`Bed occupancy export failed: ${error.message}`)
     csv = 'Admitted At,Discharged At,Ward\n' +
       (data ?? []).map((r) => {
         const ward = (r.bed as { ward?: { name?: string } } | null)?.ward?.name ?? ''
-        return `${r.admitted_at?.slice(0, 10)},${r.discharged_at?.slice(0, 10) ?? 'active'},${ward}`
+        const out  = r.discharged_at ? istDate(r.discharged_at as string) : 'active'
+        return `${istDate(r.admitted_at as string)},${out},${csvCell(ward)}`
       }).join('\n')
   }
 
   else if (params.type === 'test_volumes') {
+    // Neither table had the columns this asked for — no `created_at`, no
+    // `test_name`, no `study_type` — so both halves were rejected and the file
+    // was a header row.
+    //
+    // Counting lab *items* rather than orders, because the report is called
+    // Test Volumes and one order routinely carries several tests. A lab doing
+    // forty orders of three tests did not do forty tests.
     const [labRes, radRes] = await Promise.all([
-      rd.from('lab_orders').select('created_at, test_name')
+      rd.from('lab_order_items').select('created_at')
         .eq('tenant_id', actor.tenant_id)
         .gte('created_at', from).lte('created_at', to),
-      rd.from('radiology_orders').select('created_at, study_type')
+      rd.from('radiology_orders').select('ordered_at')
         .eq('tenant_id', actor.tenant_id)
-        .gte('created_at', from).lte('created_at', to),
+        .gte('ordered_at', from).lte('ordered_at', to),
     ])
+    if (labRes.error) throw new Error(`Test volumes export failed: ${labRes.error.message}`)
+    if (radRes.error) throw new Error(`Test volumes export failed: ${radRes.error.message}`)
     const byDay: Record<string, { lab: number; radiology: number }> = {}
     for (const l of (labRes.data ?? [])) {
-      const d = (l.created_at as string).slice(0, 10)
+      const d = istDate(l.created_at as string)
       byDay[d] = byDay[d] ?? { lab: 0, radiology: 0 }
       byDay[d].lab++
     }
     for (const r of (radRes.data ?? [])) {
-      const d = (r.created_at as string).slice(0, 10)
+      const d = istDate(r.ordered_at as string)
       byDay[d] = byDay[d] ?? { lab: 0, radiology: 0 }
       byDay[d].radiology++
     }
@@ -234,4 +274,11 @@ export async function exportReport(params: {
   }
 
   return csv
+}
+
+
+/** A value that cannot break the row it sits in. Hospital and ward names contain commas. */
+function csvCell(v: string | null | undefined): string {
+  const t = (v ?? '').replace(/"/g, '""')
+  return /[",\n\r]/.test(t) ? `"${t}"` : t
 }

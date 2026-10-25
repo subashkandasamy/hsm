@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Printer, CheckCircle2, Trash2, Loader2 } from 'lucide-react'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -28,6 +29,8 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
   const { profile: me } = useAuth()
   const canWrite = !!me?.role && hasPermission(me.role, 'billing:write')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const p = profile
   const addrParts = [p?.address_line1, p?.address_line2, [p?.city, p?.state].filter(Boolean).join(', '), p?.pincode && `- ${p.pincode}`].filter(Boolean)
@@ -45,15 +48,32 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
     router.refresh()
   }
   async function handleDelete() {
-    if (!confirm('Delete this estimate?')) return
+    setConfirmDelete(false)
+    setError(null)
     setBusy(true)
     const res = await deleteEstimate(estimate.id)
-    if (!res.success) { alert(res.error); setBusy(false); return }
+    if (!res.success) { setError(res.error ?? 'Could not delete this estimate'); setBusy(false); return }
     router.push('/billing/estimates')
   }
 
   return (
     <div className="max-w-4xl mx-auto">
+      {error && (
+        <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm"
+             style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
+          {error}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete this estimate?"
+        description="The estimate and its lines are removed. Anything already given to the patient on paper stays as it is."
+        confirmLabel="Delete"
+        loading={busy}
+      />
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -86,7 +106,7 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
             </button>
           )}
           {canWrite && (
-            <button onClick={handleDelete} disabled={busy} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #FECACA', color: '#EF4444' }}>
+            <button onClick={() => setConfirmDelete(true)} disabled={busy} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #FECACA', color: '#EF4444' }}>
               <Trash2 className="w-4 h-4" />
             </button>
           )}

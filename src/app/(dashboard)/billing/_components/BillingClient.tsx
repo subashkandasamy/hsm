@@ -20,7 +20,7 @@ import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
-import { istToday } from '@/lib/istDate'
+import { istToday, istDate } from '@/lib/istDate'
 
 const STATUS_MAP: Record<string, string> = {
   draft:     'info',
@@ -223,6 +223,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
   const [applyingBillId, setApplyingBillId] = useState<string | null>(null)
   // Inline cancel state: null | billId being cancelled | `${billId}:confirm` awaiting confirm
   const [cancelState, setCancelState] = useState<string | null>(null)
+  // Shown in the page, not in a browser dialog: an alert() here blocks the tab
+  // and is dismissed by reflex, which is exactly when the message mattered.
+  const [actionError, setActionError] = useState<string | null>(null)
   // Refund state
   const [refundAdmissionId, setRefundAdmissionId] = useState<string | null>(null)
   const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'upi' | 'bank_transfer'>('cash')
@@ -293,8 +296,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     setApplyingBillId(billId)
     const res = await applyAdvanceToBill(billId, admissionId)
     setApplyingBillId(null)
-    if (!res.success) alert(res.error ?? 'Failed to apply advance')
-    else refresh()
+    if (!res.success) setActionError(res.error ?? 'Could not apply the advance')
+    else { setActionError(null); refresh() }
   }
 
   async function handleCancelBill(e: React.MouseEvent, billId: string) {
@@ -304,8 +307,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
       setCancelState(billId)
       const res = await cancelBill(billId)
       setCancelState(null)
-      if (!res.success) alert(res.error)
-      else refresh()
+      if (!res.success) setActionError(res.error ?? 'Could not cancel that bill')
+      else { setActionError(null); refresh() }
     } else {
       // First click — ask for confirmation inline
       setCancelState(`${billId}:confirm`)
@@ -502,6 +505,16 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
 
   return (
     <div>
+      {actionError && (
+        <div className="mb-4 px-4 py-3 rounded-xl text-sm flex items-start justify-between gap-3"
+             style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} aria-label="Dismiss"
+                  style={{ background: 'none', border: 'none', color: '#B91C1C', cursor: 'pointer', lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+      )}
       <PageHeader
         title="Billing"
         subtitle="Generate bills, record payments, manage invoices"
@@ -603,8 +616,12 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
           g.totalOutstanding > 0 ||
           g.pendingAdvance > 0 ||
           g.advanceSummary?.admissionStatus === 'admitted' ||
-          allGroupBills(g).some(b => b.created_at.startsWith(todayStr)) ||
-          g.deposits.some(d => d.created_at.startsWith(todayStr))
+          // istDate, not a string prefix: created_at is stored in UTC, so
+          // `.startsWith(istToday())` is false for everything billed between
+          // midnight and 05:30 IST. A night-shift bill dropped straight into
+          // the collapsed History section and looked lost.
+          allGroupBills(g).some(b => istDate(b.created_at) === todayStr) ||
+          g.deposits.some(d => istDate(d.created_at) === todayStr)
         const todayGroups   = filteredGroups.filter(isActiveToday)
         const historyGroups = filteredGroups.filter(g => !isActiveToday(g))
         const sorted = [...todayGroups, ...historyGroups]

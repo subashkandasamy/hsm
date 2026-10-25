@@ -162,9 +162,20 @@ export async function getUnbilledCharges(params: {
       .select('id, qty, price_snapshot, drug:drugs(name), batch:drug_batches(hsn_code, gst_rate)')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
-    if (admissionId) q = q.eq('admission_id', admissionId)
-    else if (visitId) q = q.eq('visit_id', visitId)
-    const { data } = await q
+    if (admissionId) {
+      q = q.eq('admission_id', admissionId)
+    } else if (visitId) {
+      // `dispenses` has no visit_id — the link to a visit runs through the
+      // prescription. Filtering on it directly made PostgREST reject the whole
+      // query, and because the error was never read the result was simply an
+      // empty list: **medicines dispensed to an OPD patient were silently left
+      // off their bill**, every time, and the hospital gave them away.
+      const { data: rx } = await supabase
+        .from('prescriptions').select('id').eq('visit_id', visitId)
+      q = q.in('prescription_id', (rx ?? []).map((r) => r.id as string))
+    }
+    const { data, error } = await q
+    if (error) throw new Error(`Could not read pharmacy charges: ${error.message}`)
     for (const d of data ?? []) {
       const qty = d.qty as number
       const price = d.price_snapshot as number
@@ -207,15 +218,19 @@ export async function getUnbilledCharges(params: {
 
   // ---- OT schedules (unbilled, completed) ----
   {
-    const q = supabase
+    let q = supabase
       .from('ot_schedules')
       .select('id, procedure_name, price_snapshot, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id)')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
       .eq('status', 'completed')
-    if (admissionId) {
-      // no direct link — just take all patient OT charges
-    }
+    // `ot_schedules.admission_id` does exist and is populated — this branch
+    // used to be an empty block saying there was no link, so every one of a
+    // patient's unbilled surgeries was offered on every bill. An OPD bill
+    // could pull in, and permanently mark as billed, a surgery belonging to
+    // an admission it had nothing to do with.
+    if (admissionId) q = q.eq('admission_id', admissionId)
+    else q = q.is('admission_id', null)   // day-case surgery only
     const { data } = await q
     for (const s of data ?? []) {
       lines.push({
@@ -465,18 +480,32 @@ export async function generateBill(
   // unbilled list forever). Rows another bill already owned are never touched.
   const flipped: Array<{ table: string; ids: string[] }> = []
 
-  // Helper: update billing_status with double-bill guard — returns error string or null
+  /**
+   * Mark the source rows billed, refusing if another bill got there first.
+   *
+   * The count must be compared against **distinct** ids, not against the
+   * number of charge lines. One row can produce several lines — a lab order
+   * with three tests is three lines all carrying the same `ref_id` — so a
+   * two-test order asked to flip `[X, X]`, matched the one row that exists,
+   * and read 1 < 2 as "somebody else billed this".
+   *
+   * The effect was that **a lab order with more than one test could never be
+   * billed at all**, and every attempt burned a GST invoice number from a
+   * legally sequential series on the way out. The guard was right; it was
+   * being handed a list with duplicates in it.
+   */
   async function flipToBilled(table: string, refs: string[]): Promise<string | null> {
+    const wanted = [...new Set(refs)]
     const { data, error } = await supabase
       .from(table as 'visits')
       .update({ billing_status: 'billed' })
-      .in('id', refs)
+      .in('id', wanted)
       .eq('billing_status', 'unbilled')
       .select('id')
     if (error) return error.message
     const ids = (data ?? []).map((r) => r.id as string)
     if (ids.length) flipped.push({ table, ids })
-    if (ids.length < refs.length) return `Some ${table} charges were already billed`
+    if (ids.length < wanted.length) return `Some ${table} charges were already billed`
     return null
   }
 
@@ -670,6 +699,17 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
   const supabase = await createClient()
 
+  // Cancelling twice is not a no-op, which is why this guard exists.
+  //
+  // The second pass reverts the same charges to 'unbilled' again — but by then
+  // a replacement bill may legitimately own them, and it has just had them
+  // pulled out from under it. A stale tab or a double-click was enough.
+  const { data: bill } = await supabase
+    .from('bills').select('status').eq('id', billId).single()
+  if (!bill) return { success: false, error: 'Bill not found' }
+  if ((bill.status as string) === 'cancelled')
+    return { success: false, error: 'This bill is already cancelled' }
+
   // Block if non-advance payments exist (cash/card/UPI etc.)
   const { count: cashCount } = await supabase
     .from('payments').select('id', { count: 'exact', head: true })
@@ -679,9 +719,13 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
   // Delete any advance auto-payments — advance returns to pool via exclusion logic
   await supabase.from('payments').delete().eq('bill_id', billId).eq('method', 'advance')
 
-  // Get all bill items with source and ref_id to revert
-  const { data: items } = await supabase
+  // Get all bill items with source and ref_id to revert. Read the error: a
+  // failure here with the cancel going ahead anyway would strand every charge
+  // as 'billed' against a bill that no longer exists, and they would never
+  // appear on the unbilled list again.
+  const { data: items, error: itemsErr } = await supabase
     .from('bill_items').select('source, ref_id').eq('bill_id', billId)
+  if (itemsErr) return { success: false, error: itemsErr.message }
 
   // Revert each source row back to unbilled
   const refsBySource = new Map<string, string[]>()
@@ -715,8 +759,11 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
     // 'nursing' and daily 'bed' auto-bills have no source-table billing_status to revert
   }
 
+  // Conditional on the status we read above, so two cancels racing each other
+  // cannot both come through.
   const { error } = await supabase
-    .from('bills').update({ status: 'cancelled' }).eq('id', billId)
+    .from('bills').update({ status: 'cancelled' })
+    .eq('id', billId).neq('status', 'cancelled')
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'cancel', 'bill', billId)
@@ -804,18 +851,26 @@ export async function getBillingStats(): Promise<{
   const today = istToday()
   const { from, to } = istDayBoundsISO(today)
 
+  // A consolidated IPD bill is a wrapper around bills that already exist, so
+  // counting both makes the hospital's billed and outstanding figures roughly
+  // double. Seven other readers in this file filter it out; these three did
+  // not, and they feed the two screens an owner actually looks at.
+  const NOT_A_SERVICE_BILL = 'bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund,consolidated)'
+
   const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }, collection] = await Promise.all([
     // Today's non-cancelled service bills — for "Billed Today" (value of new bills raised)
     supabase.from('bills').select('total')
       .gte('created_at', from).lt('created_at', to)
       .not('status', 'eq', 'cancelled')
-      .or('bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund)'),
+      .or(NOT_A_SERVICE_BILL),
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
-      .gte('created_at', from),
+      .gte('created_at', from)
+      .or(NOT_A_SERVICE_BILL),
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
-      .lt('created_at', from),
+      .lt('created_at', from)
+      .or(NOT_A_SERVICE_BILL),
     // "Collected Today" = actual money received today (payments + advances − refunds)
     getCollectionSummary(supabase, actor.tenant_id, from, to),
   ])
@@ -974,8 +1029,15 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       grandTotal: regFb.reduce((s, b) => s + (b as { total: number }).total, 0),
       totalPaid: regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0),
       refunded: await sumCreditNotes(supabase, regFb.map((b) => (b as unknown as { id: string }).id)),
+      // Both of these were missing on this path, and the omission showed on a
+      // patient's own summary: `advanceAdjusted` undefined made the view
+      // compute a full advance still outstanding and print "Advance Not Yet
+      // Applied" over a deposit that had in fact been used up.
+      advanceAdjusted: await sumAdvanceAdjusted(supabase, regFb.map((b) => (b as unknown as { id: string }).id)),
       advanceCollected: advFb,
-      advanceRefunded: 0,
+      advanceRefunded: allBillsFb
+        .filter((b) => (b as { bill_source?: string | null }).bill_source === 'advance_refund')
+        .reduce((sum, b) => sum + Math.abs((b as { total: number }).total), 0),
       balanceDue: Math.max(0, regFb.reduce((s, b) => s + (b as { total: number }).total, 0) - regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0)),
     }
   }
