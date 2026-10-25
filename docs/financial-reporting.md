@@ -619,7 +619,20 @@ so patients never become ledgers.
 pharmacy, room rent against the ₹5,000 test, HSN summary. Built *with* a real
 CA looking at it, not from blog posts — including this document's §5.
 
-**Phase 6 — the owner's dashboard.** The operating picture of §0b for a
+**~~Phase 6 — the owner's dashboard.~~ Done 25 Oct 2026.** Collected, billed and
+outstanding as three headlines, a thirty-day trend, department and payment
+bars, bed occupancy, activity counts — each against the same weekday averaged
+over the four before it. Money comes from `getDayEndSheet`, so the two screens
+cannot disagree.
+
+**`mv_daily_revenue_by_tenant` is reconciled** to the shared definition and is
+now what the trend reads. Two warnings earned the hard way, both worth keeping:
+rebuilding a materialized view **resets its grants** and silently undid the
+0133 lockdown, exposing every tenant's collections until 0226 put it back; and
+because a materialized view cannot carry RLS, anything reading one must use the
+service-role client **and filter `tenant_id` itself**.
+
+~~**Phase 6 — the owner's dashboard.**~~ The operating picture of §0b for a
 chosen day — collected by mode, billed by variety, outstanding, and the activity
 counts — every figure against its own comparison. Replaces the four flat tiles
 and takes the CSV dropdown off that screen. Reconcile or drop
