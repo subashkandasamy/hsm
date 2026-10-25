@@ -27,7 +27,12 @@ export default async function DashboardPage({
     .from('profiles').select('role').eq('id', user!.id).single()
   const role = (profile?.role as string) ?? 'nurse'
 
-  if (role === 'admin' || role === 'accountant') {
+  // An accountant opening Uyirly wants the day's money, not bed occupancy and
+  // footfall. They were being shown the owner's dashboard because the two
+  // roles share a permission set, which is not the same as sharing a job.
+  if (role === 'accountant') redirect('/accounts')
+
+  if (role === 'admin') {
     const kpis = await getAdminDashboard().catch(() => null)
     // Setup guide is an admin responsibility only.
     const setup = role === 'admin' ? await getSetupProgress().catch(() => null) : null

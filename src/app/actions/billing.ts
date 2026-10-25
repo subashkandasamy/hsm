@@ -14,7 +14,7 @@ import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
 import { gstForSource, getTenantGstConfig } from '@/lib/billing/gst'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
-import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/collections'
+import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -851,26 +851,20 @@ export async function getBillingStats(): Promise<{
   const today = istToday()
   const { from, to } = istDayBoundsISO(today)
 
-  // A consolidated IPD bill is a wrapper around bills that already exist, so
-  // counting both makes the hospital's billed and outstanding figures roughly
-  // double. Seven other readers in this file filter it out; these three did
-  // not, and they feed the two screens an owner actually looks at.
-  const NOT_A_SERVICE_BILL = 'bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund,consolidated)'
-
   const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }, collection] = await Promise.all([
     // Today's non-cancelled service bills — for "Billed Today" (value of new bills raised)
     supabase.from('bills').select('total')
       .gte('created_at', from).lt('created_at', to)
       .not('status', 'eq', 'cancelled')
-      .or(NOT_A_SERVICE_BILL),
+      .or(SERVICE_BILLS_ONLY),
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
       .gte('created_at', from)
-      .or(NOT_A_SERVICE_BILL),
+      .or(SERVICE_BILLS_ONLY),
     supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
       .lt('created_at', from)
-      .or(NOT_A_SERVICE_BILL),
+      .or(SERVICE_BILLS_ONLY),
     // "Collected Today" = actual money received today (payments + advances − refunds)
     getCollectionSummary(supabase, actor.tenant_id, from, to),
   ])

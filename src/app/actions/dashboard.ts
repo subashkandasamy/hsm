@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getReadClient } from '@/lib/supabase/read-replica'
-import { getCollectionSummary, istToday, istDayBoundsISO } from '@/lib/billing/collections'
+import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
@@ -64,7 +64,7 @@ export async function getAdminDashboard(): Promise<AdminKPIs> {
     // figure counts the same money twice — see getBillingStats, which had the
     // same gap.
     primary.from('bills').select('total, paid').in('status', ['unpaid', 'partial'])
-      .or('bill_source.is.null,bill_source.not.in.(appointment_refund,advance_refund,consolidated)'),
+      .or(SERVICE_BILLS_ONLY),
   ])
 
   const todayRevenue       = collection.total

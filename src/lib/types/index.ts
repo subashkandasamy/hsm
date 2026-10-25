@@ -1737,3 +1737,41 @@ export interface ReferralOverview {
   total_earned: number
   referrals: ReferredHospital[]
 }
+
+// ── Accounts: the day-end sheet ───────────────────────────────────────────
+
+export interface DayEndSourceLine {
+  /** `bill_items.source` — consultation, lab, pharmacy, bed, nursing, … */
+  source: string
+  amount: number
+  lines: number
+}
+
+export interface DayEndSheet {
+  date: string
+  /** Money that arrived. Reconciles to the drawer; has no department. */
+  collected: {
+    total: number
+    billPayments: number
+    advances: number
+    refunds: number
+    byMethod: Record<string, number>
+  }
+  /** Value raised. Splits by department exactly; is not the same as collected. */
+  billed: {
+    bills: number
+    sources: DayEndSourceLine[]
+    subtotal: number
+    discount: number
+    tax: number
+    roundOff: number
+    total: number
+  }
+  /** Billed and not yet paid, split by whether it was raised today. */
+  outstanding: {
+    today: number
+    earlier: number
+    total: number
+    bills: number
+  }
+}
