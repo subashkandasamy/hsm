@@ -12,6 +12,30 @@ The request, as given:
 
 ---
 
+## 0. Decided, 25 Oct 2026
+
+Answers from the owner, which settle the open questions in §8 and narrow the
+build considerably.
+
+**Collected and pending are both wanted, as separate figures.** Not one blended
+number — "collected today" beside "billed but not yet collected". That resolves
+§3 in the simplest possible direction: show both, never mix them.
+
+**Expenses are out of scope for now, and on the waiting list.** The shape is
+confirmed as petty cash — petrol, travel, tea and coffee, food, staff
+reimbursements. That is option 1 in §6 and nothing larger. Do not design for
+vendor payables or payroll until asked.
+
+**An `accountant` role already exists** (`src/lib/rbac.ts`) with
+`billing:read/write/manage`, `billing:advance`, `insurance:*` and
+`inventory:*`. New reports can gate on `billing:read` without inventing a role.
+
+**The export must not assume one accounting package.** The owner's own auditor
+uses Tally, but this is a product for the whole country and the next hospital's
+CA will use something else — or nothing but a spreadsheet. See §6a.
+
+---
+
 ## 1. It is four requests, not one
 
 They arrive in one sentence and have almost nothing in common.
@@ -194,18 +218,85 @@ that" is not yet a requirement. It could be any of:
    but holds no money.
 4. **A general ledger** — chart of accounts, double entry, trial balance.
 
-**Do not build 4.** A hospital that wants a trial balance already has Tally and
-an accountant who will not move. MocDoc's answer here is a **Tally integration**,
-not a ledger of their own — which is the right read of the market and worth
-copying rather than fighting.
+**Do not build 4.** A hospital that wants a trial balance already has an
+accounting package and an accountant who will not move off it. The job is to
+hand that accountant clean data, not to become their software.
 
-**Build 1 first.** It is a day's work, it answers the owner's sentence
+**Build 1 when it comes back off the waiting list.** It is a day's work, it answers the owner's sentence
 literally, and it makes the daily collection report double-entry-ish at a glance:
 *collected ₹48,000, spent ₹6,200, net ₹41,800.* That single line is what an
 owner looks at, and no competitor dashboard shows it because they are built
 around revenue.
 
 Then ask whether 2 is wanted before assuming it.
+
+---
+
+## 6a. Export: one dataset, several renderings
+
+The temptation is to build a Tally integration, because the first hospital's
+auditor uses Tally and Tally is genuinely dominant — directional figures put it
+around 70–75% of computerised books in India, though no independent survey
+exists and every number comes from a vendor or consultant blog.
+
+**That is still the wrong thing to build.** Tally is the biggest share of a
+split market, not the market. Zoho Books is the growing cloud option, Vyapar
+holds the micro-business tier, Busy has a following among North Indian traders,
+Marg is strong in pharma distribution — and a large number of small-town CAs
+keep books for a nursing home in **Excel and nothing else**. A hospital in
+Karur and a hospital in Indore will not have the same auditor using the same
+tool, and we sell to both.
+
+So the architecture is **one canonical dataset, several renderings**:
+
+```
+    sales & receipts register          ← computed once, the single source
+        │
+        ├── CSV / Excel                ← primary. Universal.
+        ├── Tally XML                  ← convenience for the common case
+        └── anything else              ← only when a customer actually asks
+```
+
+**CSV is the primary deliverable, not the fallback.** Every package on that
+list imports a spreadsheet, every CA can open one, and it is the only format
+that works for the accountant who has no package at all. A well-shaped CSV is
+worth more than a perfect integration with one vendor.
+
+**Tally XML is worth adding second**, because it is a large minority and the
+format is known: `ENVELOPE > HEADER > BODY > DESC > DATA > TALLYMESSAGE >
+VOUCHER`, dates as `YYYYMMDD`, `VOUCHERTYPENAME` matching a type that already
+exists in their company (`Sales`, `Receipt`, `Payment`, `Journal`), debit and
+credit by `ISDEEMEDPOSITIVE`, and debits must equal credits or the whole voucher
+is rejected into an Exceptions report.
+
+One detail there is unusually well aligned with §0's decision.
+`BILLALLOCATIONS.LIST` carries a `BILLTYPE` — `New Ref` opens an outstanding
+against a bill, `Agst Ref` closes it. **A Sales voucher with `New Ref` and a
+Receipt voucher with `Agst Ref` reproduces "collected separately, pending
+separately" inside the accountant's own software**, maintained by Tally's
+bill-wise outstanding rather than by us. Where we export to a tool that cannot
+do that, the CSV still carries both columns.
+
+### Two things that are needed whatever the tool
+
+**Ledger mapping is per-hospital configuration.** Every chart of accounts is
+different: one hospital posts lab income to "Diagnostic Income", another to
+"Lab Receipts". We cannot guess, and hardcoding "Sales" guarantees a rejected
+import. A small settings screen mapping our sources — consultation, lab,
+radiology, pharmacy, bed, nursing, icu, ot — plus each payment mode, to names
+the hospital types in. **This is required for Tally, Busy, Marg and Zoho
+alike**, so it belongs in the core and not in any one exporter.
+
+**Patients must not become ledgers.** A hospital with ten thousand patients
+would otherwise create ten thousand Tally ledgers and make the accountant's
+file unusable. The shape that works:
+
+- **OPD bills settled the same day** — no debtor exists. One consolidated daily
+  Sales voucher per income head, against Cash or Bank. This is most of the
+  volume.
+- **Credit bills** — insurance, pending IPD — a party ledger with a bill
+  reference, cleared by a Receipt when the money arrives. Only these need
+  naming, and there are few of them.
 
 ---
 
@@ -221,37 +312,47 @@ department, billed by department, outstanding, and — once Phase 3 lands —
 expenses and net. Printable on a letterhead. This is what the owner hands the
 accountant each evening, and the thing he was actually describing.
 
-**Phase 2 — the range and the download.** Everything in Phase 1 over any date
-range, as CSV. Doctor-wise revenue lands here, because it needs a different
-join per revenue type and should not hold up Phase 1. Must reuse
+**Phase 2 — the range and the register.** Everything in Phase 1 over any date
+range, plus the canonical **sales & receipts register** of §6a — the dataset
+every export is rendered from. Doctor-wise revenue lands here, because it needs
+a different join per revenue type and should not hold up Phase 1. Must reuse
 `getCollectionSummary` so the numbers never disagree with the Cash Book.
 
-**Phase 3 — petty cash.** One table, one screen, daily. Closes the ledger.
+**Phase 3 — CSV / Excel export.** The register, downloadable. Universal, and
+the only format that serves a CA with no package at all. Includes the ledger
+mapping screen, since that is needed by every exporter and not just one.
 
-**Phase 4 — the tax pack.** Exempt vs taxable split, inpatient vs outpatient
+**Phase 4 — Tally XML.** The common case, built on Phase 3's dataset and
+mapping. Sales with `New Ref`, Receipt with `Agst Ref`, consolidated daily for
+same-day OPD so patients never become ledgers.
+
+**Phase 5 — the tax pack.** Exempt vs taxable split, inpatient vs outpatient
 pharmacy, room rent against the ₹5,000 test, HSN summary. Built *with* a real
 CA looking at it, not from blog posts — including this document's §5.
 
-**Phase 5 — the 269ST warning.** Cash per patient per IST day, flagged before
+**Phase 6 — the 269ST warning.** Cash per patient per IST day, flagged before
 the receipt is printed rather than after.
 
-**Not planned: a general ledger.** If accounting integration is ever wanted, it
-is a Tally export, not a chart of accounts.
+**Waiting list — petty cash.** §0. One table, one screen, daily. Picked up when
+the owner comes back to it.
 
----
+**Not planned: a general ledger**, and **not planned: an integration with any
+single accounting vendor**. We produce clean data; their software consumes it.
 
-## 8. What to go back to the owner with
+## 8. Still open
 
-Three questions, because the answers change the build and he is the only one
-who can give them:
+The three questions this document opened with were answered on 25 Oct 2026 and
+are recorded in §0. What remains:
 
-1. **Collected or billed?** When he says "how much did the lab bring in today",
-   does he mean the money taken at the counter, or the value of the tests
-   ordered? (§3. Almost everyone means the first and asks for the second.)
-2. **Which expenses?** Petty cash only, or supplier payments and salaries too?
-   (§6. The difference is a day versus a month.)
-3. **Who is the auditor and what do they use?** If the answer is Tally — and it
-   usually is — then the target is a file that imports cleanly, and a beautiful
-   analytics page is not what is being asked for at all.
+1. **Which other package, first?** Nothing beyond CSV and Tally should be built
+   speculatively. The second format is decided by the second hospital that asks,
+   not by market-share estimates — and the estimates we have are all from vendor
+   blogs anyway.
+2. **Does the owner's auditor want per-bill or daily-consolidated vouchers?**
+   §6a argues for consolidated on same-day OPD. Worth confirming with the one
+   accountant we can actually reach before it is built for everybody.
+3. **What does the hospital call its income heads?** The ledger-mapping screen
+   needs a sensible default list, and the fastest way to get one that is not
+   invented is to look at their existing Tally chart of accounts.
 
-Question 3 is the one worth asking first. It can make most of this unnecessary.
+Question 2 is the one to ask while there is still a hospital visit in progress.
