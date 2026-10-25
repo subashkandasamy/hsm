@@ -602,7 +602,15 @@ at, as a file — same query, same filters, no second code path. Universal, and
 the only format that serves a CA with no package at all. Includes the ledger
 mapping screen, since that is needed by every exporter and not just one.
 
-**Phase 4 — Tally XML.** The common case, built on Phase 3's dataset and
+**~~Phase 4 — Tally XML.~~ Done 25 Oct 2026.** Sales and Receipt vouchers off
+the same register, with the per-bill / consolidated toggle. `New Ref` and
+`Agst Ref` carry the hospital's outstanding into Tally's own bill-wise
+tracking; consolidated writes no references rather than pretending to. One
+sundry-debtors ledger, never one per patient. An unmapped head stops the
+export and says which. `npm run verify:tally`, plus a real export parsed with
+an XML parser: 24 vouchers, none unbalanced, totals matching the register.
+
+~~**Phase 4 — Tally XML.**~~ The common case, built on Phase 3's dataset and
 mapping. Sales with `New Ref`, Receipt with `Agst Ref`, and the per-bill /
 daily-consolidated toggle from §0, defaulting to consolidated for same-day OPD
 so patients never become ledgers.
