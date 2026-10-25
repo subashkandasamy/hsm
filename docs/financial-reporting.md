@@ -94,6 +94,70 @@ They have `billing:read` and no use for either.
 
 ---
 
+## 0b. What the owner's dashboard should hold
+
+Asked for 25 Oct 2026: every bill variety separately with its own total,
+patients consulted per day, OP and IP, admissions, discharges — for a chosen
+day. This is the operating picture, and it is a legitimate dashboard rather
+than the shrunken report §0a warns about: it answers *how did the hospital run
+today*, which no range-filtered table answers well.
+
+Everything needed exists. `bill_items.source` already carries all ten
+varieties — `consultation`, `lab`, `radiology`, `pharmacy`, `ipd_pharmacy`,
+`bed`, `nursing`, `icu`, `ot`, `manual`. Counts come from
+`admissions.admitted_at` and `.discharged_at`, `visits`, `appointments` and
+`emergency_cases`. Already computed: collection total and mode split, bed
+occupancy, footfall, pending bills, low stock.
+
+### The trap that will produce the first support call
+
+**Per-variety figures are *billed*. The collection figure is *collected*. They
+do not add up, and the owner will add them up.** A payment attaches to a bill,
+not to a bill item (§3), so revenue splits by department exactly and money does
+not. Three bands, never one column:
+
+```
+COLLECTED TODAY   ₹48,200   cash 31,400 · UPI 14,800 · insurance 2,000
+BILLED TODAY      ₹61,500   consultation 8,400 · lab 12,300 · pharmacy 9,800
+                            bed 18,000 · nursing 6,200 · radiology 4,100 ...
+OUTSTANDING       ₹13,300   billed, not yet collected
+```
+
+Each is true on its own. A single blended number would be wrong in a way
+nobody could see.
+
+### Every number carries a comparison
+
+Otherwise it is a digit, not a dashboard (§0a):
+
+```
+Consultations    34      ▲ average Saturday 28
+Admissions        6      ▬ average 6
+Collected   ₹48,200      ▼ average Saturday ₹51,000
+```
+
+### The day must be selectable
+
+Today by default, but yesterday and last Monday will be wanted. Cheap designed
+in, awkward retrofitted.
+
+### Landmine: `mv_daily_revenue_by_tenant`
+
+```sql
+SELECT tenant_id, (received_at AT TIME ZONE 'Asia/Kolkata')::date AS day,
+       sum(amount) AS total_amount FROM payments GROUP BY ...
+```
+
+It sums **every** payment including `method = 'advance'`, which
+`getCollectionSummary` excludes on purpose — applying an advance is not new
+money. Nothing uses it today, because the dashboard computes live. But it sits
+there looking fast and authoritative, and the day something reaches for it for
+speed, the dashboard and the report disagree. **Fix it to match the shared
+definition, or drop it.** Do not leave a second definition of revenue lying
+around in the database.
+
+---
+
 ## 1. It is four requests, not one
 
 They arrive in one sentence and have almost nothing in common.
@@ -408,9 +472,11 @@ so patients never become ledgers.
 pharmacy, room rent against the ₹5,000 test, HSN summary. Built *with* a real
 CA looking at it, not from blog posts — including this document's §5.
 
-**Phase 6 — the owner's dashboard.** Comparison and trend, per §0a: this
-period against the last, by department and doctor, collections against billings.
-Replaces the four flat tiles and takes the CSV dropdown off that screen.
+**Phase 6 — the owner's dashboard.** The operating picture of §0b for a
+chosen day — collected by mode, billed by variety, outstanding, and the activity
+counts — every figure against its own comparison. Replaces the four flat tiles
+and takes the CSV dropdown off that screen. Reconcile or drop
+`mv_daily_revenue_by_tenant` first; it is a second definition of revenue.
 
 **Phase 7 — the 269ST warning.** Cash per patient per IST day, flagged before
 the receipt is printed rather than after.
