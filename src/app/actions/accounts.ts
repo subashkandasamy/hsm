@@ -7,6 +7,7 @@ import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collecti
 import { istDate, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
+import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
 
 /**
  * One day of money, as an accountant reads it.
@@ -379,7 +380,7 @@ export async function getLedgerMappings(): Promise<LedgerMapping[]> {
 }
 
 export async function saveLedgerMapping(params: {
-  kind: 'source' | 'method'; key: string; ledgerName: string
+  kind: 'source' | 'method' | 'account'; key: string; ledgerName: string
 }): Promise<{ success: boolean; error?: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -495,4 +496,131 @@ function toCsv(head: string[], rows: Array<Array<string | number>>): string {
   // CRLF because the file is for a spreadsheet, and Excel is the one reader
   // that still minds.
   return [head, ...rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n'
+}
+
+// ── Tally ───────────────────────────────────────────────────────────────────
+
+/**
+ * The register as Tally vouchers.
+ *
+ * Built from the same `getSalesRegister` and `getMovementsInRange` the screen
+ * and the CSV use. Tally is a rendering, not a destination: a second query
+ * shaped for one accounting package is how two reports start disagreeing, and
+ * the next hospital's auditor will be using something else.
+ *
+ * ── It refuses rather than guesses ─────────────────────────────────────────
+ *
+ * Every ledger named in a voucher has to exist already in the hospital's
+ * books. An unmapped income head or payment method therefore stops the export
+ * and says which one is missing, instead of writing a plausible name that
+ * Tally silently drops into its Exceptions report — where a hospital would
+ * find it, if at all, weeks later while reconciling.
+ *
+ * ── Per bill, or a day at a time ───────────────────────────────────────────
+ *
+ * Per-bill gives one Sales voucher per bill with a bill reference, so Tally
+ * keeps the hospital's "yet to collect" by itself and a Receipt closes it.
+ * Consolidated gives one Sales voucher per day, which is far fewer rows for a
+ * busy month and gives that up — a single voucher cannot carry one reference
+ * per bill. The choice is the accountant's; the default is per-bill, because
+ * losing outstanding silently would be the worse surprise.
+ */
+export async function exportTallyXml(params: {
+  from: string
+  to: string
+  mode: 'per_bill' | 'consolidated'
+  source?: string | null
+  doctorId?: string | null
+}): Promise<{ filename: string; xml: string; sales: number; receipts: number }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+
+  const ledgers = await getLedgerMappings()
+  const ledgerOf = (kind: 'source' | 'method' | 'account', key: string) =>
+    ledgers.find((l) => l.kind === kind && l.key === key)?.ledger_name ?? null
+
+  const party = ledgerOf('account', 'debtors')
+  if (!party) {
+    throw new Error(
+      'Set a ledger name for "Money owed by patients" on the Ledger names tab first — '
+      + 'every Sales voucher needs an account to post the debit to.')
+  }
+
+  const [reg, { movements }] = await Promise.all([
+    getSalesRegister({ ...params, limit: 20000 }),
+    getMovementsInRange({ from: params.from, to: params.to }),
+  ])
+
+  // Fail loudly and specifically, before writing anything.
+  const missingSources = [...new Set(reg.rows.flatMap((r) => r.sources.map((s) => s.source)))]
+    .filter((s) => !ledgerOf('source', s))
+  const missingMethods = [...new Set(movements.map((m) => m.method))]
+    .filter((m) => !ledgerOf('method', m))
+  if (missingSources.length || missingMethods.length) {
+    const bits = [
+      missingSources.length ? `income heads: ${missingSources.join(', ')}` : null,
+      missingMethods.length ? `payment methods: ${missingMethods.join(', ')}` : null,
+    ].filter(Boolean).join('; ')
+    throw new Error(`No ledger name set for ${bits}. Fill those in on the Ledger names tab — `
+      + 'a guessed name is a voucher Tally rejects.')
+  }
+
+  const sales: TallySale[] = []
+
+  if (params.mode === 'per_bill') {
+    for (const r of reg.rows) {
+      sales.push({
+        date: r.date,
+        voucherNo: r.billNo,
+        narration: `${r.patientName}${r.uhid ? ` (${r.uhid})` : ''}`
+          + `${r.doctorName && r.doctorName !== '—' ? ` — ${r.doctorName}` : ''}`,
+        credits: r.sources.map((s) => ({ ledger: ledgerOf('source', s.source)!, amount: s.amount })),
+        partyLedger: party,
+        billRef: r.billNo,
+      })
+    }
+  } else {
+    // One voucher per day, income heads summed. The bill reference goes,
+    // which is the trade the accountant chose.
+    const byDay = new Map<string, Map<string, number>>()
+    for (const r of reg.rows) {
+      const day = byDay.get(r.date) ?? new Map<string, number>()
+      for (const s of r.sources) day.set(s.source, round2((day.get(s.source) ?? 0) + s.amount))
+      byDay.set(r.date, day)
+    }
+    for (const [date, heads] of [...byDay.entries()].sort()) {
+      sales.push({
+        date,
+        voucherNo: `DAY-${date.replace(/-/g, '')}`,
+        narration: `Consolidated sales for ${date}`,
+        credits: [...heads.entries()].map(([source, amount]) => ({ ledger: ledgerOf('source', source)!, amount })),
+        partyLedger: party,
+        billRef: null,
+      })
+    }
+  }
+
+  // A refund is money going out, so it is not a Receipt. Left out of this file
+  // rather than posted with a negative sign, which Tally would take as a
+  // receipt of minus the amount and quietly corrupt the day.
+  const receipts: TallyReceipt[] = movements
+    .filter((m) => m.amount > 0)
+    .map((m) => ({
+      date: istDate(m.time),
+      voucherNo: m.reference || m.id.slice(0, 8),
+      narration: `${m.patientName} — ${m.kind === 'advance' ? 'advance' : 'bill payment'}`,
+      debitLedger: ledgerOf('method', m.method)!,
+      partyLedger: party,
+      amount: m.amount,
+      // An advance is not against a bill yet, so it has no reference to close.
+      billRef: m.kind === 'payment' && m.reference ? m.reference : null,
+    }))
+
+  const xml = buildTallyXml(sales.filter((s) => saleTotal(s) > 0), receipts)
+  return {
+    filename: `tally-vouchers_${params.from}_to_${params.to}.xml`,
+    xml,
+    sales: sales.length,
+    receipts: receipts.length,
+  }
 }

@@ -1811,7 +1811,7 @@ export interface SalesRegister {
 }
 
 export interface LedgerMapping {
-  kind: 'source' | 'method'
+  kind: 'source' | 'method' | 'account'
   /** A `bill_items.source` for income, or a payment method for receipts. */
   key: string
   ledger_name: string

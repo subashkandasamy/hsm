@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, Search, FileText, Receipt, Download } from 'lucide-react'
+import { Loader2, Search, FileText, Receipt, Download, FileCode2 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import EmptyState from '@/components/ui/EmptyState'
-import { getSalesRegister, exportRegisterCsv } from '@/app/actions/accounts'
+import { getSalesRegister, exportRegisterCsv, exportTallyXml } from '@/app/actions/accounts'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import type { SalesRegister, CashMovement, CashSummary } from '@/lib/types'
 import { SOURCE_LABEL, METHOD_LABEL, money } from './labels'
@@ -36,6 +36,9 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
   const [cash, setCash]   = useState<{ movements: CashMovement[]; summary: CashSummary } | null>(null)
   const [busy, setBusy]   = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [tallyBusy, setTallyBusy] = useState(false)
+  const [tallyMode, setTallyMode] = useState<'per_bill' | 'consolidated'>('per_bill')
+  const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   /**
@@ -77,6 +80,32 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
     } catch (e) {
       setError((e as Error).message || 'Could not build that register')
     } finally { setBusy(false) }
+  }
+
+  /**
+   * The same rows again, as Tally vouchers.
+   *
+   * It covers both books at once whichever tab is open, because an accounting
+   * import is not useful one half at a time: Sales without Receipts leaves
+   * every bill outstanding in the accountant's books.
+   */
+  async function downloadTally() {
+    setTallyBusy(true); setError(null); setNotice(null)
+    try {
+      const { filename, xml, sales, receipts } = await exportTallyXml({
+        from, to, mode: tallyMode,
+        source: source || null, doctorId: doctorId || null,
+      })
+      const url = URL.createObjectURL(new Blob([xml], { type: 'application/xml;charset=utf-8' }))
+      const a = document.createElement('a')
+      a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+      setNotice(`${sales} sales voucher${sales === 1 ? '' : 's'} and ${receipts} receipt`
+        + `${receipts === 1 ? '' : 's'}. In Tally: Alt+O → Transactions → pick this file. `
+        + 'Anything it refuses appears in its Exceptions report.')
+    } catch (e) {
+      setError((e as Error).message || 'Could not build the Tally file')
+    } finally { setTallyBusy(false) }
   }
 
   function switchTo(b: Book) {
@@ -163,6 +192,25 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
             {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             CSV
           </button>
+
+          <button onClick={downloadTally} disabled={tallyBusy}
+            title="Sales and receipts as Tally vouchers"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+            style={{
+              background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0',
+              minHeight: '42px', cursor: tallyBusy ? 'not-allowed' : 'pointer', opacity: tallyBusy ? 0.5 : 1,
+            }}>
+            {tallyBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCode2 className="w-4 h-4" />}
+            Tally XML
+          </button>
+
+          <label className="flex flex-col gap-1">
+            <span style={{ fontSize: '11px', color: '#64748B' }}>Tally vouchers</span>
+            <Select value={tallyMode} onChange={(e) => setTallyMode(e.target.value as 'per_bill' | 'consolidated')}>
+              <option value="per_bill">One per bill — keeps outstanding</option>
+              <option value="consolidated">One a day — fewer rows</option>
+            </Select>
+          </label>
         </div>
       </GlassCard>
 
@@ -170,6 +218,13 @@ export default function RegisterTab({ today, monthStart }: { today: string; mont
         <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm"
              style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm"
+             style={{ background: '#ECFDF5', color: '#065F46', border: '1px solid #A7F3D0' }}>
+          {notice}
         </div>
       )}
 

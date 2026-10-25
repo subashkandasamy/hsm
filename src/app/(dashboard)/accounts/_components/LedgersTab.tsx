@@ -44,7 +44,7 @@ export default function LedgersTab({ canManage }: { canManage: boolean }) {
       .finally(() => setBusy(false))
   }, [])
 
-  async function save(kind: 'source' | 'method', key: string, value: string) {
+  async function save(kind: 'source' | 'method' | 'account', key: string, value: string) {
     setError(null)
     const res = await saveLedgerMapping({ kind, key, ledgerName: value })
     if (!res.success) { setError(res.error ?? 'Could not save that name'); return }
@@ -78,6 +78,29 @@ export default function LedgersTab({ canManage }: { canManage: boolean }) {
         </div>
       )}
 
+      <GlassCard className="p-5 mb-4">
+        <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>Money owed by patients</h2>
+        <p className="mb-3" style={{ fontSize: '12px', color: '#94A3B8' }}>
+          One ledger for everything billed and not yet paid — usually something like
+          &ldquo;Sundry Debtors&rdquo;. Deliberately one and not one per patient: a hospital with
+          ten thousand patients would otherwise fill its accountant&rsquo;s file with ten thousand
+          ledgers. Each bill is tracked by its own number inside this account.
+        </p>
+        <div className="flex items-center gap-3" style={{ maxWidth: '520px' }}>
+          <span style={{ fontSize: '13px', color: '#475569', width: '38%' }}>Debtors account</span>
+          <div className="flex-1 flex items-center gap-2">
+            <Input
+              value={map['account:debtors'] ?? ''}
+              disabled={!canManage}
+              placeholder="—"
+              onChange={(e) => setMap((m) => ({ ...m, 'account:debtors': e.target.value }))}
+              onBlur={(e) => canManage && save('account', 'debtors', e.target.value)}
+            />
+            {saved === 'account:debtors' && <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#0D9488' }} />}
+          </div>
+        </div>
+      </GlassCard>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Group title="Income heads" subtitle="What each kind of charge is posted to"
                rows={SOURCES.map((k) => ({ key: k, label: SOURCE_LABEL[k] ?? k }))}
@@ -96,7 +119,7 @@ function Group({ title, subtitle, rows, kind, map, setMap, save, saved, canManag
   kind: 'source' | 'method'
   map: Record<string, string>
   setMap: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  save: (kind: 'source' | 'method', key: string, value: string) => void
+  save: (kind: 'source' | 'method' | 'account', key: string, value: string) => void
   saved: string | null
   canManage: boolean
 }) {
