@@ -249,7 +249,7 @@ that is wrong in a way nobody can see.
 
 ---
 
-## 4. What a review of these pages actually found
+## 4. What a review of these pages actually found — **fixed, 25 Oct 2026 (`683ff79`)**
 
 A review of Billing, Dashboard, the Cash Book and their actions (~7,600 lines)
 on 25 Oct 2026, before planning any new work. Thirteen findings. **Every schema
@@ -334,6 +334,40 @@ Applied"* on a patient's bill.
 
 **12.** `window.confirm` / `alert` in `BillDetailClient.tsx:191, 194, 238` and
 `BillingClient.tsx:296, 307`, against the project's own no-browser-popups rule.
+
+### A fourteenth, found by looking for more of the same
+
+The five silent zeros were all one mistake, so the schema was swept for others.
+One more came back, and it is the one that costs money.
+
+**`dispenses` has no `visit_id`.** The link from a dispense to a visit runs
+through the prescription. Building an **OPD** bill filtered on it directly, the
+query was rejected, the error was not read, and the result was an empty list —
+so **medicines dispensed to an outpatient were silently left off their bill**,
+every time. The hospital gave them away.
+
+It is also the one a chain-only check would never have found, because the
+filter is applied to a variable several lines later:
+
+```ts
+let q = supabase.from('dispenses').select(...)
+if (admissionId) q = q.eq('admission_id', admissionId)
+else if (visitId) q = q.eq('visit_id', visitId)   // no such column
+```
+
+### The guard that stops this class coming back
+
+`npm run verify:schema-refs` reads the schema, reads every Supabase filter in
+`src/`, and compares — statically, with no database connection. It follows
+filters applied to a query held in a variable, for the reason above. Both the
+`payments.created_at` and `dispenses.visit_id` bugs were put back to confirm it
+fails on them.
+
+Getting it **quiet** mattered as much as getting it working. The first version
+reported fourteen missing columns of which one was real, and a checker that
+cries wolf gets switched off and then protects nothing. It now reads several
+`ADD COLUMN`s in one `ALTER TABLE`, knows the `TIME` type, and bounds a query
+chain by indentation instead of guessing at statement ends.
 
 ### What this changes about the plan
 
@@ -509,12 +543,9 @@ file unusable. The shape that works:
 
 Ordered by value per unit of work, which is not the order the request implies.
 
-**Phase 0 — the thirteen (§4).** All of them, before any new screen. The
-multi-test lab bill first, because a hospital cannot bill its commonest order
-and is burning invoice numbers trying. Then the silent zeros, the day
-boundaries, and the convention fixes. Each one needs a check that it stays
-fixed — a schema-drift test would have caught five of the thirteen on the day
-they were written.
+**~~Phase 0 — the fourteen (§4).~~ Done 25 Oct 2026, `683ff79`.** All of them,
+plus `npm run verify:schema-refs` so the silent-zero class cannot return.
+Phase 1 is now unblocked.
 
 **Phase 1 — one honest day**, on the new Accounts page (§0a).  A day-end sheet: collected by mode, collected by
 department, billed by department, outstanding, and — once Phase 3 lands —
