@@ -554,7 +554,25 @@ day. Any day selectable, printable, and the accountant lands there instead of
 the clinical dashboard. Every figure checked against an independent SQL query
 rather than against a green build.
 
-**Phase 2 — the register, on screen.** The canonical **sales & receipts
+**~~Phase 2 — the register, on screen.~~ Done 25 Oct 2026.** `/accounts` →
+**Register**, two books over any range: **Sales** (every bill, with patient,
+doctor, departments, billed / received / owed) and **Receipts** (every payment,
+advance and refund). Filters by department, doctor and settled-or-owed, built
+from the range itself so a hospital is never offered a department it does not
+run. Receipts are not recomputed — they come from the Cash Book's own
+`getMovementsInRange`, so the two screens cannot drift.
+
+**One gap it exposed, which is data and not reporting.** A bill built by hand
+has no `visit_id`, no `appointment_id`, no `admission_id` and no `ref_id` on
+its lines, so there is nowhere a doctor could be recorded — two consultation
+bills in the demo tenant show "—" and that is the honest answer. Lab and
+radiology walk-ins were rescued by falling back to the order's `ordered_by`,
+but a typed-in consultation cannot be. **Doctor-wise revenue will have holes
+wherever a bill was built by hand**, and the fix belongs in the bill builder:
+capture the doctor when a consultation line is added by hand. Until then the
+register should keep showing "—" rather than guessing.
+
+~~**Phase 2 — the register, on screen.**~~ The canonical **sales & receipts
 register** of §6a — the dataset every export is rendered from — shown in Uyirly
 over any date range, filterable by department, doctor, payment mode and
 collected-versus-pending, with the totals above the table. Doctor-wise revenue

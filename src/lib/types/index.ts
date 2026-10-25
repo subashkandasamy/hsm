@@ -1775,3 +1775,37 @@ export interface DayEndSheet {
     bills: number
   }
 }
+
+export interface SalesRegisterRow {
+  id: string
+  /** IST calendar date of the bill. */
+  date: string
+  billNo: string
+  patientName: string
+  uhid: string
+  doctorId: string | null
+  doctorName: string
+  /** Gross by department, biggest first. Sums to `subtotal`. */
+  sources: Array<{ source: string; amount: number }>
+  subtotal: number
+  discount: number
+  tax: number
+  roundOff: number
+  total: number
+  paid: number
+  balance: number
+  status: string
+}
+
+export interface SalesRegister {
+  from: string
+  to: string
+  rows: SalesRegisterRow[]
+  /** How many bills matched the filters, before the display cap. */
+  matched: number
+  truncated: boolean
+  totals: { subtotal: number; discount: number; tax: number; total: number; paid: number; balance: number }
+  /** Only doctors and departments that actually appear in this range. */
+  doctors: Array<{ id: string; name: string }>
+  sources: string[]
+}

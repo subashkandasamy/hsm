@@ -7,6 +7,8 @@ import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import { getDayEndSheet } from '@/app/actions/accounts'
 import type { DayEndSheet } from '@/lib/types'
+import RegisterTab from './RegisterTab'
+import { SOURCE_LABEL, METHOD_LABEL, money } from './labels'
 
 /**
  * The sheet an owner hands his accountant at the end of the day.
@@ -20,30 +22,6 @@ import type { DayEndSheet } from '@/lib/types'
  * The billed block reconciles line by line down to its own total, so the
  * column can be added up by hand and will come out right.
  */
-
-const SOURCE_LABEL: Record<string, string> = {
-  consultation: 'Consultation',
-  lab:          'Laboratory',
-  radiology:    'Radiology',
-  pharmacy:     'Pharmacy (OP)',
-  ipd_pharmacy: 'Pharmacy (IP)',
-  bed:          'Room & bed',
-  nursing:      'Nursing',
-  icu:          'Intensive care',
-  ot:           'Operation theatre',
-  blood:        'Blood bank',
-  dental:       'Dental',
-  manual:       'Other charges',
-}
-
-const METHOD_LABEL: Record<string, string> = {
-  cash: 'Cash', card: 'Card', upi: 'UPI',
-  bank_transfer: 'Bank transfer', insurance: 'Insurance', cheque: 'Cheque',
-}
-
-function money(n: number): string {
-  return '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 function Row({ label, value, muted, strong, negative, border }: {
   label: string; value: number; muted?: boolean; strong?: boolean; negative?: boolean; border?: boolean
@@ -65,11 +43,13 @@ function Row({ label, value, muted, strong, negative, border }: {
   )
 }
 
-export default function DayEndClient({ today, initialSheet, hospitalName }: {
+export default function DayEndClient({ today, monthStart, initialSheet, hospitalName }: {
   today: string
+  monthStart: string
   initialSheet: DayEndSheet
   hospitalName: string
 }) {
+  const [tab, setTab]     = useState<'day' | 'register'>('day')
   const [date, setDate]   = useState(today)
   const [sheet, setSheet] = useState(initialSheet)
   const [busy, setBusy]   = useState(false)
@@ -92,11 +72,15 @@ export default function DayEndClient({ today, initialSheet, hospitalName }: {
     <div>
       <PageHeader
         title="Accounts"
-        subtitle="Day-end sheet — what came in, what was raised, what is owed"
+        subtitle={tab === 'day'
+          ? 'Day-end sheet — what came in, what was raised, what is owed'
+          : 'Register — every bill and every receipt, over any range'}
         actions={
           <div className="flex items-center gap-2 no-print">
-            <Input type="date" value={date} max={today}
-                   onChange={(e) => load(e.target.value)} />
+            {tab === 'day' && (
+              <Input type="date" value={date} max={today}
+                     onChange={(e) => load(e.target.value)} />
+            )}
             <button onClick={() => window.print()}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
                     style={{ background: '#0D9488', border: 'none', minHeight: '44px', cursor: 'pointer' }}>
@@ -106,7 +90,24 @@ export default function DayEndClient({ today, initialSheet, hospitalName }: {
         }
       />
 
-      {error && (
+      <div className="flex gap-1 mb-4 no-print p-1 rounded-xl w-fit" style={{ background: '#F1F5F9' }}>
+        {([['day', 'Day end'], ['register', 'Register']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className="px-4 py-2 rounded-lg text-sm font-semibold"
+            style={{
+              background: tab === k ? '#fff' : 'transparent',
+              color: tab === k ? '#0F172A' : '#64748B',
+              border: 'none', cursor: 'pointer',
+              boxShadow: tab === k ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'register' && <RegisterTab today={today} monthStart={monthStart} />}
+
+      {tab === 'day' && error && (
         <div className="no-print mb-4 px-4 py-3 rounded-xl text-sm"
              style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>
           {error}
@@ -120,7 +121,7 @@ export default function DayEndClient({ today, initialSheet, hospitalName }: {
         .no-print { display: none !important; }
       }`}</style>
 
-      <div id="dayend">
+      <div id="dayend" style={{ display: tab === 'day' ? undefined : 'none' }}>
         {/* Only shows on paper — the screen already has the page header. */}
         <div className="hidden print:block mb-4">
           <h1 style={{ fontSize: '18px', fontWeight: 700 }}>{hospitalName}</h1>

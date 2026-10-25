@@ -5,7 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import type { CashMovement, CashSummary, DayBook, ShiftSummary, CashShiftClose } from '@/lib/types'
-import { istToday, istDayStartISO, istDayBoundsISO } from '@/lib/istDate'
+import { istToday, istDayStartISO, istDayEndISO, istDayBoundsISO } from '@/lib/istDate'
 
 // Day windows are IST calendar days (a payment at 02:00 IST belongs to that day's
 // book, not the previous one) — see lib/istDate.
@@ -134,6 +134,30 @@ function summarize(movs: CashMovement[]): CashSummary {
   }
   s.net = s.cash + s.card + s.upi + s.bank + s.insurance
   return s
+}
+
+/**
+ * The same movements as the Cash Book, over a range instead of one day.
+ *
+ * The Accounts register needs exactly what this file already defines — bill
+ * payments, advances taken, advance refunds and credit notes, with `advance`
+ * applications excluded because applying a deposit is not money arriving
+ * twice. Rebuilding that list next door would have been a second definition
+ * of "cash in", and a second definition is how two screens come to disagree.
+ */
+export async function getMovementsInRange(params: {
+  from: string; to: string; cashierId?: string | null
+}): Promise<{ movements: CashMovement[]; summary: CashSummary }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+  const supabase = await createClient()
+  const movements = await fetchMovements(supabase, {
+    from: istDayStartISO(params.from),
+    to: istDayEndISO(params.to),
+    cashierId: params.cashierId ?? null,
+  })
+  movements.sort((a, b) => b.time.localeCompare(a.time))
+  return { movements, summary: summarize(movements) }
 }
 
 export async function getDayBook(params: { date: string; cashierId?: string | null }): Promise<DayBook> {
