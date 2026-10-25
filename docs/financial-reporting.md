@@ -249,29 +249,101 @@ that is wrong in a way nobody can see.
 
 ---
 
-## 4. Confirmed defect: the one export that exists is broken
+## 4. What a review of these pages actually found
 
-`src/app/actions/dashboard.ts` — Admin Dashboard → **Daily Collection** → CSV:
+A review of Billing, Dashboard, the Cash Book and their actions (~7,600 lines)
+on 25 Oct 2026, before planning any new work. Thirteen findings. **Every schema
+claim below was re-checked against the live database**, not taken from the
+review.
+
+They share one shape, and it is the reason this section exists: **almost all of
+them return a wrong answer that looks like a right answer.** A query naming a
+column that does not exist is rejected by PostgREST, the code destructures
+`{ data }` without reading `error`, and the caller gets `null` — which becomes
+zero, or an empty file. Nothing throws. Nothing logs. The tile reads 0 and the
+hospital believes it.
+
+Building a dashboard on top of this would make the lying prettier.
+
+### Severe — a bill that cannot be raised
+
+**1. A multi-test lab order can never be billed.** `billing.ts:479`.
+`buildCharges` emits one line per test, all carrying the same `ref_id`:
 
 ```ts
-.from('payments')
-.select('created_at, amount, method, bill_id')   // payments has no created_at
-.gte('created_at', from)
+for (const item of items) lines.push({ source: 'lab', ref_id: o.id, ... })
 ```
 
-**`payments` has no `created_at` column.** It has `received_at`. PostgREST
-rejects the query, the code destructures `{ data }` without checking `error`,
-`data` is null, and the file downloads **with a header row and nothing else**.
+so a CBC + LFT order produces `refs = [X, X]`. `flipToBilled` then runs
+`.in('id', refs)`, which matches **one** row, and checks
+`ids.length < refs.length` — 1 < 2 — concluding *"Some lab_orders charges were
+already billed"*. The bill fails. It will fail every time, for ever, for any
+order with more than one test.
 
-The owner's single most-wanted report already exists as a button and silently
-produces an empty file.
+Worse: each attempt **burns a GST invoice number** before failing, and those
+are a legally sequential series.
 
-`src/app/actions/insurance.ts:1167` (`listClaimSettlementPayments`) has the same
-bug and returns an empty list for every claim.
+Fix is `[...new Set(refs)]`. The guard was right; the input was not deduped.
 
-Both are a one-word fix. Worth doing immediately and separately from any of the
-work below — it is the difference between "not built yet" and "appears built and
-lies".
+### Severe — wrong numbers shown as fact
+
+| # | Where | What it shows | Why |
+|---|---|---|---|
+| **3** | Pharmacist dashboard | Low stock **always 0** | `drug_batches` has `qty_available`/`expiry`; the query asks for `qty_remaining`/`expiry_date` |
+| **4** | Pharmacist dashboard | Pending prescriptions **always 0** | `prescriptions` has no `status` column at all |
+| **5** | Daily Collection CSV | **Header row only** | `payments` has `received_at`, not `created_at` |
+| **6** | Test Volumes CSV | **Header row only** | `lab_orders`/`radiology_orders` have `ordered_at`, not `created_at`; no `test_name`/`study_type` |
+| **7** | Footfall CSV | **0 emergency cases**, always | `emergency_cases` has `arrived_at`, not `created_at` |
+
+The Pharmacist dashboard has two tiles and **both of them are broken**. The
+Admin dashboard's export dropdown has four options and **three return empty
+files**.
+
+**11. Consolidated bills are double-counted.** Seven readers in `billing.ts`
+filter `bill_source !== 'consolidated'`. `getBillingStats` and the dashboard's
+pending-bills query do not — so a consolidated IPD bill is counted alongside the
+bills it consolidates, inflating both billed and outstanding on the two screens
+an owner looks at.
+
+### Wrong day boundaries
+
+**8.** `dashboard.ts:11` — `todayRange()` builds a day from server-local time,
+which on Vercel is UTC, while the rest of the app and migration 0133 define the
+day as IST. Doctor and receptionist counts are wrong for everything between
+00:00 and 05:30 IST — the night shift.
+
+**10.** `BillingClient.tsx:606` compares a UTC `created_at` prefix against
+`istToday()`, so early-morning bills drop into the collapsed History section and
+look missing.
+
+### Correctness and safety
+
+**2.** `billing.ts:216` — a dead `if (admissionId) { /* no direct link */ }` in
+the OT block, although `ot_schedules.admission_id` exists and is populated. OT
+charges are not scoped to the encounter, so an OPD bill can silently pull in and
+link to an unrelated admission's surgery.
+
+**9.** `cancelBill` has no status guard. A second cancel — stale tab, a retry —
+re-runs the revert and un-bills charges that another bill now owns.
+
+**13.** `CombinedBillView.tsx:60` — `advanceAdjusted` is never set on the
+admission-missing fallback, so a fully adjusted advance prints *"Advance Not Yet
+Applied"* on a patient's bill.
+
+### Convention
+
+**12.** `window.confirm` / `alert` in `BillDetailClient.tsx:191, 194, 238` and
+`BillingClient.tsx:296, 307`, against the project's own no-browser-popups rule.
+
+### What this changes about the plan
+
+The reports and the dashboard were going to be built on these same actions. So
+the fixes are not a separate chore to be done later — **they are Phase 0, and
+Phase 0 blocks everything.** There is no value in a beautiful dashboard reading
+from `getBillingStats` while it double-counts.
+
+It also argues for one habit in the new code: **never destructure `{ data }`
+without reading `error`.** Every single silent-zero above is that one omission.
 
 ---
 
@@ -437,8 +509,12 @@ file unusable. The shape that works:
 
 Ordered by value per unit of work, which is not the order the request implies.
 
-**Phase 0 — the lie.** Fix the `created_at` bug in `exportReport` and
-`listClaimSettlementPayments`. Hours. Do it first and alone.
+**Phase 0 — the thirteen (§4).** All of them, before any new screen. The
+multi-test lab bill first, because a hospital cannot bill its commonest order
+and is burning invoice numbers trying. Then the silent zeros, the day
+boundaries, and the convention fixes. Each one needs a check that it stays
+fixed — a schema-drift test would have caught five of the thirteen on the day
+they were written.
 
 **Phase 1 — one honest day**, on the new Accounts page (§0a).  A day-end sheet: collected by mode, collected by
 department, billed by department, outstanding, and — once Phase 3 lands —
