@@ -462,6 +462,15 @@ const OT_STATUS_META = {
   inactive:    { label: 'Inactive',    bg: '#F1F5F9', color: '#94A3B8' },
 }
 
+// A status nobody here recognises must not take the page down with it. This
+// read used to be OT_STATUS_META[room.status], and one demo row seeded as
+// 'available' was enough to turn the whole OT tab into "This page couldn't
+// load" — a theatre list lost to a colour lookup.
+function otStatusMeta(status: string | null | undefined) {
+  return OT_STATUS_META[status as keyof typeof OT_STATUS_META]
+    ?? { label: status || 'Unknown', bg: '#F1F5F9', color: '#94A3B8' }
+}
+
 // ---- OT Room form (shared by Add and Edit) ----
 function OtRoomForm({ initial, onSubmit, onCancel }: {
   initial?: Partial<OtRoom>
@@ -1267,7 +1276,7 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
           ) : (
             <div className="space-y-2">
               {otRooms.map(room => {
-                const sm = OT_STATUS_META[room.status ?? 'active']
+                const sm = otStatusMeta(room.status)
                 const locationStr = [
                   room.floor ? `Floor ${room.floor}` : null,
                   room.block ? `Block ${room.block}` : null,

@@ -1393,8 +1393,8 @@ async function createRestOfHospital(tenantId: string, s: Seeded): Promise<void> 
 
   // ── Operation theatre ──────────────────────────────────────────────────────
   const rooms = [
-    { id: uuid(), tenant_id: tenantId, name: 'OT 1', ot_type: 'Major', floor: '2', block: 'B', is_active: true, status: 'available' },
-    { id: uuid(), tenant_id: tenantId, name: 'OT 2', ot_type: 'Minor', floor: '2', block: 'B', is_active: true, status: 'available' },
+    { id: uuid(), tenant_id: tenantId, name: 'OT 1', ot_type: 'Major', floor: '2', block: 'B', is_active: true, status: 'active' },
+    { id: uuid(), tenant_id: tenantId, name: 'OT 2', ot_type: 'Minor', floor: '2', block: 'B', is_active: true, status: 'active' },
   ]
   ok('2 operation theatres', (await db.from('ot_rooms').insert(rooms)).error)
 
