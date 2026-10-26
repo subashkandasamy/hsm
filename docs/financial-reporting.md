@@ -638,7 +638,14 @@ counts — every figure against its own comparison. Replaces the four flat tiles
 and takes the CSV dropdown off that screen. Reconcile or drop
 `mv_daily_revenue_by_tenant` first; it is a second definition of revenue.
 
-**Phase 7 — the 269ST warning.** Cash per patient per IST day, flagged before
+**~~Phase 7 — the 269ST warning.~~ Done 26 Oct 2026.** Cash is totalled across
+every bill and deposit for that patient's IST day and shown in the payment box
+**before** the money is taken. It warns, it does not block — 273B allows for
+reasonable cause and a counter that cannot complete a payment is its own harm.
+₹2,00,000 exactly already breaches, which `npm run verify:cash-limit` pins to
+the rupee. `listCashLimitBreaches` gives the month-after view.
+
+~~**Phase 7 — the 269ST warning.**~~ Cash per patient per IST day, flagged before
 the receipt is printed rather than after.
 
 **Waiting list — petty cash.** §0. One table, one screen, daily. Picked up when
