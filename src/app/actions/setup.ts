@@ -68,7 +68,8 @@ export async function getSetupProgress(): Promise<SetupProgress> {
 
   const doctorsQ = supabase.from('profiles').select('id', { count: 'exact', head: true }).or(DOCTOR_FILTER)
 
-  const [doctorsRes, hours, labTests, radTests, pharmacyStock, wards, tariffs, patients] = await Promise.all([
+  const [doctorsRes, hours, labTests, radTests, pharmacyStock, wards, tariffs, patients,
+         notePhrases] = await Promise.all([
     doctorsQ,
     countIf(true, 'doctor_availability'),
     countActiveIf(hasModule('lab'), 'lab_tests_catalog'),
@@ -79,6 +80,7 @@ export async function getSetupProgress(): Promise<SetupProgress> {
     countIf(hasModule('ipd'), 'wards'),
     countIf(true, 'procedure_tariffs'),
     countIf(true, 'patients'),
+    countIf(true, 'note_templates'),
   ])
   const doctors = doctorsRes.count ?? 0
 
@@ -145,6 +147,13 @@ export async function getSetupProgress(): Promise<SetupProgress> {
       description: 'Add consultation and procedure charges so billing is accurate.',
       href: '/settings/tariffs',
       done: tariffs > 0,
+    },
+    {
+      key: 'phrases', show: true,
+      title: 'Keep your everyday note phrases',
+      description: 'The sentences your doctors write for every patient — one tap instead of a paragraph. Start from the ready-made set and edit it to how you write.',
+      href: '/settings/phrases',
+      done: notePhrases > 0,
     },
     {
       key: 'patient', show: true,

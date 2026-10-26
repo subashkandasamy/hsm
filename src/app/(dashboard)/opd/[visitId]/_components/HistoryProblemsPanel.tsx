@@ -153,7 +153,7 @@ export default function HistoryProblemsPanel({ patientId, canWrite }: Props) {
         {HISTORY_FIELDS.map((f) => (
           <div key={f.key}>
             <label className="text-xs block mb-1" style={{ color: '#94A3B8' }}>{f.label}</label>
-            <SpeechTextarea value={hist[f.key] ?? ''} disabled={!canWrite}
+            <SpeechTextarea fieldKey={`hx.${f.key}`} value={hist[f.key] ?? ''} disabled={!canWrite}
               onChange={(v) => setHist((h) => ({ ...h, [f.key]: v }))}
               placeholder={f.placeholder} rows={2}
               className="w-full px-3 py-2 rounded-xl text-sm"

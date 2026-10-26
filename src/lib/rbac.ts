@@ -190,6 +190,7 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Getting Started',  href: '/getting-started',      icon: 'Rocket',          requiredPermission: 'settings:modules' },
       { label: 'Departments',      href: '/settings/departments', icon: 'Building2',       requiredPermission: 'departments:manage' },
       { label: 'Tariffs & Fees',   href: '/settings/tariffs',     icon: 'BadgeDollarSign', requiredPermission: 'tariffs:manage' },
+      { label: 'Note Phrases',     href: '/settings/phrases',     icon: 'ListPlus',        requiredPermission: 'opd:write' },
       { label: 'Analyzers',        href: '/settings/devices',     icon: 'Microscope',      requiredPermission: 'lab:process', moduleKey: 'lab' },
       { label: 'IPD Billing',      href: '/settings/ipd-billing', icon: 'BedDouble',       requiredPermission: 'ipd:config', moduleKey: 'ipd' },
       { label: 'Hospital Profile', href: '/settings/profile',     icon: 'Building2',       requiredPermission: 'settings:write' },

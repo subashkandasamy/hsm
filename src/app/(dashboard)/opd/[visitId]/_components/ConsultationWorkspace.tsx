@@ -12,7 +12,7 @@ import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
-import Textarea from '@/components/ui/Textarea'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -20,8 +20,6 @@ import { useAuth } from '@/context/AuthContext'
 import {
   saveVitals, saveConsultation, addPrescription, removePrescription, closeVisit, reopenVisit,
 } from '@/app/actions/opd'
-import { useSpeechInput } from '@/hooks/useSpeechInput'
-import MicButton from '@/components/ui/MicButton'
 import type { Visit, Patient, Prescription, LabTestCatalog, RadiologyCatalog, LabOrder, RadiologyOrder, PatientAllergy, ClinicalTemplate, DentalTooth, DentalTreatment, DentalRecall } from '@/lib/types'
 import type { EyeExamData } from '@/lib/types'
 import OrderLabModal from '@/app/(dashboard)/lab/_components/OrderLabModal'
@@ -184,11 +182,6 @@ export default function ConsultationWorkspace({
 
   // History expanded
   const [historyOpen, setHistoryOpen] = useState(false)
-
-  // Speech-to-text for consultation fields
-  const speechComplaint = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, complaint: c.complaint ? `${c.complaint} ${t}` : t })) })
-  const speechDiagnosis = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, diagnosis: c.diagnosis ? `${c.diagnosis} ${t}` : t })) })
-  const speechNotes     = useSpeechInput({ onAppend: (t) => setConsult((c) => ({ ...c, notes: c.notes ? `${c.notes} ${t}` : t })) })
 
   async function handleSaveVitals() {
     setVitalsSaving(true)
@@ -561,23 +554,16 @@ export default function ConsultationWorkspace({
 
             <div className="space-y-4">
               <FormField label="Chief Complaint">
-                <div className="relative">
-                  <Textarea
-                    value={consult.complaint}
-                    onChange={(e) => setConsult((c) => ({ ...c, complaint: e.target.value }))}
-                    placeholder="Patient's main complaint…"
-                    disabled={isClosed || !isDoctor}
-                    style={{ minHeight: '4rem', paddingRight: speechComplaint.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                  />
-                  {speechComplaint.supported && isDoctor && !isClosed && (
-                    <div className="absolute top-2 right-2">
-                      <MicButton listening={speechComplaint.listening} onToggle={speechComplaint.toggle} />
-                    </div>
-                  )}
-                </div>
-                {speechComplaint.interim && (
-                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechComplaint.interim}…</p>
-                )}
+                <SpeechTextarea
+                  variant="field"
+                  fieldKey="consult.complaint"
+                  department={clinicalTemplate}
+                  value={consult.complaint}
+                  onChange={(v) => setConsult((c) => ({ ...c, complaint: v }))}
+                  placeholder="Patient's main complaint…"
+                  disabled={isClosed || !isDoctor}
+                  style={{ minHeight: '4rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                />
               </FormField>
               {isDoctor && !isClosed && (
                 <div className="mb-3">
@@ -586,23 +572,16 @@ export default function ConsultationWorkspace({
               )}
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Diagnosis">
-                  <div className="relative">
-                    <Textarea
-                      value={consult.diagnosis}
-                      onChange={(e) => setConsult((c) => ({ ...c, diagnosis: e.target.value }))}
-                      placeholder="Clinical diagnosis…"
-                      disabled={isClosed || !isDoctor}
-                      style={{ minHeight: '4rem', paddingRight: speechDiagnosis.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                    />
-                    {speechDiagnosis.supported && isDoctor && !isClosed && (
-                      <div className="absolute top-2 right-2">
-                        <MicButton listening={speechDiagnosis.listening} onToggle={speechDiagnosis.toggle} />
-                      </div>
-                    )}
-                  </div>
-                  {speechDiagnosis.interim && (
-                    <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechDiagnosis.interim}…</p>
-                  )}
+                  <SpeechTextarea
+                    variant="field"
+                    fieldKey="consult.diagnosis"
+                    department={clinicalTemplate}
+                    value={consult.diagnosis}
+                    onChange={(v) => setConsult((c) => ({ ...c, diagnosis: v }))}
+                    placeholder="Clinical diagnosis…"
+                    disabled={isClosed || !isDoctor}
+                    style={{ minHeight: '4rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                  />
                 </FormField>
                 <FormField label="ICD Code" hint="e.g. J06.9">
                   <Input
@@ -615,23 +594,16 @@ export default function ConsultationWorkspace({
                 </FormField>
               </div>
               <FormField label="Notes">
-                <div className="relative">
-                  <Textarea
-                    value={consult.notes}
-                    onChange={(e) => setConsult((c) => ({ ...c, notes: e.target.value }))}
-                    placeholder="Additional clinical notes, follow-up instructions…"
-                    disabled={isClosed || !isDoctor}
-                    style={{ minHeight: '5rem', paddingRight: speechNotes.supported && isDoctor && !isClosed ? '2.25rem' : undefined, ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
-                  />
-                  {speechNotes.supported && isDoctor && !isClosed && (
-                    <div className="absolute top-2 right-2">
-                      <MicButton listening={speechNotes.listening} onToggle={speechNotes.toggle} />
-                    </div>
-                  )}
-                </div>
-                {speechNotes.interim && (
-                  <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNotes.interim}…</p>
-                )}
+                <SpeechTextarea
+                  variant="field"
+                  fieldKey="consult.notes"
+                  department={clinicalTemplate}
+                  value={consult.notes}
+                  onChange={(v) => setConsult((c) => ({ ...c, notes: v }))}
+                  placeholder="Additional clinical notes, follow-up instructions…"
+                  disabled={isClosed || !isDoctor}
+                  style={{ minHeight: '5rem', ...((!isDoctor || isClosed) ? { opacity: 0.7 } : {}) }}
+                />
               </FormField>
             </div>
           </GlassCard>

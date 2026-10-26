@@ -105,7 +105,7 @@ export default function NursingDocsPanel({ admissionId, canWrite }: Props) {
             {SBAR.map(([k, l, ph]) => (
               <div key={k}>
                 <label className="text-xs block mb-1 font-semibold" style={{ color: '#64748B' }}>{l}</label>
-                <SpeechTextarea value={ho[k] ?? ''} onChange={(v) => setHo((h) => ({ ...h, [k]: v }))} placeholder={ph} rows={2} disabled={!canWrite}
+                <SpeechTextarea fieldKey={`nursing.${k}`} value={ho[k] ?? ''} onChange={(v) => setHo((h) => ({ ...h, [k]: v }))} placeholder={ph} rows={2} disabled={!canWrite}
                   className="w-full px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #E2E8F0', color: '#0F172A', resize: 'vertical' }} />
               </div>
             ))}

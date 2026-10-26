@@ -1408,6 +1408,16 @@ export interface NavGroup { label: string; items: NavItem[] }
 
 export type ClinicalTemplate = 'general' | 'dental' | 'ophthalmology' | 'paediatrics' | 'obgyn'
 
+/** One reusable phrase for one note box, shared across the hospital. */
+export interface NoteTemplate {
+  id: string
+  field_key: string
+  label: string
+  body: string
+  department: ClinicalTemplate | null
+  use_count: number
+}
+
 /** Paediatric OPD visit notes (visits.clinical_data when the template is paediatrics). */
 export interface PaediatricVisitData {
   template: 'paediatrics'
