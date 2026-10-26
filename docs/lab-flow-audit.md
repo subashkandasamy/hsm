@@ -272,6 +272,41 @@ makes "where did this mapping come from" unanswerable later.
 action sets the order's status and none of these. Chain of custody is the one
 thing an accreditation assessor asks about first.
 
+### 4.6 An analyzer's fingerprint is matched case-sensitively
+
+Found by running the flow end to end. A message whose header read `H360|ERBA`
+registered as a **new** instrument beside the existing `H360^Erba`, with none
+of its twenty-four code mappings — so every result came back "unmapped" and the
+hospital would have been asked to map the same machine a second time.
+
+No real analyzer changes its own capitalisation between messages, so this is
+not a live fault. But a firmware update could, and the cost of being wrong is
+a lab silently losing its mappings on a Monday morning. Normalising the
+fingerprint before lookup is a one-line guard against an expensive surprise.
+
+---
+
+## 4a. The walk-through, 26 Oct 2026
+
+One order carried from ordering to a released report in the demo tenant,
+through the real screens rather than by calling functions.
+
+| Step | What happened |
+|---|---|
+| Order CBC + Urine R&M | One order `2610260001`, one accession, bill `₹550` raised at once |
+| Worklist, unpaid | **No Collect button** — an "Awaiting payment" badge instead. The **Label button is there**, which is §3.3's mechanism, visible |
+| Pay ₹550 | Through the billing screen; no 269ST warning, correctly |
+| Collect | Button appears once paid; order → `collected` |
+| Tubes | Two: **Lavender (EDTA)** `…0101` for the CBC, **Urine container** `…0102` for the R&M |
+| Analyzer | A partial H360 message on tube `…0101` — 4 of 28 — came back `matched, written 4` |
+| Verify | Refused: *"1 of 2 tests have no result yet"* — the urine had nothing at all |
+| After one urine value | Asked: *"41 measurements still have no value… release an interim report"* with **Release as interim** / **Go back** |
+| Release | Payment gate passed (it was paid); order → `reported` |
+| Report | Two pages, **LABORATORY REPORT — INTERIM**, *"41 results still pending — a final report follows"*, every promised analyte listed with `—  Pending` where unmeasured |
+
+Everything was removed afterwards and the tenant checked back to its previous
+state.
+
 ---
 
 ## 5. How other systems do it
