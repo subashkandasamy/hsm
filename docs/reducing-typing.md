@@ -151,6 +151,83 @@ a day's work against a problem that otherwise needs a different engine.
 
 ---
 
+## 3a. Dictate, then clean — the shape to actually build
+
+The proposal: **do not listen to the consultation.** The doctor dictates, as
+now. The rough transcript is passed through a model to be tidied, and the
+doctor sees the result before it lands in the field.
+
+That is a materially better design than ambient scribing, and the research
+supports it more specifically than it supports the ambient version.
+
+**Why it is safer by construction:**
+
+- **No patient audio.** No recording of a consultation, no consent question,
+  no third party in the room. The only voice is the doctor's, saying what they
+  were going to type anyway.
+- **Dictation is an easier problem than conversation.** One speaker, speaking
+  deliberately, saying clinical sentences. Not two people interrupting each
+  other in two languages.
+- **The model's job is narrow.** Tidy a sentence that already exists. Not
+  decide what was clinically important in twelve minutes of talk.
+- **A person reads it before it is saved** — which is the single intervention
+  with the strongest evidence behind it.
+
+**What the evidence says:**
+
+- Post-processing an accented clinical transcript with a model **recovered
+  much of the accuracy lost for non-native speakers**. That is precisely the
+  Indian-accent problem the current microphone has.
+- A JAMA Network Open study found speech-recognition clinical notes carried a
+  **7.4% error rate — falling to 0.4% after human review**. The review step is
+  what makes dictation safe, and this design keeps it.
+- A bilingual code-switched study (the Tamil-and-English case) found model
+  post-processing still left word error around **0.37**. So: expect real help,
+  not a solved problem.
+
+**The danger, named:** a scoping review calls it **cascading errors** — a
+small transcription mistake amplified by the model into a *fluent but wrong*
+clinical narrative. Garbled input becomes confident, well-written, incorrect
+text. That is worse than the garble, because the garble was obviously wrong.
+
+### The rules that make it safe
+
+1. **Numbers are never changed.** Doses, frequencies, durations, vitals,
+   blood pressures — these pass through untouched. If the transcript says
+   `5 mg`, the output says `5 mg`, even if 50 would read better. Most of the
+   harm in a clinical note lives in its numbers.
+2. **Drug names are corrected only against this hospital's own list.**
+   `drug_master` is the dictionary. `paracetmol` → `Paracetamol` because that
+   is in the catalogue; a name that matches nothing stays exactly as dictated
+   and is flagged, not guessed.
+3. **Tidy, do not restructure.** Fix the words, fix the punctuation, keep the
+   doctor's order and the doctor's meaning. Do not sort it into
+   subjective/objective — deciding which is which is interpretation, and
+   interpretation is where invention starts.
+4. **Nothing is added.** No normal findings the doctor did not say, no
+   inferred diagnosis, no helpful completions.
+5. **Show both.** The raw transcript and the cleaned version side by side,
+   with the changes marked, so a wrong "correction" is visible rather than
+   buried in fluent prose.
+6. **The doctor accepts it.** It is a suggestion until a person says so.
+7. **It must degrade, never block.** No internet, slow model, failed request:
+   the raw transcript goes into the box and the doctor edits it as they do
+   today. Dictation must never stop working because an API did.
+
+### How it fits with templates
+
+They are for different consultations, and both are wanted:
+
+- **Template** — the routine follow-up seen forty times a week. Two taps, no
+  internet, no cost.
+- **Dictate and clean** — the unusual case no template fits, where the
+  alternative today is a long paragraph typed with one finger.
+
+Building templates first is still right: they cover the larger share of visits
+and cost nothing to run.
+
+---
+
 ## 4. What to build, in order
 
 1. **A phrase library for the four MLC free-text boxes.** Small, offline,
@@ -158,16 +235,22 @@ a day's work against a problem that otherwise needs a different engine.
 2. **Consultation templates, per tenant, per department**, lean, with a
    starter set, and an offer to save a phrase once it has been written a few
    times.
-3. **Leave the mic where it is** for now, with the language and vocabulary
-   hints as a cheap improvement. Revisit ambient scribing when there is an
-   Indian benchmark to judge it by, or when a hospital will pay to be the
-   trial.
+3. **Dictate-then-clean** on the mic that already exists (§3a) — the doctor's
+   own voice only, numbers untouched, drug names checked against the
+   hospital's catalogue, both versions shown, nothing saved unaccepted, and a
+   raw transcript when the model is unreachable.
+4. **Not ambient scribing.** Revisit when there is an Indian benchmark to
+   judge it by, or when a hospital will pay to be the trial.
 
 **AI's place in this is small and specific** — not writing the note, but
 noticing that the doctor has typed the same thing five times and offering to
 remember it.
 
-**Sources:** [Note bloat review, PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC11852943/) ·
+**Sources:** [Accent-related errors and an LLM remedy](https://pubmed.ncbi.nlm.nih.gov/41772044/) ·
+[Speech-recognition errors in clinical documents, JAMA Netw Open](https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2687052) ·
+[Bilingual code-switched medical ASR with LLM postprocessing](https://pmc.ncbi.nlm.nih.gov/articles/PMC13344086/) ·
+[ASR in healthcare post-LLM, scoping review](https://www.mdpi.com/2227-9032/14/10/1333) ·
+[Note bloat review, PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC11852943/) ·
 [ECRI copy/paste literature review](https://www.ecri.org/Resources/HIT/CP_Toolkit/CopyPaste_Literature_final.pdf) ·
 [Ambient scribes in India — the benchmark gap](https://arxiv.org/html/2609.17355v1) ·
 [JMIR time-motion study of an ambient scribe](https://medinform.jmir.org/2026/1/e85580) ·
