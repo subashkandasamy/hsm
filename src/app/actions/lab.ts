@@ -13,6 +13,15 @@ import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
+/**
+ * Verification can fail in a way the technician is allowed to overrule.
+ *
+ * `needsConfirmation` marks the one refusal that is a question rather than a
+ * verdict: a panel with measurements still missing. Releasing part of a panel
+ * is a real decision a laboratory makes; it just must not be made by accident.
+ */
+type VerifyResult = SimpleResult | { success: false; error: string; needsConfirmation: true }
+
 // ---- Master catalog (global, platform-managed) ----
 
 export async function listLabMaster(): Promise<LabTestMaster[]> {
@@ -328,15 +337,23 @@ export async function enterResults(
     // would name the order it was not written to.
     const { data: item } = await supabase
       .from('lab_order_items')
-      .select('test_id, lab_tests_catalog(ref_low, ref_high)')
+      .select('test_id, lab_tests_catalog(ref_low, ref_high, crit_low, crit_high)')
       .eq('id', item_id).eq('lab_order_id', orderId).maybeSingle()
     if (!item) continue
 
+    // Critical before reference, because a potassium of 7.0 and one of 5.2 are
+    // not the same fact. This used to compute only high/low/normal, and the
+    // catalogue had no critical bounds to compare against — so a test a
+    // hospital added itself produced a result that could be high but never
+    // critical, appeared in no queue, and telephoned nobody.
     let flag: LabFlag = 'normal'
     if (result_value != null) {
       const cat = (item as Record<string, unknown>)?.lab_tests_catalog as
-        { ref_low: number | null; ref_high: number | null } | null
-      if (cat?.ref_high != null && result_value > cat.ref_high) flag = 'high'
+        { ref_low: number | null; ref_high: number | null
+          crit_low: number | null; crit_high: number | null } | null
+      if (cat?.crit_high != null && result_value >= cat.crit_high) flag = 'critical_high'
+      else if (cat?.crit_low != null && result_value <= cat.crit_low) flag = 'critical_low'
+      else if (cat?.ref_high != null && result_value > cat.ref_high) flag = 'high'
       else if (cat?.ref_low != null && result_value < cat.ref_low) flag = 'low'
       else flag = 'normal'
     } else {
@@ -349,6 +366,18 @@ export async function enterResults(
       unit: unit ?? null,
       flag,
     }).eq('id', item_id).eq('lab_order_id', orderId)
+
+    // A value corrected down out of the critical band has to leave the queue,
+    // or it stands as an instruction to telephone a doctor about a number
+    // that is no longer anywhere in the record. The panel path already does
+    // this; this one did not exist to.
+    if (flag !== 'critical_high' && flag !== 'critical_low') {
+      await supabase.rpc('withdraw_stale_critical_item', {
+        p_order_id: orderId,
+        p_test_id: (item as { test_id: string }).test_id,
+        p_new_value: result_value ?? null,
+      })
+    }
   }
 
   // Changing a value withdraws any authorisation it had. A corrected result is
@@ -375,7 +404,11 @@ export async function enterResults(
  * lab:verify is granted to that role by default. The point is that releasing is
  * a deliberate act by a person, not that it is a different person.
  */
-export async function verifyOrder(orderId: string): Promise<SimpleResult> {
+export async function verifyOrder(
+  orderId: string,
+  /** Set after the technician has been told how many are missing and said yes. */
+  releasePartial = false,
+): Promise<VerifyResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:verify')
@@ -417,6 +450,28 @@ export async function verifyOrder(orderId: string): Promise<SimpleResult> {
     }
   }
 
+  // ── And a panel that is only partly answered ────────────────────────────
+  //
+  // The check above asks whether each *test* has been touched, and one analyte
+  // with a value marks the whole panel answered. So a Complete Blood Count
+  // with one number of twenty-eight passed exactly as a complete one did, and
+  // two orders in the demo tenant were released that way.
+  //
+  // Releasing part of a panel is a legitimate thing to do — a result nobody
+  // can produce should not hold up twenty-seven that are ready. What is not
+  // legitimate is doing it without knowing, so this says how many are missing
+  // and asks again rather than refusing.
+  const incomplete = await countMissingAnalytes(supabase, orderId)
+  if (incomplete > 0 && !releasePartial) {
+    return {
+      success: false,
+      error: `${incomplete} measurement${incomplete === 1 ? '' : 's'} in this order `
+        + 'still have no value. Enter them, or verify again to release an interim '
+        + 'report — it will be marked interim and a final report must follow.',
+      needsConfirmation: true,
+    }
+  }
+
   const { data: updated, error } = await supabase.from('lab_orders').update({
     status: 'verified', verified_by: actor.id, verified_at: new Date().toISOString(),
   }).eq('id', orderId).in('status', ['collected', 'processing']).select('id')
@@ -432,6 +487,23 @@ export async function verifyOrder(orderId: string): Promise<SimpleResult> {
   return { success: true }
 }
 
+/**
+ * Promised measurements on this order with no value yet.
+ *
+ * Asks the report's own function, so the number a technician is shown is
+ * exactly the number that will be printed as pending — two definitions of
+ * "incomplete" would be worse than none.
+ */
+async function countMissingAnalytes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orderId: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('get_lab_report_analytes', { p_order_id: orderId })
+  if (error) { console.error('[countMissingAnalytes]', error.message); return 0 }
+  return ((data ?? []) as Array<{ value_num: number | null; value_text: string | null }>)
+    .filter((r) => r.value_num == null && !r.value_text).length
+}
+
 /** Release a verified order. This is the point it becomes visible to the patient. */
 export async function reportOrder(orderId: string): Promise<SimpleResult> {
   await requireWriteAccess()
@@ -440,9 +512,33 @@ export async function reportOrder(orderId: string): Promise<SimpleResult> {
   const supabase = await createClient()
 
   const { data: cur } = await supabase
-    .from('lab_orders').select('status').eq('id', orderId).single()
+    .from('lab_orders').select('status, admission_id').eq('id', orderId).single()
   if (cur?.status !== 'verified') {
     return { success: false, error: 'Results must be verified before the report is released' }
+  }
+
+  // ── The payment gate, where it actually holds ───────────────────────────
+  //
+  // collectSample refuses an unpaid OPD order, and that was the only check.
+  // It is bypassed in ordinary use: printing tube labels creates the barcodes
+  // with no check at all, and an analyzer's result moves an order out of
+  // 'ordered' on its own — "a machine only reports on a tube that was drawn
+  // and run". So an unpaid test could be labelled, run, resulted, verified
+  // and released without anyone being asked for money.
+  //
+  // Release is the moment the hospital loses its leverage, so the gate belongs
+  // here as well. IPD is exempt for the same reason as at collection: the
+  // charge settles into the discharge bill, and holding a ward patient's
+  // report for a cash payment would be absurd.
+  if (!cur.admission_id) {
+    const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
+    if (linkedBill && linkedBill.status !== 'paid'
+        && !(await isBillCashlessCovered(supabase, linkedBill))) {
+      return {
+        success: false,
+        error: 'This test has not been paid for — take the payment before releasing the report',
+      }
+    }
   }
 
   const { data: updated, error } = await supabase.from('lab_orders').update({
@@ -671,6 +767,7 @@ export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
     .from('lab_critical_notifications')
     .select(`id, lab_order_id, value_num, created_at,
              analyte:lab_analytes(name, short_name, unit_ucum),
+             test:lab_tests_catalog(name, unit),
              doctor:profiles!lab_critical_notifications_notified_to_fkey(full_name),
              order:lab_orders(accession_no, patient:patients(full_name, uhid))`)
     .eq('acknowledged', false)
@@ -684,6 +781,7 @@ export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
   type Row = {
     id: string; lab_order_id: string; value_num: number | null; created_at: string
     analyte: { name: string; short_name: string | null; unit_ucum: string | null } | null
+    test: { name: string; unit: string | null } | null
     doctor: { full_name: string } | null
     order: { accession_no: string | null; patient: { full_name: string; uhid: string } | null } | null
   }
@@ -693,9 +791,11 @@ export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
     accession_no: r.order?.accession_no ?? null,
     patient_name: r.order?.patient?.full_name ?? '—',
     patient_uhid: r.order?.patient?.uhid ?? '—',
-    analyte: r.analyte?.short_name ?? r.analyte?.name ?? '—',
+    // One or the other, never both — an entry names the analyte it came from,
+    // or the catalogue test where there are no analytes behind it.
+    analyte: r.analyte?.short_name ?? r.analyte?.name ?? r.test?.name ?? '—',
     value_num: r.value_num,
-    unit: r.analyte?.unit_ucum ?? null,
+    unit: r.analyte?.unit_ucum ?? r.test?.unit ?? null,
     notified_to_name: r.doctor?.full_name ?? null,
     created_at: r.created_at,
   }))

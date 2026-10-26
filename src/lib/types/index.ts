@@ -357,7 +357,15 @@ export interface LabTestCatalog {
   lab_master_id?: string | null
 }
 
+/**
+ * The verdict on one result.
+ *
+ * Single tests used to have only the first four, which is why a test a
+ * hospital added itself could never be critical. Now the same set as
+ * lab_result_analytes, so one word means one thing wherever it is read.
+ */
 export type LabFlag = 'pending' | 'normal' | 'high' | 'low'
+  | 'critical_high' | 'critical_low' | 'abnormal' | 'unranged'
 export type AnalyteValueType = 'numeric' | 'ordinal' | 'text'
 export type AnalyteFlag =
   | 'pending' | 'normal' | 'high' | 'low'

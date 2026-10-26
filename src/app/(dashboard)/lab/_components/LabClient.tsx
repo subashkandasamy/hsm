@@ -68,6 +68,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
+  const [partialAsk, setPartialAsk] = useState<{ id: string; msg: string } | null>(null)
   const [actionError, setActionError] = useState<{ id: string; msg: string } | null>(null)
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
@@ -111,15 +112,32 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
     setTab('results')
   }
 
-  async function handleVerify(orderId: string) {
+  /**
+   * Verify, and ask once before releasing a panel that is only partly answered.
+   *
+   * A laboratory legitimately releases twenty-seven results rather than hold
+   * them for a twenty-eighth nobody can produce. What it must not do is
+   * release them believing the panel is complete, which is what happened
+   * until now — a Complete Blood Count with fourteen of its numbers went out
+   * as a final report with nothing on it to say so.
+   *
+   * The second press is the consent. The report then prints as interim.
+   */
+  async function handleVerify(orderId: string, releasePartial = false) {
     setActionId(orderId)
     setActionError(null)
-    const res = await verifyOrder(orderId)
+    const res = await verifyOrder(orderId, releasePartial)
     if (!res.success) {
+      if ('needsConfirmation' in res && res.needsConfirmation) {
+        setPartialAsk({ id: orderId, msg: res.error })
+        setActionId(null)
+        return
+      }
       setActionError({ id: orderId, msg: res.error })
       setActionId(null)
       return
     }
+    setPartialAsk(null)
     await refresh()
     setActionId(null)
     setTab('verify')
@@ -259,6 +277,27 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                     <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }}>
                       ⚠ {actionError.msg}
                     </p>
+                  )}
+                  {partialAsk?.id === order.id && (
+                    <div className="mt-2 px-3 py-2 rounded-lg"
+                         style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                      <p className="text-xs" style={{ color: '#92400E', lineHeight: 1.5 }}>
+                        {partialAsk.msg}
+                      </p>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => handleVerify(order.id, true)}
+                          disabled={actionId === order.id}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          style={{ background: '#B45309', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                          Release as interim
+                        </button>
+                        <button onClick={() => setPartialAsk(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                          style={{ background: '#fff', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}>
+                          Go back and enter them
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
 

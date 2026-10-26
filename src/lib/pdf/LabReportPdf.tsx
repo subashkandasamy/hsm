@@ -71,7 +71,20 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
 
   const abnormal = singles.filter((i) => i.flag === 'high' || i.flag === 'low').length
     + analytes.filter((a) => ABNORMAL_FLAGS.has(a.flag)).length
+
+  // Counted across BOTH kinds, which it was not.
+  //
+  // This looked only at single tests, so a panel missing half its analytes
+  // printed as a finished report — a Complete Blood Count with fourteen of its
+  // twenty-eight numbers, with nothing on the page to say so, because an
+  // analyte nobody measured had no row and simply did not appear. The report
+  // function now returns the promised analytes either way, flagged 'pending'
+  // where there is no value, and they are counted here.
+  //
+  // ISO 15189:2022 §7.4.1.7 asks for a result released before it is complete
+  // to be marked preliminary. This is the number that decides that.
   const pending = singles.filter((i) => i.result_value == null && !i.result_text).length
+    + analytes.filter((a) => a.value_num == null && !a.value_text).length
 
   // Group by sample type so a mixed order (blood + urine) reads as separate panels.
   const groups = new Map<string, LabOrderItem[]>()
@@ -104,8 +117,10 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
       <PageChrome hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
       <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
-        title="LABORATORY REPORT"
-        subtitle={pending > 0 ? `${pending} result${pending > 1 ? 's' : ''} pending — interim report` : abnormal > 0 ? `${abnormal} result${abnormal > 1 ? 's' : ''} outside the reference range` : null}
+        title={pending > 0 ? 'LABORATORY REPORT — INTERIM' : 'LABORATORY REPORT'}
+        subtitle={pending > 0
+          ? `${pending} result${pending > 1 ? 's' : ''} still pending — a final report follows`
+          : abnormal > 0 ? `${abnormal} result${abnormal > 1 ? 's' : ''} outside the reference range` : null}
         numberLabel={order.accession_no ? 'Accession No' : 'Report Ref'} number={ref}
         date={order.reported_at ? `Reported ${fmtDateTime(order.reported_at)}` : 'Not yet reported'}
       />
