@@ -17,6 +17,7 @@
     "verify:worklist": "tsx scripts/verify-worklist.ts",
     "verify:schema-refs": "tsx scripts/verify-schema-refs.ts",
     "verify:tally": "tsx scripts/verify-tally.ts",
+    "verify:cash-limit": "tsx scripts/verify-cash-limit.ts",
     "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts"
   },
   "dependencies": {

@@ -1835,3 +1835,14 @@ export interface OwnerDay {
   beds: { total: number; occupied: number; percent: number }
   attention: { staleBills: number; staleAmount: number; lowStock: number }
 }
+
+export interface CashBreach {
+  /** IST day the cash was taken. */
+  date: string
+  patientId: string
+  patientName: string
+  uhid: string
+  /** Total cash from this patient on this day, across every bill and deposit. */
+  cash: number
+  receipts: number
+}

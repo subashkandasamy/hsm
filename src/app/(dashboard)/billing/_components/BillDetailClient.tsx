@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { getCashTakenToday } from '@/app/actions/accounts'
+import { cashPosition, cashWarning } from '@/lib/billing/cashLimit'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Printer, Download, CheckCircle2, XCircle, DollarSign, Loader2, MessageSquare, Phone } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
@@ -124,6 +126,10 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   // block the tab, and on a ward tablet they are easy to dismiss by accident.
   const [actionError, setActionError]   = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  // Cash already taken from this patient today, across every bill and deposit.
+  // Section 269ST counts per person per day, so a single bill's history is not
+  // the question — see lib/billing/cashLimit.
+  const [cashToday, setCashToday] = useState<number | null>(null)
 
   // Refund / credit note
   const [showRefund, setShowRefund]     = useState(false)
@@ -201,6 +207,18 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
     await refresh()
     setLoading(false)
   }
+
+  // Asked when the payment box opens, not as the amount is typed: the figure
+  // is about the day, not about this payment, so it does not change under the
+  // cashier's hands while they are deciding.
+  useEffect(() => {
+    if (!showPay || !bill.patient_id) return
+    let live = true
+    getCashTakenToday(bill.patient_id)
+      .then((r) => { if (live) setCashToday(r.alreadyToday) })
+      .catch(() => { if (live) setCashToday(null) })
+    return () => { live = false }
+  }, [showPay, bill.patient_id])
 
   async function handlePayment() {
     const amt = Math.round(parseFloat(payAmount) * 100) / 100
@@ -856,6 +874,27 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               {payError}
             </div>
           )}
+
+          {/* Said before the money is taken. Afterwards the penalty has already
+              attached, and under 271DA it is the whole amount received. */}
+          {payMethod === 'cash' && cashToday !== null && (() => {
+            const pos = cashPosition(cashToday, parseFloat(payAmount) || 0)
+            const msg = cashWarning(pos)
+            if (!msg) return null
+            return (
+              <div className="px-3 py-2.5 rounded-xl text-sm" style={{
+                background: pos.breaches ? '#FEF2F2' : '#FFFBEB',
+                color: pos.breaches ? '#991B1B' : '#92400E',
+                border: `1px solid ${pos.breaches ? '#FECACA' : '#FDE68A'}`,
+                lineHeight: 1.5,
+              }}>
+                <strong style={{ display: 'block', marginBottom: '2px' }}>
+                  {pos.breaches ? 'Too much cash for one day' : 'Close to the cash limit'}
+                </strong>
+                {msg}
+              </div>
+            )
+          })()}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
               Amount (Balance: <Money amount={balance} />)

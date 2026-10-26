@@ -5,8 +5,9 @@ import { getReadClient } from '@/lib/supabase/read-replica'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collections'
-import { istDate, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
-import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay } from '@/lib/types'
+import { CASH_LIMIT } from '@/lib/billing/cashLimit'
+import { istDate, istToday, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
 
@@ -783,4 +784,116 @@ async function attentionFor(
     staleAmount: round2(owed),
     lowStock: Number(stock.data?.low_stock_count ?? 0),
   }
+}
+
+// ── Section 269ST ───────────────────────────────────────────────────────────
+
+/**
+ * Cash already taken from this patient today, wherever it came in.
+ *
+ * The aggregation is the whole point. Section 269ST counts per *person* per
+ * day, not per bill, so a hospital that takes ₹1.5 lakh against the surgery
+ * and ₹1 lakh against the room has a ₹2.5 lakh contravention spread across two
+ * perfectly ordinary-looking receipts. Counting one bill at a time would miss
+ * every real case.
+ *
+ * So: every cash payment against any of this patient's bills, plus every cash
+ * advance against any of their admissions, bucketed by IST day. `method =
+ * 'advance'` is excluded for the usual reason — that is a deposit being
+ * applied, and the cash was counted on the day it was handed over.
+ */
+export async function getCashTakenToday(
+  patientId: string, date?: string,
+): Promise<{ date: string; alreadyToday: number }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+  const supabase = await createClient()
+
+  const day = date ?? istToday()
+  const { from, to } = istDayBoundsISO(day)
+
+  const [bills, admissions] = await Promise.all([
+    supabase.from('bills').select('id').eq('patient_id', patientId),
+    supabase.from('admissions').select('id').eq('patient_id', patientId),
+  ])
+  if (bills.error) throw new Error(`Could not read this patient's bills: ${bills.error.message}`)
+  if (admissions.error) throw new Error(`Could not read admissions: ${admissions.error.message}`)
+
+  const billIds = (bills.data ?? []).map((b) => b.id as string)
+  const admIds  = (admissions.data ?? []).map((a) => a.id as string)
+
+  const [pays, advs] = await Promise.all([
+    billIds.length
+      ? supabase.from('payments').select('amount')
+          .in('bill_id', billIds).eq('method', 'cash')
+          .gte('received_at', from).lt('received_at', to)
+      : Promise.resolve({ data: [], error: null }),
+    admIds.length
+      ? supabase.from('admission_advances').select('amount')
+          .in('admission_id', admIds).eq('method', 'cash')
+          .gte('received_at', from).lt('received_at', to)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (pays.error) throw new Error(`Could not read cash payments: ${pays.error.message}`)
+  if (advs.error) throw new Error(`Could not read cash advances: ${advs.error.message}`)
+
+  const total = [...(pays.data ?? []), ...(advs.data ?? [])]
+    .reduce((s, r) => s + Number((r as { amount: number }).amount), 0)
+
+  return { date: day, alreadyToday: round2(total) }
+}
+
+/**
+ * Patients who went over the limit, for whoever has to answer for it later.
+ *
+ * The counter warning stops it happening; this is for the month afterwards,
+ * when an accountant or a CA wants to know whether it ever did.
+ */
+export async function listCashLimitBreaches(params: { from: string; to: string }): Promise<CashBreach[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:read')
+  const supabase = await createClient()
+
+  const from = istDayStartISO(params.from)
+  const to   = istDayEndISO(params.to)
+
+  const [pays, advs] = await Promise.all([
+    supabase.from('payments')
+      .select('amount, received_at, bill:bills(patient_id, patient:patients(full_name, uhid))')
+      .eq('tenant_id', actor.tenant_id).eq('method', 'cash')
+      .gte('received_at', from).lt('received_at', to),
+    supabase.from('admission_advances')
+      .select('amount, received_at, admission:admissions(patient_id, patient:patients(full_name, uhid))')
+      .eq('tenant_id', actor.tenant_id).eq('method', 'cash')
+      .gte('received_at', from).lt('received_at', to),
+  ])
+  if (pays.error) throw new Error(`Could not read cash payments: ${pays.error.message}`)
+  if (advs.error) throw new Error(`Could not read cash advances: ${advs.error.message}`)
+
+  type Joined = { full_name: string; uhid: string } | null
+  const rows: Array<{ day: string; patientId: string; name: string; uhid: string; amount: number }> = []
+  for (const p of (pays.data ?? []) as unknown as Array<{ amount: number; received_at: string; bill: { patient_id: string; patient: Joined } | null }>) {
+    if (!p.bill?.patient_id) continue
+    rows.push({ day: istDate(p.received_at), patientId: p.bill.patient_id,
+      name: p.bill.patient?.full_name ?? '—', uhid: p.bill.patient?.uhid ?? '', amount: Number(p.amount) })
+  }
+  for (const a of (advs.data ?? []) as unknown as Array<{ amount: number; received_at: string; admission: { patient_id: string; patient: Joined } | null }>) {
+    if (!a.admission?.patient_id) continue
+    rows.push({ day: istDate(a.received_at), patientId: a.admission.patient_id,
+      name: a.admission.patient?.full_name ?? '—', uhid: a.admission.patient?.uhid ?? '', amount: Number(a.amount) })
+  }
+
+  const byPatientDay = new Map<string, CashBreach>()
+  for (const r of rows) {
+    const key = `${r.day}:${r.patientId}`
+    const cur = byPatientDay.get(key)
+      ?? { date: r.day, patientId: r.patientId, patientName: r.name, uhid: r.uhid, cash: 0, receipts: 0 }
+    cur.cash = round2(cur.cash + r.amount)
+    cur.receipts += 1
+    byPatientDay.set(key, cur)
+  }
+
+  return [...byPatientDay.values()]
+    .filter((b) => b.cash >= CASH_LIMIT)
+    .sort((a, b) => b.cash - a.cash)
 }
