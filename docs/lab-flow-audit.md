@@ -121,9 +121,9 @@ easy to reintroduce.
 
 ---
 
-## 3. Bugs
+## 3. Bugs — **all four fixed 26 Oct 2026 (`49788e6`)**
 
-### 3.1 An incomplete panel is released as a final report, silently
+### 3.1 ~~An incomplete panel is released as a final report, silently~~ FIXED
 
 **Severity: high.** This one is already in the demo data, on reports marked
 released.
@@ -169,7 +169,7 @@ and unflagged.
 any are; and make `verifyOrder` say how many analytes are missing rather than
 treating one as all.
 
-### 3.2 A single test can never raise a critical alert
+### 3.2 ~~A single test can never raise a critical alert~~ FIXED
 
 **Severity: high, but latent — it depends on the hospital's own catalogue.**
 
@@ -198,7 +198,7 @@ to add its own test is the one it bites.
 `lab_order_items`, or route every test through an analyte — even a panel of
 one. The second is less code and makes one path instead of two.
 
-### 3.3 The payment gate is bypassed by the analyzer path
+### 3.3 ~~The payment gate is bypassed by the analyzer path~~ FIXED — now checked at release
 
 **Severity: medium. Possibly deliberate; it is undocumented either way.**
 
@@ -217,6 +217,17 @@ lost — but the gate reads as enforcement and is not.
 
 **Fix, if it should be enforced:** check at release rather than collection,
 which is the point the hospital actually loses leverage.
+
+---
+
+### 3.4 ~~A panel's flag never reaches the item row~~ FIXED
+
+Found while explaining the flow rather than auditing it. `lab_order_items.flag`
+is what the patient's EMR timeline reads, and for a panel it kept the
+`'pending'` it was created with for ever — so every panel a patient had ever
+had showed in their history as though the laboratory had not started. A trigger
+now rolls the worst analyte flag up to the item, and the backfill corrected
+every panel already resulted.
 
 ---
 
