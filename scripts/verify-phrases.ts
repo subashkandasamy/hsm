@@ -176,6 +176,27 @@ async function main() {
   const again = await addStarterTwice(t)
   check('and a second run adds nothing', again === STARTER_COUNT, `${again} rows after`)
 
+  console.log('\nThe ward round note, on an inpatient')
+  await svc.from('note_templates').delete().eq('tenant_id', t)
+  await svc.from('note_templates').insert({
+    tenant_id: t, field_key: 'ipd.progress_note', label: 'Stable',
+    body: 'Patient comfortable. Vitals stable. Continue same treatment.', created_by: doc!.id,
+  })
+  const { data: adm } = await svc.from('admissions').select('id')
+    .eq('tenant_id', t).eq('status', 'admitted').limit(1).single()
+  await page.goto(`http://demo.localhost:3000/ipd/${adm!.id}`, { waitUntil: 'networkidle', timeout: 120_000 })
+  await page.waitForTimeout(2500)
+  const noteBox = page.locator('textarea[placeholder^="Observations"]').first()
+  check('the ward round note is on the page', (await noteBox.count()) > 0)
+  const ipdPicker = page.locator('button[title="Saved phrases"]')
+  check('it has a phrase picker', (await ipdPicker.count()) > 0)
+  await ipdPicker.first().click()
+  await page.waitForTimeout(1200)
+  await page.getByText('Stable', { exact: true }).first().click()
+  await page.waitForTimeout(1200)
+  check('one tap fills the ward round note',
+        (await noteBox.inputValue()).startsWith('Patient comfortable'), await noteBox.inputValue())
+
   console.log('\nThe step on Getting Started')
   // Admin-only page, so this needs its own session.
   const { data: admin } = await svc.from('profiles').select('id')

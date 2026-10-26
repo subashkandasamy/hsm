@@ -4,13 +4,11 @@ import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Save, Plus, Trash2, Search, UserPlus, X, Scissors, BedDouble, Printer } from 'lucide-react'
-import { useSpeechInput } from '@/hooks/useSpeechInput'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
-import MicButton from '@/components/ui/MicButton'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
-import Textarea from '@/components/ui/Textarea'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -104,7 +102,6 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
 
   const isClosed = schedule.status === 'completed' || schedule.status === 'cancelled'
 
-  const speechNotes = useSpeechInput({ onAppend: (t) => setNotes(n => n ? `${n} ${t}` : t) })
 
   // Debounced staff search
   useEffect(() => {
@@ -435,23 +432,15 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
             </button>
           )}
         </div>
-        <div className="relative">
-          <Textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Intraoperative notes, findings, complications, post-op instructions…"
-            disabled={isClosed || !canRecord}
-            style={{ minHeight: '7rem', paddingRight: speechNotes.supported ? '2.25rem' : undefined, ...(isClosed ? { opacity: 0.7 } : {}) }}
-          />
-          {speechNotes.supported && !isClosed && canRecord && (
-            <div className="absolute top-2 right-2">
-              <MicButton listening={speechNotes.listening} onToggle={speechNotes.toggle} />
-            </div>
-          )}
-        </div>
-        {speechNotes.interim && (
-          <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNotes.interim}…</p>
-        )}
+        <SpeechTextarea
+          variant="field"
+          fieldKey="ot.notes"
+          value={notes}
+          onChange={setNotes}
+          placeholder="Intraoperative notes, findings, complications, post-op instructions…"
+          disabled={isClosed || !canRecord}
+          style={{ minHeight: '7rem', ...(isClosed ? { opacity: 0.7 } : {}) }}
+        />
       </GlassCard>
 
       {/* Consumables */}

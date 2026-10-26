@@ -3,8 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Save, CheckCircle, Eye } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
-import MicButton from '@/components/ui/MicButton'
-import { useSpeechInput } from '@/hooks/useSpeechInput'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveClinicalData } from '@/app/actions/opd'
 import type { EyeExamData } from '@/lib/types'
 
@@ -53,10 +52,6 @@ export default function EyeClinicalSection({ visitId, initialData, disabled }: P
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-
-  const speechNotes = useSpeechInput({
-    onAppend: (t) => setData((d) => ({ ...d, notes: d.notes ? `${d.notes} ${t}` : t })),
-  })
 
   function handleSave() {
     setError('')
@@ -199,31 +194,17 @@ export default function EyeClinicalSection({ visitId, initialData, disabled }: P
         <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>
           Clinical Notes
         </label>
-        <div className="relative">
-          <textarea
-            value={data.notes}
-            onChange={(e) => setData((d) => ({ ...d, notes: e.target.value }))}
-            placeholder="Additional ophthalmic findings, management plan…"
-            disabled={disabled}
-            rows={3}
-            style={{
-              ...inputStyle,
-              minHeight: '80px', resize: 'vertical',
-              paddingRight: speechNotes.supported && !disabled ? '2.25rem' : undefined,
-              ...(disabled ? { opacity: 0.7 } : {}),
-            }}
-            onFocus={(e) => !disabled && Object.assign(e.currentTarget.style, focusStyle)}
-            onBlur={(e) => Object.assign(e.currentTarget.style, { borderColor: '#E2E8F0', boxShadow: 'none' })}
-          />
-          {speechNotes.supported && !disabled && (
-            <div className="absolute top-2 right-2">
-              <MicButton listening={speechNotes.listening} onToggle={speechNotes.toggle} />
-            </div>
-          )}
-        </div>
-        {speechNotes.interim && (
-          <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNotes.interim}…</p>
-        )}
+        <SpeechTextarea
+          fieldKey="eye.notes"
+          value={data.notes}
+          onChange={(v) => setData((d) => ({ ...d, notes: v }))}
+          placeholder="Additional ophthalmic findings, management plan…"
+          disabled={disabled}
+          rows={3}
+          style={{ ...inputStyle, minHeight: '80px', resize: 'vertical', ...(disabled ? { opacity: 0.7 } : {}) }}
+          onFocus={(e) => !disabled && Object.assign(e.currentTarget.style, focusStyle)}
+          onBlur={(e) => Object.assign(e.currentTarget.style, { borderColor: '#E2E8F0', boxShadow: 'none' })}
+        />
       </div>
     </GlassCard>
   )

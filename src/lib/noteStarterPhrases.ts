@@ -122,6 +122,25 @@ export const STARTER_PHRASES: Partial<Record<NoteFieldKey, { label: string; body
     { label: 'Manual work',      body: 'Daily wage labourer. No addictions.' },
   ],
 
+  'ipd.progress_note': [
+    { label: 'Stable',           body: 'Patient comfortable. Vitals stable. Continue same treatment.' },
+    { label: 'Improving',        body: 'Symptomatically better. Tolerating orally. Continue treatment.' },
+    { label: 'Post-op day',      body: 'Post-operative day ___. Wound healthy, no discharge. Pain under control.' },
+    { label: 'Febrile',          body: 'Fever spike to ___ °F. Blood culture sent. Antipyretics given.' },
+    { label: 'Plan to discharge', body: 'Afebrile and ambulant. Plan discharge tomorrow if stable overnight.' },
+  ],
+  'ipd.discharge_summary': [
+    { label: 'Improved',         body: 'Admitted with ___. Treated with ___. Improved symptomatically and discharged in a stable condition.' },
+    { label: 'Post-op',          body: 'Underwent ___ on ___. Post-operative period uneventful. Wound healthy. Sutures to be removed on ___.' },
+    { label: 'Follow-up',        body: 'Review in OPD after ___ days, or earlier if symptoms worsen.' },
+    { label: 'Advice on going home', body: 'Continue medication as prescribed. Rest, adequate oral fluids and a normal diet.' },
+  ],
+  'ot.notes': [
+    { label: 'Uneventful',       body: 'Procedure uneventful. Haemostasis secured. Patient shifted to recovery in a stable condition.' },
+    { label: 'Blood loss',       body: 'Estimated blood loss ___ ml. No transfusion required.' },
+    { label: 'Post-op orders',   body: 'Nil orally for ___ hours. IV fluids and analgesia as charted. Monitor vitals hourly.' },
+  ],
+
   'nursing.situation': [
     { label: 'Stable handover',  body: 'Shift handed over. Patient stable, no fresh complaints.' },
     { label: 'Post-op',          body: 'Post-operative day ___. Pain under control.' },

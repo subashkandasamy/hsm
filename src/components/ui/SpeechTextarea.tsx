@@ -27,6 +27,9 @@ interface Props {
   // opts in rather than inheriting a dropdown nobody asked for.
   fieldKey?: string
   department?: ClinicalTemplate | null
+  // Some boxes paint their own focus ring inline rather than through a class.
+  onFocus?: React.FocusEventHandler<HTMLTextAreaElement>
+  onBlur?: React.FocusEventHandler<HTMLTextAreaElement>
 }
 
 // Textarea with built-in browser speech-to-text dictation. Dictated speech is
@@ -34,7 +37,7 @@ interface Props {
 // SpeechRecognition and the field is writable, so it degrades gracefully.
 export default function SpeechTextarea({
   value, onChange, disabled = false, placeholder, rows = 2, className, style, lang,
-  variant = 'plain', fieldKey, department,
+  variant = 'plain', fieldKey, department, onFocus, onBlur,
 }: Props) {
   // Track the latest value synchronously so rapid dictation deltas append to the
   // running text (not the value captured at the last render) and none are lost.
@@ -63,6 +66,8 @@ export default function SpeechTextarea({
     placeholder,
     rows,
     className,
+    onFocus,
+    onBlur,
     style: {
       ...style,
       paddingRight: buttons ? `${1.25 + buttons * 1.75}rem` : style?.paddingRight,

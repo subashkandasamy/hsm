@@ -12,7 +12,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
-import Textarea from '@/components/ui/Textarea'
+import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import Modal from '@/components/ui/Modal'
@@ -23,8 +23,6 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, dischargePatient, updateDischargeSummary } from '@/app/actions/ipd'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
-import { useSpeechInput } from '@/hooks/useSpeechInput'
-import MicButton from '@/components/ui/MicButton'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
 import WristbandLabelModal from '@/components/barcode/WristbandLabelModal'
@@ -139,9 +137,6 @@ export default function AdmissionDetail({
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
   // Speech-to-text
-  const speechNote    = useSpeechInput({ onAppend: (t) => setNote((n) => n ? `${n} ${t}` : t) })
-  const speechSummary = useSpeechInput({ onAppend: (t) => setEditedSummary((s) => s ? `${s} ${t}` : t) })
-  const speechDischarge = useSpeechInput({ onAppend: (t) => setSummary((s) => s ? `${s} ${t}` : t) })
 
   async function handleUpdateSummary() {
     setSummaryUpdating(true)
@@ -414,19 +409,14 @@ export default function AdmissionDetail({
               <div className="px-3 py-3" style={{ background: '#F0FDF4', borderTop: '1px solid #BBF7D0' }}>
                 {editingSummary ? (
                   <div>
-                    <div className="relative">
-                      <textarea value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} rows={6}
-                        className="w-full text-sm rounded-lg p-2 border"
-                        style={{ borderColor: '#BBF7D0', color: '#0F172A', resize: 'vertical', fontFamily: 'inherit', paddingRight: speechSummary.supported ? '2.25rem' : undefined }} />
-                      {speechSummary.supported && (
-                        <div className="absolute top-2 right-2">
-                          <MicButton listening={speechSummary.listening} onToggle={speechSummary.toggle} />
-                        </div>
-                      )}
-                    </div>
-                    {speechSummary.interim && (
-                      <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechSummary.interim}…</p>
-                    )}
+                    <SpeechTextarea
+                      fieldKey="ipd.discharge_summary"
+                      value={editedSummary}
+                      onChange={setEditedSummary}
+                      rows={6}
+                      className="w-full text-sm rounded-lg p-2 border"
+                      style={{ borderColor: '#BBF7D0', color: '#0F172A', resize: 'vertical', fontFamily: 'inherit' }}
+                    />
                     {summaryError && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{summaryError}</p>}
                     <div className="flex gap-2 mt-2">
                       <button onClick={handleUpdateSummary} disabled={summaryUpdating}
@@ -652,19 +642,14 @@ export default function AdmissionDetail({
                   ))}
                 </div>
                 <FormField label="Clinical Note">
-                  <div className="relative">
-                    <Textarea value={note} onChange={(e) => setNote(e.target.value)}
-                      placeholder="Observations, plan, instructions…"
-                      style={{ minHeight: '4rem', paddingRight: speechNote.supported ? '2.25rem' : undefined }} />
-                    {speechNote.supported && (
-                      <div className="absolute top-2 right-2">
-                        <MicButton listening={speechNote.listening} onToggle={speechNote.toggle} />
-                      </div>
-                    )}
-                  </div>
-                  {speechNote.interim && (
-                    <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechNote.interim}…</p>
-                  )}
+                  <SpeechTextarea
+                    variant="field"
+                    fieldKey="ipd.progress_note"
+                    value={note}
+                    onChange={setNote}
+                    placeholder="Observations, plan, instructions…"
+                    style={{ minHeight: '4rem' }}
+                  />
                 </FormField>
                 {noteError && <p className="text-xs" style={{ color: '#DC2626' }}>{noteError}</p>}
                 <button type="submit" disabled={noteSaving || !note.trim()}
@@ -821,19 +806,14 @@ export default function AdmissionDetail({
       <Modal open={showDischarge} onClose={() => setShowDischarge(false)} title="Discharge Patient" maxWidth="30rem">
         <div className="space-y-4">
           <FormField label="Discharge Summary" required>
-            <div className="relative">
-              <Textarea value={summary} onChange={(e) => setSummary(e.target.value)}
-                placeholder="Condition at discharge, treatment given, follow-up instructions…"
-                style={{ minHeight: '7rem', paddingRight: speechDischarge.supported ? '2.25rem' : undefined }} />
-              {speechDischarge.supported && (
-                <div className="absolute top-2 right-2">
-                  <MicButton listening={speechDischarge.listening} onToggle={speechDischarge.toggle} />
-                </div>
-              )}
-            </div>
-            {speechDischarge.interim && (
-              <p className="text-xs mt-1 italic" style={{ color: '#0D9488' }}>🎤 {speechDischarge.interim}…</p>
-            )}
+            <SpeechTextarea
+              variant="field"
+              fieldKey="ipd.discharge_summary"
+              value={summary}
+              onChange={setSummary}
+              placeholder="Condition at discharge, treatment given, follow-up instructions…"
+              style={{ minHeight: '7rem' }}
+            />
           </FormField>
           {dischargeError && <p className="text-sm" style={{ color: '#DC2626' }}>{dischargeError}</p>}
           <div className="flex gap-3 justify-end">
