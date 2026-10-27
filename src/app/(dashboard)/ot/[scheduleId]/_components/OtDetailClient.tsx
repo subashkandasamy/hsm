@@ -246,7 +246,7 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
           ] as [string, string][]).map(([label, value]) => (
             <div key={label} className="flex items-baseline px-4 py-2.5 gap-3">
               <dt className="text-xs flex-shrink-0 w-24" style={{ color: '#94A3B8' }}>{label}</dt>
-              <dd className="text-sm font-medium min-w-0 truncate" style={{ color: '#0F172A' }}>{value}</dd>
+              <dd className="text-sm font-medium min-w-0 break-words" style={{ color: '#0F172A' }}>{value}</dd>
             </div>
           ))}
 

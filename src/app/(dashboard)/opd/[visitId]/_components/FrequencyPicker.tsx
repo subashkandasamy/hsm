@@ -72,7 +72,7 @@ export default function FrequencyPicker({ value, onChange, disabled }: Props) {
         }}
       >
         <span className="truncate font-mono text-xs font-semibold" style={{ color: value ? '#0D9488' : '#94A3B8' }}>
-          {displayValue || 'Select frequency…'}
+          {displayValue || 'Choose…'}
         </span>
         <ChevronDown className="w-4 h-4 flex-shrink-0 ml-1 transition-transform"
           style={{ color: '#94A3B8', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />

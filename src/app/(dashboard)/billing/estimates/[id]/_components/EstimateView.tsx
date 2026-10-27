@@ -79,7 +79,7 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
           .no-print { display: none !important; }
           body * { visibility: hidden; }
           #est-print, #est-print * { visibility: visible; }
-          #est-print { position: absolute; top: 0; left: 0; width: 100%; border: none !important; border-radius: 0 !important; box-shadow: none !important; }
+          #est-print { position: absolute; top: 0; left: 0; width: 100%; min-width: 0 !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; }
           @page { size: A4 portrait; margin: 10mm; }
         }
       `}</style>
@@ -113,8 +113,14 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
         </div>
       </div>
 
-      {/* Printable card */}
-      <div id="est-print" style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)' }}>
+      {/* Printable card.
+          This is a sheet of paper, not a page layout, so on a phone it scrolls
+          sideways at its paper width rather than reflowing: the estimate shown
+          on screen should be the one that comes out of the printer. Squeezed
+          into 390px the hospital's own address wrapped four times. The minimum
+          sits under A4's 794px, so printing is unaffected. */}
+      <div className="overflow-x-auto">
+      <div id="est-print" style={{ background: '#fff', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.07)', minWidth: '44rem' }}>
         {/* Header */}
         <div style={{ padding: '20px 32px 16px', borderBottom: '2px solid #0D9488' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
@@ -215,6 +221,7 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
           </p>
           <p style={{ fontSize: '10px', color: '#CBD5E1', margin: '8px 0 0', textAlign: 'right' }}>System generated · Powered by Uyirly</p>
         </div>
+      </div>
       </div>
     </div>
   )

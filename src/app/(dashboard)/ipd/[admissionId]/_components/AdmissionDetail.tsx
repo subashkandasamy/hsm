@@ -549,7 +549,7 @@ export default function AdmissionDetail({
               style={{ borderTop: '1px solid #F1F5F9' }}>
               <div>
                 <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Attending Doctor</p>
-                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                   {adm.doctor?.full_name ?? '—'}
                 </p>
               </div>
@@ -561,13 +561,13 @@ export default function AdmissionDetail({
                   <>
                     <div>
                       <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Morning Nurse</p>
-                      <p className="text-sm font-semibold truncate" style={{ color: morningAssignment ? '#0F172A' : '#94A3B8' }}>
+                      <p className="text-sm font-semibold break-words" style={{ color: morningAssignment ? '#0F172A' : '#94A3B8' }}>
                         {morningAssignment?.nurse?.full_name ?? '—'}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Night Nurse</p>
-                      <p className="text-sm font-semibold truncate" style={{ color: nightAssignment ? '#0F172A' : '#94A3B8' }}>
+                      <p className="text-sm font-semibold break-words" style={{ color: nightAssignment ? '#0F172A' : '#94A3B8' }}>
                         {nightAssignment?.nurse?.full_name ?? '—'}
                       </p>
                     </div>
@@ -577,7 +577,7 @@ export default function AdmissionDetail({
 
               <div>
                 <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Ward / Bed</p>
-                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                   {adm.ward?.name} — {adm.bed?.bed_no}
                 </p>
               </div>

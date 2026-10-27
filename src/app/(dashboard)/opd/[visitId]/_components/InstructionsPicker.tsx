@@ -73,7 +73,7 @@ export default function InstructionsPicker({ value, onChange, disabled }: Props)
         }}
       >
         <span className="truncate text-sm" style={{ color: value ? '#0F172A' : '#94A3B8' }}>
-          {value || 'Select instructions…'}
+          {value || 'Choose…'}
         </span>
         <ChevronDown
           className="w-4 h-4 flex-shrink-0 ml-1 transition-transform"

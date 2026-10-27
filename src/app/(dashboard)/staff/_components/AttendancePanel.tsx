@@ -134,10 +134,14 @@ export default function AttendancePanel({ staff, initialAttendance, currentMonth
             {staff.filter((s) => s.is_active).map((s) => {
               const existing = attendanceMap.get(s.id)
               return (
-                <div key={s.id} className="flex items-center gap-3 py-2 px-3 rounded-xl flex-wrap"
+                // Four buttons in a row leave about twenty-six pixels for a
+                // name on a phone — every member of staff read "Dr. Aru…", and
+                // marking the wrong person present is the whole risk here.
+                <div key={s.id}
+                  className="flex flex-col gap-2 py-2 px-3 rounded-xl sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
                   style={{ background: 'rgba(248,250,252,0.6)' }}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{s.full_name}</p>
+                    <p className="text-sm font-medium break-words" style={{ color: '#0F172A' }}>{s.full_name}</p>
                     <p className="text-xs" style={{ color: '#94A3B8' }}>{s.role}</p>
                   </div>
                   {existing && (

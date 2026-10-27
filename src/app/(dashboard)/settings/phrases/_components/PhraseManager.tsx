@@ -187,13 +187,17 @@ export default function PhraseManager({ initial }: { initial: NoteTemplate[] }) 
                       editing === t.id ? <div key={t.id}>{form}</div> : (
                         <div
                           key={t.id}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                          className="flex flex-col gap-1.5 px-3 py-2 rounded-xl sm:flex-row sm:items-center sm:gap-2"
                           style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}
                         >
+                          {/* This is the screen a doctor reads the wording on,
+                              so on a phone the phrase wraps rather than
+                              stopping halfway through the sentence. */}
                           <div className="flex-1" style={{ minWidth: 0 }}>
-                            <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{t.label}</p>
-                            <p className="text-xs truncate" style={{ color: '#64748B' }}>{t.body}</p>
+                            <p className="text-sm font-medium break-words" style={{ color: '#0F172A' }}>{t.label}</p>
+                            <p className="text-xs line-clamp-2 sm:truncate" style={{ color: '#64748B' }}>{t.body}</p>
                           </div>
+                          <div className="flex items-center gap-2 self-end sm:contents">
                           {/* Used-how-often, because it is the only reason the
                               picker puts one phrase above another. */}
                           <span className="text-xs tabular-nums" style={{ color: '#94A3B8' }}>
@@ -211,6 +215,7 @@ export default function PhraseManager({ initial }: { initial: NoteTemplate[] }) 
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                          </div>
                         </div>
                       )
                     ))}

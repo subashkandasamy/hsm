@@ -84,12 +84,16 @@ export default function MtpRegister({ initialRows, initialDrugs, initialMonth }:
         <div className="grid gap-2">
           {rows.map((r) => (
             <GlassCard key={r.id} className="p-3.5">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-mono font-semibold" style={{ color: '#0F766E', minWidth: '8.5rem' }}>
+              {/* Two rows on a phone. Side by side, the serial number's fixed
+                  width plus the unshrinkable pills left the patient's name
+                  about thirty pixels — a register you cannot read a name in. */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                <div className="flex items-start gap-3 min-w-0 sm:flex-1 sm:contents">
+                <span className="text-xs font-mono font-semibold shrink-0" style={{ color: '#0F766E', minWidth: '8.5rem' }}>
                   {r.serial_no}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                  <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                     {r.patient_name ?? '—'}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
@@ -99,6 +103,9 @@ export default function MtpRegister({ initialRows, initialDrugs, initialMonth }:
                     {r.performed_by_name ? ` · ${r.performed_by_name}` : ''}
                   </p>
                 </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
                 {/* Beyond twenty weeks the Act needs two practitioners, so the
                     gestation is worth seeing without opening the record. */}
                 {r.gestation_weeks != null && r.gestation_weeks > 20 && (
@@ -118,6 +125,7 @@ export default function MtpRegister({ initialRows, initialDrugs, initialMonth }:
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
                   {r.status === 'draft' ? 'Finish' : 'View'}
                 </Link>
+                </div>
               </div>
             </GlassCard>
           ))}
@@ -149,8 +157,12 @@ export default function MtpRegister({ initialRows, initialDrugs, initialMonth }:
                 </p>
               </div>
             )}
+            {/* w-full inside an overflow-x-auto is a contradiction: the table
+                obeys the container instead of scrolling it, and on a phone the
+                seven columns crush "Tab. Combokit" into six stacked letters. A
+                minimum width is what lets the scroll do its job. */}
             <div className="overflow-x-auto">
-              <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+              <table className="text-xs" style={{ borderCollapse: 'collapse', width: '100%', minWidth: '40rem' }}>
                 <thead>
                   <tr style={{ color: '#94A3B8' }}>
                     <th style={th}>Drug</th>

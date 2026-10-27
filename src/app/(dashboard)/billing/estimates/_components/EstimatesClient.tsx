@@ -52,23 +52,27 @@ export default function EstimatesClient({ initial, roomTypes, procedures }: Prop
         <div className="space-y-2">
           {initial.map((e) => (
             <Link key={e.id} href={`/billing/estimates/${e.id}`}
-              className="glass-card flex items-center gap-4 px-4 py-3 transition-all"
+              className="glass-card flex flex-col gap-2 px-4 py-3 transition-all sm:flex-row sm:items-center sm:gap-4"
               style={{ textDecoration: 'none' }}>
+              <div className="flex items-center gap-4 min-w-0 sm:contents">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{ background: 'rgba(13,148,136,0.08)' }}>
                 <FileText className="w-4 h-4" style={{ color: '#0D9488' }} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                   {e.patient?.full_name ?? e.patient_name ?? 'Walk-in enquiry'}
                 </p>
                 <p className="text-xs" style={{ color: '#94A3B8' }}>
                   {e.estimate_no} · <DateText date={e.created_at} />
                 </p>
               </div>
+              </div>
+              <div className="flex items-center gap-3 sm:contents">
               <StatusBadge status={e.status === 'final' ? 'success' : 'info'} label={e.status === 'final' ? 'Final' : 'Draft'} />
               <span className="text-sm font-bold tabular-nums" style={{ color: '#0F172A' }}><Money amount={e.total} /></span>
-              <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: '#CBD5E1' }} />
+              <ChevronRight className="w-4 h-4 flex-shrink-0 hidden sm:block" style={{ color: '#CBD5E1' }} />
+              </div>
             </Link>
           ))}
         </div>

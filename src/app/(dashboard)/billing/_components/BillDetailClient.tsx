@@ -582,7 +582,25 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               <div style={{ padding: '40px 0', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>No line items</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: gstRegistered ? '560px' : '440px' }}>
+              {/* The minimum has to leave the description column something to
+                  work with: with tableLayout fixed it was getting 93px, and
+                  "Consultation — Dr. Arun Prakash" came out four lines deep.
+                  The table scrolls, so a wider minimum costs nothing. */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed', minWidth: gstRegistered ? '46rem' : '38rem' }}>
+                {/* table-layout: fixed takes its columns from the first row, and
+                    the first row here is a single colSpan cell naming the
+                    department. With nothing to go on the browser split the width
+                    equally — six columns of 123px — so the widths on the <th>s
+                    below were never applied, and Qty got as much room as the
+                    description. A colgroup is what fixed layout actually reads. */}
+                <colgroup>
+                  <col />
+                  {gstRegistered && <col style={{ width: '80px' }} />}
+                  <col style={{ width: '50px' }} />
+                  <col style={{ width: '105px' }} />
+                  {gstRegistered && <col style={{ width: '55px' }} />}
+                  <col style={{ width: '110px' }} />
+                </colgroup>
                 {Object.entries(grouped).map(([source, items], si) => {
                   const srcLabel = SOURCE_LABELS[source as BillItemSource | 'advance_refund'] ?? source
                   const srcTotal = (items ?? []).reduce((s, i) => s + (i?.amount ?? 0), 0)

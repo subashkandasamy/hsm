@@ -132,13 +132,16 @@ export default function PatientsClient({ initialPatients }: Props) {
                       {initials}
                     </div>
                     {/* Info */}
+                    {/* The UHID used to sit beside the name, and being
+                        unshrinkable it left about sixty pixels for the name
+                        itself — every patient on the list read "Anand Subra…".
+                        The name gets the line; the number joins the details
+                        below it, where nothing competes for width. */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{p.full_name}</p>
-                        <span className="font-mono text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+                      <p className="font-semibold text-sm break-words" style={{ color: '#0F172A' }}>{p.full_name}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs flex-wrap" style={{ color: '#64748B' }}>
+                        <span className="font-mono px-2 py-0.5 rounded-lg"
                           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-xs flex-wrap" style={{ color: '#64748B' }}>
                         {p.gender && <span className="capitalize">{p.gender}</span>}
                         {p.dob && <span>{computeAge(p.dob)}</span>}
                         {p.phone && <span>{p.phone}</span>}

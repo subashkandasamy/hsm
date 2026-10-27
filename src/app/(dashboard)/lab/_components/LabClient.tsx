@@ -241,7 +241,10 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
         <div className="space-y-3">
           {currentList.map((order) => (
             <GlassCard key={order.id} className="p-4">
-              <div className="flex items-start justify-between gap-4">
+              {/* The buttons go under the order on a phone. Beside it they
+                  left about sixty pixels, and a test chip like "Urine Routine
+                  & Microscopy (R&M)" came out four lines tall. */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold" style={{ color: '#0F172A' }}>
@@ -301,7 +304,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-wrap sm:flex-shrink-0">
                   {tab === 'collect' && (
                     <>
                       {canPrintSample && (

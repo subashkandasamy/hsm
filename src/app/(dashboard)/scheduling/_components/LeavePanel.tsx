@@ -142,7 +142,11 @@ export default function LeavePanel({ initialLeave, nurses, canApprove, actorId }
                 <div key={lr.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>
+                      {/* Whose leave this is — on a narrow phone the approve
+                          and reject buttons beside it leave about a hundred
+                          pixels, and approving the wrong person's leave is the
+                          mistake this screen can actually make. */}
+                      <span className="text-sm font-medium break-words" style={{ color: '#0F172A' }}>
                         {lr.profile?.full_name ?? (isOwn ? 'You' : '—')}
                       </span>
                       <span className="text-[11px] px-1.5 py-0.5 rounded-md capitalize" style={{ background: '#F1F5F9', color: '#64748B' }}>{lr.leave_type}</span>

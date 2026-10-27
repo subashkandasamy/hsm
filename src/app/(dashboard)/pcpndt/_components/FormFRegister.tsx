@@ -101,12 +101,16 @@ export default function FormFRegister({
         <div className="grid gap-2">
           {rows.map((r) => (
             <GlassCard key={r.id} className="p-3.5">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-mono font-semibold" style={{ color: '#0F766E', minWidth: '7.5rem' }}>
+              {/* Two rows on a phone. Side by side, the serial number's fixed
+                  width plus the unshrinkable pills left the patient's name
+                  about thirty pixels — a register you cannot read a name in. */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                <div className="flex items-start gap-3 min-w-0 sm:flex-1 sm:contents">
+                <span className="text-xs font-mono font-semibold shrink-0" style={{ color: '#0F766E', minWidth: '7.5rem' }}>
                   {r.serial_no}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+                  <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                     {r.patient_name ?? '—'}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
@@ -115,6 +119,9 @@ export default function FormFRegister({
                     {r.amends_id ? ' · amends an earlier form' : ''}
                   </p>
                 </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
                 {/* An MTP indication on a Form F is the single most scrutinised
                     fact in the register, so it is shown rather than buried —
                     but the Act expects "NA" written where there is none, and a
@@ -132,6 +139,7 @@ export default function FormFRegister({
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.2)' }}>
                   {r.status === 'draft' ? 'Finish' : 'View'}
                 </Link>
+                </div>
               </div>
             </GlassCard>
           ))}

@@ -417,7 +417,9 @@ function MultiWardRow({ ward, locationStr, avail, occ, isAdmin, onView, onEdit, 
                 : <ChevronRight className="w-3 h-3" style={{ color: '#94A3B8' }} />}
         </button>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.05rem' }}>
-          <span className="text-xs font-semibold truncate" style={{ color: '#374151' }}>{ward.name}</span>
+          {/* A ward's name wraps rather than being cut: "Female General Ward"
+              and "Male General Ward" differ in their first word. */}
+          <span className="text-xs font-semibold leading-tight break-words" style={{ color: '#374151' }}>{ward.name}</span>
           {locationStr && (
             <span style={{ fontSize: '0.65rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
               <MapPin style={{ width: '0.55rem', height: '0.55rem', flexShrink: 0 }} />

@@ -63,19 +63,24 @@ export default function MlcRegister({ rows, options }: {
       ) : (
         <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
           {shown.map((r) => (
-            <div key={r.id} className="flex items-center gap-3 px-4 py-3 flex-wrap"
+            <div key={r.id}
+              className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
               style={{ borderBottom: '1px solid #F1F5F9' }}>
-              <Gavel className="w-4 h-4 flex-shrink-0"
+              {/* On a phone the chips and buttons below would otherwise squeeze
+                  this column to a couple of pixels — the patient's name and the
+                  AR number, which are the two things this register is for. */}
+              <div className="flex items-start gap-3 min-w-0 sm:flex-1">
+              <Gavel className="w-4 h-4 flex-shrink-0 mt-0.5"
                 style={{ color: r.status === 'complete' ? '#94A3B8' : '#DC2626' }} />
 
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold break-words" style={{ color: '#0F172A' }}>
                   {r.patient_name ?? '—'}
                   <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>
                     {r.ar_no}
                   </span>
                 </p>
-                <p className="text-xs truncate" style={{ color: '#64748B' }}>
+                <p className="text-xs" style={{ color: '#64748B' }}>
                   {r.arrived_at
                     ? new Date(r.arrived_at).toLocaleString('en-IN', {
                         day: '2-digit', month: 'short', year: 'numeric',
@@ -86,7 +91,9 @@ export default function MlcRegister({ rows, options }: {
                   {r.injury_grade && r.injury_grade !== 'deferred' && ` · ${r.injury_grade}`}
                 </p>
               </div>
+              </div>
 
+              <div className="flex items-center gap-2 flex-wrap">
               {/* Shown on every row, because an entry with no intimation against
                   it is the one thing on this screen that is a problem. */}
               {r.intimation_count === 0 ? (
@@ -117,6 +124,7 @@ export default function MlcRegister({ rows, options }: {
                 style={{ background: '#F1F5F9', color: '#475569', textDecoration: 'none' }}>
                 {r.status === 'draft' ? 'Finish' : 'Open'}
               </Link>
+              </div>
             </div>
           ))}
         </GlassCard>

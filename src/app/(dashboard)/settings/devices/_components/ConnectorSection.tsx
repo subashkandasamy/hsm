@@ -237,7 +237,11 @@ function ConnectorCard({
 
   return (
     <GlassCard className="p-4">
-      <div className="flex flex-wrap items-start gap-3">
+      {/* flex-wrap was not enough: the buttons are unshrinkable but this
+          column is not, so on a phone it collapsed to sixty pixels and the
+          upgrade notice came out eighteen lines tall. Stacked below instead. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+        <div className="flex items-start gap-3 min-w-0 sm:contents">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ background: revoked ? '#F1F5F9' : 'rgba(13,148,136,0.08)' }}>
           <Server className="w-4 h-4" style={{ color: revoked ? '#94A3B8' : '#0D9488' }} />
@@ -304,8 +308,9 @@ function ConnectorCard({
             </p>
           )}
         </div>
+        </div>
 
-        <div className="flex gap-1.5 flex-shrink-0">
+        <div className="flex gap-1.5 flex-wrap sm:flex-shrink-0">
           {!revoked && (
             <button onClick={onRegenerate} disabled={busy} title="New pairing code"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"

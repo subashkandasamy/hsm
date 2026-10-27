@@ -415,7 +415,7 @@ export default function ConsultationWorkspace({
           {visit.complaint && (
             <div>
               <p className="text-xs mb-0.5" style={{ color: '#64748B' }}>Chief Complaint</p>
-              <p className="text-sm truncate" style={{ color: '#0F172A' }}>{visit.complaint}</p>
+              <p className="text-sm break-words" style={{ color: '#0F172A' }}>{visit.complaint}</p>
             </div>
           )}
         </div>

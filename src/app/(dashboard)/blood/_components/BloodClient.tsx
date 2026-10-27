@@ -149,14 +149,16 @@ export default function BloodClient({ initialInventory, initialUnits, initialReq
         title="Blood Bank"
         subtitle="Inventory, requests, and issue tracking"
         action={
-          <div className="flex items-center gap-2">
+          // Three buttons in a row do not fit a phone, and without wrapping the
+          // longest label folds a word per line instead of moving down.
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <button onClick={refresh} className="p-2 rounded-xl"
               style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#64748B', cursor: 'pointer' }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
             {canManage && (
               <button onClick={handleExpire}
-                className="px-3 py-2 rounded-xl text-xs font-medium"
+                className="px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap"
                 style={{ background: 'rgba(255,255,255,0.8)', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                 Expire Old Units
               </button>

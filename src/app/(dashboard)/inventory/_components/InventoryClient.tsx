@@ -388,20 +388,20 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
           <div className="space-y-3">
             {alerts.map((item) => (
               <GlassCard key={item.id} className="p-4">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 flex-shrink-0 rounded-xl flex items-center justify-center"
                       style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
                       <AlertTriangle className="w-4 h-4" style={{ color: '#DC2626' }} />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-sm truncate" style={{ color: '#0F172A' }}>{item.name}</p>
+                      <p className="font-medium text-sm break-words" style={{ color: '#0F172A' }}>{item.name}</p>
                       <p className="text-xs" style={{ color: '#94A3B8' }}>
                         {item.category ?? 'Uncategorised'} · Reorder at {item.reorder_level} {item.unit ?? ''}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="flex items-center gap-3 sm:flex-shrink-0">
                     <div className="text-right">
                       <p className="text-lg font-bold" style={{ color: '#DC2626' }}>{item.qty_in_stock}</p>
                       <p className="text-xs" style={{ color: '#94A3B8' }}>{item.unit ?? 'units'} in stock</p>
