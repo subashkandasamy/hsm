@@ -46,6 +46,8 @@ export interface Tenant {
 
 export interface TenantWithStats extends Tenant {
   user_count: number; patient_count: number; last_activity: string | null
+  /** The hospital's first active admin — who to ring about this tenant. */
+  admin_name: string | null; admin_phone: string | null
 }
 
 export interface PlatformAdmin {

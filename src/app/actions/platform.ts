@@ -72,17 +72,47 @@ export async function listTenants(params?: { status?: string }): Promise<TenantW
 
   if (!tenants) return []
 
+  // Who to ring. Sales here is founder-led and direct, so the name and number
+  // of the person who signed the hospital up is the most used fact on this
+  // screen — and looking it up meant opening the tenant's own staff list.
+  //
+  // One query for every tenant rather than one per tenant: this list already
+  // does two round trips each for the counts, and a third would be felt.
+  // Where a hospital has several admins the first active one wins, which is
+  // the one who registered: they are inserted at signup, before anyone else.
+  const { data: admins, error: adminErr } = await service
+    .from('profiles')
+    .select('tenant_id, full_name, phone, is_active, created_at')
+    .in('tenant_id', tenants.map((t) => t.id))
+    .eq('role', 'admin')
+    .order('is_active', { ascending: false })
+    .order('created_at', { ascending: true })
+  if (adminErr) console.error('listTenants admins', adminErr.message)
+
+  const adminOf = new Map<string, { full_name: string; phone: string | null }>()
+  for (const a of admins ?? []) {
+    if (!adminOf.has(a.tenant_id as string)) {
+      adminOf.set(a.tenant_id as string, {
+        full_name: a.full_name as string,
+        phone: (a.phone as string | null) ?? null,
+      })
+    }
+  }
+
   const stats = await Promise.all(
     tenants.map(async (t) => {
       const [userRes, patientRes] = await Promise.all([
         service.from('profiles').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id),
         service.from('patients').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id),
       ])
+      const admin = adminOf.get(t.id as string)
       return {
         ...t,
         user_count:    userRes.count ?? 0,
         patient_count: patientRes.count ?? 0,
         last_activity: null as string | null,
+        admin_name:    admin?.full_name ?? null,
+        admin_phone:   admin?.phone ?? null,
       }
     })
   )

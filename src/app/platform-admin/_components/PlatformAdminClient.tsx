@@ -5,7 +5,7 @@ import {
   Building2, Users, UserCheck, ShieldAlert, ExternalLink, RefreshCw,
   Loader2, AlertTriangle, CalendarClock, Plus, Trash2, CreditCard,
   ChevronDown, Activity, Clock, CheckCircle2, XCircle, ArrowLeftRight,
-  RotateCcw,
+  RotateCcw, Phone, UserRound,
 } from 'lucide-react'
 import {
   listTenants, suspendTenant, reactivateTenant, impersonateTenant,
@@ -338,7 +338,32 @@ export default function PlatformAdminClient({ initialTenants, initialSubscriptio
                         <span className="text-xs px-2 py-0.5 rounded-full"
                           style={{ background: 'rgba(255,255,255,0.06)', color: '#94A3B8' }}>{t.plan}</span>
                       </div>
-                      <p className="text-xs mb-2" style={{ color: '#64748B' }}>{t.slug}.uyirly.com</p>
+                      <p className="text-xs mb-1.5" style={{ color: '#64748B' }}>{t.slug}.uyirly.com</p>
+
+                      {/* Who to ring about this hospital. Sales here is a
+                          phone call, so the number is a tel: link rather than
+                          something to copy out by hand. */}
+                      {(t.admin_name || t.admin_phone) && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs mb-2">
+                          {t.admin_name && (
+                            <span className="flex items-center gap-1" style={{ color: '#94A3B8' }}>
+                              <UserRound className="w-3.5 h-3.5 shrink-0" />
+                              <span className="break-words">{t.admin_name}</span>
+                            </span>
+                          )}
+                          {t.admin_phone ? (
+                            <a href={`tel:${t.admin_phone}`} className="flex items-center gap-1"
+                              style={{ color: '#5EEAD4', textDecoration: 'none' }}>
+                              <Phone className="w-3.5 h-3.5 shrink-0" />
+                              <span className="tabular-nums">{t.admin_phone}</span>
+                            </a>
+                          ) : (
+                            <span className="flex items-center gap-1" style={{ color: '#475569' }}>
+                              <Phone className="w-3.5 h-3.5 shrink-0" /> no number
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-4 text-xs" style={{ color: '#64748B' }}>
                         <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.user_count} users</span>
                         <span className="flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> {t.patient_count} patients</span>

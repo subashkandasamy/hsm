@@ -103,6 +103,23 @@ async function main() {
     check(`the ${word.toLowerCase()} section is there`, body.toLowerCase().includes(word.toLowerCase()))
   }
 
+  // Who to ring, against the database rather than against the page's own story.
+  const { data: tenantRows } = await svc.from('tenants').select('id, name').limit(50)
+  let withAdmin = 0, shown = 0, numbersShown = 0
+  for (const t of tenantRows ?? []) {
+    const { data: a } = await svc.from('profiles')
+      .select('full_name, phone').eq('tenant_id', t.id as string).eq('role', 'admin')
+      .order('is_active', { ascending: false }).order('created_at', { ascending: true })
+      .limit(1).maybeSingle()
+    if (!a) continue
+    withAdmin++
+    if (body.includes(a.full_name as string)) shown++
+    if (a.phone && body.includes(a.phone as string)) numbersShown++
+    else if (!a.phone) numbersShown++
+  }
+  check('every hospital shows its admin', withAdmin > 0 && shown === withAdmin, `${shown} of ${withAdmin}`)
+  check('and the number where there is one', numbersShown === withAdmin, `${numbersShown} of ${withAdmin}`)
+
   await page.goto('http://localhost:3000/platform-admin/seeds', { waitUntil: 'networkidle', timeout: 120_000 })
   await page.waitForTimeout(1500)
   check('the seeds page opens too', page.url().includes('/platform-admin/seeds'), page.url())
