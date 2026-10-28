@@ -19,6 +19,7 @@
     "verify:tally": "tsx scripts/verify-tally.ts",
     "verify:cash-limit": "tsx scripts/verify-cash-limit.ts",
     "audit:mobile": "tsx scripts/audit-mobile.ts",
+    "verify:platform-admin": "tsx scripts/verify-platform-admin.ts",
     "verify:phrases": "tsx scripts/verify-phrases.ts",
     "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts"
   },

@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ShieldCheck, Database } from 'lucide-react'
+import { ShieldCheck, Database, LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit, listPartnerPayouts } from '@/app/actions/platform'
+import { listTenants, getAdminStats, listSubscriptions, listPlatformAudit, listPartnerPayouts, signOutPlatformAdmin } from '@/app/actions/platform'
 import PlatformAdminClient from './_components/PlatformAdminClient'
 import MessagingToggle from './_components/MessagingToggle'
 
@@ -44,7 +44,7 @@ export default async function PlatformAdminPage() {
       style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F4C75 100%)' }}>
       <div className="max-w-5xl mx-auto w-full">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3 mb-8 flex-wrap">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: 'linear-gradient(135deg, #0D9488, #0891B2)' }}>
             <ShieldCheck className="w-5 h-5 text-white" />
@@ -58,6 +58,16 @@ export default async function PlatformAdminPage() {
             style={{ background: 'rgba(255,255,255,0.06)', color: '#94A3B8', border: '1px solid rgba(255,255,255,0.1)' }}>
             <Database className="w-3.5 h-3.5" /> Seeds
           </Link>
+          {/* There was no way out of this panel short of clearing cookies by
+              hand, so a shared or borrowed machine kept signing straight back
+              in to the screen that sees every hospital. */}
+          <form action={signOutPlatformAdmin} className="shrink-0">
+            <button type="submit"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+              style={{ background: 'rgba(248,113,113,0.1)', color: '#F87171', border: '1px solid rgba(248,113,113,0.25)', cursor: 'pointer' }}>
+              <LogOut className="w-3.5 h-3.5" /> Sign out
+            </button>
+          </form>
         </div>
 
         {/* MRR + stats bar */}

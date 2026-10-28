@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { ShieldCheck, Database } from 'lucide-react'
+import { ShieldCheck, Database, LogOut } from 'lucide-react'
 import { listDrugMaster, listLabMaster, listRadiologyMaster } from '@/app/actions/seeds'
+import { signOutPlatformAdmin } from '@/app/actions/platform'
 import SeedsClient from './_components/SeedsClient'
 
 export const metadata = { title: 'Seeds — Platform Admin' }
@@ -40,7 +41,7 @@ export default async function SeedsPage() {
       style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F4C75 100%)' }}>
       <div className="max-w-5xl mx-auto w-full">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center"
             style={{ background: 'linear-gradient(135deg, #0D9488, #0891B2)' }}>
             <Database className="w-5 h-5 text-white" />
@@ -50,10 +51,17 @@ export default async function SeedsPage() {
             <p className="text-xs" style={{ color: '#64748B' }}>Global catalogs shared across all tenants</p>
           </div>
           <a href="/platform-admin"
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs shrink-0"
             style={{ background: 'rgba(255,255,255,0.06)', color: '#94A3B8', border: '1px solid rgba(255,255,255,0.1)' }}>
             <ShieldCheck className="w-3.5 h-3.5" /> Admin
           </a>
+          <form action={signOutPlatformAdmin} className="shrink-0">
+            <button type="submit"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+              style={{ background: 'rgba(248,113,113,0.1)', color: '#F87171', border: '1px solid rgba(248,113,113,0.25)', cursor: 'pointer' }}>
+              <LogOut className="w-3.5 h-3.5" /> Sign out
+            </button>
+          </form>
         </div>
 
         {/* Counts */}

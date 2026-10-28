@@ -1,9 +1,27 @@
 'use server'
 
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { razorpay, PLANS } from '@/lib/razorpay'
 import type { TenantWithStats } from '@/lib/types'
+
+/**
+ * Leave the platform admin panel, properly.
+ *
+ * Done on the server rather than with the browser client, because the session
+ * lives in cookies that @supabase/ssr sets server-side: signing out in the
+ * page would leave them to be cleared on a round trip that a closed tab never
+ * makes, and the next visit walks straight back in. `scope: 'global'` also
+ * revokes the refresh token at Supabase, so a copy of the cookie taken
+ * elsewhere cannot mint a new session either — which matters more here than
+ * anywhere else in the product, since this panel sees every hospital.
+ */
+export async function signOutPlatformAdmin(): Promise<void> {
+  const supabase = await createClient()
+  await supabase.auth.signOut({ scope: 'global' })
+  redirect('/login')
+}
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 

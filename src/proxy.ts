@@ -200,9 +200,48 @@ export async function proxy(request: NextRequest) {
       // never renders under a tenant's context. (Access is still gated by the
       // platform_admins table on the page itself.)
       if (pathname === '/platform-admin' || pathname.startsWith('/platform-admin/')) {
-        const url = request.nextUrl.clone()
-        url.hostname = isLocalhostSubdomain ? 'localhost' : rootDomain
-        return NextResponse.redirect(url)
+        // The Location is written out in full, by hand.
+        //
+        // NextResponse.redirect drops the origin when it matches the one Next
+        // believes it is serving, and in development that is always
+        // localhost:3000 whatever the Host header says. So redirecting a
+        // demo.localhost hit to localhost came back as a bare
+        // "location: /platform-admin", which the browser resolved against
+        // demo.localhost again: ERR_TOO_MANY_REDIRECTS, and no way to reach
+        // the panel locally from a tenant tab. Production was unaffected —
+        // there the two hosts differ to Next as well — but the fix belongs in
+        // both paths rather than only the one that happened to work.
+        const port = /:(\d+)$/.exec(hostname)?.[1]
+        const apex = isLocalhostSubdomain ? 'localhost' : rootDomain
+        const proto = request.headers.get('x-forwarded-proto')
+          ?? (isLocalhostSubdomain ? 'http' : 'https')
+        const to = `${proto}://${apex}${port ? `:${port}` : ''}${pathname}${request.nextUrl.search}`
+
+        // In development the redirect cannot be made to stick. Next collapses
+        // a Location it considers same-origin down to a bare path, and in dev
+        // it believes it is always serving localhost:3000 whatever the Host
+        // header says — so "http://localhost:3000/platform-admin" went out as
+        // "/platform-admin", which the browser resolved against
+        // demo.localhost again: ERR_TOO_MANY_REDIRECTS. Deployed, the two
+        // hosts differ to Next as well and the redirect is sent in full, which
+        // is why this only ever bit someone running the app locally.
+        //
+        // So on a .localhost subdomain we hand back the address instead of
+        // trying to send the browser there. One click, no loop.
+        if (isLocalhostSubdomain) {
+          return new NextResponse(
+            `<!doctype html><meta charset="utf-8"><title>Platform admin</title>` +
+            `<body style="font:15px/1.6 system-ui;margin:3rem auto;max-width:34rem;color:#0F172A">` +
+            `<h1 style="font-size:1.1rem">The platform admin panel is not served from a hospital's address.</h1>` +
+            `<p>It lives on the apex: <a href="${to}">${to}</a></p>` +
+            `<p style="color:#64748B;font-size:13px">You are seeing this page rather than being redirected ` +
+            `because Next rewrites same-origin redirects to a bare path in development, and from ` +
+            `<code>${hostname}</code> that path points back here.</p></body>`,
+            { status: 421, headers: { 'content-type': 'text/html; charset=utf-8' } },
+          )
+        }
+
+        return new NextResponse(null, { status: 307, headers: { location: to } })
       }
 
       // ── Inject tenant context headers (built before async work) ──────────

@@ -744,8 +744,16 @@ function Table({ headers, children, empty }: {
 }) {
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+      {/* w-full inside an overflow-x-auto is a contradiction: the table obeys
+          the container instead of scrolling it, so on a phone the columns
+          crushed — "tablet 600mg + 300mg" came out four lines deep in 93px.
+          A fixed floor only moves the problem, since the width still gets
+          divided among however many columns the tab has. max-content lets the
+          content decide and the container scroll; minWidth 100% keeps it
+          filling the page on a desktop, where it always fitted anyway. */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left" style={{ borderCollapse: 'collapse' }}>
+        <table className="text-left"
+          style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%' }}>
           <thead>
             <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
               {headers.map(h => (
