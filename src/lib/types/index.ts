@@ -26,6 +26,9 @@ export interface TenantProfile {
   pcpndt_reporting_person_name?: string | null
   pcpndt_reporting_person_phone?: string | null
   emergency_contact: string | null
+  // UPI collection at the counter — the hospital's own id, never Uyirly's.
+  upi_vpa?: string | null
+  upi_payee_name?: string | null
   // GST tax-invoice config
   gst_enabled?: boolean
   gst_state_code?: string | null

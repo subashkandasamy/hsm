@@ -21,7 +21,8 @@
     "audit:mobile": "tsx scripts/audit-mobile.ts",
     "verify:platform-admin": "tsx scripts/verify-platform-admin.ts",
     "verify:phrases": "tsx scripts/verify-phrases.ts",
-    "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts"
+    "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts",
+    "verify:upi": "tsx scripts/verify-upi.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

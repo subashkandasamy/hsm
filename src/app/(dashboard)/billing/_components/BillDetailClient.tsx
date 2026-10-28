@@ -22,6 +22,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useMessagingEnabled } from '@/context/MessagingContext'
 import { hasPermission } from '@/lib/rbac'
 import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
+import UpiCollectPanel from './UpiCollectPanel'
+import { showSuccess as showPaidOnDisplay } from '@/lib/counterDisplay'
 import type { Bill, BillItemSource, TenantProfile, DiscountRequestRow, CreditNote } from '@/lib/types'
 
 function fmt(n: number) {
@@ -231,6 +233,11 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
     })
     setPaying(false)
     if (!res.success) { setPayError(res.error); return }
+    // Let the patient watch their own screen confirm it. Best-effort: a display
+    // that is unplugged must never stop a payment that is already recorded.
+    if (payMethod === 'upi') {
+      void showPaidOnDisplay({ reference: payRef, billNo: bill.bill_no }).catch(() => {})
+    }
     setShowPay(false)
     setPayAmount('')
     setPayRef('')
@@ -948,11 +955,20 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               <option value="insurance">Insurance</option>
             </Select>
           </div>
+          {payMethod === 'upi' && (
+            <UpiCollectPanel
+              vpa={tenantProfile?.upi_vpa}
+              payeeName={tenantProfile?.upi_payee_name || tenantProfile?.name || 'Hospital'}
+              amount={parseFloat(payAmount) || balance}
+              billNo={bill.bill_no}
+            />
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reference (optional)</label>
             <input
               type="text"
-              placeholder="Transaction ID, cheque no…"
+              placeholder={payMethod === 'upi' ? 'UTR / UPI transaction ID' : 'Transaction ID, cheque no…'}
               value={payRef}
               onChange={(e) => setPayRef(e.target.value)}
               className="w-full px-3 py-3 rounded-xl text-sm"

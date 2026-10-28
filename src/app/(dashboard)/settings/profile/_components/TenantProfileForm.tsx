@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { upsertTenantProfile, uploadTenantLogo, setTenantCode } from '@/app/actions/tenantProfile'
 import type { TenantProfile } from '@/lib/types'
 import GlassCard from '@/components/ui/GlassCard'
+import { isValidVpa } from '@/lib/upi'
 
 // Client-side mirror of SQL tenant_doc_prefix() / server computePrefix().
 function previewPrefix(code: string, slug: string): string {
@@ -76,6 +77,7 @@ function initValues(profile: TenantProfile | null): FormValues {
     'cin_no', 'gst_no', 'blood_bank_license',
     'pcpndt_reg_no', 'pcpndt_registered_name', 'pcpndt_registered_address',
     'pcpndt_valid_upto', 'pcpndt_reporting_person_name', 'pcpndt_reporting_person_phone',
+    'upi_vpa', 'upi_payee_name',
   ]
   const out: FormValues = {}
   for (const k of keys) out[k] = (profile?.[k] as string | null) ?? ''
@@ -115,6 +117,10 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
   const [pharmacyRate, setPharmacyRate] = useState<string>(
     initialProfile?.pharmacy_default_gst_rate != null ? String(initialProfile.pharmacy_default_gst_rate) : '12'
   )
+
+  // Shown as you type, and mirrors the CHECK in migration 0233 so the form and
+  // the database cannot disagree about what a UPI id looks like.
+  const vpaBad = (values.upi_vpa ?? '').trim() !== '' && !isValidVpa(values.upi_vpa)
 
   function set(key: string, val: string) {
     setValues((prev) => ({ ...prev, [key]: val }))
@@ -273,6 +279,59 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
           </div>
         </GlassCard>
       ))}
+
+      {/* UPI collection — kept out of the plain field map so the warning about a
+          mistyped id sits next to the box it is about. */}
+      <GlassCard className="p-6">
+        <p className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>UPI Collection</p>
+        <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+          Your hospital&rsquo;s own UPI id. Bills can then show a payment QR with the amount already filled in, on the
+          counter display or on screen. Patients pay straight into this account &mdash; the money never passes through
+          Uyirly.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Hospital UPI ID</label>
+            <input type="text" value={values.upi_vpa ?? ''} placeholder="hospital@okicici"
+              onChange={(e) => set('upi_vpa', e.target.value.trim())}
+              className="w-full px-3 py-2.5 rounded-xl text-sm"
+              style={{
+                background: 'rgba(255,255,255,0.8)', color: '#0F172A', outline: 'none',
+                border: `1px solid ${vpaBad ? '#FCA5A5' : '#E2E8F0'}`,
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = vpaBad ? '#FCA5A5' : '#E2E8F0' }} />
+            <p className="text-xs mt-1" style={{ color: vpaBad ? '#DC2626' : '#94A3B8' }}>
+              {vpaBad
+                ? 'That does not look like a UPI id — it should read something like hospital@okicici.'
+                : 'Exactly as it appears in your UPI app.'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Name shown to patients</label>
+            <input type="text" value={values.upi_payee_name ?? ''} placeholder={values.name || 'Hospital name'}
+              onChange={(e) => set('upi_payee_name', e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl text-sm"
+              style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
+            <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
+              What the patient sees before confirming. Blank uses the hospital name.
+            </p>
+          </div>
+        </div>
+
+        {/* A wrong id pays a stranger and there is no way to recall it, so this
+            is said plainly rather than left for someone to discover. */}
+        <div className="text-xs mt-4 px-3 py-2.5 rounded-xl" style={{
+          background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', lineHeight: 1.5,
+        }}>
+          <strong>Check this before you use it.</strong> Every patient who scans a bill pays this exact id. If it is
+          wrong, the money goes to whoever owns it and cannot be recalled. Send ₹1 to it yourself once and confirm it
+          lands before taking a real payment.
+        </div>
+      </GlassCard>
 
       {/* GST / Tax invoice */}
       <GlassCard className="p-6">
