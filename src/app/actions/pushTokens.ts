@@ -33,14 +33,3 @@ export async function upsertPushToken(
  * Fetch all push tokens for a given profile.
  * Used server-side only (e.g. by the check-in push trigger).
  */
-export async function getTokensForProfile(
-  profileId: string
-): Promise<Array<{ push_token: string; platform: 'ios' | 'android' }>> {
-  const { createServiceClient } = await import('@/lib/supabase/service')
-  const service = createServiceClient()
-  const { data } = await service
-    .from('device_push_tokens')
-    .select('push_token, platform')
-    .eq('profile_id', profileId)
-  return (data ?? []) as Array<{ push_token: string; platform: 'ios' | 'android' }>
-}

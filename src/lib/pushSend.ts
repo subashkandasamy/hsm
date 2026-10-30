@@ -50,3 +50,27 @@ export async function sendPushNotification(
     console.error(`[Push] FCM error ${res.status}: ${text}`)
   }
 }
+
+/**
+ * The device tokens registered for one profile.
+ *
+ * This lives here, and not in app/actions, on purpose. It was exported from a
+ * 'use server' file, where every export is a callable endpoint — so anyone
+ * could POST a profile id and read that person's device tokens, with no
+ * session, across tenants. device_push_tokens has a correct policy
+ * (profile_id = auth.uid()); the service client simply switched it off.
+ *
+ * There is no caller that needs it from a browser. Moving it out of the action
+ * file removes the endpoint rather than guarding it.
+ */
+export async function getTokensForProfile(
+  profileId: string,
+): Promise<Array<{ push_token: string; platform: 'ios' | 'android' }>> {
+  const { createServiceClient } = await import('@/lib/supabase/service')
+  const service = createServiceClient()
+  const { data } = await service
+    .from('device_push_tokens')
+    .select('push_token, platform')
+    .eq('profile_id', profileId)
+  return (data ?? []) as Array<{ push_token: string; platform: 'ios' | 'android' }>
+}

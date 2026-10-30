@@ -268,8 +268,7 @@ export async function checkIn(id: string): Promise<SimpleResult> {
   if (appt?.doctor_id) {
     const patientName = (appt.patient as unknown as { full_name: string } | null)?.full_name ?? 'A patient'
     Promise.resolve().then(async () => {
-      const { getTokensForProfile } = await import('@/app/actions/pushTokens')
-      const { sendPushNotification } = await import('@/lib/pushSend')
+      const { getTokensForProfile, sendPushNotification } = await import('@/lib/pushSend')
       const tokens = await getTokensForProfile(appt.doctor_id)
       await Promise.all(
         tokens.map((t) =>
