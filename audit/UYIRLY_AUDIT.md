@@ -1579,3 +1579,131 @@ appointments carry on — an inconsistency worth making deliberate either way.
 | Connector cross-tenant write | **PASS** — explicitly guarded |
 | Payment gate at release | **PASS** |
 | Four-eyes (entry ≠ verification) | **BY DESIGN ABSENT** — documented in `rbac.ts` as a deliberate choice for single-technician labs |
+
+---
+
+# MODULE 6 — PHARMACY / INVENTORY / BLOOD BANK — **COMPLETE**
+
+Read: `pharmacy.ts` (1,515), `inventory.ts` (384), `blood.ts` issue path, and from
+the live catalog the bodies of `dispense_drug` and `issue_blood_unit`.
+
+## PASS — stock and clinical safety are enforced in the database
+
+**`dispense_drug`** cannot oversell or dispense an expired batch, and does both
+in one atomic statement:
+
+```sql
+UPDATE drug_batches SET qty_available = qty_available - p_qty
+WHERE id = p_batch_id
+  AND qty_available >= p_qty      -- stock cannot go negative
+  AND expiry > CURRENT_DATE;      -- an expired batch cannot be dispensed
+IF NOT FOUND THEN RETURN 'Insufficient stock or batch expired'
+```
+
+Two pharmacists dispensing the last strip: one wins, the other is told. Expiry is
+a database rule, not a UI check.
+
+**`issue_blood_unit`** is the most safety-conscious function in the product.
+Before a unit can be issued it requires, in order: the unit exists;
+`screening_status = 'passed'` (TTI); the component matches the request; and **a
+compatible cross-match recorded for that exact request *and* that exact unit**,
+taking the most recent. Then it claims the unit atomically —
+`status IN ('available','reserved') AND expiry >= CURRENT_DATE AND
+screening_status = 'passed'` — **re-checking screening inside the claim**. These
+are the checks that prevent a transfusion reaction.
+
+**FEFO is correct** — `inventory.ts:40`, `.order('expiry', { ascending: true,
+nullsFirst: false })`: oldest expiry first, undated batches last.
+
+## 🔴 F-45 — HIGH — issuing a blood unit fails every time, and always has
+
+`issue_blood_unit` ends with:
+
+```sql
+INSERT INTO blood_issues (id, request_id, blood_unit_id, patient_id,
+                          price_snapshot, billing_status, issued_by)
+VALUES (…);
+```
+
+**`tenant_id` is not in the column list.** In the live catalog
+`blood_issues.tenant_id` is **`NOT NULL` with no default**. So every call raises
+`23502 not-null violation` at the last statement.
+
+The function body comes from
+`supabase/migrations/0084_bloodbank_phase3_crossmatch.sql:90`, which rewrote it
+when the cross-match requirement was added.
+
+**Confirmed against production: `blood_issues` contains 0 rows.** A blood unit
+has never been successfully issued through Uyirly.
+
+`blood.ts:678` is the only creation path — every other reference is a read or a
+`billing_status` update — so there is no second route that works.
+
+One mercy: the `blood_units` claim happens before the failing INSERT, but a
+plpgsql function with no EXCEPTION block is one transaction, so the whole thing
+rolls back. **No unit is left stranded as 'issued'** — it simply never works.
+
+For a hospital that has configured a blood bank, the final step of the workflow
+is dead. **Effort: S** — add `tenant_id` to the insert.
+
+## F-46 — HIGH — a pattern: `SECURITY DEFINER` RPCs that take ids and never check the tenant
+
+This is the same defect in five places, and worth treating as one:
+
+| Function | Locates by | Tenant check |
+|---|---|---|
+| `claim_bed_and_admit` | `p_bed_id` | **none** (F-34) |
+| `transfer_bed` | three bed/admission ids | **none** (F-03) |
+| `dispense_drug` | `p_batch_id` + 4 more ids | **none** |
+| `issue_blood_unit` | `p_blood_unit_id`, `p_request_id` | **none** |
+| `get_next_uhid_for` | `p_tenant_id` from the caller | **none** (F-03) |
+
+Each is `SECURITY DEFINER`, so RLS is off, and each acts on a row found by id
+alone. With a foreign id you can: occupy another hospital's bed, move their
+patient between beds, **decrement their pharmacy stock**, consume a blood unit
+from their fridge, and burn their patient numbering.
+
+Each also writes a child row carrying **your** `current_tenant_id()` while
+pointing at **their** parent — the mixed-tenant row F-26 says no constraint would
+catch.
+
+**The contrast is instructive.** `save_lab_analyte_results` — reviewed in Module 5
+— does exactly this check and explains why:
+
+> A connector belonging to one hospital may not write onto another's order,
+> however it arrived at the id.
+
+The pattern is understood in this codebase. It has been applied in one place and
+not in five. Since `0238` none are reachable by `anon`, so this needs an
+authenticated user of another tenant holding a foreign UUID.
+
+**Fix is uniform:** add `AND tenant_id = current_tenant_id()` to each locating
+statement, and refuse when the parent's tenant and the caller's differ.
+**Effort: M across all five.**
+
+## F-47 — LOW — FEFO governs inventory consumption, not pharmacy dispensing
+
+`consumeFEFO` (`inventory.ts:31-40`) consumes oldest-expiry-first and is used for
+stock issue and negative adjustments. But `dispense_drug` takes `p_batch_id` from
+the **caller** — the database enforces *not expired* and *in stock*, but not
+*oldest first*. Whichever batch the dispensing screen chooses is the one
+consumed.
+
+So FEFO at the pharmacy counter is a UI property, not an enforced one. Worth
+confirming the dispense screen orders by expiry; nothing below it will.
+
+## Verdicts — pharmacy / inventory / blood
+
+| Area | Verdict |
+|---|---|
+| Stock cannot go negative | **PASS** — atomic |
+| Expired batch cannot be dispensed | **PASS** — enforced in SQL |
+| Concurrent dispense of last unit | **PASS** |
+| FEFO on inventory consumption | **PASS** |
+| FEFO on pharmacy dispensing | **PARTIAL** — F-47, caller chooses |
+| Blood: TTI screening before issue | **PASS** |
+| Blood: component match | **PASS** |
+| Blood: compatible cross-match required | **PASS** |
+| Blood: atomic unit claim | **PASS** |
+| **Blood: issue completes** | **FAIL** — F-45, broken since `0084` |
+| Tenant scoping in stock/bed/blood RPCs | **FAIL** — F-46 |
