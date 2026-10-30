@@ -1279,3 +1279,146 @@ and `updateWardDailyRate`.
 | **GST cosmetic / elective 18%** | **FAIL** — not implemented |
 | GST rounding | **PARTIAL** — F-29, CGST+SGST can exceed tax by a paisa |
 | Plan gating server-side | **PASS** for IPD billing |
+
+---
+
+# MODULE 4 — IPD / ADMISSIONS — **COMPLETE**
+
+Files read: `ipd.ts` (598), `lib/cron/dailyBilling.ts` (145), `lib/ipdDailyBilling.ts`,
+`lib/ipdBilling.ts`, `admissionBilling.ts` (already in Module 3), plus the
+`claim_bed_and_admit` and `transfer_bed` function bodies from the live catalog.
+
+## PASS — the parts that are right
+
+**Bed claim: PASS.** `claim_bed_and_admit` uses a conditional update —
+`UPDATE beds SET status='occupied' WHERE id=… AND status='available' RETURNING ward_id`
+— so two admissions racing for one bed cannot both win. Same compare-and-set
+discipline as the billing flip.
+
+**Discharge gate: PASS, and thoughtfully.** `dischargePatient:474-500` runs
+`catchUpDailyCharges` **before** the balance check, so nobody is discharged with
+unbilled days, and the gate is **insurance-aware**: an approved-but-unsettled
+claim covers its share and only the patient's residual is demanded.
+
+**The daily-billing cron: PASS.** `lib/cron/dailyBilling.ts` filters
+`.eq('tenant_id', …)` on every query — the service-role discipline F-23 warns
+about, correctly applied. It enforces read-only **and** plan server-side in a
+headless path (`:85-87`), resolves a per-tenant system actor for `created_by`
+(`:103-111`, matching the `current_tenant_id() is NULL` trap), records blocked
+days so a later catch-up never back-bills them (`:94-97`), and wraps each tenant
+in its own try/catch.
+
+**Daily charges are not double-billed.** `autoIpdBill` finds an existing bill by
+`(tenant, admission, billing_date, bill_source)`, and `catchUpDailyCharges:344-347`
+builds a `handled` set of days that already carry a `bed` line, so a day already
+charged is skipped. *My concern about the cron and the ward board both billing
+the same day was wrong and is withdrawn.*
+
+**Temp-ward slot race: safe.** `admitPatient:78-81` names a slot `Slot-{count+1}`
+after a count — racy — but `beds_ward_id_bed_no_key` is UNIQUE on
+`(ward_id, bed_no)`, so the loser fails on the constraint rather than creating a
+duplicate. Safe, though the error surfaced would be a raw constraint message.
+
+## F-34 — HIGH — a bed can be claimed in another hospital
+
+`claim_bed_and_admit` (live catalog), `SECURITY DEFINER` so RLS is off:
+
+```sql
+UPDATE beds SET status = 'occupied'
+WHERE id = p_bed_id AND status = 'available'      -- no tenant_id filter
+RETURNING ward_id INTO v_ward_id;
+…
+INSERT INTO admissions (… tenant_id …) VALUES (p_admission_id, current_tenant_id(), …)
+```
+
+The bed is located **by id alone**; the admission is then written with the
+**caller's** tenant. Passing a bed UUID from another hospital:
+
+- marks **their** bed occupied — removing capacity they can see no reason for
+- creates an admission in **your** tenant holding **their** `bed_id` and
+  `ward_id` — precisely the mixed-tenant row F-26 says nothing would catch
+
+`transfer_bed` has the same shape and was already noted in F-03: no tenant
+filter on either bed, and `admissions` updated by id alone.
+
+Reachable by any authenticated user with `ipd:write` who holds a foreign bed
+UUID. Since `0238` it is no longer reachable by `anon`.
+
+Fix: filter both statements on `tenant_id = current_tenant_id()`, and reject
+when the admission's tenant and the bed's tenant differ. **Effort: S.**
+
+## F-35 — MEDIUM — a patient can be admitted twice
+
+`admitPatient:47-54` counts active admissions in TypeScript and then admits:
+
+```ts
+const { count: activeCount } = await supabase.from('admissions')
+  .select('id', { count:'exact', head:true })
+  .eq('patient_id', patient_id).eq('status','admitted')
+if ((activeCount ?? 0) > 0) return { success:false, … }
+```
+
+The check is not inside `claim_bed_and_admit`, and the RPC does not repeat it.
+Two concurrent admissions of the same patient to **different** beds both read
+zero and both succeed — each claiming its own bed, so the bed-level
+compare-and-set does not help.
+
+`admissions` has unique indexes on `(id)` and `(tenant_id, ip_no)` only. A
+partial unique index — `ON admissions (patient_id) WHERE status = 'admitted'` —
+would make this impossible. **Effort: S.**
+
+## F-36 — LOW — `autoIpdBill` promises an idempotency it does not provide
+
+`lib/ipdDailyBilling.ts:38-39` states the function "dedups on
+(tenant, admission, date, bill_source) + ref_id, so it is safe to run" more than
+once. For a line with `ref_id: null` that is **false** —
+`lib/ipdBilling.ts:108`:
+
+```ts
+const newItems = lineItems.filter((i) => !i.ref_id || !alreadyBilledRefs.has(i.ref_id))
+```
+
+`!i.ref_id` makes a null-ref line **always** count as new. Every daily charge is
+null-ref: room rent (`ipdDailyBilling.ts:93`), ICU monitoring (`:119`, `:135`),
+ventilator (`:136`).
+
+No harm today — every caller guards. The daily path skips days already carrying
+a `bed` line; the pharmacy and lab callers pass real `ref_id`s
+(`ipdTreatment.ts:613`, `:734`). **The hazard is the comment**: it tells the next
+developer the function is safe to call twice, and for the daily charges it is
+not. Either make it true (a deterministic ref_id per admission+day+charge) or
+correct the comment. **Effort: S.**
+
+## F-37 — LOW / LONGEVITY — the cron truncates silently and cannot scale sideways
+
+- `dailyBilling.ts:123` — `.limit(1000)` on active admissions per tenant. Beyond
+  that, charges are **silently** not generated: no error, no counter, nothing in
+  `DailyBillingRunResult`. Absurd headroom for a 15-bed hospital, but it is a
+  silent revenue stop rather than a loud failure.
+- `:61-63` — all tenants loaded unpaginated, then processed **sequentially**,
+  several queries each, under `maxDuration = 300` on the route. At roughly half a
+  second per tenant that is a few hundred tenants before the run is cut off
+  mid-loop. The next day's catch-up repairs it, so no money is lost — but the
+  run reports success for a partial pass.
+
+## F-38 — LOW — two copies of the read-only rule, described as mirrors, deliberately differing
+
+`dailyBilling.ts:28-33` calls itself a "mirror of proxy.computeIsReadOnly". They
+are not mirrors: for `status === 'suspended'`, the proxy returns **false** (it is
+hard-blocked elsewhere) and the cron returns **true** (skip billing). Both are
+correct for their own purpose, but the comment invites someone to sync them, and
+doing so would either bill suspended hospitals or stop billing live ones.
+
+## Verdicts — IPD
+
+| Area | Verdict |
+|---|---|
+| Bed allocation race | **PASS** — compare-and-set |
+| Bed allocation tenant scoping | **FAIL** — F-34 |
+| Duplicate admission | **FAIL** — F-35 |
+| Discharge balance gate | **PASS** — insurance-aware, catch-up first |
+| Daily charge double-billing | **PASS** — guarded at day selection |
+| `autoIpdBill` documented contract | **PARTIAL** — F-36 |
+| Headless plan + read-only enforcement | **PASS** |
+| Cron scale behaviour | **PARTIAL** — F-37 |
+| Clinical admission separate from cash | **PASS** — admission succeeds without payment; cash is gated at discharge |
