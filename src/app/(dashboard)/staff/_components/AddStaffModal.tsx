@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { createStaff } from '@/app/actions/hr'
 import type { Role } from '@/lib/types'
+import { useAuth } from '@/context/AuthContext'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
 
 const ROLES: { value: Role; label: string }[] = [
@@ -17,6 +18,7 @@ const ROLES: { value: Role; label: string }[] = [
   { value: 'lab_tech',     label: 'Lab Technician' },
   { value: 'pharmacist',   label: 'Pharmacist' },
   { value: 'accountant',   label: 'Accountant' },
+  { value: 'hr',           label: 'HR / Manager' },
   { value: 'admin',        label: 'Admin' },
 ]
 
@@ -44,6 +46,12 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  // Only an administrator can create another administrator — an HR manager who
+  // could would simply be an administrator. Enforced in the action and in RLS
+  // too; this just keeps the option out of sight.
+  const { profile } = useAuth()
+  const assignableRoles = profile?.role === 'admin' ? ROLES : ROLES.filter((r) => r.value !== 'admin')
+
   const [createdPassword, setCreatedPassword] = useState<string | null>(null)
   // Whether the credentials email actually went, and where. An admin told
   // "emailed" when nothing was sent will not think to hand the password over.
@@ -193,7 +201,7 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
           <FormField label="Role" required>
             <Select value={form.role} onChange={(e) => set('role', e.target.value as Role)}>
               <option value="">Select role…</option>
-              {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {assignableRoles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </Select>
           </FormField>
         </div>

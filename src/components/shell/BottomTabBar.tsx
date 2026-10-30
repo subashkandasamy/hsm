@@ -47,6 +47,8 @@ const ROLE_PRIORITY: Record<Role, string[]> = {
   lab_tech:     ['/lab', '/radiology', '/blood', '/patients', '/dashboard'],
   pharmacist:   ['/pharmacy', '/patients', '/dashboard', '/lab', '/radiology'],
   accountant:   ['/billing', '/insurance', '/dashboard', '/patients'],
+  // No clinical destination here by design — an HR manager has none.
+  hr:           ['/staff', '/scheduling', '/dashboard'],
 }
 
 interface BottomTabBarProps { role: Role; enabledModules?: string[] }

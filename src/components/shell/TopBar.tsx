@@ -17,6 +17,7 @@ const ROLE_LABELS: Record<Role, string> = {
   lab_tech:     'Lab Technician',
   pharmacist:   'Pharmacist',
   accountant:   'Accountant',
+  hr:           'HR / Manager',
 }
 
 interface TopBarProps {

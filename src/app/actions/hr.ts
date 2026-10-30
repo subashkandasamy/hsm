@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { sendStaffCredentialsEmail } from '@/lib/email'
+import type { Role } from '@/lib/types'
 import {
   CreateStaffSchema, UpdateStaffSchema,
   MarkAttendanceSchema,
@@ -28,6 +29,35 @@ function generateTempPassword(): string {
   let pw = ''
   for (let i = 0; i < 12; i++) pw += chars[bytes[i] % chars.length]
   return pw
+}
+
+/**
+ * An HR manager may run the staff list, but never an administrator's account.
+ *
+ * The database enforces this too (migration 0236), but two of the calls below —
+ * updateStaffEmail and resendStaffCredentials — run under the service role and
+ * bypass row-level security completely. Without this guard an HR user could
+ * reset the owner's password, or move their login to an address they control,
+ * and own the hospital. So the check lives here, where those calls are.
+ */
+async function assertMayManage(
+  actorRole: Role, targetProfileId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (actorRole === 'admin') return { ok: true }
+  const service = createServiceClient()
+  const { data } = await service.from('profiles').select('role').eq('id', targetProfileId).maybeSingle()
+  if ((data?.role as string | undefined) === 'admin') {
+    return { ok: false, error: 'Only an administrator can manage another administrator’s account.' }
+  }
+  return { ok: true }
+}
+
+/** Only an administrator may hand out the administrator role. */
+function assertMayAssignRole(actorRole: Role, newRole: unknown): string | null {
+  if (newRole === 'admin' && actorRole !== 'admin') {
+    return 'Only an administrator can create or promote another administrator.'
+  }
+  return null
 }
 
 /** Builds the tenant's login URL from the request's subdomain headers. */
@@ -75,6 +105,9 @@ export async function createStaff(
 
   const parsed = CreateStaffSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+
+  const roleErr = assertMayAssignRole(actor.role, parsed.data.role)
+  if (roleErr) return { success: false, error: roleErr }
 
   // Use service-role client so we can call auth.admin APIs
   const service = createServiceClient()
@@ -150,6 +183,11 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   const parsed = UpdateStaffSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
+  const roleErr = assertMayAssignRole(actor.role, parsed.data.role)
+  if (roleErr) return { success: false, error: roleErr }
+
   const supabase = await createClient()
 
   const profileData: Record<string, unknown> = {}
@@ -186,6 +224,8 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
 export async function getStaffEmail(profileId: string): Promise<string | null> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return null
   const service = createServiceClient()
   const { data } = await service.auth.admin.getUserById(profileId)
   return data?.user?.email ?? null
@@ -195,6 +235,8 @@ export async function updateStaffEmail(profileId: string, newEmail: string): Pro
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
   const trimmed = newEmail.trim().toLowerCase()
   if (!trimmed) return { success: false, error: 'Email cannot be empty' }
   const service = createServiceClient()
@@ -209,6 +251,8 @@ export async function deactivateStaff(profileId: string): Promise<SimpleResult> 
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
   if (profileId === actor.id) return { success: false, error: "You can't deactivate your own account." }
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
 
   const supabase = await createClient()
   const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', profileId)
@@ -228,6 +272,8 @@ export async function reactivateStaff(profileId: string): Promise<SimpleResult> 
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
 
   const supabase = await createClient()
   const { error } = await supabase.from('profiles').update({ is_active: true }).eq('id', profileId)
@@ -251,6 +297,9 @@ export async function resendStaffCredentials(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
 
   const service = createServiceClient()
   const { data: userData } = await service.auth.admin.getUserById(profileId)

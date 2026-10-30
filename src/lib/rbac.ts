@@ -105,6 +105,17 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'leave:request',
     'dashboard:read',
   ],
+  // A non-clinical manager: attendance, leave, the duty roster, and the
+  // hospital's shape through aggregate figures. No clinical screen at all —
+  // "read-only everywhere" would hand them every diagnosis in the building,
+  // plus the MTP and PC&PNDT registers, whose confidentiality is statutory.
+  // The dashboard is safe here because it reads counts, never a patient name.
+  hr: [
+    'hr:read', 'hr:manage', 'hr:attendance',
+    'scheduling:read', 'scheduling:manage',
+    'leave:request', 'leave:approve',
+    'dashboard:read',
+  ],
   accountant: [
     'billing:read', 'billing:write', 'billing:manage',
     'billing:advance',

@@ -75,6 +75,7 @@ export type Role =
   | 'lab_tech'
   | 'pharmacist'
   | 'accountant'
+  | 'hr'
 
 export interface Profile {
   id: string

@@ -32,11 +32,12 @@ const ROLE_LABELS: Record<Role, string> = {
   nurse:        'Nurse',
   receptionist: 'Receptionist',
   lab_tech:     'Lab Tech',
+  hr:           'HR / Manager',
   pharmacist:   'Pharmacist',
   accountant:   'Accountant',
 }
 
-const ROLES: Role[] = ['doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacist', 'accountant', 'admin']
+const ROLES: Role[] = ['doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacist', 'accountant', 'hr', 'admin']
 
 interface Props {
   initialStaff: StaffMember[]
@@ -51,6 +52,8 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
   const role = profile?.role
   const canManage    = !!role && hasPermission(role, 'hr:manage')
   const canAttendance = !!role && hasPermission(role, 'hr:attendance')
+  // Same rule as Add Staff: nobody but an administrator hands out that role.
+  const assignableRoles = role === 'admin' ? ROLES : ROLES.filter((r) => r !== 'admin')
 
   const [tab, setTab]       = useState<Tab>('directory')
   const [staff, setStaff]   = useState(initialStaff)
@@ -556,6 +559,9 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
 // ─── Inline Edit Modal ─────────────────────────────────────────────────────────
 
 function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; onClose: () => void; onSuccess: () => void }) {
+  // Same rule as Add Staff: only an administrator hands out that role.
+  const { profile: actor } = useAuth()
+  const assignableRoles = actor?.role === 'admin' ? ROLES : ROLES.filter((r) => r !== 'admin')
   const [form, setForm] = useState({
     full_name:                member.full_name,
     role:                     member.role as Role,
@@ -654,7 +660,7 @@ function EditStaffModal({ member, onClose, onSuccess }: { member: StaffMember; o
           </FormField>
           <FormField label="Role" required>
             <Select value={form.role} onChange={(e) => set('role', e.target.value as Role)}>
-              {(['doctor','nurse','receptionist','lab_tech','pharmacist','accountant','admin'] as Role[]).map((r) => (
+              {assignableRoles.map((r) => (
                 <option key={r} value={r}>{r.replace('_', ' ')}</option>
               ))}
             </Select>
