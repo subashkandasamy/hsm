@@ -1707,3 +1707,113 @@ confirming the dispense screen orders by expiry; nothing below it will.
 | Blood: atomic unit claim | **PASS** |
 | **Blood: issue completes** | **FAIL** — F-45, broken since `0084` |
 | Tenant scoping in stock/bed/blood RPCs | **FAIL** — F-46 |
+
+---
+
+# MODULE 7 — OPD / APPOINTMENTS — **COMPLETE**
+
+Read: `opd.ts` (386), `appointments.ts` (461), `lib/clinicalTemplates.ts`, plus
+production counts to settle two questions the code alone could not.
+
+## The brief's named rules — verified
+
+| Rule | Verdict | Evidence |
+|---|---|---|
+| Check-in is payment-free | **PASS** | `appointments.ts:261` — *"Check-in is NEVER gated on payment — the doctor's queue must stay accurate"* |
+| Only consultation start is payment-gated | **PARTIAL** — see F-48 | `opd.ts:120` |
+| Financial and nursing panels excluded from the clinical notes workspace | **PASS** | `ConsultationWorkspace.tsx` imports neither; both appear only under `ipd/[admissionId]/` |
+| Specialty templates are department-based, not tenant-wide | **PASS** | `clinicalTemplates.ts:20-34` resolves via the appointment's department, then the doctor's |
+
+## PASS — other things done well
+
+`startVisit` is idempotent, **blocks a patient who is admitted to IPD or active
+in Emergency**, and when checking payment it fetches **all** bills including
+cancelled ones — *"so a cancelled bill without payment doesn't silently bypass
+the gate"* (`:89-91`). Cashless cover is keyed off `eligibility_status`, the
+pre-authorisation decision, not the final claim status, with the reasoning
+stated: the pre-auth is what unlocks treatment; the claim only settles money
+later.
+
+`bookAppointment` calls `ensure_appointment_partition` **before** inserting
+(`:86`). That is why `appointments` carries 14 months of runway and is the one
+partitioned table immune to F-39's month-boundary window.
+
+`reopenVisit` leaves `billing_status` untouched, so reopening a billed visit
+cannot put it back on the unbilled list.
+
+## F-48 — MEDIUM — the consultation payment gate cannot fire in the common path
+
+`opd.ts:120`:
+
+```ts
+if (hasBill && !hasPaid && !cashlessCovered) { return … 'collect payment …' }
+```
+
+The gate fires **only when a bill already exists** for the appointment. Nothing
+creates one in the ordinary flow: `bookAppointment` inserts an appointment and
+no bill, and `GenerateBillSchema` (`schemas/index.ts:549-550`) accepts
+`visit_id` and `admission_id` but **no `appointment_id`** — so the billing screen
+cannot produce one either.
+
+Production bears it out: **443 bills, of which 13 carry an `appointment_id`** —
+about 3%. For the other 97% of consultations `hasBill` is false, the gate passes,
+and payment is collected **after** the consultation, from the unbilled-charges
+list once the visit closes.
+
+So the rule as written in the brief — *only consultation start is payment-gated* —
+is implemented but inert for the normal path. Either the appointment-stage bill
+should be created at booking (making the gate real), or the comment and the rule
+should be restated to match what the product does. **Effort: M to make it real.**
+
+## F-49 — LOW — two comments describe a flow that does not exist
+
+- `opd.ts:270` — *"billing happens at booking time (not at close)"*
+- `opd.ts:141` — *"the consultation bill created at booking time"*
+
+No bill is created at booking. Both comments describe the intended design rather
+than the shipped one, and they are the reason F-48 is easy to miss.
+
+## F-50 — LOW / LATENT — nothing marks a visit billed when its appointment bill is paid
+
+`startVisit:142` backfills `visit_id` onto an appointment-stage bill but never
+sets `visits.billing_status = 'billed'`. The only place that happens is
+`generateBill`'s `flipToBilled` (`billing.ts:501`).
+
+So a consultation paid through an appointment-stage bill leaves its visit
+`unbilled`, and `getUnbilledCharges:52-59` — which filters only on
+`status='closed' AND billing_status='unbilled' AND consultation_fee > 0`, with
+no check for an existing paid bill — would offer that same consultation fee for
+billing a second time.
+
+**Checked against production: zero visits are currently in that state.** The
+path is structural, not live — the two billing routes have not yet overlapped on
+a real visit. Worth closing before they do, since the appointment-stage route
+does exist (4 such bills carry no `visit_id` today). **Effort: S.**
+
+## F-51 — LOW — a write gated on a read permission
+
+`startVisit:58` requires `opd:read`, yet it inserts a `visits` row. It works
+today only because of who happens to hold what: `nurse` has `opd:read` (and so
+may start a visit, plausibly intended), while `receptionist` has neither and so
+cannot. The guard expresses the intent by accident rather than by name.
+
+## F-52 — LOW — the duplicate-appointment guard is a read-then-write
+
+`bookAppointment:64-73` selects an existing active appointment for the same
+patient and date, then inserts. Two concurrent bookings both read none and both
+succeed. Same class as F-35; the consequence here is a duplicate appointment and
+a wasted token, not a clinical or financial error.
+
+## Verdicts — OPD
+
+| Area | Verdict |
+|---|---|
+| Check-in payment-free | **PASS** |
+| Consultation-start payment gate | **PARTIAL** — F-48, inert for ~97% of visits |
+| Patient cannot start an OPD visit while admitted | **PASS** |
+| Cancelled bills cannot bypass the gate | **PASS** |
+| Cashless cover keyed to pre-auth | **PASS** |
+| Clinical workspace free of money and nursing | **PASS** |
+| Templates department-scoped | **PASS** |
+| Consultation double-billing | **LATENT** — F-50, zero live instances |
+| Appointment partition safety | **PASS** — on-demand creation |
