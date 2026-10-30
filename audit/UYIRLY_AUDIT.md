@@ -903,3 +903,111 @@ connector's worklist, with every query in the request looking correct.
 Relevant to the "many years, large data" lens: this is the class of defect that
 produces unexplainable mixed data long after the write that caused it, with no
 constraint to catch it at the time. **Effort to add composite FKs: L.**
+
+---
+
+# MODULE 2 — SERVICE-ROLE CALL SITES — **COMPLETE** (portal deferred)
+
+## Coverage
+
+| | Count |
+|---|---|
+| `service.from()` / `svc.from()` calls located | **164** |
+| — on the 26 global tables (no `tenant_id` exists) | 76 — no filter possible or needed |
+| — on tenant-scoped tables | **88** |
+| ·· tenant filter visible in the statement | 32 |
+| ·· required reading | 56 |
+| ···· **read and judged** | **42** |
+| ···· `patientPortal.ts` — **deferred at owner's instruction** | 14 |
+| **`auth.admin.*` calls — missed by the above, found by reading** | **18** |
+
+## PASS — read individually, correctly scoped
+
+| Call site | Why safe |
+|---|---|
+| `devices.ts:550` `retryMessage` | message and barcode read via **user** client first (`:534`, `:547`) |
+| `patients.ts:98` `createPatient` | `patient_members` is global; update targets the row just created |
+| `seeds.ts:379-390` tariffs | `requirePlatformAdmin()`; cross-tenant by design |
+| `api/device/radiology/studies` | every id resolved **with** `tenant_id` first (`:92`, `:122`, `:128`) before any unfiltered `.eq('id')` |
+| `api/device/radiology/worklist` | orders filtered `.eq('tenant_id', connector.tenant_id)` (`:85`); modality lookups likewise |
+| `api/device/lab/results` | `tenantId = connector.tenant_id` (`:59`); every write carries it (`:92`) |
+| `api/device/pair`, `ping`, `viewer-key` | tenant derived from the token-hashed connector row, never from the request |
+| `onboarding.ts:179,188,196` | every seeded row carries `tenant_id` of the tenant just created |
+| `partnerAuth.ts` ×8 | `partners` is **global identity** — `0112_referral_program.sql:10` says `tenant_id` is "set for tenant-partners; NULL for external". Scoped by email or `session.partnerId` |
+| `platform.ts` ×6 | all behind `requirePlatformAdmin()` (`:613, :670, :688, :735, :757`) |
+| `api/webhooks/razorpay` ×5 | located by the provider's own `stripe_subscription_id`; tenant read **from** the matched row (`:133`, `:171`, `:185`, `:200`) |
+
+**Billing idempotency: PASS, and enforced properly.** Commission accrual is
+protected by a **unique index**, `partner_commissions_source_payment_id_key` on
+`source_payment_id` — not by the check-then-insert at `route.ts:37`, which is a
+race. A replayed webhook cannot pay a partner twice.
+
+**The prevailing pattern in this codebase is correct and consistently applied:**
+authorize with the user client so RLS runs, then act with the service client on
+the already-proven id. 42 of 42 read call sites follow it.
+
+## F-25 — EXPANDED — it is four actions, not two
+
+The enumeration above counts `.from()` calls. **`service.auth.admin.*` is not a
+table query**, so none of the Supabase Auth Admin calls appeared in it — and
+that is where the critical finding lives. Eight of the eighteen are in `hr.ts`,
+each taking a caller-supplied `profileId` with **no tenant comparison**:
+
+| Action | `auth.admin` call | Cross-tenant effect |
+|---|---|---|
+| `updateStaffEmail` | `updateUserById(id, { email })` | **account takeover** — move the login, then reset the password |
+| `resendStaffCredentials` | `updateUserById(id, { password, ban_duration:'none' })` | password reset + **ban lifted**; lockout |
+| `deactivateStaff` | `updateUserById(id, { ban_duration: FOREVER_BAN })` | **permanently ban** another hospital's staff member |
+| `reactivateStaff` | `updateUserById(id, { ban_duration:'none' })` | **restore a login another hospital deliberately removed** — e.g. a dismissed employee |
+
+The last is worth stating plainly: a hospital sacks someone and deactivates
+them; an admin at an unrelated hospital can silently give them their login back.
+
+Safe by contrast, and for the right reason: `auth.ts` acts on `user.id` from the
+session, `subscription.ts` on `actor.id`, `onboarding.ts` on the user it just
+created, `platform.ts` behind `requirePlatformAdmin()`.
+
+**One fix closes all four** — a tenant comparison inside `assertMayManage`, with
+the admin short-circuit moved below it. **Severity: Critical. Effort: S. OPEN.**
+
+## F-27 — LOW — partner e-mail lookups interpolate into an `ilike` pattern
+
+`partnerAuth.ts:55` validates a login email with `e.includes('@')` only — not a
+format check. That value is then used as an `ilike` pattern at `:27`, `:57` and
+`:77`, where `%` and `_` are **wildcards**.
+
+Input such as `%@%` matches every partner. It does **not** grant a login:
+`.maybeSingle()` errors when more than one row matches, so the lookup fails
+closed. But `registerPartner:27` uses the same check for existence, so a
+pattern that matches several rows reads as "no existing partner" and inserts a
+junk row.
+
+`patientPortal.ts` does the same `.ilike('email', …)` but validates with
+`EMAIL_RE` first, so it is not affected. **Effort: S.**
+
+## Method note — why the enumeration was not enough
+
+This module was located by enumeration and then **read**. The enumeration found
+164 call sites and would have reported Module 2 clean. The critical finding was
+**not in those 164** — it is an Auth Admin call, a different API with no RLS
+behind it, and it surfaced only because `hr.ts` was read line by line.
+
+Recorded because it is evidence for the reviewer's instruction: a sweep answers
+the question it was given, and says nothing about the question nobody asked.
+
+## Verdicts — service-role layer
+
+| Area | Verdict |
+|---|---|
+| Tenant scoping of `.from()` service queries (non-portal) | **PASS** — 42 of 42 |
+| Device ingest routes (lab + radiology) | **PASS** |
+| Razorpay webhook scoping and idempotency | **PASS** |
+| Platform-admin partner actions | **PASS** |
+| **Supabase Auth Admin calls in `hr.ts`** | **FAIL** — F-25 |
+| Partner e-mail validation | **PARTIAL** — F-27 |
+| Patient portal (14 call sites) | **DEFERRED** — owner's instruction |
+
+**Module 2 complete.** Next: Module 3 — `src/app/actions/billing.ts` and
+`admissionBilling.ts` (31 actions), covering the money rules the brief names:
+discounts, refunds, partial payments, advance reconciliation, GST bands,
+rounding, and totals against line items.
