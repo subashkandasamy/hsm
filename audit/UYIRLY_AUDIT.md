@@ -587,3 +587,125 @@ unset. Correct behaviour; recorded so nobody assumes reads are being offloaded.
 **Next module: the 128 raw service-role queries** — chosen because F-23 proves
 the guardrail against cross-tenant leakage is unused, making those call sites
 the largest unexamined risk in the product.
+
+---
+
+# MODULE 2 — SERVICE-ROLE CALL SITES — *in progress*
+
+164 service-role `.from()` calls located. 76 are on the 26 global tables that
+carry no `tenant_id` (drug master, ICD codes, platform tables, portal identity)
+and need no filter. 88 are on tenant-scoped tables and are being read one by one.
+
+**Clean so far** — these use the correct pattern, *authorize with the user client
+so RLS applies, then act with the service client on the already-proven id*:
+
+| Call site | Why it is safe |
+|---|---|
+| `devices.ts:550` `retryMessage` | message and barcode both read through the **user** client first (`:534`, `:547`) |
+| `patients.ts:98` `createPatient` | `patient_members` is global; the `patients` update is on the row just created in this tenant |
+| `seeds.ts:379-390` tariffs | `requirePlatformAdmin()`; cross-tenant by design |
+
+---
+
+# 🔴 F-24 — CRITICAL — any person can read any patient's full medical history across every hospital
+
+**Verified by reading. Not exploited — no patient data was accessed.**
+
+The patient portal uses a **custom session**, not Supabase auth, so RLS protects
+none of it. Every authorization decision is made in code. Two of them accept
+identifiers the user simply types, with no verification of any kind.
+
+## Path A — claim a stranger by Aadhaar number
+
+**Step 1.** `addFamilyMember` (`src/app/actions/patientPortal.ts:201-228`). Any
+signed-in portal user supplies a name and a 12-digit Aadhaar. The checks are:
+
+```ts
+if (aadhaar.length !== 12) return …                       // :209  format only
+const conflict = await aadhaarOwnedElsewhere(svc, aadhaar, session.accountId)
+if (conflict) return …                                     // :213  only if ALREADY claimed
+```
+
+**Nothing verifies the Aadhaar belongs to the user.** No OTP to the
+Aadhaar-linked mobile, no document, no match against the patient's registered
+details. It is a typed number.
+
+**Step 2.** `linkPatientRecords` is called immediately (`:227`), and at
+`:37-43` runs:
+
+```ts
+.from('patients').select('id').is('patient_member_id', null).eq('aadhaar_no', aadhaar)
+…
+.update({ patient_member_id: m.id, patient_account_id: accountId }).in('id', ids)
+```
+
+**No tenant filter** — cross-hospital by design. Every *unlinked* patient row in
+**every hospital on the platform** matching that Aadhaar is reassigned to the
+caller's account.
+
+**Step 3.** `ownsPatient` (`:293-308`) now returns the patient, because
+`patient_account_id === session.accountId` (`:300`).
+
+**Result:** `getPatientHospitalRecords`, `getPortalLabReport`,
+`getPortalRadiologyReport`, `getPortalScanImageUrl`, appointments and queue
+status all open — that person's complete medical history, at every hospital on
+Uyirly.
+
+## Path B — simpler: register with the victim's phone number
+
+`ownsPatient:301` grants ownership by a **second** route:
+
+```ts
+const phoneMatch = normalizePhone(data.phone as string) === session.phone
+if (!linked && !phoneMatch) return null
+```
+
+A patient is owned if the portal account's phone equals the phone on the
+hospital record. And `registerPatient` (`:71-108`) validates the phone for
+**format and uniqueness only** (`:81`, `:90`) — there is **no OTP anywhere in
+the product** (confirmed: `grep -i otp` across `src/` returns nothing but
+unrelated matches; the portal is email + password).
+
+So registering an account with someone else's mobile number grants their records
+directly, with no family-member step at all.
+
+## Why this is worse than F-01
+
+| | F-01 purge | **F-24** |
+|---|---|---|
+| Needs | a tenant UUID | **an Aadhaar or a phone number** |
+| Obtainable | not published | **routinely photocopied; widely breached** |
+| Effect | destroys data | **reads PHI, silently** |
+| Detectable | obvious | **leaves no trace a hospital would see** |
+
+It is also a **land grab: first claimer wins.** `aadhaarOwnedElsewhere` only
+protects an Aadhaar some account has *already* taken. The portal shipped
+recently, so almost every patient in the database is unclaimed — and therefore
+unprotected.
+
+## Reproduction — run on `demo` only, never on `karur`
+
+1. Note an existing demo patient's `aadhaar_no` and `phone`.
+2. Register a fresh portal account at `my.uyirly.com` with **your own** email and
+   that patient's **phone number**.
+3. Observe their records appear — Path B, no further step.
+4. Or register normally, then *Add family member* with that patient's Aadhaar —
+   Path A.
+
+## Recommended direction — **not applied, review only**
+
+The hole is that ownership is asserted rather than proved. Options, strongest
+first:
+
+1. **Verify the phone with an OTP at registration**, and verify the Aadhaar-linked
+   mobile before `addFamilyMember` links anything. This is the real fix and it
+   needs the SMS provider, which is currently a stub that reports success without
+   sending (see Module 4 backlog).
+2. **Stop auto-claiming.** Make `linkPatientRecords` create a *pending* link that
+   the hospital, or the patient at the counter, confirms. Removes the land grab.
+3. **Drop the `phoneMatch` branch** at `:301`. It is the weakest of the two and
+   has no compensating control.
+4. Interim, cheap: require **phone *and* Aadhaar *and* date of birth** to match
+   the hospital record before any link. Raises the bar without new infrastructure.
+
+**Effort: M. Severity: Critical. Status: OPEN — no fix applied, per instruction.**
