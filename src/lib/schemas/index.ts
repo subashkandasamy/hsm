@@ -1,4 +1,23 @@
 import { z } from 'zod'
+import type { Role } from '@/lib/types'
+
+/**
+ * The one list of roles the validators use.
+ *
+ * It was three separate hardcoded enums, and adding the `hr` role updated the
+ * Role union, the permission matrix, the database CHECK and both dropdowns —
+ * but not these. The form offered HR / Manager and the server rejected it, in
+ * front of a hospital. The two lines below make that a compile error instead:
+ * the first proves every value here is a real Role, the second proves every
+ * Role appears here.
+ */
+export const ROLE_VALUES = [
+  'admin', 'doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacist', 'accountant', 'hr',
+] as const satisfies readonly Role[]
+
+type MissingRole = Exclude<Role, (typeof ROLE_VALUES)[number]>
+const _everyRoleIsValidated: [MissingRole] extends [never] ? true : MissingRole = true
+void _everyRoleIsValidated
 
 // ---- Auth ----
 export const LoginSchema = z.object({
@@ -10,7 +29,7 @@ export const LoginSchema = z.object({
 export const ProfileSchema = z.object({
   id: z.string().uuid(),
   full_name: z.string().min(1, 'Full name is required'),
-  role: z.enum(['admin', 'doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacist', 'accountant']),
+  role: z.enum(ROLE_VALUES),
   phone: z.string().nullable().optional(),
   department_id: z.string().uuid().nullable().optional(),
   is_active: z.boolean().default(true),
@@ -899,7 +918,7 @@ export const CreateStaffSchema = z.object({
   email: z.string().email('Valid email required'),
   // Optional: when omitted the server auto-generates a temp password and emails it.
   temp_password: z.string().min(8, 'Password must be ≥ 8 characters').optional(),
-  role: z.enum(['admin','doctor','nurse','receptionist','lab_tech','pharmacist','accountant']),
+  role: z.enum(ROLE_VALUES),
   department_id: z.string().uuid().nullable().optional(),
   phone: z.string().nullable().optional(),
   designation: z.string().nullable().optional(),
@@ -910,7 +929,7 @@ export const CreateStaffSchema = z.object({
 })
 export const UpdateStaffSchema = z.object({
   full_name: z.string().min(1).max(200).optional(),
-  role: z.enum(['admin','doctor','nurse','receptionist','lab_tech','pharmacist','accountant']).optional(),
+  role: z.enum(ROLE_VALUES).optional(),
   department_id: z.string().uuid().nullable().optional(),
   phone: z.string().nullable().optional(),
   designation: z.string().nullable().optional(),
