@@ -780,3 +780,126 @@ on the patient record itself.
 Switching the link to phone means `linkPatientRecords` keys on `patients.phone`
 and `addFamilyMember` either goes away or becomes a naming exercise within one
 phone group. **Effort: M.**
+
+---
+
+# 🔴 F-25 — CRITICAL — cross-tenant account takeover via staff email change
+
+**Verified by reading. Not exploited.** Patient portal work paused at the
+owner's instruction; this was found continuing Module 2 on `hr.ts`.
+
+## The path
+
+`updateStaffEmail` (`src/app/actions/hr.ts:234-248`):
+
+```ts
+export async function updateStaffEmail(profileId: string, newEmail: string) {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'hr:manage')      // :237  admin or hr
+  const may = await assertMayManage(actor.role, profileId)
+  if (!may.ok) return { success: false, error: may.error }
+  …
+  const service = createServiceClient()                  // :242  RLS OFF
+  const { error } = await service.auth.admin
+    .updateUserById(profileId, { email: trimmed })       // :243  NO TENANT CHECK
+```
+
+**`profileId` is never checked against the actor's tenant.** And
+`assertMayManage` (`:43-53`) does not check tenancy either — for an admin it
+returns immediately:
+
+```ts
+if (actorRole === 'admin') return { ok: true }           // :46
+const { data } = await service.from('profiles')
+  .select('role').eq('id', targetProfileId).maybeSingle() // :48  also no tenant filter
+```
+
+So **any hospital admin can change the login email of any staff member at any
+other hospital on the platform**, given that person's profile UUID. A password
+reset to the attacker's address then completes a full account takeover —
+including that hospital's patient records.
+
+An `hr` user can do the same to any **non-admin** account anywhere, because the
+only thing `assertMayManage` blocks is an admin target.
+
+## Same shape, second action
+
+`resendStaffCredentials` (`:294-…`) repeats it:
+
+- `:305` `service.auth.admin.getUserById(profileId)` — reads another tenant's
+  login email
+- `:312-315` `service.auth.admin.updateUserById(profileId, { password, ban_duration: 'none' })`
+  — **resets that user's password and lifts any ban**
+
+The follow-up `profiles` update at `:319` uses the *user* client, so RLS makes it
+return zero rows and the action reports failure — **after** the password has
+already been changed. Net effect cross-tenant: victim locked out, ban cleared,
+attacker sees an error. Denial of service rather than takeover; `updateStaffEmail`
+is the clean takeover path because nothing after it fails.
+
+## Honest note on provenance
+
+`assertMayManage` is **mine, written earlier today** (commit `86b0f93`) to stop an
+HR user reaching an administrator's account. It does that correctly.
+
+It does **not** check tenancy — and `updateStaffEmail` never checked tenancy
+before I touched it either. So the hole predates the change, but my guard sits
+directly above the vulnerable call and *looks* like an authorization check,
+which makes the gap harder to notice, not easier. That is a fair criticism of
+the change.
+
+## Why RLS does not save this
+
+Everywhere else in this codebase the pattern is *authorize with the user client
+so RLS applies, then act with the service client on the proven id* — and it is
+applied consistently and correctly (see Module 2 passes). These two functions
+break it: they act through `service.auth.admin.*`, which is the Supabase **Auth
+Admin API**, not a table query. No policy exists there to fall back on.
+
+## Prerequisite
+
+A profile UUID belonging to another tenant. Not guessable, but UUIDs travel — in
+URLs, exports, API responses, support screenshots and shared demos.
+
+## Recommended direction — **not applied, review only**
+
+Make `assertMayManage` compare tenants, which fixes both call sites at once:
+
+```ts
+const { data } = await service.from('profiles')
+  .select('role, tenant_id').eq('id', targetProfileId).maybeSingle()
+if (!data || data.tenant_id !== actorTenantId) return { ok: false, error: 'Not found' }
+```
+
+It needs the actor's `tenant_id` passed in (callers already hold `actor`), and
+the admin short-circuit at `:46` must move **below** the tenant check rather than
+above it. Return a not-found style message so the function cannot be used as an
+oracle for "is this UUID an admin".
+
+**Severity: Critical. Effort: S. Status: OPEN.**
+
+---
+
+# F-26 — MEDIUM — tenant consistency is not enforced between related rows
+
+294 foreign keys have a tenant-scoped table on both sides. **3** are composite
+keys that include `tenant_id` and therefore enforce that parent and child belong
+to the same hospital.
+
+In the other 291 relationships the database will accept a child row in tenant A
+referencing a parent row in tenant B. Nothing detects it.
+
+No active breach: an honest path cannot obtain a foreign tenant's id, because
+reads go through RLS. The exposure is the 128 service-role writes, where a
+mistaken id is accepted silently.
+
+Where it would surface: `api/device/radiology/worklist/route.ts:84-97` joins
+`patients` through `radiology_orders`. The orders are correctly filtered by
+`tenant_id` (`:85`), but the join inherits whatever `patient_id` those rows hold
+— so a single mismatched row would put another hospital's patient name on a
+connector's worklist, with every query in the request looking correct.
+
+Relevant to the "many years, large data" lens: this is the class of defect that
+produces unexplainable mixed data long after the write that caused it, with no
+constraint to catch it at the time. **Effort to add composite FKs: L.**
