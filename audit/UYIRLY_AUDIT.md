@@ -107,6 +107,116 @@ Status is **UNVERIFIED** for all functional rows until Phase 2 runs.
 | **wards** | 1 | 6 | `wards` (19) |
 ---
 
+# FINDINGS REGISTER
+
+The index. Every finding, its status, and where the detail lives. Statuses:
+**FIXED** (applied and verified), **OPEN** (reported, no fix applied),
+**PARKED** (owner deferred), **BLOCKED** (needs an answer from the hospital).
+
+Fixes marked FIXED were applied **before** the review-only instruction was given
+on 30 Oct; nothing has been changed since.
+
+## Critical
+
+| ID | Finding | Module | Status |
+|---|---|---|---|
+| F-01 | `purge_tenant_data` deletes a hospital; `anon` held EXECUTE | DB | **FIXED** `0237` |
+| F-04 | `profiles` policy recursion — staff writes broken on every tenant since `0010` | 1 | **FIXED** `0234` |
+| F-24 | Portal ownership is asserted, not proved — a mobile number reads a family's records | Portal | **PARKED** by owner |
+| F-25 | Cross-tenant account takeover via `updateStaffEmail` + 3 more `auth.admin` calls | 2 | **OPEN** |
+
+## High
+
+| ID | Finding | Module | Status |
+|---|---|---|---|
+| F-02 | `tenant-logos` storage policies check neither tenant nor role; `{public}` | 1 | **OPEN** |
+| F-03 | 25 `SECURITY DEFINER` functions callable by `anon` | DB | **FIXED** `0238` |
+| F-05 | A nurse could set her own role to `admin` | 1 | **FIXED** `0235` |
+| F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
+| F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **OPEN** |
+| F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **OPEN** |
+| F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **OPEN** |
+| F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **OPEN** |
+| F-34 | `claim_bed_and_admit` claims a bed by id with no tenant check | 4 | **OPEN** — see F-46 |
+| F-45 | **Issuing a blood unit fails every time** — `tenant_id` missing from the INSERT | 6 | **OPEN** |
+| F-46 | Five `SECURITY DEFINER` RPCs locate rows by id and never check tenancy | 4,6 | **OPEN** |
+
+## Medium
+
+| ID | Finding | Module | Status |
+|---|---|---|---|
+| F-06 | Device push tokens readable by anyone from any browser | 2 | **FIXED** `1e7a54b` |
+| F-07 | Razorpay webhook failed open on a missing secret | 2 | **FIXED** `2f53129` |
+| F-08 | Patient documents and scan images readable by any role in the tenant | 2 | **BLOCKED** — who prints reports? |
+| F-14 | Read-only and plan enforcement rest on headers stamped in one branch | 1 | **OPEN** |
+| F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **OPEN** |
+| F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **OPEN** |
+| F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **OPEN** |
+| F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
+| F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
+| F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **OPEN** |
+| F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **OPEN** |
+| F-39 | Five-minute partition hole at every month boundary | DB | **OPEN** |
+| F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **OPEN** |
+| F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **OPEN** |
+| F-43 | "Marked interim" is promised and never recorded | 5 | **OPEN** |
+| F-48 | Consultation payment gate inert for ~97% of visits | 7 | **OPEN** |
+
+## Low / informational
+
+| ID | Finding | Module | Status |
+|---|---|---|---|
+| F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **OPEN** |
+| F-10 | Four reference tables readable by `anon` | DB | **OPEN** — confirm intent |
+| F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
+| F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **OPEN** |
+| F-18 | `enabled_modules` fails open on a null column | 1 | **OPEN** |
+| F-19 | Four sequential round trips before any dashboard page renders | 1 | **OPEN** |
+| F-20 | Tenant cache per-instance and unbounded; 0–60s suspension lag | 1 | **OPEN** |
+| F-21 | Unknown hostnames trigger an uncached service-role query | 1 | **OPEN** |
+| F-22 | `select('*')` on `profiles` in the hot path | 1 | **OPEN** |
+| F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **OPEN** |
+| F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **OPEN** |
+| F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **OPEN** |
+| F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **OPEN** |
+| F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **OPEN** |
+| F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **OPEN** |
+| F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **OPEN** |
+| F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
+| F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **OPEN** |
+| F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **OPEN** — 0 live instances |
+| F-51 | `startVisit` is a write gated on `opd:read` | 7 | **OPEN** |
+| F-52 | Duplicate-appointment guard is a read-then-write | 7 | **OPEN** |
+
+## Suspicions raised and withdrawn
+
+Recorded because an audit that only lists hits is not honest about its method.
+
+| What I suspected | Why it was wrong |
+|---|---|
+| Double-billing race in `generateBill` | The flip is a **conditional update** — atomic compare-and-set |
+| `ot_consumable` missing from `TABLE_MAP` double-bills | Its lines are nested children of a parent that **is** flipped |
+| Cron and ward board both bill the same day | Catch-up skips days already carrying a `bed` line |
+| Analyzer results skip critical detection | The check lives **inside** the shared RPC, not the TypeScript |
+| Partition runway is a 32-day fuse | The monthly job has succeeded every month since July |
+| 19 policies with no `WITH CHECK` are defects | Postgres reuses `USING` as the write check when it is omitted |
+
+## Tally
+
+| Severity | Total | Fixed | Open | Parked/Blocked |
+|---|---|---|---|---|
+| Critical | 4 | 2 | 1 | 1 |
+| High | 11 | 2 | 9 | 0 |
+| Medium | 16 | 2 | 13 | 1 |
+| Low / info | 21 | 0 | 21 | 0 |
+| **Total** | **52** | **6** | **44** | **2** |
+
+Modules completed: **7** — foundation, service-role layer, billing, IPD, lab and
+radiology, pharmacy and blood bank, OPD and appointments.
+
+
+---
+
 # PHASE 1 — Security
 
 Sweeps are exhaustive and mechanical: one question answered for every object,
