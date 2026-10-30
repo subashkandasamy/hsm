@@ -709,3 +709,74 @@ first:
    the hospital record before any link. Raises the bar without new infrastructure.
 
 **Effort: M. Severity: Critical. Status: OPEN — no fix applied, per instruction.**
+
+## F-24 — REVISED after a design decision from the product owner
+
+**Decision recorded (30 Oct 2026):** Aadhaar is dropped. **Mobile number is the
+family connection** — all patients registered with the same mobile may see each
+other's records.
+
+That removes Path A. It does **not** remove the finding; it concentrates it.
+
+### The finding, restated
+
+With mobile as the sole family link, **the mobile number is the credential for a
+family's medical records.** The whole portal now rests on one question: *is the
+mobile number verified?*
+
+It is not. `registerPatient` (`patientPortal.ts:71-108`) checks the phone for
+**format and uniqueness only** (`:81`, `:90`). There is **no OTP anywhere in the
+product.** So anyone who knows a mobile number can register with it and read
+that family's records across every hospital.
+
+Before the decision this was one of two paths. Now it is the **only** path, and
+it is unverified. **OTP stops being a feature and becomes the security model.**
+It is also blocked: the SMS sender is a stub that returns success without
+sending (`src/lib/notify/index.ts:90-94`).
+
+**Severity: Critical. Status: OPEN.**
+
+### Three structural consequences of "same mobile = family"
+
+These are properties of the design, not bugs, and each needs a deliberate answer.
+
+**1. Recycled numbers — a certainty over years, not a risk.**
+Indian operators reissue disconnected mobile numbers after roughly 90 days. The
+new holder registers on the portal and inherits the previous family's medical
+history. Asked to consider "long run of the application for many years": this
+event has probability 1 at sufficient time and patient count. Mitigation is
+re-verification on a cadence, or binding the link to something the number alone
+does not prove.
+
+**2. Placeholder numbers — forced by the schema.**
+`patients.phone` is `NOT NULL` (live catalog) and `PatientFields:54-57` demands a
+valid Indian mobile. **There is no "no phone" option.** An elderly rural patient
+without a mobile leaves the front desk no choice but to type someone else's — a
+relative's, the receptionist's, or the hospital's own. Under this design every
+patient who received that placeholder becomes one family with shared records.
+
+Current data is too small to show it (29 patients, one phone shared by two, none
+spanning hospitals) but the mechanism is structural and will appear at volume.
+**Recommended: add an explicit "no mobile" state that excludes the record from
+portal linking**, rather than forcing staff to invent a number.
+
+**3. There is no way to revoke a wrong link.**
+`ownsPatient:301` computes `phoneMatch` **live** on every request. It is not a
+stored row. So there is no record of who gained access, no audit entry, and
+nothing to delete. `removeFamilyMember` only removes `patient_members` rows — it
+cannot undo a phone match. Correcting a mistake requires editing the phone number
+on the patient record itself.
+
+### What dropping Aadhaar touches — not applied, for planning only
+
+| File / object | Current dependency |
+|---|---|
+| `patientPortal.ts:84` | registration **requires** a 12-digit Aadhaar |
+| `patientPortal.ts:201-228` | `addFamilyMember` is entirely Aadhaar-keyed |
+| `patientPortal.ts:28-46` | `linkPatientRecords` matches on `aadhaar_no` |
+| `patientPortal.ts:50-62` | `aadhaarOwnedElsewhere` |
+| `patients.aadhaar_no` | nullable text column, retained for records |
+
+Switching the link to phone means `linkPatientRecords` keys on `patients.phone`
+and `addFamilyMember` either goes away or becomes a naming exercise within one
+phone group. **Effort: M.**
