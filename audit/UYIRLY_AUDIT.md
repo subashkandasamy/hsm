@@ -336,3 +336,254 @@ for the privileged side-effect.
 - CSP / HSTS / X-Frame-Options, CSRF, upload type and size checks — **UNVERIFIED**
 - Audit-log immutability from tenant users — **UNVERIFIED**
 - PHI in logs, URLs, analytics, client storage — **UNVERIFIED**
+
+---
+
+# MODULE 1 — FOUNDATION (the request spine) — **COMPLETE**
+
+Method changed at the reviewer's instruction: **no sweeps, pure code review.** Every
+file below was opened and read line by line. No fixes applied — findings only.
+
+**Why this module first:** every one of the 57 hospital pages and all 701 server
+actions pass through these files. A defect here is a defect everywhere.
+
+## Files reviewed — 11 of 11
+
+| # | File | Lines | Read | Findings |
+|---|---|---|---|---|
+| 1 | `src/proxy.ts` | 418 | ✅ | F-12, F-14, F-15, F-20, F-21 |
+| 2 | `src/lib/server-utils.ts` | 65 | ✅ | F-14 |
+| 3 | `src/app/(dashboard)/layout.tsx` | 107 | ✅ | F-12, F-18, F-19, F-22 |
+| 4 | `src/lib/supabase/server.ts` | 29 | ✅ | clean |
+| 5 | `src/lib/supabase/client.ts` | 10 | ✅ | clean |
+| 6 | `src/lib/supabase/service.ts` | 9 | ✅ | clean |
+| 7 | `src/lib/supabase/cached-user.ts` | 15 | ✅ | clean — uses `getUser()` |
+| 8 | `src/lib/supabase/read-replica.ts` | 19 | ✅ | note R-3 |
+| 9 | `src/lib/supabase/tenant-scope.ts` | 63 | ✅ | **F-23** |
+| 10 | `src/lib/audit.ts` | 33 | ✅ | F-16, F-19 |
+| 11 | `src/lib/plans.ts` + `rbac.ts` guards | 35 + 141 | ✅ | F-13, F-17 |
+
+---
+
+## F-23 — HIGH — the cross-tenant safety helper is written, documented, and never used
+
+`src/lib/supabase/tenant-scope.ts:6-13` states the hazard in its own words:
+
+> The service-role client **BYPASSES** Row-Level Security. Any query it runs
+> against a tenant-owned table therefore **MUST** filter by `tenant_id` in code —
+> a forgotten filter is a silent cross-tenant data leak… Prefer these helpers
+> over a bare `service.from(table)`.
+
+Four helpers exist: `selectForTenant`, `insertForTenant`, `updateForTenant`,
+`deleteForTenant`.
+
+**Call sites outside the file itself: 0.**
+**Raw `service.from(...)` / `svc.from(...)` calls in `src/app/actions`: 128.**
+
+So the guardrail was built, the danger was correctly identified in writing, and
+every one of the 128 service-role queries does it by hand instead. Each is an
+independent opportunity to omit `.eq('tenant_id', …)`, and each omission is a
+silent cross-tenant leak with RLS switched off and nothing to catch it.
+
+**This finding determines the next module of the audit:** reading all 128 call
+sites for a missing tenant filter is now the highest-value work remaining.
+**Impact: potential cross-tenant PHI disclosure. Effort to adopt helpers: M.**
+
+## F-12 — HIGH — tenant isolation is skipped on any unrecognised hostname
+
+The guard exists and is correct — `src/app/(dashboard)/layout.tsx:51-54`:
+
+```ts
+const currentTenantId = hdrs.get('x-tenant-id')
+if (currentTenantId && profile.tenant_id !== currentTenantId) {
+  redirect('/login?wrongtenant=1')
+}
+```
+
+Its comment claims `x-tenant-id` *"is absent only on bare-localhost dev"*
+(`layout.tsx:50`). **That is not true.** Reading `proxy.ts`, the header is
+stamped only at line 327, inside the tenant-subdomain branch. It is absent on:
+
+| Branch | `proxy.ts` | Headers stamped? |
+|---|---|---|
+| apex / `www` | 139-157, returns at 156 | **no** |
+| `app.{rootDomain}` | 160-167 | **no** |
+| bare localhost | falls to 371 | **no** (acknowledged) |
+| **any other hostname** | **falls to 371-411** | **no** |
+
+The final branch accepts any host that is not the apex, not `*.rootDomain`, not
+`*.localhost` and not bare localhost. It checks the session and lets the request
+through — with **no tenant header, no suspension check, no read-only
+computation and no plan gating**.
+
+Because the guard is `if (currentTenantId && …)`, a null header means the
+isolation check does not run at all.
+
+**UNVERIFIED — the one thing I cannot check from here:** whether such a hostname
+is reachable in production. Vercel issues `*.vercel.app` URLs for every project
+unless Deployment Protection is enabled, and nothing in the repo references one.
+**To verify:** open the Vercel deployment URL while signed in. If the dashboard
+renders, this finding is live.
+
+## F-13 — HIGH — plan gating is bypassable for the lab/radiology connector
+
+`src/lib/plans.ts:14-22` exports `GROWTH_ONLY_ROUTES` including
+`/settings/devices`, with this justification:
+
+> `/settings/devices` is here because it configures the analyzer and scanner
+> connectors… **Without it a Starter tenant could pair a connector it has no
+> module to use.**
+
+**That export is never imported.** `grep` for `GROWTH_ONLY_ROUTES` returns only
+`plans.ts:18` (the declaration) and `proxy.ts:307` — which declares its **own
+local constant of the same name with a different list**:
+
+| Route | `plans.ts` | `proxy.ts` (the one that enforces) |
+|---|---|---|
+| `/settings/devices` | gated | **not gated** |
+| `/staff` | gated | not gated (deliberate — comment at 312) |
+| `/settings/ipd-billing` | not listed | gated |
+
+So the protection the comment describes does not exist. And the actions behind
+that page confirm it: `src/app/actions/devices.ts` gates every mutation on
+`requirePermission(actor.role, 'lab:manage')` — a **role** check — at lines 171,
+209, 234, 262, 339, 390. **`requireModule('lab')` is never called anywhere in
+that file.**
+
+A Starter-plan admin can therefore reach `/settings/devices`, create a
+connector, pair it, and ingest lab results for a module they have not paid for.
+The ingest route is also exempt from middleware entirely (`proxy.ts:113-117`),
+so there is no plan check on that path either.
+
+**Impact: revenue/entitlement bypass. Effort: S** — one `requireModule('lab')`
+per mutation, plus reconciling the two route lists into one.
+
+## F-14 — MEDIUM — read-only and plan enforcement rest on headers stamped in one branch only
+
+`server-utils.ts:11-16` and `:19-22` decide read-only purely from
+`x-tenant-readonly`. `:25-32` decides module access from `x-tenant-plan` /
+`x-tenant-status`, and opens with an explicit fail-open:
+
+```ts
+if (!h.get('x-tenant-id')) return true   // "No tenant headers — don't block."
+```
+
+Combined with F-12, on any hostname that misses the subdomain branch:
+`requireWriteAccess()` does not throw (header absent ≠ `'1'`), and `hasModule()`
+returns **true for every module**. A lapsed or Starter tenant reaching the app by
+such a host has neither restriction.
+
+The headers themselves cannot be forged on the subdomain branch — `proxy.ts:327-332`
+uses `.set()` on a copy of the incoming headers, overwriting any client value.
+**The weakness is absence, not forgery.**
+
+## F-15 — MEDIUM — middleware authenticates with an unverified JWT
+
+`proxy.ts:283` uses `supabase.auth.getSession()`, with the comment *"validates
+JWT locally — zero network round-trip."* `getSession()` decodes the cookie; it
+does not verify it against the auth server. Supabase's guidance is to use
+`getUser()` in server code.
+
+**Mitigated, not exploitable for data:** `getCachedUser()`
+(`cached-user.ts:13`) uses `getUser()`, and PostgREST verifies the JWT on every
+query. So a forged cookie passes the middleware redirect and then fails at the
+layout and the database.
+
+**Residual:** the middleware gate is advisory. Any future code that trusts
+middleware having "already authenticated" would be wrong.
+
+## F-16 — MEDIUM — audit writes fail silently
+
+`src/lib/audit.ts:24-32`:
+
+```ts
+await supabase.from('audit_logs').insert({ … })   // result never inspected
+```
+
+No error check. An RLS rejection, constraint violation or outage loses the
+record with no signal — in the table that exists to prove who did what. Two
+earlier returns (`:10` no actor, `:22` no tenant) also drop the entry silently.
+
+**Positive, verified against the live catalog:** `audit_logs` carries **only**
+`audit_logs_tenant_admin_read` (SELECT) and `audit_logs_tenant_insert` (INSERT).
+There is **no UPDATE and no DELETE policy**, so a tenant user cannot alter or
+erase history. Audit immutability from tenant users: **PASS**.
+
+## F-17 — LOW — two plan-route lists, drifted; one is dead code
+
+See F-13. `plans.ts:18` is unreferenced. Same defect class as the role-enum
+drift that reached a hospital earlier today: a list duplicated with no mechanism
+tying the copies together.
+
+## F-18 — LOW — module gating fails open on a null column
+
+`layout.tsx:79-81`: when `tenants.enabled_modules` is not an array, the fallback
+enables **every** module. A tenant row with `NULL` there gets everything.
+
+## F-19 — PERFORMANCE — four sequential round trips before any page renders
+
+Per dashboard page load, in `layout.tsx`:
+
+| Line | Call | Note |
+|---|---|---|
+| 18 | `getCachedUser()` → `auth.getUser()` | network call to Supabase Auth |
+| 22 | `profiles.select('*')` | `select *` — F-22 |
+| 73 | `tenants.select('enabled_modules')` | **service-role, uncached, every load** |
+| 83 | `isMessagingEnabled()` | `platform_settings` — request-cached only |
+
+`enabled_modules` and `messaging_enabled` change almost never yet are fetched on
+every navigation. `logAudit` (`audit.ts:16-20`) adds a **fifth** round trip on
+every audited action, re-reading `profiles.tenant_id` that `getActorProfile()`
+already holds in a request-scoped cache.
+
+## F-20 — PERFORMANCE/CORRECTNESS — the tenant cache is per-instance and unbounded
+
+`proxy.ts:16-17, 23-53`. A module-level `Map` with a 60-second TTL and **no
+eviction**. Consequences:
+
+- On serverless each instance keeps its own copy, so suspending a tenant takes
+  effect between 0 and 60 seconds later, **per instance** — unpredictable.
+- Entries are never removed. At many tenants on a long-lived instance this grows
+  without bound. (Unknown slugs are *not* cached — `:38` returns before the
+  `set` — so an attacker cannot inflate it.)
+
+## F-21 — PERFORMANCE — unknown hostnames trigger an uncached service-role query
+
+`proxy.ts:27-38`. Every request for a slug that does not exist performs a
+service-role `tenants` lookup and caches nothing. With wildcard DNS, an
+unauthenticated caller can force one database round trip per request by varying
+the subdomain. Amplifier, not a breach.
+
+## F-22 — INFO — `select('*')` in the hot path
+
+`layout.tsx:24` pulls every column of `profiles` on every dashboard render when
+six are used.
+
+## R-3 — INFO — read-replica helper is configured but inert
+
+`read-replica.ts:12-15` falls back to the primary when the replica env vars are
+unset. Correct behaviour; recorded so nobody assumes reads are being offloaded.
+
+---
+
+## Verdicts — foundation
+
+| Area | Verdict |
+|---|---|
+| Tenant isolation on correct hostnames | **PASS** — `layout.tsx:52` |
+| Tenant isolation on other hostnames | **FAIL** — F-12 |
+| Actor tenant derived from DB, not headers | **PASS** — `server-utils.ts:54-57` |
+| Audit-log immutability from tenant users | **PASS** |
+| Audit-write reliability | **FAIL** — F-16 |
+| Plan gating (routes) | **PARTIAL** — F-13, F-17 |
+| Plan gating (actions) | **FAIL** for devices — F-13 |
+| Read-only enforcement | **PARTIAL** — F-14 |
+| Service-role tenant scoping discipline | **FAIL** — F-23 |
+| Session verification (layout, DB) | **PASS** |
+| Session verification (middleware) | **PARTIAL** — F-15 |
+
+**Module 1: 11 of 11 files read. Complete.**
+
+**Next module: the 128 raw service-role queries** — chosen because F-23 proves
+the guardrail against cross-tenant leakage is unused, making those call sites
+the largest unexamined risk in the product.
