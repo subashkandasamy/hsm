@@ -1422,3 +1422,160 @@ doing so would either bill suspended hospitals or stop billing live ones.
 | Headless plan + read-only enforcement | **PASS** |
 | Cron scale behaviour | **PARTIAL** — F-37 |
 | Clinical admission separate from cash | **PASS** — admission succeeds without payment; cash is gated at discharge |
+
+---
+
+# MODULE 5 — LAB / RADIOLOGY + PARTITION LONGEVITY — **COMPLETE**
+
+Read: `lab.ts` (839), `lib/lab/ingest.ts` (251), and from the live catalog the
+bodies of `save_lab_analyte_results`, `alert_missing_next_partition`, the
+critical-value triggers, and `cron.job` / `cron.job_run_details`.
+
+## PASS — the best code in this codebase
+
+`save_lab_analyte_results` deserves recording in full:
+
+- **Cross-tenant guard.** `IF p_tenant_id IS NOT NULL AND p_tenant_id <> v_tenant
+  THEN RAISE … insufficient_privilege`, with the reason stated: *"A connector
+  belonging to one hospital may not write onto another's order, however it
+  arrived at the id. Barcodes repeat across hospitals by design."* This is the
+  tenant check `claim_bed_and_admit` (F-34) is missing.
+- **Age- and sex-aware reference ranges** — `resolve_reference_range(analyte,
+  tenant, sex, age_days)`. The brief's age/sex item: implemented.
+- **Critical evaluated before reference**, commented *"a potassium of 7.0 and one
+  of 5.2 are not the same fact."*
+- **No verdict on free text** — `value_type = 'text'` yields `unranged` rather
+  than a guess.
+- **Corrections supersede** — delete-then-insert, with the reason ON CONFLICT
+  cannot be used under partitioning.
+- **`withdraw_stale_critical`** retracts an alert when a value is corrected out
+  of the critical band.
+- **Authorisation is withdrawn on every write**: `verified_by = NULL,
+  verified_at = NULL` — *"a result that has changed has not been checked by
+  anybody yet."*
+
+**Both result paths alert.** `trg_log_critical_result` on `lab_result_analytes`
+and `trg_log_critical_item` on `lab_order_items`. *My suspicion that the analyzer
+path skipped critical detection was wrong and is withdrawn — the check lives
+inside the shared RPC, not in the TypeScript I first grepped.*
+
+**The verify gate** (`verifyOrder:407-488`) refuses an order with no results,
+refuses one with missing tests, reads **both** `lab_order_items` and
+`lab_result_analytes` (the panel trap), guards partial-panel release behind
+explicit confirmation, and uses a conditional status update with a zero-row
+check — *"Reporting success for an authorisation that never happened is the worst
+possible lie to tell on this particular screen."*
+
+**The release gate** (`reportOrder:508-553`) requires `verified`, and carries the
+payment gate with a comment explaining why the collection-time gate was
+bypassable (tube labels, analyzer auto-advance). IPD exempt, correctly.
+
+## F-42 — MEDIUM — the partial-panel safety check fails open
+
+`countMissingAnalytes:497-505`:
+
+```ts
+const { data, error } = await supabase.rpc('get_lab_report_analytes', …)
+if (error) { console.error(…); return 0 }     // ← 0 means "nothing missing"
+```
+
+If the RPC fails, the function reports **zero missing measurements**, the
+confirmation prompt at `:465` is skipped, and an incomplete panel is verified as
+though complete. A patient-safety check that fails open. It should refuse to
+verify when it cannot establish completeness. **Effort: S.**
+
+## F-43 — MEDIUM — "it will be marked interim" is not true
+
+`verifyOrder:469-470` tells the technician the report *"will be marked interim
+and a final report must follow."* Searching the codebase for `interim` finds
+only that message, a button label and a UI comment. **Nothing is written.**
+`:475-477` sets `status/verified_by/verified_at` and no partial-release flag.
+
+So the order carries no record that it was released incomplete, and "a final
+report must follow" is enforced by nothing. If the missing values are entered
+later, a reprint silently becomes a full report with no amendment trail — which
+is the amendment-history gap already on the lab backlog. **Effort: M.**
+
+## F-44 — LOW — single tests get flat critical bounds, panels get age/sex-aware ones
+
+`enterResults:351-357` reads `crit_low/crit_high` from `lab_tests_catalog` — one
+flat pair per test. `save_lab_analyte_results` resolves them through
+`resolve_reference_range(…, v_sex, v_age_days)`.
+
+So a potassium measured as a panel analyte is judged against a neonate's range;
+the same potassium entered as a single test is judged against the catalogue's
+adult figure. Two sources of truth for the same clinical question.
+
+## PARTITION LONGEVITY — the "many years" lens
+
+`pg_cron` is installed and three jobs are active:
+
+| Job | Schedule | Last runs |
+|---|---|---|
+| `create-next-month-partitions` | `5 0 1 * *` | **succeeded** 1 Jul, 1 Aug, 1 Sep, 1 Oct |
+| `alert-missing-partitions` | `0 9 * * *` | succeeded daily |
+| `refresh-dashboard-matviews` | `*/5 * * * *` | succeeded |
+
+Runway on 30 Oct 2026: `appointments` → **y2027m12**; `lab_result_analytes` →
+y2026m12; `visits`, `bill_items`, `lab_order_items`, `audit_logs` → **y2026m11**.
+
+*I first read this as a 32-day fuse. It is not — the job has succeeded every
+month and maintains a one-month runway by design. Alarm withdrawn.* Three real
+findings remain.
+
+### F-39 — MEDIUM — a five-minute hole at every month boundary
+
+The job runs at **00:05 on the 1st**. Between 00:00:00 and 00:05:00 the new
+month's partition does not exist, and an insert into `visits`, `bill_items`,
+`lab_order_items` or `audit_logs` **fails outright** — no partition of relation …
+found for row.
+
+A hospital with a night shift is awake then: an emergency admission, a 00:30 lab
+order. The window has already occurred four times this year.
+
+Fix: schedule before the boundary (`55 23 L * *`) or create two to three months
+ahead so a single miss is survivable. **Effort: S.**
+
+### F-40 — MEDIUM — the partition alarm reports to nobody
+
+```sql
+RAISE WARNING 'Missing next-month partition: %_%', t, next_suffix;
+```
+
+A `WARNING` goes to the Postgres log. Nothing reads it. And because a warning is
+not an error, `cron.job_run_details.status` reads **'succeeded' whether or not a
+partition is missing** — so the monitoring record cannot distinguish a healthy
+month from a broken one.
+
+There is no path from "partition missing" to "a human knows". Combined with the
+one-month runway, a single silent failure of job 1 means the hospital stops
+being able to create visits, bills or lab orders on the 1st of the following
+month. **Effort: S** — write to a table the app surfaces, or raise an exception
+so the job is recorded as failed.
+
+### F-41 — LOW — one table is protected twice, five are protected once
+
+`appointments` has **14 months** of runway because it has a second mechanism —
+`ensure_appointment_partition(date)` called on demand from `appointments.ts:86`
+and `patientPortal.ts:701`, plus pre-creation in migration `0094`. The other
+five partitioned tables rely solely on the monthly job.
+
+So a failure of job 1 takes down visits, bills, lab orders and audit while
+appointments carry on — an inconsistency worth making deliberate either way.
+
+## Verdicts — lab
+
+| Area | Verdict |
+|---|---|
+| Results cannot be released unverified | **PASS** |
+| Panel/analyte two-table handling | **PASS** |
+| Partial-panel release requires consent | **PASS** — but F-42 fails open |
+| Interim marking | **FAIL** — F-43, promised and not recorded |
+| Critical detection, manual path | **PASS** |
+| Critical detection, analyzer path | **PASS** |
+| Critical retraction on correction | **PASS** |
+| Age/sex reference ranges | **PASS** for analytes, **PARTIAL** for single tests (F-44) |
+| Verification withdrawn when a result changes | **PASS** |
+| Connector cross-tenant write | **PASS** — explicitly guarded |
+| Payment gate at release | **PASS** |
+| Four-eyes (entry ≠ verification) | **BY DESIGN ABSENT** — documented in `rbac.ts` as a deliberate choice for single-technician labs |
