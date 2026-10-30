@@ -1156,3 +1156,126 @@ Narrow, but reachable through normal UI selection. **Effort: S.**
 `recordAdvance` · `collectAdvanceDeposit` · `recordAdvanceRefund` ·
 `issueAdvanceRefundBill` · `getAdmissionFinancials` ·
 `listAdmissionsWithOutstandingBalance` · `getAdmissionAdvanceReceipt`.
+
+---
+
+# MODULE 3 — BILLING — part 2 (all mutation paths now read)
+
+## F-32 — HIGH — money in is locked; money out is not
+
+`record_bill_payment` (live catalog) is exemplary:
+
+```sql
+SELECT * INTO v_bill FROM bills WHERE id = p_bill_id FOR UPDATE;   -- row lock
+SELECT coalesce(sum(amount),0) INTO v_paid FROM payments WHERE bill_id = p_bill_id;
+IF p_amount > v_balance + 0.001 THEN … refuse … END IF;
+INSERT INTO payments …;  UPDATE bills SET paid = v_new_paid …;
+```
+
+The balance is computed **inside** the lock, overpayment is refused, and the
+function is deliberately **not** `SECURITY DEFINER` — so RLS still decides which
+bill the caller can see, and a foreign bill simply reads as "not found".
+
+**Every other money path checks a balance in TypeScript and then writes.** The
+Supabase JS client cannot take a row lock, so these are not careless — they are
+*unable* to be safe in their current shape:
+
+| Path | File:line | Balance read | Then writes |
+|---|---|---|---|
+| `issueCreditNote` | `refunds.ts:54,62` | `getRefundable()` | `credit_notes` insert |
+| `recordAdvanceRefund` | `admissionBilling.ts:373,384` | `unusedAdvance` | `admission_advance_refunds` insert |
+| `issueAdvanceRefundBill` | `admissionBilling.ts:494` | same | — |
+| `collectAdvanceDeposit` | `admissionBilling.ts:243` | same | — |
+| `applyAdvanceToBill` | `admissionBilling.ts:155,163` | same | `payments` insert — also F-28 |
+
+Two concurrent refunds on one bill both read `refundable = ₹5,000` and both
+insert ₹5,000. **₹10,000 leaves the hospital against a ₹5,000 entitlement**, with
+no constraint to catch it. A double-click on a slow connection is enough; two
+counters is enough.
+
+The only RPCs besides the payment one are number generators —
+`get_next_bill_no`, `get_next_credit_no`, `get_next_summary_no` — which protect
+sequences, not balances.
+
+**The asymmetry is the finding: inbound cash is serialised, outbound cash is
+not.** Fix is to move each balance-check-then-write into an RPC shaped like
+`record_bill_payment`. **Effort: M. Severity: High.**
+
+## F-33 — MEDIUM — cancelBill reverts charges before it is allowed to cancel
+
+`cancelBill` (`billing.ts:695-771`) carries a comment describing a real bug it
+was written to fix:
+
+> Cancelling twice is not a no-op… The second pass reverts the same charges to
+> 'unbilled' again — but by then a replacement bill may legitimately own them,
+> and it has just had them pulled out from under it. A stale tab or a
+> double-click was enough.
+
+The guard added for it reads the status at `:707-711`. **The fix is incomplete**,
+because the order of operations is inverted:
+
+```
+:707  read status                 ← guard reads here
+:710  if cancelled → return
+:720  DELETE advance payments     ← destructive
+:739  revert charges to unbilled  ← destructive
+:764  UPDATE … .neq('status','cancelled')   ← conditional, atomic
+```
+
+Two concurrent cancels both pass the `:710` guard, both run the destructive
+steps, and only then does one lose at `:764` — returning **success**, because a
+zero-row conditional update sets no error. The charges have already been pulled
+back a second time. That is exactly the scenario the comment set out to prevent:
+the conditional update protects the *status column* but not the *reversion that
+precedes it*.
+
+Correct order is to claim the cancellation first (conditional update, check rows
+affected) and revert only if it succeeded.
+
+Two further notes on the same function:
+
+- **A third copy of the source→table map.** `:739-758` is an if/else chain that
+  must agree with `generateBill`'s `TABLE_MAP` (`:512-522`). They agree today —
+  nine sources each — but nothing ties them. A source added to one and not the
+  other strands charges as `billed` against a bill that no longer exists, which
+  `:722-725` names as the failure to avoid.
+- **Advance payments are deleted, not reversed** (`:720`, and `reconcile.ts:54`).
+  After release there is no record that an advance was ever applied. For money,
+  a reversing entry is the safer form.
+
+**Good in this function:** blocking cancellation when non-advance payments exist
+(`:713-717`), and reading the `bill_items` error rather than ignoring it
+(`:728`) with the consequence spelled out.
+
+## Module 3 status
+
+**All mutation paths read** — `generateBill`, `applyDiscount`, `updateBillItemGst`,
+`finalizeBill`, `cancelBill`, `recordPayment` + the RPC body, `applyAdvanceToBill`,
+`recordAdvance`, `recordAdvanceRefund`, `collectAdvanceDeposit`,
+`issueCreditNote`, `generateMissingDailyCharges`, plus `lib/gst.ts`,
+`lib/billing/gst.ts`, `lib/billing/reconcile.ts`.
+
+**Outstanding — read-only builders, no write risk:** `getCombinedBillData`,
+`getOpdCombinedBillData`, `getPatientCombinedBillData`, `getBillingStats`,
+`listBills`, `getBill`, `listTariffs`, and the two config setters `updateTariff`
+and `updateWardDailyRate`.
+
+## Verdicts — billing
+
+| Rule from the brief | Verdict |
+|---|---|
+| Totals always match line items | **PASS** — recomputed from items every change |
+| Duplicate-submit / double billing | **PASS** — conditional update, compare-and-set |
+| Discounts | **PASS** — with an overpaid rollback |
+| Partial payments | **PASS** — locked RPC |
+| **Refunds** | **FAIL** — F-32, unlocked, over-refundable |
+| **Cancellations** | **PARTIAL** — F-33, reverts before claiming |
+| Advance is a deposit pool, not an invoice | **PASS** |
+| Advance reconciles on discharge/refund | **PARTIAL** — F-28 bypasses reconcile; F-32 unlocked |
+| GST per-line rate and amount | **PASS** |
+| GST clinical 0% | **PASS** |
+| GST pharmacy by category | **PARTIAL** — one tenant default + per-batch override |
+| **GST non-ICU room rent > ₹5,000 at 5%** | **FAIL** — not implemented |
+| **GST cosmetic / elective 18%** | **FAIL** — not implemented |
+| GST rounding | **PARTIAL** — F-29, CGST+SGST can exceed tax by a paisa |
+| Plan gating server-side | **PASS** for IPD billing |
