@@ -1011,3 +1011,148 @@ the question it was given, and says nothing about the question nobody asked.
 `admissionBilling.ts` (31 actions), covering the money rules the brief names:
 discounts, refunds, partial payments, advance reconciliation, GST bands,
 rounding, and totals against line items.
+
+---
+
+# MODULE 3 — BILLING (money) — part 1
+
+Files: `billing.ts` (1,411), `admissionBilling.ts` (582), `lib/gst.ts` (143),
+`lib/billing/gst.ts`, `lib/billing/reconcile.ts`.
+
+## Read and PASSED — these are well built
+
+**Double-billing protection: PASS, by compare-and-set.** `generateBill:497-510`
+flips source rows with a **conditional update**:
+
+```ts
+.update({ billing_status: 'billed' }).in('id', wanted)
+.eq('billing_status', 'unbilled').select('id')
+if (ids.length < wanted.length) return 'Some charges were already billed'
+```
+
+Atomic at row level. A second concurrent bill matches zero rows, is told so, and
+is rolled back — flipped rows reverted, bill **voided not deleted** so the GST
+invoice number stays in sequence (`:533-534`). The comment at `:483-496` records
+a real bug already fixed here (counting lines instead of distinct ids broke
+multi-test lab orders and burned invoice numbers). *My initial suspicion of a
+read-then-write race was wrong and is withdrawn.*
+
+**Totals always match line items: PASS, by construction.** `reconcileBill`
+(`lib/billing/reconcile.ts:33`) recomputes the total from `bill_items` on every
+change rather than trusting a stored figure.
+
+**Overpay guard: PASS.** `reconcile.ts:42` refuses an edit that would drop a bill
+below what the patient actually paid; `applyDiscount:612-617` restores the prior
+discount if so.
+
+**Advance is a pool, not an invoice: PASS.** Applied as a `payments` row with
+`method:'advance'`, and `reconcile.ts:40` excludes it from `patientPaid`, so
+patient cash and hospital deposit never merge. Excess advance is released back
+(`:49-59`).
+
+**Plan gating at the action layer: PASS.** `generateBill:372` blocks IPD billing
+on a Starter plan — not merely hidden in the UI.
+
+**Cross-admission guard: PASS.** `generateBill:365-367` refuses charges from a
+different admission. `getUnbilledCharges:232-233` scopes OT to the admission,
+with a comment recording the earlier bug where an OPD bill could consume an
+unrelated admission's surgery.
+
+## F-28 — HIGH — the advance path bypasses reconciliation and can lose a payment
+
+`applyAdvanceToBill` (`admissionBilling.ts:138-179`) is the one money path that
+does **not** use `reconcileBill`. It computes the result by hand:
+
+```ts
+const newPaid = (bill.paid as number) + applyAmount          // :172  stale read from :149
+const newStatus = newPaid >= (bill.total as number) ? 'paid' : 'partial'
+await supabase.from('bills').update({ paid: newPaid, status: newStatus })
+```
+
+Three consequences:
+
+1. **Lost update.** `bill.paid` was read at `:149`. A cashier recording cash
+   through `record_bill_payment` — which *is* row-locked (`billing.ts:809`) —
+   between that read and this write has their payment overwritten. The money is
+   in `payments` but `bills.paid` no longer reflects it.
+2. **Stale total.** `total` is not recomputed from line items, so if the bill
+   changed the status can be wrong.
+3. **Guards skipped.** The overpaid check and advance-release logic live inside
+   `reconcileBill` and do not run here.
+
+Also `:155-157`: `unusedAdvance` is read and then written with no lock, so two
+concurrent applies can both draw on the same remaining balance.
+
+**The cash path is protected by a locking RPC and the advance path is not.**
+Replacing `:172-174` with `reconcileBill(supabase, billId)` resolves all three.
+**Effort: S.**
+
+## F-29 — MEDIUM — CGST + SGST can differ from total tax by one paisa
+
+`lib/gst.ts:90` and `:85-86`:
+
+```ts
+cgst: round2(taxTotal / 2), sgst: round2(taxTotal / 2)
+```
+
+Each half is rounded independently. For an odd-paisa total they do not sum back:
+tax `10.05` → cgst `5.03` + sgst `5.03` = `10.06`.
+
+On a GST tax invoice CGST + SGST must equal the tax charged; a one-paisa
+mismatch is the kind of thing a GST audit queries. Fix is to round one half and
+derive the other as `taxTotal - cgst`. Same at the rate-summary rows.
+**Effort: S.**
+
+## F-30 — MEDIUM — two GST rules named in the brief are not implemented
+
+Verified absent, not inferred from one function:
+
+| Rule | Status | Evidence |
+|---|---|---|
+| per-line `gst_rate` / `gst_amount` | **PASS** | `bill_items.gst_rate`, `tax_amount` |
+| clinical items default 0% | **PASS** | `lib/billing/gst.ts:30-31` |
+| pharmacy by drug category | **PARTIAL** | `cfg.pharmacyRate` is one tenant-wide default; per-line override only if the batch carries a rate |
+| **non-ICU room rent > ₹5,000/day at 5%** | **ABSENT** | `grep` for any 5,000 threshold in the billing code returns nothing; `bed` falls to `default: rate 0` |
+| **cosmetic / elective at 18%** | **ABSENT** | no cosmetic or elective concept exists |
+
+**Live sizing (read-only query):**
+
+| Tenant | `gst_enabled` | GSTIN | rooms > ₹5,000/day |
+|---|---|---|---|
+| `karur` (paying customer) | **false** | no | 0 |
+| `newtest` | **true** | yes | **1 — ₹25,000/day, room "102"** |
+| `demo` | true | yes | 1 — ICU ₹9,000 (**correctly exempt**) |
+
+So it does **not** affect karur today. It does affect `newtest`, which has GST
+enabled and a ₹25,000/day room that is not an ICU: that room rent is being
+invoiced at 0% where the rule requires 5%. ICU is exempt at any rate, so the
+implementation needs the ward-type distinction, and `ward_room_types` exists to
+carry it. **Effort: M.**
+
+## F-31 — LOW — `TABLE_MAP` must stay in step with `BillItemSource`, and nothing enforces it
+
+`BillItemSource` has **17** values (`types/index.ts:703`); `generateBill`'s
+`TABLE_MAP` (`:512-522`) has **9**. An unmapped source hits `if (!table) continue`
+(`:526`) — **silently**, with no error and no log — so its row is never marked
+billed.
+
+Today this is safe, and for an incidental reason rather than a designed one:
+`ot_consumable` is the only emitted source missing from the map, and its lines
+are **nested children** of an `ot_schedules` row that *is* filtered
+`.eq('billing_status','unbilled')` (`:225`). Flipping the parent hides the
+children.
+
+**The exception:** `selected_refs` lets the cashier bill a consumable **without**
+its parent OT line. Then `refsBySource` contains only `ot_consumable`, nothing is
+flipped, the parent stays unbilled — and the same consumable can be billed again.
+Narrow, but reachable through normal UI selection. **Effort: S.**
+
+## Still to read in Module 3
+
+`cancelBill` · `finalizeBill` · `updateBillItemGst` · `recordPayment` /
+`record_bill_payment` RPC body · `getBillingStats` · the three
+`get*CombinedBillData` builders · `generateMissingDailyCharges` ·
+`updateWardDailyRate` · `updateTariff` · and in `admissionBilling.ts`:
+`recordAdvance` · `collectAdvanceDeposit` · `recordAdvanceRefund` ·
+`issueAdvanceRefundBill` · `getAdmissionFinancials` ·
+`listAdmissionsWithOutstandingBalance` · `getAdmissionAdvanceReceipt`.
