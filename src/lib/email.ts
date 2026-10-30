@@ -96,11 +96,16 @@ interface StaffCredentialsParams {
  * temporary password. Best-effort: never throws — staff creation must not fail
  * if email delivery does.
  */
-export async function sendStaffCredentialsEmail(params: StaffCredentialsParams): Promise<void> {
+/**
+ * Returns whether the email actually went. The caller needs to know: a staff
+ * member who never receives this has 72 hours before the password dies, and an
+ * admin who was told "sent" will not think to hand it over themselves.
+ */
+export async function sendStaffCredentialsEmail(params: StaffCredentialsParams): Promise<boolean> {
   const { to, fullName, hospitalName, loginUrl, email, tempPassword, expiresHours } = params
   if (!resend) {
     console.warn('[email] RESEND_API_KEY not set — staff temp password (dev):', tempPassword)
-    return
+    return false
   }
   try {
     await resend.emails.send({
@@ -136,8 +141,10 @@ export async function sendStaffCredentialsEmail(params: StaffCredentialsParams):
   </div>
 </div>`.trim(),
     })
+    return true
   } catch (err) {
     console.error('[email] Failed to send staff credentials email:', err)
+    return false
   }
 }
 

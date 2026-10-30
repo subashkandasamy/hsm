@@ -59,7 +59,7 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
   const [editMember, setEditMember]     = useState<StaffMember | null>(null)
   const [deactivateId, setDeactivateId] = useState<string | null>(null)
   const [resendId, setResendId]         = useState<string | null>(null)
-  const [resendResult, setResendResult] = useState<{ name: string; password: string } | null>(null)
+  const [resendResult, setResendResult] = useState<{ name: string; password: string; emailSent: boolean; email: string } | null>(null)
   const [copied, setCopied]             = useState(false)
   const [busyId, setBusyId]             = useState<string | null>(null)
   const [roleFilter, setRoleFilter]     = useState<Role | ''>('')
@@ -495,7 +495,7 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
           const res = await resendStaffCredentials(resendId)
           setResendId(null)
           if (res.success) {
-            setResendResult({ name: member?.full_name ?? '', password: res.tempPassword })
+            setResendResult({ name: member?.full_name ?? '', password: res.tempPassword, emailSent: res.emailSent, email: res.email })
             refresh()
           }
         }}
@@ -507,7 +507,7 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
 
       {/* New temp password result */}
       {resendResult && (
-        <Modal open onClose={() => setResendResult(null)} title="New Password Sent"
+        <Modal open onClose={() => setResendResult(null)} title={resendResult.emailSent ? 'New Password Sent' : 'New Password Ready'}
           footer={
             <div className="flex justify-end">
               <button onClick={() => setResendResult(null)}
@@ -519,9 +519,21 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
           }>
           <div className="space-y-4">
             <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
-              <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>Credentials re-sent{resendResult.name ? ` to ${resendResult.name}` : ''}</p>
-              <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed. It expires in 72 hours. You can also share it directly below.</p>
+              <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>New password issued{resendResult.name ? ` for ${resendResult.name}` : ''}</p>
+              <p className="text-sm" style={{ color: '#64748B' }}>
+                {resendResult.emailSent
+                  ? <>The login link and this temporary password have been emailed to <strong>{resendResult.email}</strong>. It expires in 72 hours. You can also share it directly below.</>
+                  : <>It expires in 72 hours.</>}
+              </p>
             </div>
+            {!resendResult.emailSent && (
+              <div className="p-4 rounded-xl" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                <p className="text-sm font-semibold mb-1" style={{ color: '#92400E' }}>The email could not be sent</p>
+                <p className="text-sm" style={{ color: '#92400E', lineHeight: 1.5 }}>
+                  Nothing reached {resendResult.email || 'them'}. Copy the password below and give it to them yourself.
+                </p>
+              </div>
+            )}
             <div className="p-4 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
               <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>Temporary Password</p>
               <div className="flex items-center gap-2">

@@ -68,7 +68,7 @@ export async function getStaff(profileId: string): Promise<StaffMember | null> {
 
 export async function createStaff(
   input: Record<string, unknown>
-): Promise<{ success: true; profileId: string; tempPassword: string } | { success: false; error: string }> {
+): Promise<{ success: true; profileId: string; tempPassword: string; emailSent: boolean; email: string } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
@@ -122,9 +122,10 @@ export async function createStaff(
     }, { onConflict: 'profile_id' })
   }
 
-  // Email the credentials to the staff member (best-effort — never blocks).
+  // Emailing must never block the account that has already been created — but
+  // whether it arrived is reported, not swallowed.
   const hospitalName = (await headers()).get('x-tenant-name') ?? 'your hospital'
-  await sendStaffCredentialsEmail({
+  const emailSent = await sendStaffCredentialsEmail({
     to: parsed.data.email,
     fullName: parsed.data.full_name,
     hospitalName,
@@ -135,10 +136,10 @@ export async function createStaff(
   })
 
   await logAudit(actor.id, 'create', 'staff', profileId, {
-    email: parsed.data.email, role: parsed.data.role,
+    email: parsed.data.email, role: parsed.data.role, email_sent: emailSent,
   })
   // tempPassword is also returned so the admin can share it out-of-band.
-  return { success: true, profileId, tempPassword }
+  return { success: true, profileId, tempPassword, emailSent, email: parsed.data.email }
 }
 
 export async function updateStaff(profileId: string, input: Record<string, unknown>): Promise<SimpleResult> {
@@ -246,7 +247,7 @@ export async function reactivateStaff(profileId: string): Promise<SimpleResult> 
  */
 export async function resendStaffCredentials(
   profileId: string
-): Promise<{ success: true; tempPassword: string } | { success: false; error: string }> {
+): Promise<{ success: true; tempPassword: string; emailSent: boolean; email: string } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
@@ -279,7 +280,7 @@ export async function resendStaffCredentials(
   if (profErr) return { success: false, error: profErr.message }
 
   const hospitalName = (await headers()).get('x-tenant-name') ?? 'your hospital'
-  await sendStaffCredentialsEmail({
+  const emailSent = await sendStaffCredentialsEmail({
     to: email,
     fullName: prof?.full_name ?? '',
     hospitalName,
@@ -289,8 +290,8 @@ export async function resendStaffCredentials(
     expiresHours: TEMP_PASSWORD_TTL_HOURS,
   })
 
-  await logAudit(actor.id, 'resend_credentials', 'staff', profileId)
-  return { success: true, tempPassword }
+  await logAudit(actor.id, 'resend_credentials', 'staff', profileId, { email_sent: emailSent })
+  return { success: true, tempPassword, emailSent, email }
 }
 
 // ---- Attendance ----

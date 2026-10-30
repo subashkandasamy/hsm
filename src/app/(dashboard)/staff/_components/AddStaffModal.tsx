@@ -45,6 +45,10 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [createdPassword, setCreatedPassword] = useState<string | null>(null)
+  // Whether the credentials email actually went, and where. An admin told
+  // "emailed" when nothing was sent will not think to hand the password over.
+  const [emailSent, setEmailSent] = useState(true)
+  const [sentTo, setSentTo]       = useState('')
 
   function set(k: Exclude<keyof typeof form, 'sees_patients'>, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -78,6 +82,8 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
     setSaving(false)
     if (!res.success) { setError(res.error); return }
     setCreatedPassword(res.tempPassword)
+    setEmailSent(res.emailSent)
+    setSentTo(res.email)
   }
 
   function handleClose() {
@@ -104,8 +110,21 @@ export default function AddStaffModal({ open, onClose, onSuccess, plan = 'starte
         <div className="space-y-4">
           <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
             <p className="text-sm font-semibold mb-1" style={{ color: '#065F46' }}>Account created successfully</p>
-            <p className="text-sm" style={{ color: '#64748B' }}>The login link and this temporary password have been emailed to the staff member. It expires in 72 hours, and they&apos;ll set their own password on first sign-in. You can also share it directly below.</p>
+            <p className="text-sm" style={{ color: '#64748B' }}>
+              {emailSent
+                ? <>The login link and this temporary password have been emailed to <strong>{sentTo}</strong>. It expires in 72 hours, and they&apos;ll set their own password on first sign-in. You can also share it directly below.</>
+                : <>The account is ready, but it expires in 72 hours and they&apos;ll set their own password on first sign-in.</>}
+            </p>
           </div>
+          {!emailSent && (
+            <div className="p-4 rounded-xl" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+              <p className="text-sm font-semibold mb-1" style={{ color: '#92400E' }}>The email could not be sent</p>
+              <p className="text-sm" style={{ color: '#92400E', lineHeight: 1.5 }}>
+                Nothing reached {sentTo || 'them'}. Copy the password below and give it to them yourself — otherwise
+                they cannot sign in, and it stops working in 72 hours.
+              </p>
+            </div>
+          )}
           <div className="p-4 rounded-xl" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
             <p className="text-xs mb-2" style={{ color: '#94A3B8' }}>Temporary Password</p>
             <div className="flex items-center gap-2">
