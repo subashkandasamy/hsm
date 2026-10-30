@@ -1,11 +1,23 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createHmac } from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PLANS } from '@/lib/razorpay-plans'
 import { DEFAULT_COMMISSION_PCT } from '@/lib/referral'
 
+// No `?? ''` fallback. An empty secret does not close this door, it unlocks
+// it: anyone can sign a body with an empty key, so a missing setting would
+// turn signature checking into a formality. Razorpay signs with the real
+// secret, so if ours were empty no genuine webhook would verify either — the
+// only traffic that worked would be forged. Fail closed, as the cron route does.
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET ?? ''
+
+/** Constant-time compare of two hex signatures of equal length. */
+function signatureMatches(received: string, expected: string): boolean {
+  const a = Buffer.from(received, 'utf8')
+  const b = Buffer.from(expected, 'utf8')
+  return a.length === b.length && timingSafeEqual(a, b)
+}
 
 type Svc = ReturnType<typeof createServiceClient>
 
@@ -64,8 +76,13 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-razorpay-signature') ?? ''
 
+  if (!WEBHOOK_SECRET) {
+    console.error('[razorpay webhook] RAZORPAY_WEBHOOK_SECRET is not set — refusing every webhook')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 })
+  }
+
   const expectedSig = createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex')
-  if (signature !== expectedSig) {
+  if (!signatureMatches(signature, expectedSig)) {
     console.error('[razorpay webhook] signature mismatch')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
