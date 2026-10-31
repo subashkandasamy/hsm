@@ -135,7 +135,9 @@ on 30 Oct; nothing has been changed since.
 | F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
 | F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **OPEN** |
 | F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **OPEN** |
-| F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **OPEN** |
+| F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **FIXED** — `0241`, one locking RPC; both call sites |
+| F-66 | **The bill was never checked to belong to the admission**, and both ids come from the browser | 3 | **FIXED** — `0241`; found during the F-28 fix, not by the review |
+| F-67 | `generateBill` carried a second, independent copy of the advance arithmetic | 3 | **FIXED** — `0241`; found during the F-28 fix |
 | F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **OPEN** |
 | F-34 | `claim_bed_and_admit` claims a bed by id with no tenant check | 4 | **FIXED** — `0239`, see F-46 |
 | F-45 | **Issuing a blood unit fails every time** — `tenant_id` missing from the INSERT | 6 | **FIXED** — `0239`; proved an issue now succeeds and the unit flips to `issued` |
@@ -2696,3 +2698,85 @@ Verified after:
 Before this migration the first probe would have succeeded. Four logo objects
 exist; two belong to tenants that no longer exist, which is unrelated orphan
 cleanup, not a defect.
+
+## F-28 + F-66 + F-67 — FIXED — migration `0241_apply_advance_to_bill.sql`
+
+The review's suggested fix was to replace the hand-rolled arithmetic with
+`reconcileBill`. Verifying it before writing the code showed that would have
+resolved three of the four problems and **left the worst one in place**, and
+that there were two further defects the review had not found. The fix is
+therefore a locking RPC, not a one-line substitution.
+
+### What the review had right
+
+`applyAdvanceToBill` read `bill.paid`, added to it in JavaScript, and wrote the
+sum back. A cashier posting cash through the row-locked `record_bill_payment`
+between that read and that write had their payment overwritten — money present
+in `payments`, absent from `bills.paid`. This was already known inside the
+codebase: `recordSettlement:676` carries the comment *"bills.paid can drift"*
+and recomputes from `payments` to work around it. One part of the code was
+compensating for a defect another part was creating.
+
+### What `reconcileBill` would not have fixed — F-28's real teeth
+
+`unusedAdvance` is **derived** from rows, not stored. So locking or recomputing
+*one bill* cannot stop two applies against **two different bills of the same
+admission** from each reading the same unused balance and each drawing it. The
+contended resource is the admission. `reconcileBill` locks nothing at all, so
+it would have left this wide open.
+
+The RPC takes `SELECT … FOR UPDATE` on the **admission first, then the bill** —
+always that order, so two callers cannot deadlock.
+
+### F-66 — NEW — the bill was never checked against the admission
+
+`applyAdvanceToBill(billId, admissionId)` selected the bill by id and the
+financials by admission id, and **never checked the two were related**. It is
+called from `BillingClient.tsx:297`, a client component, so both arguments
+cross the wire; a server action is an HTTP endpoint. Anyone who could open the
+billing page could apply one admission's advance to another admission's bill,
+or to an OPD bill with no admission at all.
+
+RLS still confined this to a single hospital, so it is intra-tenant accounting
+corruption rather than a data leak — but it needed no special access.
+
+### F-67 — NEW — a second copy of the same arithmetic
+
+`generateBill` (`billing.ts:540`) had its own independent implementation of the
+advance calculation, which wrote `paid: applyAmount` by **assignment** rather
+than addition — correct only because a freshly created bill has `paid = 0`.
+Both call sites now share the one function, so the two cannot drift apart.
+
+### Behavioural proof
+
+On `demo`, in `DO` blocks deliberately aborted with `RAISE`. A fresh ₹10,000
+advance and two bills were created inside the rollback, each bill alone large
+enough to swallow the whole advance:
+
+```
+unused advance : 10000.00
+#1 bill A  : {"ok": true, "applied": 10000.00, "paid": 10000.00, "status": "paid", "unused": 0.00}
+#2 bill B  : {"ok": false, "error": "No unused advance balance available for this admission"}
+#3 OPD bill, not this admission : {"ok": false, "error": "That bill does not belong to this admission"}
+TOTAL drawn : 10000.00
+```
+
+Total drawn equals the balance exactly. #3 is F-66 refused.
+
+**On the honest limits of that test:** it runs sequentially, and the *old* code
+would also have refused #2 sequentially — the lost update needs genuine
+concurrency, which one database connection cannot stage. So the race prevention
+was verified directly instead, by reading `pg_locks` from inside the still-open
+transaction:
+
+```
+locks held by the function: admissions = RowShareLock, bills = RowExclusiveLock,
+                            bills = RowShareLock, payments = RowExclusiveLock
+```
+
+`admissions = RowShareLock` is the `FOR UPDATE` on the admission. That is the
+lock that serialises two concurrent applies, and it is the same mechanism
+`record_bill_payment` already depends on.
+
+After rollback: 0 test bills, 0 test payments, the admission's advance total
+back to ₹15,000 unchanged.

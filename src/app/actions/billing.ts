@@ -536,47 +536,17 @@ export async function generateBill(
     }
   }
 
-  // Auto-apply any available advance credit for IPD admission bills.
-  // Done inline (not via applyAdvanceToBill) to reuse the existing actor + supabase
-  // client and avoid a silent permission failure in the nested server action call.
+  // Auto-apply any available advance credit for IPD admission bills, through the
+  // same locking RPC the billing counter uses. This used to be a second,
+  // independent copy of the advance arithmetic, which wrote `paid` by assignment
+  // rather than addition — correct only because a new bill has paid = 0. A
+  // not-ok result here is not a failure: it usually means there is no unused
+  // advance, and the bill itself is already valid.
   if (admission_id) {
-    const { data: advRows } = await supabase
-      .from('admission_advances').select('amount').eq('admission_id', admission_id)
-    const totalAdvance = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
-
-    const { data: refRows } = await supabase
-      .from('admission_advance_refunds').select('amount').eq('admission_id', admission_id)
-    const totalRefunded = (refRows ?? []).reduce((s, r) => s + (r.amount as number), 0)
-
-    // Advance already applied to OTHER bills for this admission (exclude the new bill)
-    const { data: priorBills } = await supabase
-      .from('bills').select('id')
-      .eq('admission_id', admission_id)
-      .neq('id', billId)
-      .not('status', 'eq', 'cancelled')
-    const priorBillIds = (priorBills ?? []).map((b) => b.id as string)
-    let advanceApplied = 0
-    if (priorBillIds.length > 0) {
-      const { data: advPmts } = await supabase
-        .from('payments').select('amount')
-        .in('bill_id', priorBillIds).eq('method', 'advance')
-      advanceApplied = (advPmts ?? []).reduce((s, p) => s + (p.amount as number), 0)
-    }
-
-    const unusedAdvance = Math.max(0, totalAdvance - totalRefunded - advanceApplied)
-    const applyAmount   = Math.min(unusedAdvance, total)
-    if (applyAmount > 0) {
-      await supabase.from('payments').insert({
-        id: crypto.randomUUID(),
-        tenant_id: actor.tenant_id,
-        bill_id: billId,
-        amount: applyAmount,
-        method: 'advance',
-        received_by: actor.id,
-      })
-      const newStatus = applyAmount >= total ? 'paid' : 'partial'
-      await supabase.from('bills').update({ paid: applyAmount, status: newStatus }).eq('id', billId)
-    }
+    await supabase.rpc('apply_advance_to_bill', {
+      p_bill_id: billId,
+      p_admission_id: admission_id,
+    })
   }
 
   await logAudit(actor.id, 'generate', 'bill', billId, {

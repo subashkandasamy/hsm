@@ -146,35 +146,21 @@ export async function applyAdvanceToBill(
 
   const supabase = await createClient()
 
-  const { data: bill } = await supabase
-    .from('bills').select('total, paid, status').eq('id', billId).single()
-  if (!bill) return { success: false, error: 'Bill not found' }
-  if (bill.status === 'paid' || bill.status === 'cancelled')
-    return { success: false, error: 'Bill is already paid or cancelled' }
-
-  const financials = await getAdmissionFinancials(admissionId)
-  const remaining = financials.unusedAdvance
-  if (remaining <= 0) return { success: false, error: 'No unused advance balance available for this admission' }
-
-  const billBalance = (bill.total as number) - (bill.paid as number)
-  const applyAmount = Math.min(remaining, billBalance)
-  if (applyAmount <= 0) return { success: true }
-
-  const { error: payErr } = await supabase.from('payments').insert({
-    id: crypto.randomUUID(),
-    tenant_id: actor.tenant_id,
-    bill_id: billId,
-    amount: applyAmount,
-    method: 'advance',
-    received_by: actor.id,
+  // One locking RPC does the whole thing: it takes the admission (the resource
+  // two concurrent applies actually contend for, since the advance balance is
+  // derived from its rows), then the bill, confirms the bill belongs to that
+  // admission — both ids arrive from the browser — recomputes the balance from
+  // `payments` rather than the drift-prone bills.paid, and posts the payment.
+  const { data: result, error: rpcErr } = await supabase.rpc('apply_advance_to_bill', {
+    p_bill_id: billId,
+    p_admission_id: admissionId,
   })
-  if (payErr) return { success: false, error: payErr.message }
+  if (rpcErr) return { success: false, error: rpcErr.message }
 
-  const newPaid = (bill.paid as number) + applyAmount
-  const newStatus = newPaid >= (bill.total as number) ? 'paid' : 'partial'
-  await supabase.from('bills').update({ paid: newPaid, status: newStatus }).eq('id', billId)
+  const res = result as { ok: boolean; error?: string; applied?: number }
+  if (!res?.ok) return { success: false, error: res?.error ?? 'Could not apply the advance' }
 
-  await logAudit(actor.id, 'apply_advance', 'bill', billId, { amount: applyAmount, admissionId })
+  await logAudit(actor.id, 'apply_advance', 'bill', billId, { amount: res.applied, admissionId })
   return { success: true }
 }
 
