@@ -2153,3 +2153,110 @@ a nurse would notice immediately. **Effort: S** — a partial unique index on
 | ER duplicate case for one patient | **PARTIAL** — F-55, racy |
 | ER registration blocked for an admitted patient | **PASS** |
 | Unknown-patient handling | **PASS** — provisional identity, unique synthetic phone |
+
+---
+
+# MODULE 10 — INSURANCE — **COMPLETE**
+
+Read: `insurance.ts` (1,494). The module `startVisit` and `dischargePatient`
+both depend on for their cashless gates.
+
+## PASS — the gate that unlocks free treatment is properly held
+
+`decideEligibility:510-544` is the function that lets a patient be treated
+without paying, so it matters who can call it and whether it can be flipped:
+
+- `requirePermission('insurance:write')` — **admin and accountant only**.
+  Receptionist, doctor and nurse hold `insurance:read`. The front desk cannot
+  wave a patient through.
+- **One-shot**: `if (claim.eligibility_status !== 'pending') return 'already
+  decided'`. An approval cannot be re-decided or reversed into a second
+  approval.
+- An estimated amount is required before approval, and the approved figure is
+  validated by `checkCoverage` against the policy.
+- Decision, timestamp, amount, denial reason and remarks are all recorded, with
+  an audit entry carrying the approved amount.
+
+## PASS — settlement is the most mature financial code in the product
+
+`recordSettlement:617-698`:
+
+- **The shortfall must be resolved explicitly.** If the insurer settles less
+  than pre-auth covered, the action refuses until the user chooses to write it
+  off or recover it from the patient — *"otherwise it silently reads as fully
+  covered while less money was collected (the revenue-leak fix)."*
+- **Conditional status update** `.eq('status','approved')` with a zero-row
+  check, and the comment records the bug it fixes: *"two settlement clicks at
+  once used to both pass the 'approved' check above and post the insurer's
+  money twice."*
+- Money is posted **through `record_bill_payment`**, the row-locked RPC, across
+  all bills of the encounter, oldest balance first.
+- TDS, UTR, settlement account and notes are all captured.
+
+## The line that confirms F-28, from the other side
+
+`recordSettlement:676-678`:
+
+```ts
+// Balance from the payments table (bills.paid can drift), posted through the
+// row-locked record_bill_payment so paid/status stay consistent.
+const { data: pays } = await supabase.from('payments').select('amount').eq('bill_id', b.id)
+const paidSoFar = (pays ?? []).reduce((s, p) => s + Number(p.amount), 0)
+```
+
+**`bills.paid` can drift** — known, written down, and worked around here by
+recomputing from `payments` and posting through the locked RPC.
+
+F-28 is the thing that *causes* that drift: `applyAdvanceToBill` writes
+`bills.paid` by hand from a stale read instead of calling `reconcileBill`. So
+one part of the codebase compensates for a defect another part creates. That
+raises F-28 from a theoretical race to a known, observed behaviour — and makes
+the one-line fix more clearly worth taking.
+
+## F-56 — MEDIUM — an insurer overpayment is logged and then dropped
+
+`recordSettlement:688-690`. After allocating across the encounter's bills, any
+remainder becomes `unallocated`, which is written into the audit entry and
+**nothing else**. No credit note, no advance, no ledger row, no warning to the
+user — the action returns plain success.
+
+If a TPA settles more than the bills outstanding (a corrected settlement, a
+consolidated payment, a bill cancelled after approval), the hospital has the
+money in its bank and nothing in Uyirly says where it belongs. It would surface
+only as a mismatch during reconciliation, months later.
+
+At minimum the user should be told. Better: post it as patient credit or an
+advance against the encounter. **Effort: S to warn, M to post.**
+
+## F-57 — LOW — partial allocation can succeed silently
+
+The posting loop (`:681-686`) catches a failed `record_bill_payment`, writes to
+`console.error`, and `continue`s. So if the first bill posts and the second
+fails, the claim is marked **settled**, the user sees success, and part of the
+insurer's money was never applied to a bill.
+
+Same class as F-16 (`logAudit` swallowing its error): a failure that only a
+server log would reveal. The outer action already knows how to refuse — the
+shortfall check does exactly that — so the pattern exists to copy.
+
+## Noted — no second person on an approval
+
+The accountant who creates a claim can approve its own eligibility. Consistent
+with the lab's documented single-technician decision (`rbac.ts`), and
+defensible at this hospital size, but it is the gate that releases treatment
+without payment and is worth a deliberate decision rather than an inherited one.
+
+## Verdicts — insurance
+
+| Area | Verdict |
+|---|---|
+| Eligibility approval restricted | **PASS** — admin/accountant only |
+| Eligibility cannot be re-decided | **PASS** |
+| Approved amount validated against policy | **PASS** |
+| Settlement requires an approved claim | **PASS** |
+| Double settlement | **PASS** — conditional update, bug recorded |
+| Shortfall against pre-auth | **PASS** — explicit resolution forced |
+| Settlement posted through the locked RPC | **PASS** |
+| Insurer overpayment | **FAIL** — F-56, logged and dropped |
+| Partial allocation failure surfaced | **FAIL** — F-57, silent |
+| Second-person approval | **ABSENT** — by design, undocumented |
