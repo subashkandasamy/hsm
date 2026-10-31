@@ -2378,3 +2378,101 @@ query has no `WHERE` to grow into.
 | Upload path tenant-scoped, server-derived | **PASS** |
 | Upload type/size limits | **FAIL** — F-58 |
 | Document read restricted by role | **FAIL** — F-08 (Module 2) |
+
+---
+
+# MODULE 12 — SCHEDULING / HR — **COMPLETE**
+
+Read: `scheduling.ts` rostering, leave and coverage paths, and the HR attendance
+path in `hr.ts`.
+
+## PASS — rostering is enforced in the database, not only in the generator
+
+- **`duty_roster_profile_id_date_key`** is UNIQUE on `(profile_id, date)`, so
+  "one nurse, one shift per day" holds even if two generators run at once. The
+  generator's own `occupied` set (`:461-465`, built across **any** unit) is an
+  optimisation on top of a real constraint rather than the only guard.
+- **`staff_attendance_profile_id_date_key`** is UNIQUE on `(profile_id, date)`,
+  backing the `upsert … onConflict: 'profile_id,date'` in `markAttendance`.
+- **Approved leave is excluded from rostering** in both paths — `generateRoster`
+  via `leaveBlockedSlots`, and `setRosterCell:390-392` refuses with *"This nurse
+  is on approved leave that day."*
+- **`assertCanManageUnit`** is a unit-level authorisation, not merely a role
+  check — a ward in-charge cannot roster another unit.
+- Generation is capped at 62 days and refuses when no shifts are configured.
+
+## PASS — attendance cannot be self-marked
+
+`markAttendance` requires `hr:attendance`, held only by **admin** and **hr**. No
+clinician or receptionist can record their own presence, which is the control
+that matters once attendance feeds payroll. `reviewLeave` likewise requires
+`leave:approve` (admin, hr) and is **conditional on `status = 'pending'`**, so a
+decided request cannot be re-decided.
+
+`requestLeave` is correct in a way worth noting: a non-manager passing someone
+else's `profile_id` silently has their own substituted rather than receiving an
+error (`:225-227`).
+
+## F-62 — MEDIUM — attendance accepts an unvalidated date and an impossible shift
+
+`MarkAttendanceSchema` (`schemas/index.ts:943-950`):
+
+```ts
+date:      z.string().min(1, 'Date required'),     // ← any non-empty string
+check_in:  z.string().nullable().optional(),       // ← no format, no ordering
+check_out: z.string().nullable().optional(),
+```
+
+Three gaps, all payroll-relevant now that this data is the basis for paying
+people:
+
+1. **`date` is not validated as a date.** `"banana"` passes zod and fails at
+   Postgres, surfacing a raw type error to the user.
+2. **No bounds.** Attendance can be marked for any date — last January, or next
+   December. A month can be backfilled or pre-filled wholesale.
+3. **No ordering between `check_in` and `check_out`.** A row can record arrival
+   at 18:00 and departure at 09:00, and nothing objects.
+
+The pattern to copy is **in the same file**: `LeaveRequestSchema:993` refines
+`end_date >= start_date`. It simply was not applied to attendance.
+
+**Effort: S.**
+
+## F-63 — LOW — approving an already-decided leave reports success
+
+`reviewLeave:250-253` updates `.eq('id', …).eq('status','pending')` and then
+checks only `error`. A zero-row update sets no error, so if the request was
+decided a moment earlier the manager is told their approval went through when
+nothing happened.
+
+`verifyOrder:482` guards exactly this and says why — *"Reporting success for an
+authorisation that never happened is the worst possible lie to tell on this
+particular screen."* The same reasoning applies to a leave decision, and the
+same `select('id')` plus length check is the fix. **Effort: S.**
+
+## F-64 — LOW — a manager can approve their own leave
+
+`reviewLeave` never compares `leave_requests.profile_id` with `actor.id`, so an
+HR manager can approve their own request. Defensible at this hospital size —
+the admin would self-approve too — but it is now a different person's decision
+than it was before the HR role existed, and worth being deliberate about.
+
+## Cross-reference
+
+**F-53** (leave can only be filed on behalf of a nurse) belongs to this module
+and is recorded under Module 8, where the live question arose.
+
+## Verdicts — scheduling / HR
+
+| Area | Verdict |
+|---|---|
+| One nurse, one shift per day | **PASS** — DB unique constraint |
+| Approved leave excluded from rostering | **PASS** — both paths |
+| Unit-level rostering authority | **PASS** |
+| Attendance self-marking blocked | **PASS** |
+| Attendance one row per person per day | **PASS** — DB unique constraint |
+| Attendance date/time validation | **FAIL** — F-62 |
+| Leave decision cannot be re-decided | **PASS** |
+| Leave decision reports truthfully | **FAIL** — F-63 |
+| Leave self-approval | **ABSENT** — F-64, undecided |
+| Leave on behalf of non-nurses | **FAIL** — F-53 |
