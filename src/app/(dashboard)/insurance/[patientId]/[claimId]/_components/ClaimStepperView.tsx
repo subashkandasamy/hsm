@@ -126,6 +126,10 @@ export default function ClaimStepperView({
   const [settlementPayments, setSettlementPayments] = useState(initialSettlementPayments)
   const [policyDocuments, setPolicyDocuments] = useState(initialPolicyDocuments)
   const [error, setError] = useState<string | null>(null)
+  // Settlement money that could not be posted to a bill. Shown until the page
+  // is left: the claim is settled, so there is no error to retry — somebody
+  // has to place the money by hand.
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Stage 1 — Add Policy
   const [addingPolicy, setAddingPolicy] = useState(policies.length === 0)
@@ -520,6 +524,7 @@ export default function ClaimStepperView({
     })
     setSettling(false)
     if (!res.success) { setError(res.error); return }
+    setNotice(res.warning ?? null)
     const [c, sp] = await Promise.all([getClaim(claim.id), listClaimSettlementPayments(claim.id)])
     if (c) setClaim(c)
     setSettlementPayments(sp)
@@ -708,6 +713,7 @@ export default function ClaimStepperView({
       )}
 
       {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#EF4444' }}>{error}</div>}
+      {notice && <div className="mb-4 px-3 py-2 rounded-xl text-sm" style={{ background: '#FFFBEB', color: '#B45309' }}>{notice}</div>}
 
       <div className="space-y-4">
         {/* ── Stage 1: Add Policy ── */}

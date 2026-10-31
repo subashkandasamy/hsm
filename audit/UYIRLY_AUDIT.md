@@ -140,6 +140,8 @@ on 30 Oct; nothing has been changed since.
 | F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **FIXED** — `0241`, one locking RPC; both call sites |
 | F-66 | **The bill was never checked to belong to the admission**, and both ids come from the browser | 3 | **FIXED** — `0241`; found during the F-28 fix, not by the review |
 | F-67 | `generateBill` carried a second, independent copy of the advance arithmetic | 3 | **FIXED** — `0241`; found during the F-28 fix |
+| F-56 | An insurer overpayment is logged and then dropped | 10 | **FIXED** — `0244`; held on the claim as `unallocated_amount`, warned in the UI |
+| F-57 | Partial allocation can succeed silently | 10 | **FIXED** — failed postings are named to the user, not just `console.error` |
 | F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **FIXED** — `0242`; two locking RPCs, a compare-and-set, a unique index |
 | F-68 | `collectAdvanceDeposit` credits the advance *before* claiming the request — double-collect | 3 | **FIXED** — `0242` batch; compare-and-set |
 | F-69 | The refund-bill guard ignores `cancelled` and **fails open** on 2+ rows (`maybeSingle`) | 3 | **FIXED** — `0242`; guard corrected + partial unique index |
@@ -3339,3 +3341,74 @@ Worth noting the delete is **not** what returns the advance to the pool:
 `apply_advance_to_bill` and `getAdmissionFinancials` both exclude cancelled
 bills already, so cancelling alone releases it. The delete is belt-and-braces
 that happens to be load-bearing for collections.
+
+## F-56 + F-57 — FIXED — migration `0244`, and `recordSettlement`
+
+Both confirmed verbatim. They are the same defect seen from two sides: money the
+insurer has paid that never reaches a bill, and nothing durable saying so.
+
+- **F-56** — after allocating across the encounter's bills, any remainder was
+  assigned to a local variable, written into the audit JSON, and dropped. No
+  credit note, no advance, no ledger row, no warning; the action returned plain
+  success.
+- **F-57** — the posting loop caught a failed `record_bill_payment`, wrote
+  `console.error`, and `continue`d. The claim was *already* flipped to `settled`
+  by then, so a failure meant part of the insurer's money was never applied
+  while the user was told it worked and only a server log knew.
+
+### What changed
+
+`unallocated_amount` on `insurance_claims`, with a partial index on
+`tenant_id WHERE unallocated_amount IS NOT NULL`. An audit JSON blob cannot be
+queried, totalled or reconciled; a column can. "Which settlements have money we
+have not placed?" is now a question somebody can actually ask, which is the
+whole point — this money surfaces as a bank reconciliation mismatch months
+later otherwise.
+
+A failed posting now records *which* bills failed (by `bill_no`, which is what
+staff recognise — `encounterBills` was widened to return it) and the action
+returns a `warning` the claim screen shows in amber beside the existing error
+banner. The two messages are deliberately different: a plain remainder asks the
+user to refund, reapply or hold it as credit; a **failed posting** says the
+claim is settled, names the bills, and says to apply it by hand. A warning
+nobody sees would not have been a fix.
+
+### Why this still returns success
+
+Tempting to return an error on a failed posting, but it would be a lie in the
+other direction: the claim *is* settled and some payments *did* post. Refusing
+would suggest nothing happened. The honest shape is success plus a warning that
+names what needs doing — and the amount parked on the claim so it is not lost
+if the user closes the tab.
+
+### Deliberately not done
+
+Auto-posting the remainder as patient credit or an admission advance. Advances
+are admission-scoped, so a visit-only claim has nowhere to put one — it would
+work for IPD and silently not for OPD, which is worse than telling the user.
+And the right destination is a human decision: refund the TPA, apply to another
+encounter, or hold as credit. Recording it and asking is the correct scope.
+
+### Verification, and its limits
+
+| Check | Result |
+|---|---|
+| `unallocated_amount` column | exists |
+| `idx_insurance_claims_unallocated` | exists |
+| claims with an amount already flagged | 0 |
+| `tsc` / `next build` | clean |
+
+**This path has never run in production.** `insurance_claims` holds 4 rows and
+**0 have ever reached `settled`**, so no historical settlement money is sitting
+unrecorded — the same latency as F-45. That is why the fix is safe to make
+without a data migration, and it is also why there is nothing to backfill.
+
+**Honest limit:** the warning path is not exercised end to end. Doing so needs
+an authenticated settlement against an approved claim whose encounter bills are
+worth less than the settlement, which cannot be staged from here — a server
+action requires a real session. The database plumbing, the types, the lint and
+the build are verified; the branch that chooses between the two warning strings
+is verified by reading.
+
+One pre-existing `react-hooks/purity` error in `ClaimStepperView.tsx` was
+checked against `HEAD` and is **not** from this change.

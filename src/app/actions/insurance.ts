@@ -55,10 +55,10 @@ const CLAIM_SELECT = `*,
 async function encounterBills(
   supabase: Awaited<ReturnType<typeof createClient>>,
   scope: { admission_id?: string | null; visit_id?: string | null; bill_id?: string | null },
-): Promise<{ id: string; total: number; paid: number }[]> {
+): Promise<{ id: string; bill_no: string | null; total: number; paid: number }[]> {
   let q = supabase
     .from('bills')
-    .select('id, total, paid, bill_source, created_at, billing_date')
+    .select('id, bill_no, total, paid, bill_source, created_at, billing_date')
     .neq('status', 'cancelled')
   if (scope.admission_id) {
     // Sweep in the source OPD visit's bills too, if this admission followed
@@ -82,7 +82,10 @@ async function encounterBills(
   // which would otherwise make every un-sourced bill invisible to insurance.
   return (data ?? [])
     .filter((b) => (b.bill_source as string | null) !== 'consolidated')
-    .map((b) => ({ id: b.id as string, total: b.total as number, paid: b.paid as number }))
+    .map((b) => ({
+      id: b.id as string, bill_no: (b.bill_no as string | null) ?? null,
+      total: b.total as number, paid: b.paid as number,
+    }))
 }
 
 /** The claimable total (sum of encounter bill totals) and outstanding balance. */
@@ -614,7 +617,9 @@ export async function advanceClaim(
  * amount in either direction). Allocates the settled amount across the
  * encounter's unpaid bills, oldest first, as insurance payments.
  */
-export async function recordSettlement(input: Record<string, unknown>): Promise<SimpleResult> {
+export async function recordSettlement(
+  input: Record<string, unknown>,
+): Promise<{ success: true; warning?: string } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'insurance:write')
@@ -661,6 +666,7 @@ export async function recordSettlement(input: Record<string, unknown>): Promise<
   if (!settledRows?.length) return { success: false, error: 'This claim has already been settled' }
 
   let unallocated = 0
+  const failedBills: string[] = []
   if (d.settled_amount > 0) {
     const bills = await encounterBills(supabase, {
       admission_id: claim.admission_id as string | null,
@@ -681,7 +687,12 @@ export async function recordSettlement(input: Record<string, unknown>): Promise<
         p_bill_id: b.id, p_amount: pay, p_method: 'insurance', p_reference: `Claim ${d.id}`,
       })
       if (payErr || !(res as { ok?: boolean } | null)?.ok) {
-        console.error('[recordSettlement] posting to bill failed', b.id, payErr?.message ?? (res as { error?: string } | null)?.error)
+        // F-57: this used to log and continue, so a failed posting left the
+        // insurer's money unapplied while the claim read 'settled' and the
+        // caller was told success. Remember it and say so.
+        const why = payErr?.message ?? (res as { error?: string } | null)?.error ?? 'unknown error'
+        console.error('[recordSettlement] posting to bill failed', b.id, why)
+        failedBills.push(b.bill_no ?? b.id)
         continue
       }
       leftover = Math.round((leftover - pay) * 100) / 100
@@ -689,11 +700,27 @@ export async function recordSettlement(input: Record<string, unknown>): Promise<
     unallocated = leftover
   }
 
+  // F-56: the remainder used to live only in the audit JSON. Put it on the
+  // claim so it can be found, totalled and reconciled. The claim is already
+  // 'settled' and some money may have posted, so this is not a failure to
+  // report by refusing — it is money that needs a person to place it.
+  if (unallocated > 0) {
+    await supabase.from('insurance_claims')
+      .update({ unallocated_amount: unallocated }).eq('id', d.id)
+  }
+
+  const warning = failedBills.length
+    ? `₹${unallocated.toFixed(2)} of this settlement could not be posted to ${failedBills.length === 1 ? 'bill' : 'bills'} ${failedBills.join(', ')}. The claim is marked settled and the amount is held against it as unallocated — apply it by hand.`
+    : unallocated > 0
+    ? `₹${unallocated.toFixed(2)} of this settlement had no outstanding bill to apply to. It is held against the claim as unallocated — refund it to the insurer, apply it elsewhere, or keep it as patient credit.`
+    : undefined
+
   await logAudit(actor.id, 'settle', 'insurance_claim', d.id, {
     settled_amount: d.settled_amount, account_id: d.settlement_account_id, unallocated,
     tds: d.tds_amount ?? 0, shortfall, shortfall_resolution: d.shortfall_resolution ?? null,
+    failed_bills: failedBills.length ? failedBills : undefined,
   })
-  return { success: true }
+  return warning ? { success: true, warning } : { success: true }
 }
 
 // ── Claim identifiers (insurer-side references, editable any time) ──────────────
