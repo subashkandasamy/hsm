@@ -123,7 +123,7 @@ on 30 Oct; nothing has been changed since.
 | F-01 | `purge_tenant_data` deletes a hospital; `anon` held EXECUTE | DB | **FIXED** `0237` |
 | F-04 | `profiles` policy recursion — staff writes broken on every tenant since `0010` | 1 | **FIXED** `0234` |
 | F-24 | Portal ownership is asserted, not proved — a mobile number reads a family's records | Portal | **PARKED** by owner |
-| F-25 | Cross-tenant account takeover via `updateStaffEmail` + 3 more `auth.admin` calls | 2 | **OPEN** |
+| F-25 | Cross-tenant account takeover via `updateStaffEmail` + 3 more `auth.admin` calls | 2 | **FIXED** — `hr.ts`, tenancy checked before the admin short-circuit, all 6 call sites |
 
 ## High
 
@@ -137,9 +137,9 @@ on 30 Oct; nothing has been changed since.
 | F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **OPEN** |
 | F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **OPEN** |
 | F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **OPEN** |
-| F-34 | `claim_bed_and_admit` claims a bed by id with no tenant check | 4 | **OPEN** — see F-46 |
-| F-45 | **Issuing a blood unit fails every time** — `tenant_id` missing from the INSERT | 6 | **OPEN** |
-| F-46 | Five `SECURITY DEFINER` RPCs locate rows by id and never check tenancy | 4,6 | **OPEN** |
+| F-34 | `claim_bed_and_admit` claims a bed by id with no tenant check | 4 | **FIXED** — `0239`, see F-46 |
+| F-45 | **Issuing a blood unit fails every time** — `tenant_id` missing from the INSERT | 6 | **FIXED** — `0239`; proved an issue now succeeds and the unit flips to `issued` |
+| F-46 | Five `SECURITY DEFINER` RPCs locate rows by id and never check tenancy | 4,6 | **FIXED** — `0239`; cross-tenant issue now refused, portal self-registration preserved |
 
 ## Medium
 
@@ -2570,3 +2570,101 @@ after each. **Effort: L.**
 | Print routes restricted by role | **FAIL** — F-65 |
 | Tenant branding on documents | **PASS** — `getTenantProfile` + `loadLogo` throughout |
 | Barcode/label print geometry | **PASS** — covered by `npm run verify:barcodes` |
+
+---
+
+# FIX PHASE — BATCH 1
+
+Each fix below was verified before the change (does the defect still exist, and
+who calls this code), and verified after (does the fix do what it claims, and
+does it break a legitimate caller). Nothing was taken on trust from the review.
+
+## F-25 — FIXED — `src/app/actions/hr.ts`
+
+`assertMayManage` took only the actor's *role*, so it never compared hospitals.
+It is the sole guard in front of six actions that call `service.auth.admin.*` —
+the Supabase Auth Admin API, where there is no row-level security to fall back
+on when the guard is wrong.
+
+Rewritten to take the whole actor and check tenancy **first, before the admin
+short-circuit** — an admin was previously waved through without any tenant
+comparison at all, which is the actual takeover path. Not-found and
+not-your-hospital now return the same message on purpose: distinguishing them
+turns the action into an oracle for "does this UUID exist, and is it an admin".
+
+Verified before changing it:
+
+- the guard was still tenant-blind on `main`;
+- **6 call sites, not the 4 the review reported** — `updateStaff`,
+  `getStaffEmail`, `updateStaffEmail`, `deactivateStaff`, `reactivateStaff`,
+  `resendStaffCredentials`. All six updated.
+- platform-admin code calls **none** of these actions, so there is no
+  legitimate cross-tenant caller the new check would break;
+- **40 profiles, 0 with a NULL `tenant_id`**, so the new comparison excludes
+  nobody who exists.
+
+`npx tsc --noEmit` clean.
+
+## F-45 + F-46 + F-34 — FIXED — migration `0239_rpcs_check_the_tenant.sql`
+
+Five `SECURITY DEFINER` functions located a row by id alone and never asked
+which hospital it belonged to. RLS is off inside a `SECURITY DEFINER` function,
+so a foreign UUID was enough to occupy another hospital's bed, move their
+patient, decrement their pharmacy stock, consume a unit from their blood fridge,
+or draw from their patient numbering.
+
+`save_lab_analyte_results` already did this check, with a comment explaining
+exactly why. The pattern was understood in this codebase. It had been applied
+once and omitted five times.
+
+The same migration adds the missing `tenant_id` to `issue_blood_unit`'s INSERT
+(**F-45**) — the column is `NOT NULL` with no default, so every issue raised
+23502 at the final statement and rolled the whole transaction back. Every
+clinical check in that function is unchanged: TTI screening, component match,
+cross-match on record, and the atomic claim that re-checks screening.
+
+`transfer_bed` additionally gained a release of the newly-claimed bed when the
+admission UPDATE matches nothing, instead of stranding a bed `occupied` with
+nobody in it.
+
+### The regression this nearly caused
+
+A uniform `IF p_tenant <> current_tenant_id() THEN RAISE` would have broken
+**patient portal self-registration**. `get_next_uhid_for` is called at
+`src/app/actions/patientPortal.ts:839` with the **service** client, where
+`current_tenant_id()` is NULL, as is `scripts/seed-demo-tenant.ts:234`. That one
+function therefore tolerates a NULL caller tenant and only refuses a *mismatch*.
+
+The other four were confirmed by reading every call site to be reached only
+through `createClient()` — the user client — so for them a strict check is safe:
+
+| Function | Callers | Client |
+|---|---|---|
+| `claim_bed_and_admit` | `ipd.ts:111` | user |
+| `transfer_bed` | `ipd.ts:411` | user |
+| `dispense_drug` | `pharmacy.ts:1091`, `vaccination.ts:420`, `pharmacySale.ts:367` | user |
+| `issue_blood_unit` | `blood.ts:678` | user |
+| `get_next_uhid_for` | `patientPortal.ts:839`, `seed-demo-tenant.ts:234` | **service** |
+
+A repo-wide grep confirmed there is no other caller — no API route, no cron, no
+edge function.
+
+### Behavioural proof
+
+Run against the `demo` tenant inside a `DO` block deliberately aborted with
+`RAISE`, so every row was rolled back. All eight `blood_units` rows belong to
+`demo`; `karur` has none, so no live data was within reach of the test.
+
+```
+A same-tenant  : {"ok": true}
+  rows in blood_issues: 1, unit status now: issued
+B cross-tenant : {"ok": false, "error": "Blood unit not found"}
+```
+
+Line A is the first time a blood unit has ever been issuable in Uyirly — before
+this, `blood_issues` held 0 rows because the insert could not succeed. Line B is
+a user from a different hospital reaching for a `demo` unit with a valid id and
+being refused.
+
+After the rollback: `blood_issues` 0 rows, `blood_crossmatches` 0 rows, the test
+unit still `available`. Nothing was left behind.

@@ -41,12 +41,29 @@ function generateTempPassword(): string {
  * and own the hospital. So the check lives here, where those calls are.
  */
 async function assertMayManage(
-  actorRole: Role, targetProfileId: string,
+  actor: { role: Role; tenant_id: string }, targetProfileId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (actorRole === 'admin') return { ok: true }
   const service = createServiceClient()
-  const { data } = await service.from('profiles').select('role').eq('id', targetProfileId).maybeSingle()
-  if ((data?.role as string | undefined) === 'admin') {
+  const { data } = await service.from('profiles')
+    .select('role, tenant_id').eq('id', targetProfileId).maybeSingle()
+
+  // Tenancy first, and before the admin short-circuit.
+  //
+  // This used to open with `if (actorRole === 'admin') return ok`, which meant
+  // an administrator was never checked against anything — and the calls below
+  // go through service.auth.admin.*, the Supabase Auth Admin API, where there
+  // is no row-level security to fall back on. So any hospital's admin could
+  // move another hospital's staff login to an address they controlled and then
+  // reset the password onto it.
+  //
+  // Not-found and not-yours give the same answer deliberately: otherwise this
+  // is an oracle for "does this UUID exist, and is it an administrator".
+  if (!data || (data.tenant_id as string) !== actor.tenant_id) {
+    return { ok: false, error: 'That staff member was not found.' }
+  }
+
+  if (actor.role === 'admin') return { ok: true }
+  if ((data.role as string | undefined) === 'admin') {
     return { ok: false, error: 'Only an administrator can manage another administrator’s account.' }
   }
   return { ok: true }
@@ -183,7 +200,7 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   const parsed = UpdateStaffSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
   const roleErr = assertMayAssignRole(actor.role, parsed.data.role)
   if (roleErr) return { success: false, error: roleErr }
@@ -224,7 +241,7 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
 export async function getStaffEmail(profileId: string): Promise<string | null> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return null
   const service = createServiceClient()
   const { data } = await service.auth.admin.getUserById(profileId)
@@ -235,7 +252,7 @@ export async function updateStaffEmail(profileId: string, newEmail: string): Pro
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
   const trimmed = newEmail.trim().toLowerCase()
   if (!trimmed) return { success: false, error: 'Email cannot be empty' }
@@ -251,7 +268,7 @@ export async function deactivateStaff(profileId: string): Promise<SimpleResult> 
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
   if (profileId === actor.id) return { success: false, error: "You can't deactivate your own account." }
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
 
   const supabase = await createClient()
@@ -272,7 +289,7 @@ export async function reactivateStaff(profileId: string): Promise<SimpleResult> 
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
 
   const supabase = await createClient()
@@ -298,7 +315,7 @@ export async function resendStaffCredentials(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
 
-  const may = await assertMayManage(actor.role, profileId)
+  const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
 
   const service = createServiceClient()
