@@ -734,7 +734,13 @@ async function resolvePortalConsultFee(
   const { data: sp } = await svc.from('staff_profiles')
     .select('consultation_fee').eq('profile_id', doctorId).eq('tenant_id', tenantId).maybeSingle()
   if (sp?.consultation_fee != null && (sp.consultation_fee as number) > 0) return sp.consultation_fee as number
-  const { data: tariff } = await svc.from('tariffs').select('amount').eq('key', 'default_consultation_fee').maybeSingle()
+  // tariffs is tenant-owned and this runs under the service role, so without the
+  // tenant filter the fallback read whichever hospital's row it found first —
+  // and with two hospitals holding the key, maybeSingle() errors and every
+  // booking silently falls through to ₹300. The tenant is already a parameter.
+  const { data: tariff } = await svc.from('tariffs')
+    .select('amount').eq('tenant_id', tenantId)
+    .eq('key', 'default_consultation_fee').maybeSingle()
   return (tariff?.amount as number) ?? 300
 }
 

@@ -135,7 +135,8 @@ on 30 Oct; nothing has been changed since.
 | F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
 | F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **FIXED** — one shared route list, 11 actions gated, 4 device routes plan-checked |
 | F-70 | **No `requireWriteAccess` on any of the 11 device mutations** — a lapsed tenant could still pair | 1 | **FIXED** — found during the F-13 fix |
-| F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **OPEN** |
+| F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **FIXED** — all 182 read; 1 real defect fixed; `verify:tenant-scope` locks the result in |
+| F-71 | `resolvePortalConsultFee` reads `tariffs` with **no tenant filter** under the service role | 2 | **FIXED** — the one real leak behind F-23; latent, 0 rows affected |
 | F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **FIXED** — `0241`, one locking RPC; both call sites |
 | F-66 | **The bill was never checked to belong to the admission**, and both ids come from the browser | 3 | **FIXED** — `0241`; found during the F-28 fix, not by the review |
 | F-67 | `generateBill` carried a second, independent copy of the advance arithmetic | 3 | **FIXED** — `0241`; found during the F-28 fix |
@@ -2980,3 +2981,106 @@ handlers.
 subject — enforcement resting on headers stamped in one branch — and the new
 `requireModule` calls inherit it. The three device routes do not, since they
 read the database directly.
+
+## F-23 + F-71 — FIXED — every service-role query read, and the result locked in
+
+F-23 asked for the right work and named it: *"reading all 128 call sites for a
+missing tenant filter is now the highest-value work remaining."* That reading is
+done. The counts were low — there are **182** service-role `.from()` statements,
+not 128 — and the outcome is narrower than the finding implies.
+
+| | |
+|---|---|
+| service-role `.from()` statements | **182** |
+| on tenant-owned tables | 103 |
+| …with no `tenant_id` in the statement | 61 |
+| **genuine defects among those 61** | **1** |
+
+The 60 others are safe, in four distinct ways, and the difference matters
+because it decides what the fix should be:
+
+- **tenant resolved upstream** — the id came from a lookup that *was*
+  tenant-filtered, or from a connector located by its own token hash. All of
+  `/api/device/*` and `lib/lab/ingest.ts`.
+- **platform-admin by design** — `platform.ts`, `seeds.ts`, behind
+  `requirePlatformAdmin`.
+- **cross-tenant by design** — the patient portal. A patient's records live at
+  several hospitals, so tenant is the wrong axis; ownership is the right one,
+  and `ownsPatient()` / `ownedOrderPatient()` prove it before every read.
+- **scanner false positive** — `onboarding.ts` sets `tenant_id` on every row of
+  an array built a few lines above the insert.
+
+One is exemplary and worth copying: `devices.ts` reads the row through the
+**user** client first so RLS proves it belongs to the actor's hospital, *then*
+lets the service role write, with a comment saying exactly that.
+
+### F-71 — NEW — the one real leak
+
+`resolvePortalConsultFee` (`patientPortal.ts:742`) already *receives* `tenantId`
+and uses it correctly for `staff_profiles` — then falls back to `tariffs` with
+no tenant filter at all. `tariffs` is tenant-owned and this runs under the
+service role, so:
+
+- with one hospital holding `default_consultation_fee`, **every** hospital's
+  portal booking was billed that hospital's fee;
+- with two or more, `maybeSingle()` **errors**, the result is null, and every
+  booking silently falls through to the hard-coded ₹300.
+
+A money path, in the patient-facing portal, wrong either way. Fixed with one
+`.eq('tenant_id', tenantId)`.
+
+**Currently latent: no tenant has that key set** (verified — the query returns
+zero rows), so the fallback is always ₹300 today and nothing has been
+mis-billed. It would have gone live the moment any hospital configured a default
+consultation fee.
+
+The clearest statement of F-23's thesis is a pair of near-identical functions:
+`appointments.ts:32` reads the same tariff row the same way and is **safe**,
+because it uses the user client and RLS scopes it. Only the service-role copy
+was wrong.
+
+### What was deliberately NOT done
+
+Adopting the four `tenant-scope.ts` helpers across 182 call sites. Having read
+all of them, 181 are correct; rewriting them would be mechanical churn with real
+regression risk across billing, lab and the portal, in exchange for no security
+gain. The helpers also cannot express the four safe patterns above — ownership
+checks, token-resolved ids, deliberate cross-tenant reads — so adoption would
+have forced bypasses and taught people to reach around the guardrail.
+
+### What was done instead — `npm run verify:tenant-scope`
+
+`scripts/verify-tenant-scope.ts` locks in the review rather than repeating it.
+It scans every service-role `.from()` call, knows the 160 tenant-owned tables,
+and requires each unfiltered query to be listed in a `REVIEWED` map **with the
+reason it is safe**. Anything new fails. Entries are keyed `file::table`, not
+line numbers, so they survive edits.
+
+It also fails on a **stale** exemption — one that no longer matches any code —
+because an allowlist nobody prunes is how a check like this quietly rots.
+
+Both failure modes were tested rather than assumed:
+
+```
+# a deliberately unfiltered service.from('bills') added to refunds.ts
+FAIL  src/app/actions/refunds.ts:74  [bills]
+      const { data } = await service.from('bills').select('id').eq('status', 'paid')
+EXIT=1
+
+# a bogus REVIEWED entry pointing at a file that does not exist
+FAIL  stale exemption, nothing matches it any more: src/app/actions/nowhere.ts::bills
+EXIT=1
+```
+
+Both probes were removed; `git diff` on `refunds.ts` is empty. Green state:
+
+```
+service-role .from() calls scanned        : 182
+on tenant-owned tables, no tenant_id      : 60
+reviewed and allowed                      : 60
+NEW, unreviewed                           : 0
+all service-role queries are tenant-scoped or reviewed
+```
+
+The script documents how to regenerate the table list after a migration adds a
+tenant-owned table.
