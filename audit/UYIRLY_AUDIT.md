@@ -157,7 +157,7 @@ on 30 Oct; nothing has been changed since.
 | F-07 | Razorpay webhook failed open on a missing secret | 2 | **FIXED** `2f53129` |
 | F-08 | Patient documents and scan images readable by any role in the tenant | 2 | **BLOCKED** — who prints reports? |
 | F-14 | Read-only and plan enforcement rest on headers stamped in one branch only | 1 | **FIXED** — all three helpers fail closed; before/after proved with a live probe |
-| F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **OPEN** |
+| F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **FIXED** — `getClaims()`; a forged cookie went from `307 /dashboard` to rejected |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **OPEN** |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **OPEN** |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
@@ -177,7 +177,7 @@ on 30 Oct; nothing has been changed since.
 | F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **OPEN** |
 | F-10 | Four reference tables readable by `anon` | DB | **OPEN** — confirm intent |
 | F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
-| F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **OPEN** |
+| F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
 | F-18 | `enabled_modules` fails open on a null column | 1 | **OPEN** |
 | F-19 | Four sequential round trips before any dashboard page renders | 1 | **OPEN** |
 | F-20 | Tenant cache per-instance and unbounded; 0–60s suspension lag | 1 | **OPEN** |
@@ -3412,3 +3412,81 @@ is verified by reading.
 
 One pre-existing `react-hooks/purity` error in `ClaimStepperView.tsx` was
 checked against `HEAD` and is **not** from this change.
+
+## F-15 — FIXED — the proxy now verifies the JWT signature
+
+The comment above the call made a claim that was simply false:
+
+```ts
+// getSession() validates JWT locally — zero network round-trip.
+const [tenant, { data: { session } }] = await Promise.all([ … supabase.auth.getSession() ])
+```
+
+`getSession()` reads the auth cookie and returns whatever it finds **without
+checking the signature**. auth-js says so in its own JSDoc, two lines above the
+method:
+
+> **IMPORTANT SECURITY NOTICE:** If using an insecure storage medium, such as
+> cookies or request headers, the user object returned by this function **must
+> not be trusted**. Always verify the JWT using `getClaims()` …
+
+### Demonstrated, not argued
+
+A cookie was built with a structurally valid ES256 header carrying the project's
+real `kid`, an unexpired payload with an arbitrary `sub`, and **a garbage
+signature**. Sent to a real dev server with `Host: karur.uyirly.com`:
+
+| | forged cookie → `/login` | no cookie → `/login` |
+|---|---|---|
+| **before** (`getSession`) | **307 → `/dashboard`** | 200 |
+| **after** (`getClaims`) | **200** | 200 |
+
+`/login` is the probe because that is where the proxy acts on `user` on its own:
+a signed-in user is bounced to `/dashboard`. Before the fix, a cookie nobody
+signed was enough to be treated as signed in. After, it is indistinguishable
+from no cookie, and `/dashboard` with the same cookie gives `307 → /login`.
+
+### Scope of the old hole — stated honestly
+
+This was **not** a data-disclosure bug. PostgREST verifies the signature itself,
+so RLS would have rejected the forged token, and `(dashboard)/layout.tsx` calls
+`getCachedUser()`, which uses `getUser()` — a verified round-trip. The damage
+was confined to decisions the proxy makes on its own: whether to bounce to
+`/login`, and the plan-gating and read-only branches that sit beside it. Real,
+worth fixing, and smaller than "authentication bypass" would suggest.
+
+### Why this does not cost a round-trip per request
+
+The original author was right to avoid network I/O in the proxy; the comment was
+just wrong about what it had achieved. This project signs tokens with **ES256** —
+the JWKS endpoint serves an EC P-256 key — so `getClaims()` fetches the JWKS
+once per instance, caches it, and thereafter verifies locally with WebCrypto.
+Next 16 runs **Proxy on the Node.js runtime by default** (changed in 16.0.0, and
+the `runtime` option is not available in a Proxy file), so `crypto.subtle` is
+present. auth-js only falls back to a `getUser()` network call for a symmetric
+(`HS*`) token or when WebCrypto is missing — neither applies.
+
+### The new failure mode, handled
+
+`getSession()` never touched the network; `getClaims()` does on first use. A
+JWKS fetch failure that threw would turn **every** request into a 500, so
+`verifiedUserId()` catches and returns null — a redirect to `/login` rather than
+an outage. Failing the other way would reinstate the hole.
+
+Verified the return shape against the auth-js source rather than assuming it:
+on success it returns `{ data: { claims: payload, header, signature } }`, so
+`claims.sub` is right, and `tsc` agrees. Also confirmed tenant resolution still
+works (`karur` → 200, not `tenant-not-found`), because the change sits inside
+the same `Promise.all`.
+
+**Honest limit:** a *valid* session could not be exercised — signing in needs a
+real password. The forged-cookie test proves `getClaims()` is called and its
+rejection path handled; the acceptance path rests on the auth-js source and the
+type, plus `next build`.
+
+## F-17 — FIXED — already closed by the F-13 work
+
+Two constants named `GROWTH_ONLY_ROUTES`, the exported one dead. There is now
+one definition in `plans.ts`, imported by `proxy.ts`. Recorded in full under
+F-13, including why the two lists had to be reconciled by hand rather than
+merged.

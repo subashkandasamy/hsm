@@ -79,6 +79,33 @@ function isValidUrl(s: string | undefined): boolean {
   try { new URL(s); return true } catch { return false }
 }
 
+/**
+ * The signed-in user's id, or null — with the JWT signature actually verified.
+ *
+ * getSession() was used here and does NOT verify the signature; auth-js says so
+ * itself: "If using an insecure storage medium, such as cookies or request
+ * headers, the user object returned by this function must not be trusted.
+ * Always verify the JWT using getClaims()."
+ *
+ * getClaims() fetches the project's JWKS once per instance and caches it, so
+ * the steady-state cost is a local WebCrypto verify rather than a round-trip.
+ * The first call does reach the network, which getSession() never did — so a
+ * JWKS failure is treated as "not signed in" (a redirect to /login) rather than
+ * being allowed to throw and turn every request into a 500. Failing the other
+ * way would reinstate the hole.
+ */
+async function verifiedUserId(
+  supabase: ReturnType<typeof createServerClient>,
+): Promise<{ id: string } | null> {
+  try {
+    const { data } = await supabase.auth.getClaims()
+    const sub = data?.claims?.sub
+    return sub ? { id: sub } : null
+  } catch {
+    return null
+  }
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const hostname = request.headers.get('host') ?? ''
@@ -276,14 +303,25 @@ export async function proxy(request: NextRequest) {
       )
 
       // ── Resolve tenant + validate session IN PARALLEL ─────────────────────
-      // getSession() validates JWT locally — zero network round-trip.
+      // getClaims(), NOT getSession(). The comment here used to claim
+      // "getSession() validates JWT locally" — it does not. getSession() reads
+      // the auth cookie and hands back whatever it finds, without checking the
+      // signature, so an edited cookie was accepted here.
+      //
+      // getClaims() does what that comment described. This project signs tokens
+      // with ES256 (the JWKS endpoint serves an EC P-256 key), so auth-js
+      // verifies the signature locally with WebCrypto against a cached JWKS —
+      // no per-request network round-trip, which is the cost the original
+      // author was right to avoid. Next 16 runs Proxy on the Node.js runtime by
+      // default, so WebCrypto is present; only a symmetric (HS*) token or a
+      // missing crypto.subtle would make auth-js fall back to a getUser() call.
+      //
       // Cross-tenant DB check removed: Supabase RLS (tenant_id on every table)
       // already prevents data leakage at the DB level.
-      const [tenant, { data: { session } }] = await Promise.all([
+      const [tenant, user] = await Promise.all([
         resolveTenant(slug),
-        supabase.auth.getSession(),
+        verifiedUserId(supabase),
       ])
-      const user = session?.user ?? null
 
       if (!tenant) {
         const url = request.nextUrl.clone()
@@ -411,8 +449,9 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user ?? null
+  // Signature-verified, as above. Only bare-localhost development reaches here
+  // now; every other unrecognised host is refused before this point.
+  const user = await verifiedUserId(supabase)
 
   if (!user) {
     const url = request.nextUrl.clone()
