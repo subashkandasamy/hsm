@@ -353,7 +353,7 @@ export async function proxy(request: NextRequest) {
       // Don't bounce a signed-in user back to /dashboard when the login page was
       // reached to clear a stale session (wrong tenant, deactivated account, or
       // an expired temp password) — those pages sign the user out on mount.
-      const loginStateParams = ['wrongtenant', 'deactivated', 'tempexpired']
+      const loginStateParams = ['wrongtenant', 'deactivated', 'tempexpired', 'notenant']
       const loginHasState = loginStateParams.some(p => request.nextUrl.searchParams.get(p))
       if (user && pathname === '/login' && !loginHasState) {
         const url = request.nextUrl.clone()
@@ -369,6 +369,28 @@ export async function proxy(request: NextRequest) {
   // ── Local dev or unrecognised hostname ─────────────────────────────────────
   const isMarketingPath = pathname === '/' || pathname.startsWith('/pricing')
   if (isPublicPath || isMarketingPath) return NextResponse.next()
+
+  // Reaching here means bare localhost, or a hostname this proxy does not
+  // recognise: not the apex, not app.{rootDomain}, not a *.{rootDomain} or
+  // *.localhost subdomain. A *.vercel.app deployment URL is the obvious case.
+  //
+  // Such a host identifies no hospital, so the tenant headers are never stamped
+  // — and everything that protects a hospital reads them. The isolation check in
+  // the dashboard layout, hasModule() (which returns TRUE with no plan header)
+  // and read-only mode all quietly stop applying. This branch used to check the
+  // session and then serve the app anyway.
+  //
+  // The dashboard layout now refuses a render with no tenant, but a layout does
+  // not run for a server-action POST, and actions post to these same paths. So
+  // the block has to be here as well to cover the action surface at all.
+  //
+  // Bare localhost stays open for development only.
+  if (!isBareLocalhost) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.search = 'notenant=1'
+    return NextResponse.redirect(url)
+  }
 
   let supabaseResponse = NextResponse.next({ request })
 
@@ -398,7 +420,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  const localLoginHasState = ['wrongtenant', 'deactivated', 'tempexpired']
+  const localLoginHasState = ['wrongtenant', 'deactivated', 'tempexpired', 'notenant']
     .some(p => request.nextUrl.searchParams.get(p))
   if (user && pathname === '/login' && !localLoginHasState) {
     const url = request.nextUrl.clone()

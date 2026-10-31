@@ -24,6 +24,11 @@ export default function LoginForm({ hospitalName }: Props) {
   const [error, setError] = useState<string | null>(
     params.get('wrongtenant') === '1'
       ? `Your account does not belong to ${hospitalName ?? 'this hospital'}. Please use your hospital's login link.`
+      : params.get('notenant') === '1'
+      // Served from an address that identifies no hospital — the apex domain, or
+      // a deployment URL. The dashboard refuses rather than rendering without a
+      // tenant, because none of the per-hospital checks can run there.
+      ? 'Please sign in from your hospital’s own web address.'
       : null
   )
   const [loading, setLoading] = useState(false)
@@ -33,7 +38,7 @@ export default function LoginForm({ hospitalName }: Props) {
   // so the user isn't left holding a session the dashboard will keep rejecting.
   useEffect(() => {
     const p = params
-    if (p.get('wrongtenant') === '1' || p.get('deactivated') === '1' || p.get('tempexpired') === '1') {
+    if (p.get('wrongtenant') === '1' || p.get('deactivated') === '1' || p.get('tempexpired') === '1' || p.get('notenant') === '1') {
       createClient().auth.signOut().catch(() => {})
     }
   }, [params])

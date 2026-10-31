@@ -132,7 +132,7 @@ on 30 Oct; nothing has been changed since.
 | F-02 | `tenant-logos` storage policies check neither tenant nor role; `{public}` | 1 | **FIXED** — `0240`; anon upload now 403, karur's logo still serves 200 |
 | F-03 | 25 `SECURITY DEFINER` functions callable by `anon` | DB | **FIXED** `0238` |
 | F-05 | A nurse could set her own role to `admin` | 1 | **FIXED** `0235` |
-| F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
+| F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **FIXED** — fails closed in both the proxy and the dashboard layout; probed with forged Host headers |
 | F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **FIXED** — one shared route list, 11 actions gated, 4 device routes plan-checked |
 | F-70 | **No `requireWriteAccess` on any of the 11 device mutations** — a lapsed tenant could still pair | 1 | **FIXED** — found during the F-13 fix |
 | F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **FIXED** — all 182 read; 1 real defect fixed; `verify:tenant-scope` locks the result in |
@@ -3084,3 +3084,88 @@ all service-role queries are tenant-scoped or reviewed
 
 The script documents how to regenerate the table list after a migration adds a
 tenant-owned table.
+
+## F-12 — FIXED — the unrecognised-hostname hole, closed without needing the Vercel check
+
+The finding was filed **UNVERIFIED**, pending someone opening the Vercel
+deployment URL to see whether such a hostname is reachable. That check turned
+out not to be needed: the guard was wrong whether or not the host is reachable,
+and fixing it is correct either way. Reachability only decides the severity, not
+the fix.
+
+Every claim was confirmed by reading `proxy.ts`. The tenant headers are set in
+exactly one place — lines 325-330, inside the tenant-subdomain branch — so they
+are absent on the apex, on `app.{rootDomain}`, on bare localhost, and on **any**
+hostname the proxy does not recognise. That last branch checked the session and
+served the application.
+
+What failed open, all at once, on such a host:
+
+| Protection | Reads | With the header absent |
+|---|---|---|
+| tenant isolation | `x-tenant-id` | `if (currentTenantId && …)` — **check skipped entirely** |
+| plan gating | `x-tenant-plan` | `hasModule()` returns **true** |
+| read-only mode | `x-tenant-readonly` | `isReadOnly` is **false** |
+
+So the dashboard was served with no tenant check, no plan gating and no
+read-only enforcement.
+
+### Two fixes, because one surface was not enough
+
+**The dashboard layout now fails closed.** `if (currentTenantId && …)` became an
+explicit refusal when the header is missing, with bare-localhost development the
+single exemption — and gated on `NODE_ENV` as well as the hostname, so it cannot
+be used as a production bypass. This is also what catches apex requests for
+paths outside `TENANT_APP_PREFIXES`: the apex branch lets `/settings`,
+`/settings/devices` and `/scheduling` through to the app, and nothing stopped a
+signed-in user there before.
+
+**The proxy now refuses the unrecognised branch too.** This is the part that
+matters, and the layout alone could not do it: **a layout does not run for a
+server-action POST**, and server actions post to these same paths. Gating only
+the layout would have blocked page renders and left every action reachable. The
+proxy sees both, so the block belongs there as well. Bare localhost stays open
+for development.
+
+`notenant` was added to **both** `loginStateParams` arrays in `proxy.ts`.
+Without that the fix would have been an infinite redirect loop: layout →
+`/login?notenant=1` → proxy bounces a signed-in user to `/dashboard` → layout
+again. The login form shows the reason and signs the stale session out, matching
+how `wrongtenant`, `deactivated` and `tempexpired` already behave.
+
+### Verification — a real dev server, forged `Host` headers
+
+| Host | Path | Result |
+|---|---|---|
+| `localhost:3999` | `/dashboard` | 307 `/login` — development unaffected |
+| `karur.uyirly.com` | `/dashboard` | 307 `/login` — a real hospital unaffected |
+| `karur.uyirly.com` | `/billing` | 307 `/login` — unaffected |
+| **`my-preview-xyz.vercel.app`** | `/dashboard` | **307 `/login?notenant=1`** |
+| **`some-random-host.example`** | `/dashboard` | **307 `/login?notenant=1`** |
+| **`my-preview-xyz.vercel.app`** | `/billing` | **307 `/login?notenant=1`** — the action surface |
+| `my-preview-xyz.vercel.app` | `/login` | 200 — reachable, so no loop |
+| `my-preview-xyz.vercel.app` | `/` and `/pricing` | 200 — marketing still open |
+| `uyirly.com` | `/patients` | 307 `/` — apex behaviour unchanged |
+| `uyirly.com` | `/settings` | 307 `/login` — reaches the app, layout gate applies |
+
+`notenant=1` appears nowhere in the old code, so its presence is proof the new
+block fired rather than the pre-existing auth redirect.
+
+`tsc` clean, `eslint` clean, `next build` compiles the proxy.
+
+**Honest limit:** every probe above is unauthenticated, because a Supabase
+session cannot be forged from here. The signed-in paths — the layout's tenant
+refusal on apex, and the absence of a redirect loop — rest on reading the code
+and on `/login?notenant=1` returning 200, not on a live session test.
+
+### Behaviour change to be aware of
+
+A `*.vercel.app` deployment URL will no longer serve the dashboard or accept its
+server actions; it redirects to `/login?notenant=1`. That is the entire point of
+the fix, but if a preview URL is part of anyone's testing routine, this is what
+changed. Local development on bare `localhost` is untouched.
+
+This also substantially narrows **F-14**: the dashboard and its actions can no
+longer be reached on a host where the headers are missing, which was the main
+way `hasModule()`'s header dependence could be exploited. F-14's own weakness —
+absent header means *allowed* — is still there and is treated separately.
