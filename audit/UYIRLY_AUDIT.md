@@ -2049,3 +2049,107 @@ nurse-shaped screen.
 | Police intimation immutable | **PASS** |
 | Amendment rather than edit | **PASS** — and well reasoned |
 | Register access restricted | **PASS** — `pcpndt:record` admin + doctor, `pcpndt:report` admin only; HR has neither |
+
+---
+
+# MODULE 9 — EMERGENCY / OT — **COMPLETE**
+
+Read: `emergency.ts` (498), `ot.ts` (464), and the `ot_schedules` constraint set
+from the live catalog.
+
+**This module is almost entirely clean.** Recording that plainly: the
+concurrency control here is the best in the product.
+
+## PASS — theatre double-booking is prevented by the database
+
+```sql
+EXCLUDE USING gist (ot_room_id WITH =, tstzrange(scheduled_start, scheduled_end) WITH &&)
+  WHERE (status = ANY (ARRAY['scheduled','in_progress']))
+```
+
+A GIST exclusion constraint on room **and** overlapping time range — the
+textbook-correct way to prevent overlapping bookings, where most codebases use a
+read-then-write check that races. And it is **partial**: cancelled and completed
+surgeries release the slot rather than blocking it forever.
+
+Both `scheduleSurgery:124-127` and `rescheduleSurgery:155-157` catch `23P01` and
+translate it into *"Room already booked for this time slot."* The constraint
+carries no `tenant_id`, which is harmless — `ot_room_id` belongs to exactly one
+tenant.
+
+## PASS — a surgery cannot be billed twice, and a failed bill is not lost
+
+`setOtStatus:204-206` moves status with a **conditional transition**:
+
+```ts
+const from = status === 'in_progress' ? ['scheduled'] : ['scheduled','in_progress']
+.update({ status }).eq('id', id).in('status', from).select(…)
+```
+
+with the reason stated — *"surgery can't be moved back (that would allow billing
+it twice)"* — and a zero-row check that says so to the user.
+
+`billCompletedSurgery:232-245` then **claims the billing before creating it**:
+
+```ts
+.update({ billing_status: 'billed' }).eq('id', row.id).eq('billing_status','unbilled').select('id')
+if (!claimed?.length) return null
+…
+if (!billId) await supabase.from('ot_schedules').update({ billing_status: 'unbilled' })…
+```
+
+Claim-then-revert-on-failure. Two clicks cannot bill it twice, and a bill that
+fails to materialise releases the charge back to the Bill Builder rather than
+stranding it as billed. The docstring describes exactly this.
+
+It also passes a real `ref_id` (`row.id`), so `autoIpdBill`'s dedup works for
+this caller — confirming the F-36 assessment that every current caller is safe.
+
+## PASS — emergency guards
+
+`registerEmergency` refuses a second active case for the same patient, and
+refuses an ER registration for a patient who is currently **admitted**, with the
+reasoning written down: *"An inpatient isn't an ER walk-in — an admitted
+patient's emergencies are handled within IPD."*
+
+## Observation — the "no mobile" problem is already solved here, in one place
+
+An unknown arrival gets a provisional patient (`emergency.ts:62-68`):
+
+```ts
+const provName  = parsed.data.prov_name?.trim()
+  || `Unknown ${gender…} ~${age}y`
+const provPhone = `PROV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+```
+
+A **synthetic, unique** phone. That matters for the family-link design behind
+F-24: because it is unique, an unidentified casualty can never be
+phone-matched into somebody else's family. The hazard I raised — that
+`patients.phone` is `NOT NULL` with no "no mobile" option, so staff must type
+*someone's* number — **already has its answer in this file.** It exists in
+Emergency and not at OPD/front-desk registration.
+
+If the mobile number becomes the family link, this `PROV-` pattern is the
+mechanism to reuse at registration. Cross-referenced to F-24.
+
+## F-55 — LOW — the emergency duplicate guards are read-then-write
+
+`registerEmergency:35-53` counts active ER cases and active admissions in
+TypeScript, then inserts. Two concurrent registrations both read zero and both
+succeed. Same class as F-35 (duplicate admission) and F-52 (duplicate
+appointment); the consequence here is two casualty cases for one arrival, which
+a nurse would notice immediately. **Effort: S** — a partial unique index on
+`emergency_cases (patient_id) WHERE status IN ('waiting','in_treatment')`.
+
+## Verdicts — emergency / OT
+
+| Area | Verdict |
+|---|---|
+| Theatre double-booking | **PASS** — GIST exclusion constraint |
+| Reschedule respects the same constraint | **PASS** |
+| Cancelled/completed surgeries release the slot | **PASS** |
+| Surgery cannot be billed twice | **PASS** — conditional transition + claim |
+| Failed OT bill releases the charge | **PASS** |
+| ER duplicate case for one patient | **PARTIAL** — F-55, racy |
+| ER registration blocked for an admitted patient | **PASS** |
+| Unknown-patient handling | **PASS** — provisional identity, unique synthetic phone |
