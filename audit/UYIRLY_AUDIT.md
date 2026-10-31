@@ -2476,3 +2476,97 @@ and is recorded under Module 8, where the live question arose.
 | Leave decision reports truthfully | **FAIL** — F-63 |
 | Leave self-approval | **ABSENT** — F-64, undecided |
 | Leave on behalf of non-nurses | **FAIL** — F-53 |
+
+---
+
+# MODULE 13 — PRINT / PDF LAYER — **COMPLETE**
+
+Read: all 20 files under `src/app/print/`, and the read actions they depend on.
+
+## PASS — the Module 2 concern is not live
+
+In Module 2 I flagged that `src/app/print/` has **no layout**, so every route
+there depends on using the user client, and *"one that reaches for the service
+client would be wide open."*
+
+Checked all 20: **zero use `createServiceClient`.** Eleven query through
+`createClient()` (RLS applies); the rest call server actions, which do the same.
+An unauthenticated request to a print route therefore resolves nothing and the
+route 404s. The hazard was real in principle and is absent in fact.
+
+## 🔴 F-65 — HIGH — 196 of 282 read actions are tenant-scoped but role-blind
+
+Tracing what `wristband/pdf` and `discharge/pdf` actually call led to this.
+Neither `getAdmission` (`ipd.ts:574`) nor `listAllergies` (`allergies.ts:9`)
+contains a permission check — both open `createClient()` and query.
+
+Measured across `src/app/actions`:
+
+| Read actions (`get*`, `list*`, `search*`, `count*`) | 282 |
+|---|---|
+| With a permission check | **86** |
+| **RLS only — no role check** | **196** |
+
+**RLS gives tenant isolation. It gives no role isolation.** So any authenticated
+user of a hospital can call any of those 196 directly — server actions are HTTP
+endpoints — and receive the data regardless of their role. Among them:
+
+```
+patients.ts::getPatient, searchPatients, listPatients
+ipd.ts::getAdmission, getAdmissionNotes          ← clinical notes
+emrHistory.ts::getPatientHistory, listPatientProblems
+lab.ts::getLabReportAnalytes, getLabOrder        ← results
+radiology.ts::getRadiologyImageUrl, getStudyViewerLink
+documents.ts::listDocuments, getDocumentUrl
+mlc.ts::listMlcPending, listPoliceIntimations    ← medico-legal
+insurance.ts::listClaimsForPatient
+billing.ts::getBill, listBills, getBillingStats
+```
+
+F-08 recorded two instances of this. It is not two instances; it is the
+**default** for reads in this codebase.
+
+### This corrects a claim I made in Module 1
+
+When the HR role was added on 30 Oct I verified the navigation and reported:
+
+> **Not a single patient record anywhere.** No name, no diagnosis, no lab result.
+
+That is true of the **menu** and false of the **API**. An HR user — who by
+design holds no clinical permission — can call `getPatientHistory`,
+`getAdmissionNotes` or `getLabReportAnalytes` from the browser and receive
+them, because those functions check nothing beyond tenancy. The nav computation
+I ran was correct about what is *shown*; I presented it as what is *reachable*,
+and it is not the same thing.
+
+The same applies to receptionist, pharmacist, lab tech and accountant.
+
+### Why it matters beyond tidiness
+
+Not a cross-tenant breach — a hospital's own staff reading a hospital's own
+records. But it defeats the purpose-limitation that the role design exists to
+express, and under DPDP that design is the stated basis for processing. A
+receptionist able to read discharge summaries and MLC police intimations is the
+concrete version.
+
+### Shape of the fix
+
+Adding `requirePermission` to 196 functions is a large and risky change —
+Module 2's F-08 note already shows why: gating `getRadiologyImageUrl` on
+`radiology:read` would break a receptionist printing a report at the counter,
+and whether that workflow exists is still an open question to the hospital.
+
+The tractable order is: define the read permissions that are missing
+(`emr:document:read` does not exist at all), answer the counter-workflow
+question, then gate the PHI-bearing reads in module batches with the UI checked
+after each. **Effort: L.**
+
+## Verdicts — print / PDF
+
+| Area | Verdict |
+|---|---|
+| No print route bypasses RLS | **PASS** — 0 of 20 use the service client |
+| Print routes reject unauthenticated requests | **PASS** — via RLS |
+| Print routes restricted by role | **FAIL** — F-65 |
+| Tenant branding on documents | **PASS** — `getTenantProfile` + `loadLogo` throughout |
+| Barcode/label print geometry | **PASS** — covered by `npm run verify:barcodes` |
