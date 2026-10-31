@@ -160,7 +160,7 @@ on 30 Oct; nothing has been changed since.
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **OPEN** |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
-| F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **OPEN** |
+| F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **FIXED** — `0243`, one transaction; `verify:bill-sources` ties the two maps |
 | F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **OPEN** |
 | F-39 | Five-minute partition hole at every month boundary | DB | **OPEN** |
 | F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **OPEN** |
@@ -3247,3 +3247,95 @@ The `READONLY:` / `PLAN:` / now `NOTENANT:` prefixes on these thrown messages
 look like machine-readable tags, but **nothing in the codebase parses them** —
 grepping for any consumer returns nothing. They are a convention for whoever
 reads the message. Harmless, but worth knowing before anyone relies on one.
+
+## F-33 — FIXED — migration `0243_cancel_bill_atomically.sql`
+
+Confirmed exactly as filed. The function carried a comment describing a bug it
+was written to fix, and the guard added for it was in the wrong order: status
+read, then **delete advance payments**, then **revert every charge**, and only
+*then* the conditional `UPDATE … .neq('status','cancelled')`. Two concurrent
+cancels both passed the read, both ran both destructive steps, and the loser
+still returned **success**, because a zero-row conditional update sets no error.
+
+### Reordering alone would not have fixed it
+
+The obvious fix — claim first, revert second — just moves the failure. If the
+revert then fails, the bill is cancelled while its charges stay `billed`
+against a bill that no longer exists, never appearing on the unbilled list
+again. That is precisely the outcome the comment on the `bill_items` error read
+calls out as the thing to avoid. Only one transaction gets both properties, so
+this is an RPC: lock the bill, re-check the status **inside** the lock, refuse
+on real money, release the advance, revert, cancel — all or nothing.
+
+### Behavioural proof — the actual bug, not a proxy for it
+
+On `demo`, in `DO` blocks aborted with `RAISE`. A lab order was marked `billed`,
+a bill created over it, then cancelled twice — with the charge handed to a
+"replacement bill" in between, which is the scenario the comment describes:
+
+```
+cancel #1              : {"ok": true}
+lab order after #1     : unbilled            (correct)
+-- replacement bill takes the charge: set back to billed --
+cancel #2              : {"ok": false, "error": "This bill is already cancelled"}
+lab order after #2     : billed              (UNTOUCHED — the fix)
+bill status            : cancelled
+```
+
+Under the old order, cancel #2 would have reverted that order to `unbilled` and
+returned success, stealing the charge from the replacement bill.
+
+The refusal path was tested too, because a guard that refuses but has already
+destroyed something is no guard:
+
+```
+cancel with cash payment : {"ok": false, "error": "Cannot cancel a bill that has payments"}
+lab order                : billed   (NOT reverted)
+bill status              : paid
+advance rows left        : 1        (NOT deleted)
+```
+
+After rollback: 0 test bills, 0 test items, 0 test payments.
+
+### The third copy of the map — now tied together
+
+The finding noted that `cancelBill`'s if/else chain had to agree with
+`generateBill`'s `TABLE_MAP` and that nothing tied them. `npm run
+verify:bill-sources` now does: it parses the TypeScript map and the SQL
+`UPDATE` statements and fails if they disagree, in either direction. Tested
+with deliberate drift rather than assumed:
+
+```
+FAIL  source 'physio' is billed into 'physio_sessions' but cancel_bill never reverts it
+FAIL  source 'blood': generateBill uses 'blood_bags', cancel_bill uses 'blood_issues'
+```
+
+It also asserts that the three sources with no source row — `manual`, `nursing`,
+`icu` — appear in neither map.
+
+**Suspicion raised and withdrawn.** Live `bill_items` carries a tenth source,
+`icu`, which is in *neither* map — this looked like the drift the finding
+predicted, already happened. It is correct: `icu_stays` has no `billing_status`
+column at all (nor does `nursing_care_plans`), and every `icu` line has a
+**null `ref_id`**. They are auto-bill lines with nothing to revert, like
+`nursing`. Both maps rightly omit it, and the check now enforces that they
+continue to.
+
+### Left alone deliberately — a decision for the hospital, not a side effect
+
+The finding's third point: advance payments are **deleted**, not reversed, so
+after release there is no record an advance was ever applied, and "for money, a
+reversing entry is the safer form". That is right in accounting terms, and I did
+not change it, because keeping the rows is not sufficient on its own:
+
+`accounts.ts:148` and `lib/billing/collections.ts:46` sum `payments` by
+`tenant_id` with **no bill-status filter**. Retaining a released advance row
+would silently overstate the day's collections — a cash-reporting change, which
+is worse than the thing being fixed. Doing this properly means teaching those
+two aggregations to exclude cancelled bills first, and that is a reporting
+decision to take deliberately. Recorded here rather than slipped in.
+
+Worth noting the delete is **not** what returns the advance to the pool:
+`apply_advance_to_bill` and `getAdmissionFinancials` both exclude cancelled
+bills already, so cancelling alone releases it. The delete is belt-and-braces
+that happens to be load-bearing for collections.

@@ -669,72 +669,24 @@ export async function cancelBill(billId: string): Promise<SimpleResult> {
 
   const supabase = await createClient()
 
-  // Cancelling twice is not a no-op, which is why this guard exists.
+  // One transaction does the whole cancellation: it locks the bill, re-checks
+  // the status inside that lock, refuses if real money came in, releases the
+  // advance, reverts every charge to unbilled, and marks the bill cancelled.
   //
-  // The second pass reverts the same charges to 'unbilled' again — but by then
-  // a replacement bill may legitimately own them, and it has just had them
-  // pulled out from under it. A stale tab or a double-click was enough.
-  const { data: bill } = await supabase
-    .from('bills').select('status').eq('id', billId).single()
-  if (!bill) return { success: false, error: 'Bill not found' }
-  if ((bill.status as string) === 'cancelled')
-    return { success: false, error: 'This bill is already cancelled' }
+  // This used to be a status read followed by two destructive steps, with the
+  // conditional update LAST. Two concurrent cancels both passed the read, both
+  // reverted the charges, and the loser still returned success because a
+  // zero-row update sets no error — so a replacement bill had its charges
+  // pulled out from under it, the exact bug the old comment described. The
+  // order could not simply be reversed either: claiming first and failing to
+  // revert would strand every charge as 'billed' against a cancelled bill.
+  const { data: result, error: rpcErr } = await supabase.rpc('cancel_bill', {
+    p_bill_id: billId,
+  })
+  if (rpcErr) return { success: false, error: rpcErr.message }
 
-  // Block if non-advance payments exist (cash/card/UPI etc.)
-  const { count: cashCount } = await supabase
-    .from('payments').select('id', { count: 'exact', head: true })
-    .eq('bill_id', billId).neq('method', 'advance')
-  if ((cashCount ?? 0) > 0) return { success: false, error: 'Cannot cancel a bill that has payments' }
-
-  // Delete any advance auto-payments — advance returns to pool via exclusion logic
-  await supabase.from('payments').delete().eq('bill_id', billId).eq('method', 'advance')
-
-  // Get all bill items with source and ref_id to revert. Read the error: a
-  // failure here with the cancel going ahead anyway would strand every charge
-  // as 'billed' against a bill that no longer exists, and they would never
-  // appear on the unbilled list again.
-  const { data: items, error: itemsErr } = await supabase
-    .from('bill_items').select('source, ref_id').eq('bill_id', billId)
-  if (itemsErr) return { success: false, error: itemsErr.message }
-
-  // Revert each source row back to unbilled
-  const refsBySource = new Map<string, string[]>()
-  for (const item of items ?? []) {
-    if (!item.ref_id) continue
-    const existing = refsBySource.get(item.source as string) ?? []
-    existing.push(item.ref_id as string)
-    refsBySource.set(item.source as string, existing)
-  }
-
-  for (const [source, refs] of refsBySource) {
-    if (source === 'consultation') {
-      await supabase.from('visits').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'bed') {
-      await supabase.from('admissions').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'lab') {
-      await supabase.from('lab_orders').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'radiology') {
-      await supabase.from('radiology_orders').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'pharmacy') {
-      await supabase.from('dispenses').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'ipd_pharmacy') {
-      await supabase.from('ipd_pharmacy_requests').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'ot') {
-      await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'blood') {
-      await supabase.from('blood_issues').update({ billing_status: 'unbilled' }).in('id', refs)
-    } else if (source === 'dental') {
-      await supabase.from('dental_treatments').update({ billing_status: 'unbilled' }).in('id', refs)
-    }
-    // 'nursing' and daily 'bed' auto-bills have no source-table billing_status to revert
-  }
-
-  // Conditional on the status we read above, so two cancels racing each other
-  // cannot both come through.
-  const { error } = await supabase
-    .from('bills').update({ status: 'cancelled' })
-    .eq('id', billId).neq('status', 'cancelled')
-  if (error) return { success: false, error: error.message }
+  const res = result as { ok: boolean; error?: string }
+  if (!res?.ok) return { success: false, error: res?.error ?? 'Could not cancel this bill' }
 
   await logAudit(actor.id, 'cancel', 'bill', billId)
   return { success: true }
