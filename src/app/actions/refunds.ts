@@ -46,25 +46,23 @@ export async function issueCreditNote(input: {
   if (!reason) return { success: false, error: 'Enter a reason for the refund' }
 
   const supabase = await createClient()
-  const { data: bill } = await supabase.from('bills').select('paid, status').eq('id', input.bill_id).maybeSingle()
-  if (!bill) return { success: false, error: 'Bill not found' }
-  if ((bill.status as string) === 'cancelled') return { success: false, error: 'Bill is cancelled' }
 
-  const refundable = await getRefundable(input.bill_id)
-  if (amount > refundable + 0.001) {
-    return { success: false, error: `Refund exceeds refundable amount (₹${refundable.toFixed(2)})` }
+  // The refundable balance is checked and the credit note written inside one
+  // row lock on the bill. Read-then-write in TypeScript let two concurrent
+  // refunds each see the same refundable amount and each pay it out.
+  const { data: result, error: rpcErr } = await supabase.rpc('issue_credit_note', {
+    p_bill_id: input.bill_id,
+    p_amount: amount,
+    p_method: input.method,
+    p_reason: reason,
+  })
+  if (rpcErr) return { success: false, error: rpcErr.message }
+
+  const res = result as { ok: boolean; error?: string; id?: string; credit_no?: string }
+  if (!res?.ok || !res.id || !res.credit_no) {
+    return { success: false, error: res?.error ?? 'Could not issue the credit note' }
   }
 
-  const { data: noData, error: noErr } = await supabase.rpc('get_next_credit_no')
-  if (noErr || !noData) return { success: false, error: 'Failed to generate credit note number' }
-
-  const id = crypto.randomUUID()
-  const { error } = await supabase.from('credit_notes').insert({
-    id, tenant_id: actor.tenant_id, bill_id: input.bill_id, credit_no: noData as string,
-    amount, method: input.method, reason, refunded_by: actor.id,
-  })
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'refund', 'bill', input.bill_id, { credit_no: noData, amount, method: input.method, reason })
-  return { success: true, id, credit_no: noData as string }
+  await logAudit(actor.id, 'refund', 'bill', input.bill_id, { credit_no: res.credit_no, amount, method: input.method, reason })
+  return { success: true, id: res.id, credit_no: res.credit_no }
 }

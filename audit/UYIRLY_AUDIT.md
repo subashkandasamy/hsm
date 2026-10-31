@@ -138,7 +138,9 @@ on 30 Oct; nothing has been changed since.
 | F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **FIXED** — `0241`, one locking RPC; both call sites |
 | F-66 | **The bill was never checked to belong to the admission**, and both ids come from the browser | 3 | **FIXED** — `0241`; found during the F-28 fix, not by the review |
 | F-67 | `generateBill` carried a second, independent copy of the advance arithmetic | 3 | **FIXED** — `0241`; found during the F-28 fix |
-| F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **OPEN** |
+| F-32 | Money **in** is row-locked; every money-**out** path is an unlocked read-then-write | 3 | **FIXED** — `0242`; two locking RPCs, a compare-and-set, a unique index |
+| F-68 | `collectAdvanceDeposit` credits the advance *before* claiming the request — double-collect | 3 | **FIXED** — `0242` batch; compare-and-set |
+| F-69 | The refund-bill guard ignores `cancelled` and **fails open** on 2+ rows (`maybeSingle`) | 3 | **FIXED** — `0242`; guard corrected + partial unique index |
 | F-34 | `claim_bed_and_admit` claims a bed by id with no tenant check | 4 | **FIXED** — `0239`, see F-46 |
 | F-45 | **Issuing a blood unit fails every time** — `tenant_id` missing from the INSERT | 6 | **FIXED** — `0239`; proved an issue now succeeds and the unit flips to `issued` |
 | F-46 | Five `SECURITY DEFINER` RPCs locate rows by id and never check tenancy | 4,6 | **FIXED** — `0239`; cross-tenant issue now refused, portal self-registration preserved |
@@ -2780,3 +2782,100 @@ lock that serialises two concurrent applies, and it is the same mechanism
 
 After rollback: 0 test bills, 0 test payments, the admission's advance total
 back to ₹15,000 unchanged.
+
+## F-32 + F-68 + F-69 — FIXED — migration `0242_money_out_is_locked_too.sql`
+
+The review listed five paths under one heading. Reading each one showed they are
+**four different defects needing four different fixes**, not one pattern — and
+two of them were not in the review at all. One of the five was already fixed by
+`0241`.
+
+| Path | Actual defect | Fix |
+|---|---|---|
+| `issueCreditNote` | genuine balance-check-then-write race | locking RPC `issue_credit_note` |
+| `recordAdvanceRefund` | genuine balance-check-then-write race | locking RPC `refund_admission_advance` |
+| `collectAdvanceDeposit` | **F-68** — money *in*, double-collect | compare-and-set |
+| `issueAdvanceRefundBill` | **F-69** — guard fails open, blocks retries | corrected guard + unique index |
+| `applyAdvanceToBill` | F-28 | already fixed in `0241` |
+
+### F-68 — NEW — the deposit was credited before the request was claimed
+
+`collectAdvanceDeposit` read `status = 'pending'`, **inserted the advance**, and
+only then flipped the request to `collected`. Two concurrent calls — a
+double-click is enough — both passed the check and both credited the deposit.
+This is money *in*, so the hospital over-credits a patient rather than losing
+cash, but the ledger is equally wrong.
+
+Fixed with the codebase's own dominant pattern rather than a new RPC: claim the
+request first with `.eq('status','pending')` and act only if the update matched
+a row. If the advance insert then fails, the request is handed back to
+`pending` so the counter can retry instead of being stuck marked collected with
+nothing behind it.
+
+### F-69 — NEW — the guard failed open exactly when it mattered
+
+`issueAdvanceRefundBill` guarded with "no existing refund bill for this
+admission". Two things were wrong with it:
+
+- It ignored `status`, so a **cancelled** refund bill blocked a retry — directly
+  contradicting the comment three steps below it, which voids rather than
+  deletes *"so a retry isn't blocked as 'already issued'"*.
+- It used `.maybeSingle()`, which **errors** when two or more rows match. The
+  code destructured only `data`, so `existing` came back `null` and the guard
+  **passed**. With one duplicate present it blocked a legitimate retry; with two
+  it waved a third one through.
+
+Also worth recording, because it changes the severity the review assigned: this
+path was **already partly protected by accident**. `idx_bills_ipd_daily_dedup`
+is unique on `(tenant_id, admission_id, billing_date, bill_source)`, so a
+same-day duplicate was always refused. Only a refund bill issued on a *later*
+date could get through. The new partial unique index closes it regardless of
+date, and excludes cancelled rows so retries stay possible.
+
+### A behaviour change worth flagging
+
+`issue_credit_note` computes the refundable balance from `sum(payments)` rather
+than `bills.paid`. `bills.paid` is a cache the codebase already knows drifts
+(the *"bills.paid can drift"* comment in `recordSettlement`). Inside a row lock
+the source of truth costs nothing to read. For any bill whose cached `paid` had
+drifted low, the refundable amount is now higher — which is correct, but it is a
+change, not purely a lock.
+
+### Behavioural proof
+
+On `demo`, in `DO` blocks aborted with `RAISE`. A bill with ₹5,000 paid and a
+fresh ₹5,000 advance were created inside the rollback, then each path was asked
+to pay out ₹5,000 **twice**:
+
+```
+credit note #1 : {"ok": true, "credit_no": "UDH/C2627/00001", "refundable_left": 0.00}
+credit note #2 : {"ok": false, "error": "Refund exceeds refundable amount (₹0.00)"}
+TOTAL credited : 5000.00   (entitlement was 5000)
+
+advance refund #1 : {"ok": true, "unused_left": 0.00}
+advance refund #2 : {"ok": false, "error": "Cannot refund ₹5000.00 — only ₹0.00 unused advance available"}
+TOTAL refunded : 5000.00   (entitlement was 5000)
+
+row locks taken: admissions = RowShareLock, bills = RowShareLock
+```
+
+Both locks confirmed from `pg_locks` inside the open transaction, as in `0241` —
+the sequential test proves the accounting, the lock proves the concurrent case.
+
+The index was tested on the case the pre-existing one missed:
+
+```
+second refund bill on a LATER DATE refused by the new index — correct
+```
+
+After rollback: 0 test bills, `credit_notes` back to its single pre-existing
+row, 0 advance refunds, the admission's advance total unchanged at ₹15,000.
+
+### Suspicion raised and withdrawn
+
+`refunds.ts:58` called `supabase.rpc('get_next_credit_no')` with **no
+arguments**, while the catalog signature is `get_next_credit_no(p_tenant_id
+uuid)`. This looked like F-45 again — a money path that could never have
+succeeded. It is safe: the argument is `DEFAULT NULL` and the body is
+`COALESCE(p_tenant_id, current_tenant_id())`, raising only if neither resolves.
+Four generators are called both ways across the codebase and all are fine.

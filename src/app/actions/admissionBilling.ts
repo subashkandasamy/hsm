@@ -247,6 +247,26 @@ export async function collectAdvanceDeposit(
     return { success: false, error: 'This deposit has already been collected' }
 
   const advanceId = crypto.randomUUID()
+
+  // Claim the request FIRST, conditional on it still being pending, and only
+  // credit the advance if this call is the one that won. Crediting first and
+  // flipping afterwards meant a double-click — or two counters — could both
+  // pass the check above and credit the deposit twice.
+  const { data: claimed } = await supabase
+    .from('advance_deposit_requests')
+    .update({
+      status:       'collected',
+      method,
+      advance_id:   advanceId,
+      collected_by: actor.id,
+      collected_at: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .eq('status', 'pending')
+    .select('id')
+  if (!claimed || claimed.length === 0)
+    return { success: false, error: 'This deposit has already been collected' }
+
   const { error: advErr } = await supabase.from('admission_advances').insert({
     id:           advanceId,
     tenant_id:    req.tenant_id,
@@ -255,15 +275,14 @@ export async function collectAdvanceDeposit(
     method,
     received_by:  actor.id,
   })
-  if (advErr) return { success: false, error: advErr.message }
-
-  await supabase.from('advance_deposit_requests').update({
-    status:       'collected',
-    method,
-    advance_id:   advanceId,
-    collected_by: actor.id,
-    collected_at: new Date().toISOString(),
-  }).eq('id', requestId)
+  if (advErr) {
+    // Hand the request back so the counter can try again, rather than leaving
+    // it marked collected with no advance behind it.
+    await supabase.from('advance_deposit_requests').update({
+      status: 'pending', advance_id: null, collected_by: null, collected_at: null,
+    }).eq('id', requestId)
+    return { success: false, error: advErr.message }
+  }
 
   await logAudit(actor.id, 'collect_advance_deposit', 'admission_advance', advanceId, {
     requestId, method,
@@ -356,28 +375,25 @@ export async function recordAdvanceRefund(params: {
   const { admissionId, amount, method } = params
   if (amount <= 0) return { success: false, error: 'Amount must be greater than zero' }
 
-  const financials = await getAdmissionFinancials(admissionId)
-  if (amount > financials.unusedAdvance) {
-    return {
-      success: false,
-      error: `Cannot refund ₹${amount} — only ₹${financials.unusedAdvance.toFixed(2)} unused advance available`,
-    }
+  const supabase = await createClient()
+
+  // The unused balance is recomputed and the refund written inside one row lock
+  // on the admission. Read-then-write let two concurrent refunds each see the
+  // same unused advance and each pay it out.
+  const { data: result, error: rpcErr } = await supabase.rpc('refund_admission_advance', {
+    p_admission_id: admissionId,
+    p_amount: amount,
+    p_method: method,
+  })
+  if (rpcErr) return { success: false, error: rpcErr.message }
+
+  const res = result as { ok: boolean; error?: string; id?: string }
+  if (!res?.ok || !res.id) {
+    return { success: false, error: res?.error ?? 'Could not record the refund' }
   }
 
-  const id = crypto.randomUUID()
-  const supabase = await createClient()
-  const { error } = await supabase.from('admission_advance_refunds').insert({
-    id,
-    tenant_id: actor.tenant_id,
-    admission_id: admissionId,
-    amount,
-    method,
-    refunded_by: actor.id,
-  })
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'refund', 'admission_advance', id, { admissionId, amount, method })
-  return { success: true, refundId: id }
+  await logAudit(actor.id, 'refund', 'admission_advance', res.id, { admissionId, amount, method })
+  return { success: true, refundId: res.id }
 }
 
 // ---- Read advances and refunds ----
@@ -495,9 +511,21 @@ export async function issueAdvanceRefundBill(params: {
   if (!adm) return { success: false, error: 'Admission not found' }
   if ((adm.status as string) !== 'discharged') return { success: false, error: 'Patient must be discharged before issuing a refund' }
 
-  // 2. No existing refund bill for this admission
-  const { data: existing } = await supabase.from('bills').select('id').eq('admission_id', admissionId).eq('bill_source', 'advance_refund').maybeSingle()
-  if (existing) return { success: false, error: 'A refund bill has already been issued for this admission' }
+  // 2. No existing refund bill for this admission.
+  // Cancelled ones don't count — step 5 voids rather than deletes on failure
+  // precisely so a retry stays possible, and the old guard ignored status and
+  // blocked it. It also used maybeSingle(), which errors on two or more rows
+  // and left `existing` null, so the guard failed OPEN in the one case it
+  // most needed to hold. A partial unique index (0242) now backs it up.
+  const { data: existing, error: existErr } = await supabase
+    .from('bills').select('id')
+    .eq('admission_id', admissionId)
+    .eq('bill_source', 'advance_refund')
+    .not('status', 'eq', 'cancelled')
+    .limit(1)
+  if (existErr) return { success: false, error: existErr.message }
+  if (existing && existing.length > 0)
+    return { success: false, error: 'A refund bill has already been issued for this admission' }
 
   // 3. Calculate refund amount
   const financials = await getAdmissionFinancials(admissionId)
