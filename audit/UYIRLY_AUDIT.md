@@ -1927,3 +1927,125 @@ a wasted token, not a clinical or financial error.
 | Templates department-scoped | **PASS** |
 | Consultation double-billing | **LATENT** — F-50, zero live instances |
 | Appointment partition safety | **PASS** — on-demand creation |
+
+---
+
+# MODULE 8 — STATUTORY REGISTERS (PC&PNDT / MTP / MLC) — **COMPLETE**
+
+Read: `pcpndt.ts` (1,012), `mlc.ts` (529), and from the live catalog the trigger
+suite on `form_f_records`, `mtp_records`, `mlc_records` and
+`mlc_police_intimations`.
+
+Emergency (`emergency.ts`) and OT (`ot.ts`) are **not** covered here — they are
+clinical workflow rather than statutory record-keeping and are listed as a
+separate module still outstanding.
+
+## PASS — the legal controls are enforced in the database, not the UI
+
+Eight triggers, all enabled:
+
+| Control | Mechanism |
+|---|---|
+| A record cannot be completed with mandatory fields blank | `form_f_completeness_gate`, `mtp_completeness_gate`, `mlc_completeness_gate` |
+| A completed record cannot be edited | `form_f_lock_completed`, `mlc_lock_completed` |
+| A record cannot be deleted | `form_f_no_delete`, `mlc_no_delete` |
+| A police intimation cannot be altered once recorded | `mlc_intimation_immutable` |
+
+`mtp_completeness_gate` checks patient name, husband's name, address, gravida,
+para, living children and abortions before a record may be marked complete —
+the fields the form legally requires, refused at the database.
+
+`form_f_lock_completed` refuses an edit with the serial number in the message
+and points at the right remedy:
+
+> Form F % is complete and cannot be edited. Raise an amendment instead — the
+> original stays on the record.
+
+**`amendFormF` is the right design, and its reasoning is worth preserving**
+(`pcpndt.ts:283-292`):
+
+> Never an edit. A new record is created carrying everything the original said,
+> pointing back at it and stating why, and the original is marked superseded
+> rather than changed. Both are kept. … The alternative is a register whose
+> contents can quietly differ from the paper already filed with the Appropriate
+> Authority, which is not a register at all — and a discrepancy found at an
+> inspection reads as concealment, not as a typo.
+
+That is the correct instinct for a statutory register and it is implemented, not
+just described.
+
+## F-54 — MEDIUM — the MTP register has two of the three controls the others have
+
+| Register | completeness | locked after completion | delete blocked |
+|---|---|---|---|
+| `form_f_records` | ✅ | ✅ | ✅ |
+| `mlc_records` | ✅ | ✅ | ✅ |
+| **`mtp_records`** | ✅ | **✗** | **✗** |
+
+A completed MTP record can be silently edited, and can be deleted outright.
+Form F and MLC both refuse.
+
+MTP records carry statutory confidentiality and a retention duty under the
+Medical Termination of Pregnancy Act, so of the three this is the register
+where a silent edit matters most. The pattern exists twice in the same codebase
+with the same helper shape, which suggests an omission rather than a decision.
+
+**Fix: `mtp_lock_completed` and `mtp_no_delete`, modelled on the Form F pair.
+Effort: S.**
+
+## Noted — the service-role escape hatch is deliberate
+
+`form_f_lock_completed` opens with:
+
+```sql
+IF (SELECT auth.role()) = 'service_role' THEN RETURN NEW; END IF;
+```
+
+Necessary — `purge_tenant_data` must be able to remove a tenant — but it means
+any of the 128 service-role call sites (F-23) could edit a completed statutory
+record without the lock firing. Defensible, and worth stating: the lock protects
+against tenant users, not against our own backend.
+
+## F-53 — LOW — leave can only be filed on behalf of a nurse
+
+*Found from a live question on `karur.uyirly.com/scheduling`, not from the
+reading order.*
+
+The "Nurse (blank = you)" picker is fed by `scheduling/page.tsx:31`:
+
+```ts
+supabase.from('profiles').select('id, full_name')
+  .eq('role', 'nurse').eq('is_active', true)
+```
+
+Karur has 10 staff: 3 nurses, 2 lab techs, 2 pharmacists, 1 receptionist, 1 HR,
+1 admin. The three names shown are correct — they are all the nurses — but the
+other **seven cannot have leave filed for them**. They can only file their own.
+
+The server already permits it. `requestLeave:225-227` accepts any `profile_id`
+and correctly restricts filing-on-behalf to a holder of `leave:approve`,
+silently substituting the actor's own id otherwise — the right shape. **So the
+limitation is the UI query alone.**
+
+It matters now because the HR role added on 30 Oct exists to do exactly this
+job, and the screen will not let it. Dropping `.eq('role','nurse')` and
+relabelling to "Staff member" is the whole fix. **Effort: S.**
+
+Scheduling is nurse-centric throughout — coverage rules, ward ratios,
+`admission_nurse_assignments` — which is defensible, since nurse rostering is
+the hard part. But **leave is not a nursing concept** and is sitting inside a
+nurse-shaped screen.
+
+## Verdicts — statutory registers
+
+| Area | Verdict |
+|---|---|
+| Mandatory fields enforced before completion | **PASS** — all three registers |
+| Completed Form F immutable | **PASS** |
+| Completed MLC immutable | **PASS** |
+| **Completed MTP immutable** | **FAIL** — F-54 |
+| Form F / MLC deletion blocked | **PASS** |
+| **MTP deletion blocked** | **FAIL** — F-54 |
+| Police intimation immutable | **PASS** |
+| Amendment rather than edit | **PASS** — and well reasoned |
+| Register access restricted | **PASS** — `pcpndt:record` admin + doctor, `pcpndt:report` admin only; HR has neither |
