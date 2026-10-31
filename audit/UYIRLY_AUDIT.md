@@ -154,7 +154,7 @@ on 30 Oct; nothing has been changed since.
 | F-06 | Device push tokens readable by anyone from any browser | 2 | **FIXED** `1e7a54b` |
 | F-07 | Razorpay webhook failed open on a missing secret | 2 | **FIXED** `2f53129` |
 | F-08 | Patient documents and scan images readable by any role in the tenant | 2 | **BLOCKED** — who prints reports? |
-| F-14 | Read-only and plan enforcement rest on headers stamped in one branch | 1 | **OPEN** |
+| F-14 | Read-only and plan enforcement rest on headers stamped in one branch only | 1 | **FIXED** — all three helpers fail closed; before/after proved with a live probe |
 | F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **OPEN** |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **OPEN** |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **OPEN** |
@@ -3169,3 +3169,81 @@ This also substantially narrows **F-14**: the dashboard and its actions can no
 longer be reached on a host where the headers are missing, which was the main
 way `hasModule()`'s header dependence could be exploited. F-14's own weakness —
 absent header means *allowed* — is still there and is treated separately.
+
+## F-14 — FIXED — the three header-dependent guards now fail closed
+
+Both halves of the finding were confirmed. Forgery is genuinely impossible:
+`proxy.ts:324-330` uses `requestHeaders.set(...)`, which overwrites whatever the
+client sent. **The weakness was absence, and absence meant "allow":**
+
+```ts
+export async function hasModule(moduleKey: string) {
+  const h = await headers()
+  if (!h.get('x-tenant-id')) return true   // "non-tenant context — don't block"
+  …
+```
+
+`requireWriteAccess()` threw only on an explicit `'1'`, and
+`isReadOnlyRequest()` returned `false`. So on any host missing the subdomain
+branch, a lapsed or Starter hospital had every module open and every write
+allowed.
+
+### The comment described a caller that does not exist
+
+That `return true` is justified by "non-tenant context". There is no such
+caller. Checked rather than assumed:
+
+| Caller | Calls these helpers? |
+|---|---|
+| server actions under `src/app/actions` | yes — all of them |
+| `setup.ts` (`hasModule` only, to pick which checklist rows to show) | yes |
+| nightly cron, `/api/device/*` | **no** — they use `tenantHasModule()`, which reads the plan from the database because it has no headers to read |
+| patient portal (`my.*`), partner portal, platform-admin panel | **no** — and these are the hosts that genuinely never stamp the headers |
+
+That last row was the real regression risk, and the reason to check instead of
+guessing: the portal hosts return from the proxy before any tenant header is
+stamped, so had `patientPortal.ts` called `requireWriteAccess()` anywhere,
+failing closed would have broken patient logins outright. It calls none of the
+three. Nor does `partnerAuth.ts`, `auth.ts`, `onboarding.ts` or `platform.ts`.
+
+So absence can safely fail closed. Bare-localhost development is the single
+exemption, gated on `NODE_ENV` as well as the hostname — the same test the
+dashboard layout now uses, so it cannot become a production bypass.
+
+### Verification — measured before and after, not asserted
+
+A temporary route under `/api/tools/`, chosen because the proxy skips that
+prefix, so the handler runs with no tenant headers whatever `Host` is sent —
+exactly the situation these guards exist for, and one the F-12 proxy fix
+otherwise makes unreachable.
+
+**Before** (the committed `server-utils.ts`, restored with `git show` for the
+measurement):
+
+| Host | `hasModule('lab')` | `isReadOnly` | `requireWriteAccess` |
+|---|---|---|---|
+| `localhost:3999` | true | false | allowed |
+| `my-preview-xyz.vercel.app` | **true** | **false** | **allowed** |
+
+**After:**
+
+| Host | `hasModule('lab')` | `isReadOnly` | `requireWriteAccess` |
+|---|---|---|---|
+| `localhost:3999` | true | false | allowed |
+| `my-preview-xyz.vercel.app` | **false** | **true** | **NOTENANT** |
+| `some-random-host.example` | **false** | **true** | **NOTENANT** |
+
+Development on bare localhost is byte-for-byte unchanged, which was the thing
+most at risk of breaking.
+
+The probe route was deleted; `git status` shows only `server-utils.ts` modified.
+`tsc` clean (after clearing a stale `.next/dev/types` entry that still
+referenced the deleted route — a generated artefact, not source), `eslint`
+clean, `next build` succeeds.
+
+### Noted in passing — not a finding
+
+The `READONLY:` / `PLAN:` / now `NOTENANT:` prefixes on these thrown messages
+look like machine-readable tags, but **nothing in the codebase parses them** —
+grepping for any consumer returns nothing. They are a convention for whoever
+reads the message. Harmless, but worth knowing before anyone relies on one.

@@ -5,6 +5,40 @@ import { createClient } from './supabase/server'
 import { getCachedUser } from './supabase/cached-user'
 import type { Role } from './types'
 
+/**
+ * Is this request missing its tenant headers, and is that legitimate?
+ *
+ * proxy.ts stamps x-tenant-* in exactly one place, inside the tenant-subdomain
+ * branch, so they are absent on every other host. These three helpers used to
+ * read "absent" as "allow": requireWriteAccess only threw on an explicit '1',
+ * and hasModule opened with `if (!x-tenant-id) return true`, commented
+ * "non-tenant context — don't block". Combined with F-12 that meant a lapsed or
+ * Starter hospital reaching the app by an unrecognised hostname had neither
+ * restriction.
+ *
+ * The comment described a caller that does not exist. Every caller of these
+ * three is a server action under src/app/actions, plus setup.ts using hasModule
+ * to decide which checklist rows to show. Nothing headless calls them — the
+ * nightly cron and the /api/device/* routes use tenantHasModule() in
+ * lib/tenantModule.ts, which reads the plan from the database because it has no
+ * headers to read. The patient portal (my.*), the partner portal and the
+ * platform-admin panel are served from hosts that never stamp these headers,
+ * and none of their actions call any of these three — checked, not assumed.
+ *
+ * So absence can fail closed. Bare-localhost development is the one exemption,
+ * gated on NODE_ENV as well as the hostname so it cannot become a production
+ * bypass — the same test the dashboard layout uses.
+ */
+async function noTenantContext(): Promise<{ missing: boolean; devExempt: boolean }> {
+  const h = await headers()
+  if (h.get('x-tenant-id')) return { missing: false, devExempt: false }
+  const host = (h.get('host') ?? '').split(':')[0]
+  return {
+    missing: true,
+    devExempt: process.env.NODE_ENV === 'development' && host === 'localhost',
+  }
+}
+
 // Throws if the tenant is in read-only mode (trial ended or subscription lapsed).
 // The proxy stamps x-tenant-readonly on every request so no extra DB query is needed.
 // Call this at the top of every mutation server action.
@@ -13,19 +47,26 @@ export async function requireWriteAccess(): Promise<void> {
   if (h.get('x-tenant-readonly') === '1') {
     throw new Error('READONLY: Your subscription has ended. Renew to make changes.')
   }
+  const { missing, devExempt } = await noTenantContext()
+  if (missing && !devExempt) {
+    throw new Error('NOTENANT: This address does not identify a hospital. Sign in from your hospital’s own web address.')
+  }
 }
 
 /** True when the tenant is in read-only mode (expired trial / lapsed subscription). */
 export async function isReadOnlyRequest(): Promise<boolean> {
   const h = await headers()
-  return h.get('x-tenant-readonly') === '1'
+  if (h.get('x-tenant-readonly') === '1') return true
+  // No hospital in context: treat as read-only rather than writable.
+  const { missing, devExempt } = await noTenantContext()
+  return missing && !devExempt
 }
 
 /** Whether the current tenant's plan includes a module (trial includes everything). */
 export async function hasModule(moduleKey: string): Promise<boolean> {
+  const { missing, devExempt } = await noTenantContext()
+  if (missing) return devExempt
   const h = await headers()
-  // No tenant headers (non-tenant context) — don't block.
-  if (!h.get('x-tenant-id')) return true
   const plan = (h.get('x-tenant-plan') ?? 'starter') as PlanKey
   const status = (h.get('x-tenant-status') ?? 'active') as TenantStatus
   return planHasModule(plan, status, moduleKey)
