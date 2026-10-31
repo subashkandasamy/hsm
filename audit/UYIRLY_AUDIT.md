@@ -2260,3 +2260,121 @@ without payment and is worth a deliberate decision rather than an inherited one.
 | Insurer overpayment | **FAIL** — F-56, logged and dropped |
 | Partial allocation failure surfaced | **FAIL** — F-57, silent |
 | Second-person approval | **ABSENT** — by design, undocumented |
+
+---
+
+# MODULE 11 — EMR / ALLERGIES / DOCUMENTS — **COMPLETE**
+
+Read: `emr.ts` (311), `allergies.ts` (73), `documents.ts` (134),
+`rxSafety.ts` (60), `dosing.ts` (40), and the prescribing surface of
+`ConsultationWorkspace.tsx`.
+
+**Correction first.** Grepping `opd.ts` and `ipdTreatment.ts` for "allerg"
+returned nothing and I read that as *no allergy check when prescribing* — the
+most serious thing that could be true of a clinical system. It is **wrong**.
+The check lives in `rxSafety.ts`, called from the prescribing UI as the doctor
+types. Third time in this audit a control has turned out to live somewhere my
+first grep did not reach.
+
+## PASS — prescribing safety exists and is clinically thought through
+
+`rxSafety.ts:8-13` matches **allergy classes**, not just exact names:
+
+```ts
+penicillin: ['penicillin','amoxicillin','ampicillin','cloxacillin','augmentin', …]
+sulfa:      ['sulfa','sulfamethoxazole','cotrimoxazole','septran','bactrim']
+nsaid:      ['ibuprofen','diclofenac','aspirin','naproxen','aceclofenac', …]
+cephalosporin: ['cephalexin','cefixime','ceftriaxone','cefuroxime', …]
+```
+
+So an allergy recorded as "penicillin" flags amoxicillin — the cross-reactivity
+that actually causes harm. Interactions against the other drugs on the
+prescription are checked too, warnings are de-duplicated, and an `AllergyBanner`
+sits at the top of the consultation workspace.
+
+**It is deliberately non-blocking** — *"a safety aid, not exhaustive"* and
+*"Non-blocking — the doctor decides."* That is the right call: a recorded
+allergy is sometimes a mild intolerance, and sometimes there is no alternative.
+Blocking would be worse medicine.
+
+**Document storage is sound where it matters**: the `documents` bucket is
+private with no policies (service-role only), paths are
+`tenants/{tenantId}/patients/{patientId}/{uuid}.{ext}` with the tenant
+**server-derived** via `requireTenantId()`, and access is through short-lived
+signed URLs (1 hour).
+
+## F-58 — MEDIUM — patient documents have no type or size limit, at either layer
+
+`getUploadUrl:33-40` takes the filename, splits off an extension, and mints a
+signed upload URL. There is **no MIME check and no size check**. The bucket
+agrees: from the live catalog, `documents` has `file_size_limit: null` and
+`allowed_mime_types: null`.
+
+Compare `tenant-logos` — 2 MB, and `{image/png, image/jpeg, image/webp}`. The
+bucket holding patient records is the one with no limits.
+
+Anyone with `emr:document:upload` — which includes **receptionist** — can
+therefore upload a file of any type and any size into the hospital's storage.
+The realistic harm is cost and abuse rather than compromise, since the bucket is
+private and served only through signed URLs. **Effort: S** — set the two bucket
+properties and validate the extension.
+
+## F-59 — LOW — nothing records that a safety warning was shown or overridden
+
+The warning is computed in the UI; `addPrescription` (`opd.ts:196`) never learns
+a warning existed. So when a doctor prescribes amoxicillin to a
+penicillin-allergic patient, the record shows only the prescription.
+
+For an advisory control the override trail **is** the control — it is what
+protects the doctor and the hospital afterwards, and what distinguishes a
+considered decision from an unnoticed one. Passing the warnings into
+`addPrescription` and storing them with an acknowledgement would close it.
+**Effort: S.**
+
+## F-60 — LOW — allergen matching is bidirectional and can misfire
+
+`rxSafety.ts:31`:
+
+```ts
+let hit = name.includes(allergen) || allergen.includes(name)
+```
+
+The minimum length is 3, so a short allergen matches inside unrelated names —
+an allergy recorded as "ACE" flags **par-ace-tamol**. False positives are not
+harmless in a safety system: they train the doctor to dismiss the banner, which
+costs the true positives.
+
+**Theoretical today** — `patient_allergies` holds 2 rows and none is 3–5
+characters. Worth tightening to word-boundary matching before the register
+grows. **Effort: S.**
+
+## F-61 — LOW — the interaction check sees only this prescription
+
+`checkPrescriptionSafety(patientId, drugName, currentDrugs)` takes
+`currentDrugs` from the **client**, meaning the drugs on the prescription being
+written. A patient's existing long-term medication — warfarin from a previous
+visit, say — is not considered, so the clinically dangerous interaction is the
+one least likely to be caught.
+
+## Noted — a scale caveat, not a problem today
+
+`rxSafety.ts:44` loads the **entire** `drug_interactions` table on every
+keystroke past three characters, with no filter. At **38 rows** this is free,
+and flagging it as a performance defect would be inflation. Recorded only
+because the table is global reference data that is expected to grow, and the
+query has no `WHERE` to grow into.
+
+## Verdicts — EMR
+
+| Area | Verdict |
+|---|---|
+| Allergy recorded and surfaced at prescribing | **PASS** |
+| Allergy class cross-reactivity | **PASS** |
+| Drug interaction checking | **PARTIAL** — F-61, this prescription only |
+| Warning blocks the prescription | **BY DESIGN ABSENT** — correct |
+| Override recorded | **FAIL** — F-59 |
+| Allergen match precision | **PARTIAL** — F-60 |
+| Document bucket private | **PASS** |
+| Upload path tenant-scoped, server-derived | **PASS** |
+| Upload type/size limits | **FAIL** — F-58 |
+| Document read restricted by role | **FAIL** — F-08 (Module 2) |
