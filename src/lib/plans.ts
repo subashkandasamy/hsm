@@ -10,15 +10,28 @@ export const PLAN_MODULES: Record<PlanKey, readonly string[]> = {
   enterprise: ['*'],
 }
 
-// Routes that require growth plan (prefix match)
+// Routes that require the Growth plan (prefix match).
+//
+// THIS IS THE ONLY LIST. proxy.ts imports it. There were previously two
+// constants of this name with different contents — this one, which nothing
+// imported, and a local one inside proxy.ts, which did the enforcing. The
+// enforcing copy was missing /settings/devices, so the protection the comment
+// below describes did not exist.
 //
 // /settings/devices is here because it configures the analyzer and scanner
 // connectors, which only exist to feed lab and radiology — both Growth-only.
 // Without it a Starter tenant could pair a connector it has no module to use.
+//
+// /settings/ipd-billing configures the IPD daily auto-bill only; nothing on it
+// applies without IPD.
+//
+// /staff is deliberately NOT here: it is available on Starter with per-role
+// limits, and 'hr' is a Starter module. The unused copy of this list had it,
+// which is why the two had to be reconciled by hand rather than merged.
 export const GROWTH_ONLY_ROUTES = [
   '/ipd', '/wards', '/emergency', '/lab', '/radiology',
-  '/ot', '/blood', '/insurance', '/inventory', '/staff',
-  '/settings/devices',
+  '/ot', '/blood', '/insurance', '/inventory',
+  '/settings/devices', '/settings/ipd-billing',
 ]
 
 export function planHasModule(plan: PlanKey, status: TenantStatus, moduleKey: string): boolean {

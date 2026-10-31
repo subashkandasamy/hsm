@@ -133,7 +133,8 @@ on 30 Oct; nothing has been changed since.
 | F-03 | 25 `SECURITY DEFINER` functions callable by `anon` | DB | **FIXED** `0238` |
 | F-05 | A nurse could set her own role to `admin` | 1 | **FIXED** `0235` |
 | F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
-| F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **OPEN** |
+| F-13 | Starter tenant can pair a lab connector; `requireModule` never called | 1 | **FIXED** — one shared route list, 11 actions gated, 4 device routes plan-checked |
+| F-70 | **No `requireWriteAccess` on any of the 11 device mutations** — a lapsed tenant could still pair | 1 | **FIXED** — found during the F-13 fix |
 | F-23 | `tenant-scope.ts` guardrail written, documented, **0 call sites** vs 128 raw | 1 | **OPEN** |
 | F-28 | `applyAdvanceToBill` bypasses `reconcileBill`; lost-update on `bills.paid` | 3 | **FIXED** — `0241`, one locking RPC; both call sites |
 | F-66 | **The bill was never checked to belong to the admission**, and both ids come from the browser | 3 | **FIXED** — `0241`; found during the F-28 fix, not by the review |
@@ -2879,3 +2880,103 @@ uuid)`. This looked like F-45 again — a money path that could never have
 succeeded. It is safe: the argument is `DEFAULT NULL` and the body is
 `COALESCE(p_tenant_id, current_tenant_id())`, raising only if neither resolves.
 Four generators are called both ways across the codebase and all are fine.
+
+## F-13 + F-70 — FIXED — plan gating for the connector
+
+Every claim in the finding was confirmed verbatim: two constants named
+`GROWTH_ONLY_ROUTES` with different contents, the exported one imported
+nowhere, the enforcing local copy in `proxy.ts` missing `/settings/devices`,
+and zero calls to `requireModule` in `devices.ts`.
+
+Two things were worse than filed, and one was better.
+
+### Worse: it is 11 mutations, not 6
+
+The review listed six `requirePermission` lines. There are **eleven** mutating
+actions in that file — the five it missed are `mapAnalyzerCode`,
+`mapAnalyzerCodes`, `ignoreAnalyzerCode`, `retryMessage` and `ignoreMessage`,
+all gated on `lab:process`. The same undercount as F-25. All eleven are now
+gated.
+
+### Worse: gating the page would not have stopped the leak
+
+The finding mentions in passing that the ingest route is exempt from
+middleware. That is the actual revenue leak, and closing the UI does nothing
+about it. `/api/device/*` is skipped by the proxy **by design** — a connector
+carries a bearer token and no cookie, so it must reach the handler — and all
+four routes checked only `connector.status === 'revoked'`. **A hospital that
+paired on Growth and then downgraded kept ingesting lab results and radiology
+studies indefinitely.** Pairing the connector is a one-time act; the ingest is
+the thing being sold.
+
+So the fix has three parts, not one:
+
+1. **One list.** `proxy.ts` now imports `GROWTH_ONLY_ROUTES` from `plans.ts`
+   instead of restating it. Reconciled by hand rather than merged, because the
+   two disagreed in both directions: the exported copy wrongly included
+   `/staff` (Starter keeps it — `hr` is a Starter module), and the enforcing
+   copy was missing `/settings/devices`.
+2. **Eleven actions** gated with `requireModule('lab')`, or `'radiology'` for
+   `setModalityStatus`. Both modules are Growth-only so the outcome is
+   identical today; the keys are written to match what the action actually
+   touches.
+3. **Four device routes** plan-checked against the database. `hasModule` reads
+   `x-tenant-plan` off the request and there is no such header here, so the new
+   `tenantHasModule(tenantId, key)` reads `tenants` with the service client.
+   This generalises `tenantHasIpd`, which already did exactly this for the
+   nightly cron; `ipdAccess.ts` now delegates to it rather than keeping a second
+   copy of the pattern. Ingest returns **402**. Re-pairing requires lab *or*
+   radiology, since one connector serves both.
+
+### F-70 — NEW — a lapsed tenant could still pair a connector
+
+`devices.ts` called `requireWriteAccess()` **nowhere**, across all eleven
+mutations, while `billing.ts` and `admissionBilling.ts` call it on every write.
+So a hospital whose subscription had ended — read-only mode, every other module
+refusing writes — could still create, pair, revoke and delete connectors and
+remap analyzer codes. Added to all eleven.
+
+### Better: karur is not affected, and nothing in production breaks
+
+The impact check that mattered. `planHasModule` returns `true` for any tenant
+on `trial`, whatever the plan:
+
+| Tenant | Plan / status | Connectors | Lab allowed after the change |
+|---|---|---|---|
+| **karur** | growth / trial | 0 | yes |
+| demo | growth / active | **3** | yes |
+| newtest | starter / cancelled | 0 | no — and `/lab` was already proxy-gated |
+| revathi-medical-center | starter / trial | 0 | yes |
+| 4 others | growth / trial | 0 | yes |
+
+`demo` is the **only** tenant in the database with a connector, and it is on
+growth/active. No hospital loses ingest. karur is on the Growth plan, so when
+its trial converts to active it stays allowed.
+
+### Verification
+
+`npx tsx` against the real module, asserting the list and the gate:
+
+```
+PASS  gated route present: /settings/devices
+PASS  gated route present: /settings/ipd-billing
+PASS  /staff not gated (Starter keeps it)
+PASS  karur  growth/trial  lab -> true
+PASS  demo   growth/active lab -> true
+PASS  newtest starter/cancelled lab -> false
+PASS  revathi starter/trial lab -> true
+PASS  hypothetical starter/active lab -> false
+```
+
+`npx tsc --noEmit` clean, `eslint` clean on all six changed files, and
+`next build` succeeds — which matters because `proxy.ts` runs in a constrained
+runtime and now carries a new import. `plans.ts` is pure data, so nothing with
+a Node dependency was pulled in; `tenantModule.ts` is imported only by route
+handlers.
+
+### Carried forward, not fixed here
+
+`hasModule` returns **true** when `x-tenant-id` is absent. That is F-14's
+subject — enforcement resting on headers stamped in one branch — and the new
+`requireModule` calls inherit it. The three device routes do not, since they
+read the database directly.

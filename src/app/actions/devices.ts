@@ -9,7 +9,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { selectSilent, type AnalyzerPulse, type SilentAnalyzer } from '@/lib/lab/silent'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, requireModule, requireWriteAccess } from '@/lib/server-utils'
 import { generatePairingCode, PAIRING_TTL_MINUTES } from '@/lib/lab/pairing'
 import { processMessage } from '@/lib/lab/ingest'
 import { revalidatePath } from 'next/cache'
@@ -169,6 +169,8 @@ export async function createConnector(
 ): Promise<{ success: true; code: string; expiresAt: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const trimmed = name.trim()
   if (!trimmed) return { success: false, error: 'Give this computer a name you will recognise' }
@@ -207,6 +209,8 @@ export async function regeneratePairingCode(
 ): Promise<{ success: true; code: string; expiresAt: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   const code = generatePairingCode()
@@ -232,6 +236,8 @@ export async function regeneratePairingCode(
 export async function revokeConnector(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   const { error } = await supabase.from('connectors')
@@ -260,6 +266,8 @@ export async function revokeConnector(id: string): Promise<SimpleResult> {
 export async function deleteConnector(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   const { data: connector } = await supabase
@@ -337,6 +345,8 @@ export async function listSilentAnalyzers(hours = 4): Promise<SilentAnalyzer[]> 
 export async function setAnalyzerStatus(id: string, status: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   if (!['discovered', 'quarantine', 'live', 'paused'].includes(status)) {
     return { success: false, error: 'Unknown status' }
@@ -388,6 +398,8 @@ export async function listModalities(): Promise<ModalityRow[]> {
 export async function setModalityStatus(id: string, status: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('radiology')
 
   // radiology_modalities has no quarantine state — a scanner either sends or
   // it does not, and there is no per-code mapping to hold back for review.
@@ -435,6 +447,8 @@ export async function mapAnalyzerCode(
 ): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
+  await requireWriteAccess()
+  await requireModule('lab')
   if (!analyteId) return { success: false, error: 'Choose what this code measures' }
 
   const supabase = await createClient()
@@ -464,6 +478,8 @@ export async function mapAnalyzerCodes(
 ): Promise<{ success: true; mapped: number } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
+  await requireWriteAccess()
+  await requireModule('lab')
   if (!pairs.length) return { success: false, error: 'Nothing to confirm' }
 
   const supabase = await createClient()
@@ -490,6 +506,8 @@ export async function mapAnalyzerCodes(
 export async function ignoreAnalyzerCode(mappingId: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   const { error } = await supabase.from('analyzer_mappings')
@@ -527,6 +545,8 @@ export async function retryMessage(
 ): Promise<{ success: true; status: string; written?: number; error?: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   // Read through the user's own client first, so RLS proves this message
@@ -572,6 +592,8 @@ export async function retryMessage(
 export async function ignoreMessage(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:process')
+  await requireWriteAccess()
+  await requireModule('lab')
 
   const supabase = await createClient()
   const { error } = await supabase.from('analyzer_messages')

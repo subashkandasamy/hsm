@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServiceClient } from '@/lib/supabase/service'
+import { tenantHasModule } from '@/lib/tenantModule'
 import { toDicomModality, modalityMatches } from '@/lib/radiology/modality'
 
 export const runtime = 'nodejs'
@@ -42,6 +43,15 @@ export async function GET(request: Request) {
 
   if (!connector) return json(401, { error: 'Unknown connector token' })
   if (connector.status === 'revoked') return json(403, { error: 'This connector has been revoked' })
+
+  // The proxy skips /api/device/* entirely — a connector carries a bearer
+  // token and no cookie — so there is no x-tenant-plan header here and the
+  // plan has to be read from the database. Without this, a tenant that
+  // downgraded off Growth kept sending a radiology worklist indefinitely: the only
+  // check was 'revoked'.
+  if (!(await tenantHasModule(connector.tenant_id as string, 'radiology'))) {
+    return json(402, { error: 'This hospital\u2019s plan does not include this module' })
+  }
 
   const url = new URL(request.url)
   const wantModality = url.searchParams.get('modality')?.toUpperCase() ?? null

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createServiceClient } from '@/lib/supabase/service'
+import { tenantHasModule } from '@/lib/tenantModule'
 import { normalisePairingCode } from '@/lib/lab/pairing'
 
 export const runtime = 'nodejs'
@@ -42,6 +43,19 @@ export async function POST(request: Request) {
   // used to discover which codes exist.
   if (!connector) return json(404, { error: 'That pairing code is not valid. Ask for a new one.' })
   if (connector.status === 'revoked') return json(403, { error: 'This connector has been revoked' })
+
+  // A connector only exists to feed lab or radiology, both Growth-only. The
+  // page that creates one is now plan-gated, but a connector paired while the
+  // hospital was on Growth outlives the downgrade, so re-pairing is checked
+  // here too. Either module is enough — one connector serves both.
+  const tid = connector.tenant_id as string
+  const [hasLab, hasRad] = await Promise.all([
+    tenantHasModule(tid, 'lab'),
+    tenantHasModule(tid, 'radiology'),
+  ])
+  if (!hasLab && !hasRad) {
+    return json(402, { error: 'This hospital\u2019s plan does not include lab or radiology' })
+  }
 
   const expiry = connector.pairing_expires_at as string | null
   if (expiry && new Date(expiry) < new Date()) {

@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { solutionSlugs } from '@/lib/solutions/registry'
+import { GROWTH_ONLY_ROUTES } from '@/lib/plans'
 
 // Public marketing/solution landing pages (buyer-intent SEO pages) — kept in one
 // place so every page added to the SOLUTIONS registry is automatically reachable
@@ -304,13 +305,10 @@ export async function proxy(request: NextRequest) {
       const isReadOnly = computeIsReadOnly(tenant)
 
       // ── Plan-based route gating ───────────────────────────────────────────
-      const GROWTH_ONLY_ROUTES = [
-        '/ipd', '/wards', '/emergency', '/lab', '/radiology',
-        '/ot', '/blood', '/insurance', '/inventory',
-        // Configures the IPD daily auto-bill only — nothing on it applies without IPD.
-        '/settings/ipd-billing',
-        // /staff is accessible on starter with per-role limits
-      ]
+      // The list lives in plans.ts and is imported, not restated. A local copy
+      // here had drifted from the exported one — it was missing
+      // /settings/devices, so a Starter tenant could reach the page that pairs
+      // a lab connector.
       if (tenant.plan === 'starter' && tenant.status !== 'trial') {
         const isGrowthRoute = GROWTH_ONLY_ROUTES.some(
           r => pathname === r || pathname.startsWith(r + '/')
