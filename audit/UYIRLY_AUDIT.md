@@ -129,7 +129,7 @@ on 30 Oct; nothing has been changed since.
 
 | ID | Finding | Module | Status |
 |---|---|---|---|
-| F-02 | `tenant-logos` storage policies check neither tenant nor role; `{public}` | 1 | **OPEN** |
+| F-02 | `tenant-logos` storage policies check neither tenant nor role; `{public}` | 1 | **FIXED** — `0240`; anon upload now 403, karur's logo still serves 200 |
 | F-03 | 25 `SECURITY DEFINER` functions callable by `anon` | DB | **FIXED** `0238` |
 | F-05 | A nurse could set her own role to `admin` | 1 | **FIXED** `0235` |
 | F-12 | Tenant isolation skipped on any unrecognised hostname | 1 | **OPEN** — needs Vercel check |
@@ -2668,3 +2668,31 @@ being refused.
 
 After the rollback: `blood_issues` 0 rows, `blood_crossmatches` 0 rows, the test
 unit still `available`. Nothing was left behind.
+
+## F-02 — FIXED — migration `0240_tenant_logo_policies.sql`
+
+The three write policies were granted to `{public}` and checked only
+`bucket_id`. They now require an authenticated **admin** whose own tenant
+matches the object's first path segment. `UPDATE` gets an explicit `WITH CHECK`
+rather than relying on Postgres reusing `USING`, so a logo cannot be renamed out
+of its own tenant's folder. Public `SELECT` is deliberately unchanged — the
+bucket is public and a rendering bill fetches the logo unauthenticated.
+
+Verified before the change: the policies were still as reviewed, and
+`tenantProfile.ts:136-151` is the **only** code in the repo touching this
+bucket. It uses the service client, and `service_role` carries
+`rolbypassrls = true` (confirmed in `pg_roles`), so the upload path cannot be
+affected by any policy. Blast radius zero, as predicted.
+
+Verified after:
+
+| Probe | Result |
+|---|---|
+| Anonymous `POST` of a logo with the publishable key | **403** `new row violates row-level security policy` |
+| Anonymous `GET` of karur's logo | **200**, 110,472 bytes, `image/jpeg` |
+| Anonymous `GET` of newtest's logo | **200**, 745,939 bytes, `image/jpeg` |
+| `anon` DELETE/UPDATE policies on the bucket | none exist — all three are `TO authenticated` |
+
+Before this migration the first probe would have succeeded. Four logo objects
+exist; two belong to tenants that no longer exist, which is unrelated orphan
+cleanup, not a defect.
