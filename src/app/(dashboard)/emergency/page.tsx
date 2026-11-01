@@ -4,12 +4,20 @@ import { listMlcPending } from '@/app/actions/mlc'
 import { getWardBoard } from '@/app/actions/wards'
 import { createClient } from '@/lib/supabase/server'
 import { getActorProfile } from '@/lib/server-utils'
+import { hasPermission } from '@/lib/rbac'
+import { redirect } from 'next/navigation'
 import EmergencyBoard from './_components/EmergencyBoard'
 import type { ProcedureTariff } from '@/lib/types'
 import { DOCTOR_FILTER } from '@/lib/doctors'
 
 export default async function EmergencyPage() {
   const [supabase, actor] = await Promise.all([createClient(), getActorProfile()])
+
+  // The MLC register, the MLC detail page and the MLC print route all redirect
+  // on this permission; this page — the ER board they hang off, and which also
+  // lists pending MLC cases — had no check at all (F-65). Granted to admin,
+  // doctor, nurse and receptionist.
+  if (!hasPermission(actor.role, 'emergency:read')) redirect('/dashboard')
 
   const [cases, recent, mlcPending, erTariffsRes, board, doctorsRes, tariffsRes, generalRes, tenantRes] = await Promise.all([
     listEmergencyCases(true),

@@ -91,6 +91,11 @@ export interface MlcPendingRow {
  * was medico-legal at all, so the list is the prompt.
  */
 export async function listMlcOptions(): Promise<MlcOption[]> {
+  // Gated even though it is only the dropdown vocabulary: it is read beside
+  // the register itself, and leaving one door open in a module is how the
+  // next reader concludes the module is open (F-65).
+  await requirePermission((await getActorProfile()).role, 'emergency:read')
+
   const supabase = await createClient()
   const { data } = await supabase
     .from('mlc_options')
@@ -151,6 +156,11 @@ export async function setCaseMlc(caseId: string, isMlc: boolean): Promise<Simple
  * it owes and one it discovers at a hearing.
  */
 export async function listMlcPending(): Promise<MlcPendingRow[]> {
+  // The accident register's pending queue — patient names and the reason they
+  // are medico-legal. Every caller (the ER board and the MLC register) now
+  // requires this permission at the page too, so throwing here is safe (F-65).
+  await requirePermission((await getActorProfile()).role, 'emergency:read')
+
   const supabase = await createClient()
   const { data } = await supabase.rpc('get_mlc_pending')
   return (data ?? []) as MlcPendingRow[]
@@ -483,6 +493,11 @@ export async function setIntimationAcknowledgement(
 }
 
 export async function listPoliceIntimations(mlcId: string): Promise<PoliceIntimation[]> {
+  // Police intimations: station, officer name and rank against a patient. The
+  // audit's concrete example of a role-blind read, and the one that most
+  // obviously should not be readable by pharmacy, lab, HR or accounts (F-65).
+  await requirePermission((await getActorProfile()).role, 'emergency:read')
+
   const supabase = await createClient()
   const { data } = await supabase
     .from('mlc_police_intimations')

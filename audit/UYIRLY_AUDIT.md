@@ -2580,7 +2580,7 @@ after each. **Effort: L.**
 |---|---|
 | No print route bypasses RLS | **PASS** — 0 of 20 use the service client |
 | Print routes reject unauthenticated requests | **PASS** — via RLS |
-| Print routes restricted by role | **FAIL** — F-65 |
+| Print routes restricted by role | **PARTIAL** — F-65; the MLC print route and the document/scan routes are gated, the rest still rely on RLS |
 | Tenant branding on documents | **PASS** — `getTenantProfile` + `loadLogo` throughout |
 | Barcode/label print geometry | **PASS** — covered by `npm run verify:barcodes` |
 
@@ -5044,3 +5044,121 @@ The missing dates of birth themselves. Seven patient records have no `dob`, and
 no code change can supply one; the resolver now fails safe instead of guessing,
 which is the most that belongs in software. Worth a look at registration, since
 a date of birth also drives paediatric dosing.
+
+## F-65 — PARTLY FIXED — a detector, the method settled, and the clearest batch closed
+
+This one is not closed, and saying otherwise would be the worst outcome for it.
+What has changed is that it is now measured, the open question it was waiting on
+is answered, and the obvious subset is done.
+
+### The open question was already answered
+
+The finding says the tractable order is: define the missing read permissions,
+**answer the counter-workflow question**, then gate in module batches. The
+counter question — "would gating `getRadiologyImageUrl` on `radiology:read`
+break a receptionist printing a report?" — was settled when `emr:file:read` was
+added for F-08/F-13. It is granted to admin, doctor, nurse, lab_tech **and
+receptionist**, precisely so the front desk can print, while accountant,
+pharmacist and hr cannot. So file reads have their permission and the blocker
+is gone for that class.
+
+The rest of the matrix turns out to be fully specified already, which changes
+the shape of the work: this is not "invent a read policy", it is "apply the
+policy that is written down". The roles that hold no clinical read at all are
+exactly the ones the Module 1 correction was about:
+
+```
+                     admin doctor nurse recept lab_tech pharm hr accnt
+emr:read               Y      Y     Y      -       Y      Y    -   -
+emr:file:read          Y      Y     Y      Y       Y      -    -   -
+ipd:read               Y      Y     Y      -       -      -    -   -
+lab:read               Y      Y     Y      -       Y      -    -   -
+radiology:read         Y      Y     Y      -       Y      -    -   -
+emergency:read         Y      Y     Y      Y       -      -    -   -
+patients:read          Y      Y     Y      Y       Y      Y    -   -
+```
+
+`hr` holds three permissions in total (`dashboard:read`, `hr:read`,
+`scheduling:read`) and `accountant` four. Neither was ever meant to read a
+patient record; the matrix says so and the actions did not.
+
+### The detector, which was wrong twice before it was right
+
+`scripts/verify-read-permissions.ts` (`npm run verify:read-permissions`)
+enumerates read actions and whether they check a role, with a checked-in
+baseline so the number cannot grow quietly. F-08 recorded two instances of this
+when the real figure was 196 — an invariant nobody was counting is how that
+happens.
+
+It took two corrections, both worth recording because a detector that miscounts
+is worse than none:
+
+1. **It only looked for `requirePermission`.** But where an action must return a
+   denial rather than raise — so a report screen can say "you may not see this"
+   instead of collapsing into "there is no image" — the codebase uses
+   `hasPermission`. Both are real checks, and counting one reported
+   `getRadiologyImageUrl` and `getDocumentUrl` as un-gated when they had been
+   deliberately gated.
+2. **It read the wrong text as the function body.** It took the first `{` after
+   the signature and counted braces — but these actions declare return types
+   like `Promise<{ url: string | null; denied?: boolean }>`, so the first `{`
+   belongs to the *type*, brace counting ended at the type's close, and every
+   such function came back un-gated whatever it contained. Fixing it to the next
+   line that is exactly `}` at column 0 moved the gated count from 56 to 72.
+
+Current, trustworthy figures:
+
+```
+read actions   289
+role-checked    76
+RLS only       213
+  of those, in PHI-bearing modules: 91
+```
+
+### What was gated, and why these four
+
+The criterion is deliberately narrow and needs no new policy: **gate a read with
+the permission its own module already requires, where every caller already
+requires it too.** That makes the change defence-in-depth against the direct API
+call — the whole point of F-65, since a server action is an HTTP endpoint —
+without touching any workflow.
+
+- `mlc.ts` — `listMlcPending`, `listPoliceIntimations`, `listMlcOptions` on
+  `emergency:read`. This is the finding's own concrete example. Safe to
+  **throw**, because every caller already demands it: the MLC register, the MLC
+  detail page and `/print/mlc/[id]/[sheet]` all redirect or refuse on
+  `emergency:read` today.
+- `documents.ts` — `listDocuments` on `emr:file:read`. Opening a document was
+  gated; *listing* them was not, and a document list is itself clinical —
+  "HIV ELISA report.pdf" beside a patient's name discloses the contents without
+  opening the file. If you may not open them, you may not enumerate them.
+
+**And a gap found while checking the callers:** `/emergency/page.tsx` — the ER
+board — had **no permission check at all**, while the MLC register, detail page
+and print route hanging off it all redirect on `emergency:read`. The parent was
+open while every child was closed. Now gated to match.
+
+`listDocuments` returns `[]` rather than throwing, unlike the MLC reads, and the
+reason is a real constraint rather than a preference: it is called from the
+patient detail page, which pharmacists can open (they hold `patients:read` but
+not `emr:file:read`). Throwing would crash the page instead of hiding a section.
+The cost is that an empty list reads the same as "no documents"; removing that
+ambiguity needs a change to the page, not to the action.
+
+### What remains, and what it needs
+
+**91 un-gated reads in PHI-bearing modules**, concentrated in
+`insurance.ts` (25), `blood.ts` (11), `ipdTreatment.ts` (8), `lab.ts` (8),
+`radiology.ts` (6) and `emergency.ts` (6).
+
+These are not blocked on deciding a policy — the matrix above decides it. They
+are blocked on **checking each caller**, which is the slow part and the part
+that cannot be skipped: `radiology.ts::getRadiologyOrder` is read by
+`/print/radiology/[orderId]/pdf`, and gating it on `radiology:read` would stop
+the receptionist printing at the counter even though `emr:file:read` was added
+to let them. The right permission for an *order* is not obviously the right
+permission for a *printed report*, and that is exactly the kind of question that
+has to be answered per caller rather than per module.
+
+The detector now makes that work incremental and safe: lower `BASELINE` as each
+batch lands, and a new un-gated read fails the script.

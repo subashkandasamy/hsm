@@ -12,6 +12,19 @@ const BUCKET = 'documents'
 const SIGNED_URL_EXPIRY = 60 * 60 // 1 hour
 
 export async function listDocuments(patientId: string): Promise<PatientDocument[]> {
+  // Opening a document was gated; LISTING them was not (F-65) — and a document
+  // list is itself clinical: "HIV ELISA report.pdf" against a patient's name
+  // discloses the thing the file contains without opening it.
+  //
+  // Same permission as getDocumentUrl, deliberately: if you may not open them,
+  // you may not enumerate them. Non-throwing, unlike the MLC reads, because
+  // this is called from the patient detail page, which pharmacists can open —
+  // they hold patients:read but not emr:file:read. Throwing would crash the
+  // page rather than hide a section. The cost is that an empty list reads the
+  // same as "no documents"; the alternative is a UI change to the page.
+  const actor = await getActorProfile()
+  if (!hasPermission(actor.role, 'emr:file:read')) return []
+
   const supabase = await createClient()
   const { data } = await supabase
     .from('patient_documents')
