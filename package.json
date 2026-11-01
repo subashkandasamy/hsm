@@ -24,7 +24,8 @@
     "verify:analyte-suggestions": "tsx scripts/verify-analyte-suggestions.ts",
     "verify:upi": "tsx scripts/verify-upi.ts",
     "verify:tenant-scope": "tsx scripts/verify-tenant-scope.ts",
-    "verify:bill-sources": "tsx scripts/verify-bill-sources.ts"
+    "verify:bill-sources": "tsx scripts/verify-bill-sources.ts",
+    "verify:ttl-cache": "tsx scripts/verify-ttl-cache.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

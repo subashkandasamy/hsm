@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { solutionSlugs } from '@/lib/solutions/registry'
 import { GROWTH_ONLY_ROUTES } from '@/lib/plans'
+import { createTtlCache } from '@/lib/ttlCache'
 
 // Public marketing/solution landing pages (buyer-intent SEO pages) — kept in one
 // place so every page added to the SOLUTIONS registry is automatically reachable
@@ -13,9 +14,23 @@ interface CachedTenant {
   id: string; name: string; slug: string; status: string; plan: string
   trial_ends_at: string | null; override_access_until: string | null
   current_period_end: string | null; cachedAt: number
+  /** Null when the column held something that was not an array. */
+  enabled_modules: string[] | null
 }
-const tenantCache = new Map<string, CachedTenant>()
-const CACHE_TTL_MS = 60 * 1000
+// Bounded, and it evicts — the plain Map this replaces never removed an entry,
+// so a long-lived instance grew without limit (F-20). 500 covers far more
+// hospitals than one instance will ever serve in a 60-second window.
+const tenantCache = createTtlCache<CachedTenant>({ ttlMs: 60 * 1000, max: 500 })
+
+// Slugs that resolved to nothing. Previously NOT cached at all, so every
+// request for a hostname that does not exist cost a service-role query, and
+// with wildcard DNS an unauthenticated caller could force one per request by
+// varying the subdomain (F-21). A short TTL because a hospital created seconds
+// ago must become reachable quickly; 10s bounds the repeat case without making
+// onboarding feel broken. A caller varying the slug every time still costs one
+// query each — that is rate limiting's job, not a cache's, and is recorded as
+// such rather than pretended away.
+const missingTenantCache = createTtlCache<true>({ ttlMs: 10 * 1000, max: 1000 })
 
 const RESERVED_SLUGS = new Set([
   'admin', 'app', 'api', 'www', 'platform', 'static', 'assets', 'default',
@@ -23,30 +38,53 @@ const RESERVED_SLUGS = new Set([
 
 async function resolveTenant(slug: string): Promise<CachedTenant | null> {
   const cached = tenantCache.get(slug)
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached
+  if (cached) return cached
+  if (missingTenantCache.get(slug)) return null
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll: () => [], setAll: () => {} } }
   )
+
+  // ONE query, not two. This was a `tenants` select followed by a separate
+  // `subscriptions` select, so every cache miss cost two sequential round
+  // trips in front of a page that had not started rendering. The embed is a
+  // to-one relationship (subscriptions.tenant_id is unique), verified against
+  // the live API, and both shapes are handled below in case that ever changes
+  // — a throw here would 500 every request on the instance.
+  //
+  // enabled_modules rides along so the dashboard layout stops making its own
+  // service-role query on every single navigation (F-19).
   const { data: tenantData } = await supabase
     .from('tenants')
-    .select('id, name, slug, status, plan, trial_ends_at, override_access_until')
+    .select('id, name, slug, status, plan, trial_ends_at, override_access_until, enabled_modules, subscriptions(current_period_end)')
     .eq('slug', slug)
     .single()
 
-  if (!tenantData) return null
+  if (!tenantData) {
+    missingTenantCache.set(slug, true)
+    return null
+  }
 
-  const { data: subData } = await supabase
-    .from('subscriptions')
-    .select('current_period_end')
-    .eq('tenant_id', tenantData.id)
-    .maybeSingle()
+  const sub = tenantData.subscriptions as
+    | { current_period_end: string | null }
+    | { current_period_end: string | null }[]
+    | null
+  const subRow = Array.isArray(sub) ? sub[0] : sub
 
   const entry: CachedTenant = {
-    ...tenantData,
-    current_period_end: subData?.current_period_end ?? null,
+    id: tenantData.id as string,
+    name: tenantData.name as string,
+    slug: tenantData.slug as string,
+    status: tenantData.status as CachedTenant['status'],
+    plan: tenantData.plan as CachedTenant['plan'],
+    trial_ends_at: tenantData.trial_ends_at as string | null,
+    override_access_until: tenantData.override_access_until as string | null,
+    enabled_modules: Array.isArray(tenantData.enabled_modules)
+      ? tenantData.enabled_modules as string[]
+      : null,
+    current_period_end: subRow?.current_period_end ?? null,
     cachedAt: Date.now(),
   }
   tenantCache.set(slug, entry)
@@ -366,6 +404,12 @@ export async function proxy(request: NextRequest) {
       requestHeaders.set('x-tenant-status',   tenant.status)
       requestHeaders.set('x-tenant-plan',     tenant.plan)
       requestHeaders.set('x-tenant-readonly', isReadOnly ? '1' : '0')
+      // Saves the dashboard layout a service-role round trip per navigation.
+      // Omitted rather than faked when the column was unusable, so the layout
+      // can tell "not configured" from "not sent" and keep its own fallback.
+      if (tenant.enabled_modules) {
+        requestHeaders.set('x-tenant-modules', JSON.stringify(tenant.enabled_modules))
+      }
       supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
       // Re-apply any cookies Supabase wrote during token refresh — the line

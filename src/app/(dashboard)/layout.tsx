@@ -19,9 +19,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   const supabase = await createClient()
+  // Named columns, not '*'. This is NOT a performance fix and was measured
+  // before being written: `profiles` has exactly 12 columns and this list is
+  // all 12, so the two fetch identical data. The reason is forward-looking —
+  // this row is handed to the client as `initialProfile`, so with '*' any
+  // column added to `profiles` later (a token, a hash, a note) would ship to
+  // the browser the day it is created, silently. Naming them means a new
+  // column has to be chosen.
   const { data: profile } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, full_name, role, phone, phone_verified, department_id, is_active, sees_patients, must_change_password, temp_password_expires_at, created_at, tenant_id')
     .eq('id', user.id)
     .single()
 
@@ -91,12 +98,30 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/change-password')
   }
 
+  // The proxy already read this row to resolve the tenant, so it stamps the
+  // modules too — this used to be a service-role query on EVERY dashboard
+  // navigation for a value that changes almost never (F-19). The query below
+  // runs only when the header is absent: bare-localhost development, or a
+  // tenant whose column held something unusable.
+  const headerModules = hdrs.get('x-tenant-modules')
+  let fromHeader: string[] | null = null
+  if (headerModules) {
+    try {
+      const parsed = JSON.parse(headerModules)
+      if (Array.isArray(parsed)) fromHeader = parsed as string[]
+    } catch {
+      // Malformed header: fall through to the query rather than trusting it.
+    }
+  }
+
   const service = createServiceClient()
-  const { data: tenant, error: tenantErr } = await service
-    .from('tenants')
-    .select('enabled_modules')
-    .eq('id', profile.tenant_id)
-    .single()
+  const { data: tenant, error: tenantErr } = fromHeader
+    ? { data: { enabled_modules: fromHeader }, error: null }
+    : await service
+        .from('tenants')
+        .select('enabled_modules')
+        .eq('id', profile.tenant_id)
+        .single()
 
   // The fallback mirrors the column's own DEFAULT — enabled_modules is jsonb
   // NOT NULL with exactly this list as its default — so a tenant that has never

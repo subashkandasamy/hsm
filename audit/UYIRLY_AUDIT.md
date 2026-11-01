@@ -179,10 +179,10 @@ on 30 Oct; nothing has been changed since.
 | F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
 | F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
 | F-18 | `enabled_modules` fails open on a null column | 1 | **CORRECTED + FIXED** — the column is `jsonb NOT NULL DEFAULT`, so NULL is impossible; the fallback now logs instead of firing silently |
-| F-19 | Four sequential round trips before any dashboard page renders | 1 | **OPEN** |
-| F-20 | Tenant cache per-instance and unbounded; 0–60s suspension lag | 1 | **OPEN** |
-| F-21 | Unknown hostnames trigger an uncached service-role query | 1 | **OPEN** |
-| F-22 | `select('*')` on `profiles` in the hot path | 1 | **OPEN** |
+| F-19 | Four sequential round trips before any dashboard page renders | 1 | **FIXED** — warm path 4→2; proxy 2→1 on a miss, 0 on a hit; `logAudit` 2→1 |
+| F-20 | Tenant cache per-instance and unbounded; 0–60s suspension lag | 1 | **FIXED** — bounded + evicting (`verify:ttl-cache`); the 0–60s lag is kept, deliberately |
+| F-21 | Unknown hostnames trigger an uncached service-role query | 1 | **FIXED** — negative cache, 10s; a slug-varying caller still costs one query each (rate limiting, F-11) |
+| F-22 | `select('*')` on `profiles` in the hot path | 1 | **FIXED for a different reason** — zero perf gain (12 of 12 columns); done so a future column cannot leak to the client |
 | F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **FIXED** — proved live: `%@%` matched 2 rows, escaped matched 0 |
 | F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **OPEN** |
 | F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **OPEN** |
@@ -4019,3 +4019,85 @@ the ward a bed.
 before, and the demo admin back to `is_active = true` — checked specifically,
 because that test wrote to a profile row and a failed rollback would have
 locked a real account out.
+
+## F-19 / F-20 / F-21 / F-22 — FIXED — the request hot path
+
+Taken together because they are one piece of code, and because changing one
+without the others would have moved work rather than removed it.
+
+### Round trips, counted rather than timed
+
+Per the review brief, measured as code shape against no data — not load-tested.
+
+| | before | after (warm) |
+|---|---|---|
+| proxy: resolve tenant | **2 sequential** (tenants, then subscriptions) | **1** on a miss, **0** on a hit |
+| proxy: unknown slug | 1 every request, cached never | 1 per novel slug, then 0 for 10s |
+| layout: `auth.getUser()` | 1 | 1 — unavoidable, it is the signature check |
+| layout: `profiles` | 1 | 1 |
+| layout: `tenants.enabled_modules` | **1 every navigation** | **0** — carried on a header |
+| layout: `isMessagingEnabled()` | **1 every navigation** | **0** for 5 minutes |
+| `logAudit`, per audited action | 2 (profiles, then insert) | **1** for 30 minutes |
+
+Proved on a running dev server with a temporary probe in the proxy, three
+successive requests to `karur/dashboard`:
+
+```
+[PROBE] slug=karur modules_stamped=true cached=false
+[PROBE] slug=karur modules_stamped=true cached=true
+[PROBE] slug=karur modules_stamped=true cached=true
+```
+
+`modules_stamped=true` means the layout's own query is genuinely skipped, not
+merely skippable. `cached=true` from the second request on means three page
+loads cost one tenant lookup. The probe was removed; `grep PROBE` returns 0.
+
+### F-20 — "it has a TTL" is not "it forgets things"
+
+The old cache checked the TTL **on read**, so an entry only expired if somebody
+asked for that exact key again — and nobody asks for a slug that stopped being
+used. Entries were never removed, so a long-lived instance grew without bound.
+
+`createTtlCache` is bounded and evicts: on insert it first reclaims anything
+expired, then drops oldest-first until there is room. `npm run verify:ttl-cache`
+asserts it, including the case that matters:
+
+```
+PASS  50 inserts into a max-3 cache leaves 3 -> 3
+PASS  expired entries were reclaimed, live ones kept -> "A"
+```
+
+Written once rather than three times, because this audit has already produced
+five findings about duplicated logic that drifted.
+
+**The 0–60s suspension lag is kept deliberately.** Making it immediate means no
+cache or an invalidation channel, and the lag is acceptable for what this
+actually gates: suspension is a *billing* control, not what keeps a hospital's
+data safe — RLS is. Nothing clinical is cached. Said plainly rather than
+engineered around.
+
+### F-21 — honest about what a cache cannot fix
+
+Unknown slugs are now negative-cached for 10 seconds — short, because a
+hospital created moments ago has to become reachable quickly. That removes the
+repeat case.
+
+It does **not** remove the attack the finding describes: a caller varying the
+subdomain every request still costs one query each, because a cache keyed by
+slug cannot help when every key is new. Bounding *that* is rate limiting's job
+(F-11), and pretending otherwise would be the wrong kind of fix.
+
+### F-22 — fixed, but not for the stated reason
+
+The finding says `select('*')` pulls every column when six are used. Checked
+first: `profiles` has **exactly 12 columns**, and the safe narrow list — the
+`Profile` interface the row is handed to the client as, plus `tenant_id` for
+the isolation guard — is **all 12**. So the two fetch identical data and the
+performance gain is **zero**. The "six are used" count misses that the whole
+row goes to `AuthProvider` as `initialProfile`.
+
+It was still worth doing, for a reason the finding does not give: with `'*'`,
+any column added to `profiles` later — a token, a hash, a private note — would
+ship to the browser the day it is created, silently. Naming the columns means a
+new one has to be chosen. Recorded as a **security** change with no performance
+claim attached, rather than letting an INFO finding look like a speed-up.

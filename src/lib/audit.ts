@@ -1,4 +1,10 @@
 import { createServiceClient } from './supabase/service'
+import { createTtlCache } from './ttlCache'
+
+// A profile's tenant does not change, so re-reading it on every audited action
+// was a round trip for a constant (F-19 counted this as the fifth). Thirty
+// minutes, bounded, and a miss simply costs the lookup it used to always do.
+const actorTenantCache = createTtlCache<string>({ ttlMs: 30 * 60 * 1000, max: 2000 })
 
 /**
  * Record one entry in the audit trail.
@@ -40,24 +46,29 @@ export async function logAudit(
 
   const service = createServiceClient()
 
-  // Resolve tenant_id from the actor's profile (PK lookup — no extra round-trip cost).
+  // Resolve tenant_id from the actor's profile.
   // audit_logs.tenant_id is NOT NULL with RLS WITH CHECK, so we must supply it.
-  const { data: profile, error: profileErr } = await service
-    .from('profiles')
-    .select('tenant_id')
-    .eq('id', actorId)
-    .maybeSingle()
+  let tenantId = actorTenantCache.get(actorId)
+  if (!tenantId) {
+    const { data: profile, error: profileErr } = await service
+      .from('profiles')
+      .select('tenant_id')
+      .eq('id', actorId)
+      .maybeSingle()
 
-  if (profileErr || !profile?.tenant_id) {
-    console.error('[audit] entry dropped — could not resolve the actor\'s tenant', {
-      actorId, action, entity, entityId, error: profileErr?.message ?? 'no profile or no tenant_id',
-    })
-    return
+    if (profileErr || !profile?.tenant_id) {
+      console.error('[audit] entry dropped — could not resolve the actor\'s tenant', {
+        actorId, action, entity, entityId, error: profileErr?.message ?? 'no profile or no tenant_id',
+      })
+      return
+    }
+    tenantId = profile.tenant_id as string
+    actorTenantCache.set(actorId, tenantId)
   }
 
   const { error } = await service.from('audit_logs').insert({
     id: crypto.randomUUID(),
-    tenant_id: profile.tenant_id,
+    tenant_id: tenantId,
     actor_id: actorId,
     action,
     entity,
@@ -67,7 +78,7 @@ export async function logAudit(
 
   if (error) {
     console.error('[audit] FAILED to record an action', {
-      actorId, action, entity, entityId, tenantId: profile.tenant_id, error: error.message,
+      actorId, action, entity, entityId, tenantId, error: error.message,
     })
   }
 }
