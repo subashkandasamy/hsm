@@ -174,8 +174,8 @@ on 30 Oct; nothing has been changed since.
 
 | ID | Finding | Module | Status |
 |---|---|---|---|
-| F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **OPEN** |
-| F-10 | Four reference tables readable by `anon` | DB | **OPEN** — confirm intent |
+| F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **MIGRATION `0246` WRITTEN, NOT APPLIED** — it is all three policies, not one; needs approval |
+| F-10 | Four reference tables readable by `anon` | DB | **CORRECTED — NOT A DEFECT**; anon's SELECT was already revoked on exactly those four tables (42501 proved live) |
 | F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
 | F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
 | F-18 | `enabled_modules` fails open on a null column | 1 | **CORRECTED + FIXED** — the column is `jsonb NOT NULL DEFAULT`, so NULL is impossible; the fallback now logs instead of firing silently |
@@ -3803,3 +3803,88 @@ clicked. What was wrong is that it could not distinguish "this tenant wants
 everything" from "the row could not be read", and chose the first in silence.
 It now logs the tenant id, the error and what it actually received. The fallback
 behaviour is unchanged.
+
+## F-10 — CORRECTED — anon cannot read those tables, and never could
+
+The finding says `drug_master`, `drug_brands`, `icd_codes` and
+`immunization_schedule` have `USING (true)` with no authentication check, so
+*"anyone with the public key can download the drug catalogue"*, and asks the
+owner to confirm intent.
+
+The policies are exactly as described. The conclusion does not follow, because
+**an RLS policy only matters if the role also holds the SQL privilege**. Asked
+the live REST API with the publishable key:
+
+```
+drug_master           -> 42501  permission denied for table drug_master
+icd_codes             -> 42501  permission denied for table icd_codes
+immunization_schedule -> 42501  permission denied for table immunization_schedule
+```
+
+The grant table says why, and says it precisely. Across the 256 public tables,
+`anon` holds SELECT on 168 and INSERT/DELETE/TRUNCATE on 172. Listing the
+four-table difference returns:
+
+```
+drug_brands
+drug_master
+icd_codes
+immunization_schedule
+```
+
+So somebody has already revoked `anon`'s SELECT on **exactly** the four tables
+this finding flags. The hardening was done at the grant layer rather than the
+policy layer, which is why a policy-only review could not see it. No change
+needed; the `USING (true)` policy is dead for `anon` and effectively reads
+"authenticated users may read this reference data".
+
+**Context worth recording so nobody panics later:** `anon` holding
+INSERT/DELETE/**TRUNCATE** on 172 tables is the stock Supabase posture —
+`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role`
+is the platform default, and RLS is the intended and only defence. Those four
+tables carry a SELECT policy and no write policy, so writes are refused by RLS
+having no permissive policy. Reads are refused by the missing grant. The two
+layers happen to cover opposite directions here.
+
+## F-09 — MIGRATION `0246` WRITTEN, NOT APPLIED
+
+Confirmed, and **wider than filed**: it is all three `patients` policies —
+SELECT, INSERT and UPDATE — that embed an `EXISTS` against `profiles`, not just
+`patients_tenant_update`. Not recursion today, because the `profiles` SELECT
+policy does not reference `patients`; mutual recursion the day one does. That is
+the same shape as the fault that took **karur** offline, where a `profiles`
+policy queried `profiles`.
+
+### The trap, which is the reason this needed reading rather than converting
+
+The finding suggests converting to `is_tenant_admin()` / `current_profile_role()`
+"to make it consistent with the rest". `current_profile_role()` is the obvious
+choice and it is **wrong**. Its body is:
+
+```sql
+SELECT role FROM profiles WHERE id = (SELECT auth.uid())
+```
+
+No `is_active`. No tenant comparison. The `patients` policies check **both**.
+Swapping in `current_profile_role() = ANY (ARRAY[...])` would silently drop the
+`is_active` check, so a deactivated staff member holding a live session would
+regain write access to the patient register — removing a defence while tidying
+up, and leaving behind code that looks more consistent than what it replaced.
+
+`0246` therefore adds `current_active_role()`, which preserves all three
+conditions — `id = auth.uid()`, `is_active = true`, and
+`tenant_id = current_tenant_id()` — so `NULL = ANY(...)` refuses exactly who the
+`EXISTS` refused. Role lists are copied unchanged. The UPDATE policy gains an
+explicit `WITH CHECK` identical to its `USING`, which is behaviourally identical
+(Postgres was already reusing it) but states plainly that a patient cannot be
+updated *into* another hospital.
+
+EXECUTE is granted to `anon` as well as `authenticated`, deliberately, for the
+same reason `0238` carved out `current_tenant_id`: a policy whose function the
+caller cannot execute **raises** instead of returning no rows, and an
+unauthenticated request must get "no rows", not an error.
+
+**Blocked:** this is an RLS change on the patient register of a live hospital,
+reaching `karur` the instant it runs, and there is no way to stage it on `demo`
+first. It needs an explicit yes. Nothing is worse while it waits — the current
+policies are correct, merely fragile.
