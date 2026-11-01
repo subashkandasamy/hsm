@@ -28,7 +28,7 @@ export default function UploadDeclarationModal({ admissionId, patientId, patient
 
     setUploading(true); setError(null); setProgress('Requesting upload URL…')
 
-    const urlResult = await getUploadUrl(patientId, file.name)
+    const urlResult = await getUploadUrl(patientId, file.name, file.size)
     if (!urlResult.success) { setUploading(false); setError(urlResult.error); setProgress(null); return }
 
     setProgress('Uploading file…')

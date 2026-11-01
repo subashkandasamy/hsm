@@ -9,7 +9,7 @@ import type { LeaveRequest, LeaveType } from '@/lib/types'
 
 interface Props {
   initialLeave: LeaveRequest[]
-  nurses: { id: string; full_name: string }[]
+  staff: { id: string; full_name: string }[]
   canApprove: boolean
   actorId: string
 }
@@ -23,7 +23,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 }
 function fmt(d: string) { return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) }
 
-export default function LeavePanel({ initialLeave, nurses, canApprove, actorId }: Props) {
+export default function LeavePanel({ initialLeave, staff, canApprove, actorId }: Props) {
   const [rows, setRows] = useState<LeaveRequest[]>(initialLeave)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -91,10 +91,10 @@ export default function LeavePanel({ initialLeave, nurses, canApprove, actorId }
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {canApprove && (
               <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Nurse (blank = you)</label>
+                <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Staff member (blank = you)</label>
                 <Select value={form.profile_id} onChange={(e) => setForm((f) => ({ ...f, profile_id: e.target.value }))}>
                   <option value="">Myself</option>
-                  {nurses.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
+                  {staff.map((n) => <option key={n.id} value={n.id}>{n.full_name}</option>)}
                 </Select>
               </div>
             )}

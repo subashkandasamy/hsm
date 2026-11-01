@@ -1,5 +1,29 @@
 import { z } from 'zod'
 import type { Role } from '@/lib/types'
+import { istToday, istAddDays } from '@/lib/istDate'
+
+// ---- Dates and times that are actually dates and times ----
+//
+// `z.string().min(1, 'Date required')` accepts "banana", which then fails at
+// Postgres and surfaces a raw type error to whoever is standing at the screen
+// (F-62). These are the shared shapes; `istDate` is pure arithmetic, so they
+// are safe in a schema file that both the browser and the server import.
+
+/** A calendar date, checked for shape AND for existing — 2026-02-30 is refused. */
+export const ymdString = (label: string) =>
+  z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, `${label} must be a date (YYYY-MM-DD)`)
+    .refine((v) => {
+      // `new Date('2026-02-30')` rolls forward to March rather than failing, so
+      // compare the round trip instead of trusting the parse.
+      const d = new Date(`${v}T00:00:00Z`)
+      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+    }, `${label} is not a real date`)
+
+/** A wall-clock time, HH:MM or HH:MM:SS, with real hour and minute values. */
+export const hhmmString = (label: string) =>
+  z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, `${label} must be a time (HH:MM)`)
+
 
 /**
  * The one list of roles the validators use.
@@ -940,13 +964,29 @@ export const UpdateStaffSchema = z.object({
   nursing_charge_per_shift: z.number().nonnegative().nullable().optional(),
   sees_patients: z.boolean().optional(),
 })
+// Attendance is what people are paid from, so the fields are bounded (F-62).
+//
+// The window is deliberately generous rather than tight: a year back covers any
+// payroll correction somebody might legitimately make, and it still refuses the
+// two things that were possible before — a date that is not a date, and
+// pre-filling a month that has not happened. One day of slack at the top absorbs
+// a browser in a timezone ahead of IST; beyond that, marking attendance for the
+// future is not a workflow.
+//
+// check_in/check_out ORDER is not checked here, on purpose. Eight of the
+// hospital's 24 shift definitions cross midnight, so a night nurse arriving at
+// 22:00 and leaving at 06:00 is correct data — "check_out before check_in" is
+// only wrong once you know which shift it was. That check lives in
+// markAttendance, which can read `shift_definitions.crosses_midnight`.
 export const MarkAttendanceSchema = z.object({
   profile_id: z.string().uuid(),
-  date: z.string().min(1, 'Date required'),
+  date: ymdString('Date')
+    .refine((v) => v >= istAddDays(istToday(), -365), 'Attendance cannot be marked more than a year back')
+    .refine((v) => v <= istAddDays(istToday(), 1), 'Attendance cannot be marked for a future date'),
   status: z.enum(['present','absent','leave','half_day']),
   shift: z.string().min(1).nullable().optional(),      // shift code (configurable)
-  check_in: z.string().nullable().optional(),
-  check_out: z.string().nullable().optional(),
+  check_in: hhmmString('Check-in').nullable().optional(),
+  check_out: hhmmString('Check-out').nullable().optional(),
 })
 // ---- Staff Scheduling & Nurse Rostering ----
 
@@ -987,8 +1027,12 @@ export const WardInchargeSchema = z.object({
 export const LeaveRequestSchema = z.object({
   profile_id: z.string().uuid().optional(),   // defaults to the requesting user
   leave_type: z.enum(['annual','casual','sick','unpaid','maternity','other']),
-  start_date: z.string().min(1, 'Start date required'),
-  end_date: z.string().min(1, 'End date required'),
+  // Same treatment as attendance: the ordering refine below was already here
+  // and correct, but it was comparing two strings that had never been checked
+  // for being dates at all (F-62's first point, in the file the audit held up
+  // as the pattern to copy).
+  start_date: ymdString('Start date'),
+  end_date: ymdString('End date'),
   reason: z.string().max(500).nullable().optional(),
 }).refine(v => v.end_date >= v.start_date, { message: 'End date cannot be before start date', path: ['end_date'] })
 

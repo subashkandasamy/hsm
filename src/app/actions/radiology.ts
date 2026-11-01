@@ -9,6 +9,7 @@ import { createServiceBill } from '@/lib/billing/serviceBill'
 import { hasPermission, requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
+import { RADIOLOGY_UPLOAD, checkUploadName, checkUploadSize } from '@/lib/upload/allowedFiles'
 import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
@@ -210,13 +211,21 @@ export async function verifyRadiologyOrder(orderId: string): Promise<SimpleResul
 export async function getRadiologyImageUploadUrl(
   orderId: string,
   filename: string,
+  sizeBytes?: number,
 ): Promise<{ success: true; signedUrl: string; filePath: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'radiology:process')
 
+  // Same gap as patient documents, and not filed separately: this bucket also
+  // had file_size_limit null and allowed_mime_types null (F-58). Its own list
+  // is wider — TIFF and DICOM, because modalities emit them.
+  const checked = checkUploadName(filename, RADIOLOGY_UPLOAD)
+  if (!checked.ok) return { success: false, error: checked.error }
+  const tooBig = checkUploadSize(sizeBytes, RADIOLOGY_UPLOAD)
+  if (tooBig) return { success: false, error: tooBig.error }
+
   const tenantId = await requireTenantId()
-  const ext = filename.split('.').pop() ?? 'bin'
-  const filePath = `tenants/${tenantId}/radiology/${orderId}/${crypto.randomUUID()}.${ext}`
+  const filePath = `tenants/${tenantId}/radiology/${orderId}/${crypto.randomUUID()}.${checked.ext}`
 
   const service = createServiceClient()
   const { data, error } = await service.storage

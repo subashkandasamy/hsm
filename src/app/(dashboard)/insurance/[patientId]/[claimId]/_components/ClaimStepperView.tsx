@@ -359,7 +359,7 @@ export default function ClaimStepperView({
   async function handleUploadDoc() {
     if (!claim || !docFile) return
     setUploadingDoc(true); setError(null)
-    const urlRes = await getUploadUrl(patientId, docFile.name)
+    const urlRes = await getUploadUrl(patientId, docFile.name, docFile.size)
     if (!urlRes.success) { setUploadingDoc(false); setError(urlRes.error); return }
     const upResp = await fetch(urlRes.signedUrl, { method: 'PUT', headers: { 'Content-Type': docFile.type || 'application/octet-stream' }, body: docFile })
     if (!upResp.ok) { setUploadingDoc(false); setError('File upload failed — please try again'); return }

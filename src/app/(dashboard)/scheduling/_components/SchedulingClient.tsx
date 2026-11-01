@@ -13,6 +13,8 @@ import DoctorHoursPanel from './DoctorHoursPanel'
 interface Props {
   units: { id: string; label: string }[]
   nurses: { id: string; full_name: string }[]
+  /** All active staff — leave is not a nurses-only concern (F-53). */
+  staff: { id: string; full_name: string }[]
   doctors: { id: string; full_name: string }[]
   initialShifts: ShiftDefinition[]
   initialCoverage: WardCoverageRule[]
@@ -58,7 +60,7 @@ export default function SchedulingClient(props: Props) {
       )}
       {tab === 'leave' && (
         <LeavePanel
-          initialLeave={props.initialLeave} nurses={props.nurses}
+          initialLeave={props.initialLeave} staff={props.staff}
           canApprove={props.canApprove} actorId={props.actorId} />
       )}
       {tab === 'config' && props.canManage && (

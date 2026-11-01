@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { hasPermission, requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
+import { DOCUMENT_UPLOAD, checkUploadName, checkUploadSize } from '@/lib/upload/allowedFiles'
 import type { PatientDocument, DocumentCategory } from '@/lib/types'
 
 const BUCKET = 'documents'
@@ -38,14 +39,24 @@ export async function listDocuments(patientId: string): Promise<PatientDocument[
 // The file path is returned so the client can pass it back to saveDocumentRecord.
 export async function getUploadUrl(
   patientId: string,
-  filename: string
+  filename: string,
+  sizeBytes?: number,
 ): Promise<{ success: true; signedUrl: string; filePath: string } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emr:document:upload')
 
+  // The bucket's own limits are the real control (set in 0255); this is here so
+  // the person uploading gets a sentence they can act on rather than a storage
+  // error after the fact (F-58). `ext` below is one of OUR strings, not the tail
+  // of the client's filename, which the old code interpolated straight into the
+  // object path.
+  const checked = checkUploadName(filename, DOCUMENT_UPLOAD)
+  if (!checked.ok) return { success: false, error: checked.error }
+  const tooBig = checkUploadSize(sizeBytes, DOCUMENT_UPLOAD)
+  if (tooBig) return { success: false, error: tooBig.error }
+
   const tenantId = await requireTenantId()
-  const ext = filename.split('.').pop() ?? 'bin'
-  const filePath = `tenants/${tenantId}/patients/${patientId}/${crypto.randomUUID()}.${ext}`
+  const filePath = `tenants/${tenantId}/patients/${patientId}/${crypto.randomUUID()}.${checked.ext}`
 
   const service = createServiceClient()
   const { data, error } = await service.storage

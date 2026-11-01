@@ -91,7 +91,7 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
     setUploadProgress('Requesting upload URL…')
 
     // 1. Get signed upload URL from server
-    const urlResult = await getUploadUrl(patientId, file.name)
+    const urlResult = await getUploadUrl(patientId, file.name, file.size)
     if (!urlResult.success) {
       setUploading(false)
       setUploadError(urlResult.error)

@@ -371,6 +371,36 @@ export async function markAttendance(input: Record<string, unknown>): Promise<Si
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const supabase = await createClient()
+
+  // check_out before check_in is wrong for a day shift and right for a night
+  // one, so it cannot be judged by the schema (F-62). Eight of this hospital's
+  // 24 shift definitions cross midnight.
+  //
+  // Where a shift is named, its own `crosses_midnight` decides. Where none is
+  // named — 14 of the 19 rows on file carry no shift — the entry is treated as
+  // a same-day shift, and the message says what to do about it rather than just
+  // refusing, so a night entry is a shift selection away instead of a dead end.
+  const { check_in: cin, check_out: cout, shift } = parsed.data
+  if (cin && cout && cout < cin) {
+    let crossesMidnight = false
+    if (shift) {
+      const { data: def } = await supabase
+        .from('shift_definitions')
+        .select('crosses_midnight')
+        .eq('code', shift)
+        .maybeSingle()
+      crossesMidnight = !!def?.crosses_midnight
+    }
+    if (!crossesMidnight) {
+      return {
+        success: false,
+        error: shift
+          ? `Check-out (${cout}) is before check-in (${cin}), and the "${shift}" shift does not cross midnight.`
+          : `Check-out (${cout}) is before check-in (${cin}). If this was a night shift, choose that shift so the overnight hours are counted.`,
+      }
+    }
+  }
+
   const { error } = await supabase.from('staff_attendance').upsert(
     {
       id: crypto.randomUUID(),

@@ -246,13 +246,52 @@ export async function reviewLeave(input: Record<string, unknown>): Promise<Resul
   const parsed = LeaveReviewSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
-  const { error } = await supabase
+
+  // Who the request belongs to, read before the update so self-approval can be
+  // judged and so a missing request is distinguishable from a decided one.
+  const { data: req } = await supabase
+    .from('leave_requests')
+    .select('profile_id, status')
+    .eq('id', parsed.data.id)
+    .maybeSingle()
+  if (!req) return { success: false, error: 'That leave request no longer exists' }
+
+  // F-64 — a manager approving their own leave.
+  //
+  // Blocking it outright would deadlock a hospital with one approver, so the
+  // line is drawn where there is somebody above: an HR manager cannot decide
+  // their own request, an admin can, because there may be nobody else who
+  // could. Either way the audit entry records that it was self-reviewed, so the
+  // decision is visible afterwards rather than indistinguishable from any other.
+  //
+  // This is a deliberate choice rather than a found rule — the hospital may
+  // want admins blocked too, which is a one-line change here.
+  const selfReview = req.profile_id === actor.id
+  if (selfReview && actor.role !== 'admin') {
+    return { success: false, error: 'You cannot decide your own leave request — ask an administrator.' }
+  }
+
+  // F-63 — a zero-row update sets no error, so a request decided a moment
+  // earlier would have reported success to the second manager. `verifyOrder`
+  // already guards exactly this and says why: reporting success for an
+  // authorisation that never happened is the worst lie to tell on this screen.
+  const { data: updated, error } = await supabase
     .from('leave_requests')
     .update({ status: parsed.data.decision, reviewed_by: actor.id, reviewed_at: new Date().toISOString() })
     .eq('id', parsed.data.id)
     .eq('status', 'pending')
+    .select('id')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, parsed.data.decision, 'leave', parsed.data.id, {})
+  if (!updated?.length) {
+    return {
+      success: false,
+      error: `This request is already ${req.status === 'pending' ? 'decided' : req.status} — nothing was changed.`,
+    }
+  }
+
+  await logAudit(actor.id, parsed.data.decision, 'leave', parsed.data.id, {
+    for_profile: req.profile_id, self_review: selfReview,
+  })
   return { success: true }
 }
 
@@ -263,8 +302,14 @@ export async function cancelLeave(id: string): Promise<Result> {
   // A user may cancel their own pending request; managers may cancel any pending one.
   let q = supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', id).eq('status', 'pending')
   if (!hasPermission(actor.role, 'leave:approve')) q = q.eq('profile_id', actor.id)
-  const { error } = await q
+  // Same zero-row trap as reviewLeave (F-63): without the select, cancelling an
+  // already-decided request — or somebody else's, for a user without
+  // leave:approve — reported success and changed nothing.
+  const { data: cancelled, error } = await q.select('id')
   if (error) return { success: false, error: error.message }
+  if (!cancelled?.length) {
+    return { success: false, error: 'That request is no longer pending, or is not yours to cancel.' }
+  }
   await logAudit(actor.id, 'cancel', 'leave', id, {})
   return { success: true }
 }

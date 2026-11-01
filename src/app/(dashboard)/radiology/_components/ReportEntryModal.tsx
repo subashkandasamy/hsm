@@ -40,7 +40,7 @@ export default function ReportEntryModal({ open, order, onClose, onSuccess }: Pr
     let imageUrl: string | null = order.image_url ?? null
 
     if (imageFile) {
-      const urlRes = await getRadiologyImageUploadUrl(order.id, imageFile.name)
+      const urlRes = await getRadiologyImageUploadUrl(order.id, imageFile.name, imageFile.size)
       if (!urlRes.success) {
         setError(`Image upload failed: ${urlRes.error}. Report saved without image.`)
       } else {
