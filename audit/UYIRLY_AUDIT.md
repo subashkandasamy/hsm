@@ -164,7 +164,7 @@ on 30 Oct; nothing has been changed since.
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
-| F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED** — `0253` revokes them and caps the argument; found by Supabase's advisor after the push |
+| F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **`0253` APPLIED AND DID NOT WORK** (revoked named roles; the grant was held by `PUBLIC`). **`0254` is the real fix** — caught by the detector, not by the migration |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5285,3 +5285,65 @@ the default-privileges trap at the table level. An audit that only hardens other
 people's code is not finished; the verification has to point at the fixes too.
 Running the advisor after the push is now part of the routine rather than an
 afterthought.
+
+### F-77, continued — `0253` applied cleanly and did not work
+
+The detector caught my own fix. Recording it, because "the migration succeeded"
+and "the hole is closed" turned out to be different facts, and only one of them
+was checked by the push.
+
+After `0253` was applied, `verify-rpc-grants` still read:
+
+```
+AFTER 0253 — callable by anon, not allowlisted : 4
+    create_next_month_partitions(p_months_ahead integer)
+    ensure_partition_for(p_table text, p_date date)
+    partition_runway()
+    record_partition_health()
+```
+
+`0253` is listed in `supabase_migrations.schema_migrations`, so it ran. It said:
+
+```sql
+REVOKE EXECUTE ON FUNCTION … FROM anon, authenticated;
+```
+
+and the ACL showed why that achieved nothing:
+
+```
+create_next_month_partitions  {=X/postgres,postgres=X/postgres,service_role=X/postgres}
+                               ^^^^^^^^^^^
+```
+
+**An empty grantee in a Postgres ACL is `PUBLIC`.** Postgres grants `EXECUTE` on
+every new function to `PUBLIC`, and `anon` and `authenticated` inherit it from
+there. Revoking from the named roles removed grants they never separately held —
+a successful no-op. No error, no warning, migration green.
+
+And the repository already knew this.
+`0238_security_definer_functions_are_not_public` opens with *"Postgres grants
+EXECUTE to PUBLIC by default"*, revokes `FROM public, anon`, and says it is
+written as a loop over what is actually granted *"so a function added later
+without a REVOKE is caught the next time this runs rather than quietly
+inheriting the default again."*
+
+That is precisely the situation 0248 created, and the remedy was already on
+disk. I wrote a fresh list of function names instead of re-running the sweep
+that exists — and a list is the thing that goes stale, which is the same mistake
+as F-31's `TABLE_MAP`.
+
+`0254` re-runs the 0238 sweep, then tightens the five maintenance entry points
+beyond the house baseline (`authenticated` has no caller for them; pg_cron runs
+as postgres), and handles `effective_test_range` separately because it is
+`SECURITY INVOKER` and the `prosecdef` sweep does not see it.
+
+Three lessons, all of them about verification rather than about grants:
+
+1. **A green migration is not a verified outcome.** `0253` applied and did
+   nothing. Nothing in the push could have told me.
+2. **The detector earned its keep on the fix, not on the defect.** It was
+   written to stop the problem recurring and it caught the repair being wrong
+   the first time.
+3. **Look for the existing remedy before writing one.** `0238` had both the
+   diagnosis and the correct mechanism, and reading it would have saved the
+   round trip.
