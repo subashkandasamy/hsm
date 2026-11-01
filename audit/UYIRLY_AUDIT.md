@@ -163,7 +163,7 @@ on 30 Oct; nothing has been changed since.
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
 | F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **FIXED** — `0243`, one transaction; `verify:bill-sources` ties the two maps |
-| F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **CODE FIXED; migration `0245` WRITTEN, NOT APPLIED** — needs the owner's go-ahead |
+| F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **FIXED** — `0245` applied; a second admit to a different bed is refused and the bed is released |
 | F-39 | Five-minute partition hole at every month boundary | DB | **OPEN** |
 | F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **OPEN** |
 | F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **FIXED** — refuses now; the union makes fail-open a compile error |
@@ -174,7 +174,7 @@ on 30 Oct; nothing has been changed since.
 
 | ID | Finding | Module | Status |
 |---|---|---|---|
-| F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **MIGRATION `0246` WRITTEN, NOT APPLIED** — it is all three policies, not one; needs approval |
+| F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **FIXED** — `0246` applied; 0 policies now reference `profiles`; `is_active` preserved and proved |
 | F-10 | Four reference tables readable by `anon` | DB | **CORRECTED — NOT A DEFECT**; anon's SELECT was already revoked on exactly those four tables (42501 proved live) |
 | F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
 | F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
@@ -3951,3 +3951,71 @@ F-65 — that 196 of 282 read actions are role-blind — remains open. F-08 was 
 sharpest instance of it (clinical files), not the whole of it. Closing the rest
 means deciding a read permission per module, which is a policy exercise with the
 hospital rather than a defect list.
+
+## `0245` and `0246` — APPLIED and verified
+
+Run by the owner. Verified read-only afterwards, then exercised on `demo` inside
+`DO` blocks aborted with `RAISE`.
+
+### Catalog state
+
+| Check | Result |
+|---|---|
+| `idx_admissions_one_active_per_patient` | present |
+| `claim_bed_and_admit` carries the `unique_violation` handler | true |
+| `current_active_role()` exists | yes |
+| its EXECUTE grants | `anon`, `authenticated`, `service_role` |
+| **`patients` policies still referencing `profiles`** | **0** |
+
+That last row is the finding closed: the policy-to-policy link that made mutual
+recursion possible is gone.
+
+### F-09 — the policies still admit exactly who they should
+
+RLS does not apply to a superuser, so these ran under
+`SET LOCAL ROLE authenticated` with a forged `request.jwt.claims` — without
+that, the test would have proved nothing.
+
+```
+demo admin (active)        : 14 patients visible
+demo accountant (in list)  : 14
+karur hr (NOT in list)     : 0
+demo admin DEACTIVATED     : 0
+```
+
+14 is exactly `demo`'s patient count, so tenant scoping is intact rather than
+accidentally opened. `karur`'s hr sees nothing, as the role list says.
+
+**The fourth line is the one that mattered.** Deactivating the admin inside the
+rolled-back transaction stops access immediately — so `current_active_role()`
+really does preserve the `is_active` condition that `current_profile_role()`
+would have dropped. Had I taken the finding's suggested helper, this line would
+have read 14 and a deactivated employee would have kept write access to the
+patient register.
+
+### F-35 — a second admission is refused, and the bed comes back
+
+The scenario the TypeScript count check cannot see — the same patient, a
+**different** bed:
+
+```
+admit #1, bed A               : {"ok": true}
+admit #2, SAME patient, bed B : {"ok": false, "error": "This patient is already
+                                 admitted. Discharge the existing admission…"}
+bed A status : occupied
+bed B status : available     ← released by the exception block
+active admissions            : 1
+```
+
+Bed B coming back `available` is the subtle half. A plpgsql `EXCEPTION` block is
+a subtransaction and undoes only what happened **inside** it, so the
+`UPDATE beds` had to sit inside the block. Had it stayed above, bed B would now
+be stranded `occupied` with nobody in it — a refused admission quietly costing
+the ward a bed.
+
+### Nothing left behind
+
+0 test admissions, `demo` occupied beds unchanged at 2, 6 active admissions as
+before, and the demo admin back to `is_active = true` — checked specifically,
+because that test wrote to a profile row and a failed rollback would have
+locked a real account out.
