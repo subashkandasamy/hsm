@@ -52,14 +52,53 @@ export async function getUnbilledCharges(params: {
   {
     let q = supabase
       .from('visits')
-      .select('id, consultation_fee')
+      .select('id, consultation_fee, appointment_id')
       .eq('patient_id', patientId)
       .eq('status', 'closed')
       .eq('billing_status', 'unbilled')
       .gt('consultation_fee', 0)
     if (visitId) q = q.eq('id', visitId)
     const { data } = await q
+
+    // A consultation can be billed by either of two routes, and only one of
+    // them sets `visits.billing_status` (F-50). The appointment-stage route
+    // creates a bill carrying `appointment_id` and a 'consultation' line, and
+    // `startVisit` backfills `visit_id` onto it — but nothing marked the visit
+    // billed, so the same fee was still on offer here afterwards.
+    //
+    // startVisit now marks it, which fixes new visits. This exclusion covers
+    // the ones already in the database, and keeps the preview correct even if a
+    // future path creates such a bill without going through startVisit.
+    //
+    // Matching on the bill rather than on the line's ref_id is deliberate: an
+    // appointment-stage consultation line carries the APPOINTMENT id as its
+    // ref, not the visit id (verified on all 14 such bills), so a ref-based
+    // check would miss every one of them.
+    const alreadyBilled = new Set<string>()
+    const candidateVisitIds = (data ?? []).map((v) => v.id as string)
+    const candidateApptIds = (data ?? []).map((v) => v.appointment_id as string | null).filter(Boolean) as string[]
+    if (candidateVisitIds.length) {
+      const ors = [`visit_id.in.(${candidateVisitIds.join(',')})`]
+      if (candidateApptIds.length) ors.push(`appointment_id.in.(${candidateApptIds.join(',')})`)
+      const { data: consultBills } = await supabase
+        .from('bills')
+        .select('visit_id, appointment_id, items:bill_items!inner(source)')
+        .neq('status', 'cancelled')
+        .eq('items.source', 'consultation')
+        .or(ors.join(','))
+      const apptToVisit = new Map(
+        (data ?? [])
+          .filter((v) => v.appointment_id)
+          .map((v) => [v.appointment_id as string, v.id as string])
+      )
+      for (const b of consultBills ?? []) {
+        const vid = (b.visit_id as string | null) ?? apptToVisit.get(b.appointment_id as string)
+        if (vid) alreadyBilled.add(vid)
+      }
+    }
+
     for (const v of data ?? []) {
+      if (alreadyBilled.has(v.id as string)) continue
       lines.push({
         source: 'consultation',
         ref_id: v.id,
@@ -220,13 +259,25 @@ export async function getUnbilledCharges(params: {
     }
   }
 
-  // ---- OT schedules (unbilled, completed) ----
+  // ---- OT schedules + consumables (completed; each line filtered on its own billing_status) ----
   {
     let q = supabase
       .from('ot_schedules')
-      .select('id, procedure_name, price_snapshot, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id)')
+      .select('id, procedure_name, price_snapshot, billing_status, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id, billing_status)')
       .eq('patient_id', patientId)
-      .eq('billing_status', 'unbilled')
+      // Deliberately NOT filtered on the schedule's own billing_status.
+      //
+      // Once a consumable carries its own flag (F-31), the parent and its
+      // children can be billed separately — and filtering here on the parent
+      // would mean that billing the surgery alone excluded the whole row from
+      // every later preview, so its unbilled consumables could never be
+      // invoiced. That is a revenue leak in the opposite direction from the one
+      // F-31 names, and it exists today for the same reason: the old code
+      // relied on "flipping the parent hides the children".
+      //
+      // Each line is now filtered on its own status below. The cost is reading
+      // a patient's completed surgeries rather than only their unbilled ones,
+      // which is a handful of rows per patient.
       .eq('status', 'completed')
     // `ot_schedules.admission_id` does exist and is populated — this branch
     // used to be an empty block saying there was no link, so every one of a
@@ -237,19 +288,25 @@ export async function getUnbilledCharges(params: {
     else q = q.is('admission_id', null)   // day-case surgery only
     const { data } = await q
     for (const s of data ?? []) {
-      lines.push({
-        source: 'ot',
-        ref_id: s.id,
-        description: s.procedure_name as string,
-        qty: 1,
-        unit_price: s.price_snapshot as number,
-        amount: s.price_snapshot as number,
-      })
+      if (s.billing_status !== 'billed') {
+        lines.push({
+          source: 'ot',
+          ref_id: s.id,
+          description: s.procedure_name as string,
+          qty: 1,
+          unit_price: s.price_snapshot as number,
+          amount: s.price_snapshot as number,
+        })
+      }
       // Consumables requested through pharmacy are priced and billed when pharmacy
       // dispatches them (as IPD pharmacy lines) — listing them here too showed ₹0
       // lines and risked billing them twice.
-      for (const c of (s.consumables ?? []) as Array<{ id: string; description: string; qty: number; unit_price: number; pharmacy_request_id: string | null }>) {
+      for (const c of (s.consumables ?? []) as Array<{ id: string; description: string; qty: number; unit_price: number; pharmacy_request_id: string | null; billing_status: string | null }>) {
         if (c.pharmacy_request_id || !(Number(c.unit_price) > 0)) continue
+        // Its own flag now, not just the parent's (F-31): a consumable can be
+        // billed without its surgery, so hiding it behind the parent's unbilled
+        // filter was the reason the same one could be billed twice.
+        if (c.billing_status === 'billed') continue
         lines.push({
           source: 'ot_consumable',
           ref_id: c.id,
@@ -513,21 +570,43 @@ export async function generateBill(
     return null
   }
 
+  // Every source `getUnbilledCharges` can emit must appear here. It emits ten
+  // (bed, blood, consultation, dental, ipd_pharmacy, lab, ot, ot_consumable,
+  // pharmacy, radiology); this map had nine, and the missing one — ot_consumable
+  // — fell through a silent `continue`, so the consumable was never marked
+  // billed and could be billed again (F-31). The other BillItemSource values
+  // (icu, manual, nursing*, pharmacy_sale_item, vaccine) never reach this code:
+  // they are written directly onto IPD daily or pharmacy-sale bills and have no
+  // separate source row to flip.
   const TABLE_MAP: Record<string, string> = {
-    consultation: 'visits',
-    bed:          'admissions',
-    lab:          'lab_orders',
-    radiology:    'radiology_orders',
-    pharmacy:     'dispenses',
-    ipd_pharmacy: 'ipd_pharmacy_requests',
-    ot:           'ot_schedules',
-    blood:        'blood_issues',
-    dental:       'dental_treatments',
+    consultation:   'visits',
+    bed:            'admissions',
+    lab:            'lab_orders',
+    radiology:      'radiology_orders',
+    pharmacy:       'dispenses',
+    ipd_pharmacy:   'ipd_pharmacy_requests',
+    ot:             'ot_schedules',
+    ot_consumable:  'ot_consumables',
+    blood:          'blood_issues',
+    dental:         'dental_treatments',
   }
 
   for (const [source, refs] of refsBySource) {
     const table = TABLE_MAP[source]
-    if (!table) continue
+    if (!table) {
+      // Refusing, not skipping. A charge reached this bill from the unbilled
+      // list, so a missing map entry means it is about to be invoiced without
+      // its source row being marked billed — i.e. it will be offered again on
+      // the next bill. Being quiet about that is what made F-31 survive. The
+      // bill is voided below by the same path a flip failure uses, so nothing
+      // is left half-applied.
+      console.error('[generateBill] no TABLE_MAP entry for a billed source', { source, refs })
+      for (const f of flipped) {
+        await supabase.from(f.table as 'visits').update({ billing_status: 'unbilled' }).in('id', f.ids)
+      }
+      await supabase.from('bills').update({ status: 'cancelled' }).eq('id', billId)
+      return { success: false, error: `Cannot bill "${source}" charges — this charge type is not wired for billing. Please report this.` }
+    }
 
     const flipErr = await flipToBilled(table, refs)
     if (flipErr) {

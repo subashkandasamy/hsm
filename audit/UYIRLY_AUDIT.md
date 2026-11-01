@@ -171,7 +171,7 @@ on 30 Oct; nothing has been changed since.
 | F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **FIXED** — `0248`; raises (so cron records `failed`) **and** records a `partition_health` row, as two jobs |
 | F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **FIXED** — refuses now; the union makes fail-open a compile error |
 | F-43 | "Marked interim" is promised and never recorded | 5 | **CORRECTED** — the printed report *does* say INTERIM; the screen now does too. Residual = amendment trail |
-| F-48 | Consultation payment gate inert for ~97% of visits | 7 | **OPEN** |
+| F-48 | Consultation payment gate inert for ~97% of visits | 7 | **DOCUMENTED, DELIBERATELY NOT CHANGED** — making the gate universal means billing at booking, a commercial decision; 14/451 bills measured and the real scope recorded in code |
 
 ## Low / informational
 
@@ -187,15 +187,15 @@ on 30 Oct; nothing has been changed since.
 | F-21 | Unknown hostnames trigger an uncached service-role query | 1 | **FIXED** — negative cache, 10s; a slug-varying caller still costs one query each (rate limiting, F-11) |
 | F-22 | `select('*')` on `profiles` in the hot path | 1 | **FIXED for a different reason** — zero perf gain (12 of 12 columns); done so a future column cannot leak to the client |
 | F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **FIXED** — proved live: `%@%` matched 2 rows, escaped matched 0 |
-| F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **OPEN** |
+| F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **FIXED** — `0249` adds `ot_consumables.billing_status`; map completed, an unmapped source now **refuses** instead of skipping; also closed the reverse leak that created |
 | F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **FIXED** — all four daily charges now carry deterministic refs; a real concurrent double-bill, not just a stale comment |
 | F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **FIXED** — admissions paged (ceiling removed), time budget + `complete`/`tenantsNotReached` so a partial pass is reported |
 | F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **FIXED** — comment now states the `suspended` divergence and why syncing them would break billing either way |
 | F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **FIXED** — `0248`; all six get the generous case, one job |
 | F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **OPEN** |
 | F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
-| F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **OPEN** |
-| F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **OPEN** — 0 live instances |
+| F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **FIXED** — both corrected; they were the reason F-48 was easy to miss |
+| F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **FIXED** in code (`startVisit` marks it; preview excludes it). **3 pre-existing rows** need `0250` — a data change, awaiting approval |
 | F-51 | `startVisit` is a write gated on `opd:read` | 7 | **FIXED** — `opd:visit:start`, granted to the identical role set (proved) |
 | F-52 | Duplicate-appointment guard is a read-then-write | 7 | **ANALYSED — RECOMMEND DEFER**; the DB fix is blocked by partitioning, reordering trades one harm for another |
 
@@ -4673,3 +4673,127 @@ than the limiter's — it kept knocking past the reset and then complained that
 the fresh window had been consumed by its own knocking, which is correct
 behaviour. Recorded because a limiter test that asserts the wrong thing is worse
 than none.
+
+## F-31, F-48, F-49, F-50 — the appointment-stage billing cluster
+
+All four are the same theme: a charge is invoiced and the row it came from is
+not marked billed, so the unbilled list offers it again — plus the comments that
+made it hard to see.
+
+### F-31 — FIXED, and the suggested mapping would have rolled bills back
+
+Confirmed exactly: `getUnbilledCharges` emits **ten** sources (bed, blood,
+consultation, dental, ipd_pharmacy, lab, ot, ot_consumable, pharmacy,
+radiology) and `TABLE_MAP` had **nine**. `ot_consumable` is the one missing, and
+it fell through `if (!table) continue` in silence.
+
+The obvious fix is to map `ot_consumable → 'ot_schedules'`. That would have been
+wrong, and checked rather than assumed: an `ot_consumable` line's `ref_id` is
+the **`ot_consumables` row id** (`ref_id: c.id`), not the schedule id. The ref
+would match no schedule, `flipToBilled` would report "Some ot_schedules charges
+were already billed", and the **whole bill would roll back** — turning a rare
+double-charge into a reliably failing bill. That is the second time in this
+audit that a mapping fix would have broken billing on a `ref_id` convention
+(see F-36).
+
+`ot_consumables` had no `billing_status` column at all — 9 columns, none a
+billing flag — so there was no way to mark one billed. Migration `0249` gives it
+the same flag every other billable source has, with a `CHECK` and a backfill
+that re-derives its own targets from `bill_items`. The backfill matches **0 rows
+today** (1 consumable, 0 billed consumable lines), so it is a no-op on live data.
+
+The alternative was to forbid billing a consumable without its parent surgery —
+no migration needed. Rejected: that removes a legitimate workflow (surgery to
+the insurer, consumables to the patient), trading a defect for a product
+restriction.
+
+**And fixing it opened a leak in the opposite direction, which I had to fix in
+the same change.** The parent query filtered `.eq('billing_status','unbilled')`
+on `ot_schedules`. Once a consumable has its own flag, billing the surgery alone
+would exclude the whole row from every later preview — so its unbilled
+consumables could never be invoiced at all. Worth being clear that this is not a
+new bug I introduced: it is already true today, for the same reason the old code
+"worked" (flipping the parent hides the children). The parent filter is gone and
+each line is now filtered on its own status.
+
+Finally, the silent skip is now a **refusal**. A charge that reached this point
+came from the unbilled list, so a missing map entry means it is about to be
+invoiced without its source being flipped. The bill is voided down the same path
+a flip failure uses, and the cashier is told. Being quiet is what let F-31
+survive.
+
+### F-48 — measured, documented, and deliberately not "fixed"
+
+Confirmed on production: **451 bills, 14 with an `appointment_id`** — 3.1%. The
+gate fires only when a bill already exists, and nothing in the ordinary flow
+creates one (`bookAppointment` makes no bill; `GenerateBillSchema` takes
+`visit_id` and `admission_id` but no `appointment_id`).
+
+The finding offers two options, and the first one — create the bill at booking —
+is **not mine to take**. It decides that every patient pays before being seen.
+That is the hospital's commercial policy, and it also needs the appointment-stage
+bill to be creatable at all, which today it is not from the billing screen. What
+I have done is record the real scope at the gate itself, with the measured
+numbers, so the next reader sees what it covers instead of inferring it from two
+comments that said the opposite.
+
+### F-49 — FIXED
+
+Both comments corrected. `opd.ts:270` said "billing happens at booking time (not
+at close)" and `opd.ts:141` referred to "the consultation bill created at
+booking time". No bill is created at booking. These were not cosmetic: they are
+the reason F-48 reads as implemented when it is inert.
+
+### F-50 — FIXED in code; 3 rows need a decision
+
+Structural, as filed. `startVisit` backfilled `visit_id` onto the
+appointment-stage bill but never set `visits.billing_status`, and
+`getUnbilledCharges` filters only on `status/billing_status/fee > 0` with no
+check for an existing paid bill.
+
+Two changes, because the write side and the read side need different things:
+
+- **`startVisit`** now marks the visit billed — but only when a bill actually
+  exists. Reaching that line means the payment gate passed with a bill present,
+  so it is paid or cashless-covered, and every appointment-stage bill carries a
+  `consultation` line (verified on all 14). With no bill — the ordinary 97% —
+  the visit must stay unbilled so the fee is collected afterwards.
+- **`getUnbilledCharges`** excludes a visit whose consultation is already on a
+  live bill. This matters for rows already in the database and for any future
+  path that does not go through `startVisit`.
+
+The exclusion matches on the **bill**, not on the line's `ref_id`, and that
+detail decides whether it works at all: an appointment-stage consultation line
+carries the **appointment id** as its ref, not the visit id. A ref-based check
+would have missed every one of them. Proved against the live API rather than
+reasoned about — the query returns both shapes, the `visit_id` match and the
+`appointment_id` match with `visit_id: null`:
+
+```json
+[{"visit_id":"f13c95d2-…","appointment_id":"50093dc1-…","items":[{"source":"consultation"}]},
+ {"visit_id":null,        "appointment_id":"c4ce3b35-…","items":[{"source":"consultation"}]}]
+```
+
+**The audit's "zero live instances" was right about the symptom and wrong about
+the state.** My first query reproduced it — 0 — because it required
+`paid > 0` *and* `fee > 0`. Widening it to the real condition found **3 closed
+visits** flagged `unbilled` whose consultation sits on a fully-paid bill
+(aes-health, newtest, vrhospital; none is karur). They are not being
+double-offered, and the reason is incidental exactly as elsewhere in this
+cluster: all three have `consultation_fee = 0`, and the preview filters
+`fee > 0`. A priced consultation on this route would have been offered twice.
+
+Correcting those 3 rows is a **data change on live tenants**, so it is migration
+`0250` on its own, with the rows listed and the statement written to re-derive
+its targets rather than trust three ids. It is a flag correcting itself to match
+money already collected; it cannot lose a charge, because the condition requires
+a non-cancelled bill that already contains the consultation line. Awaiting
+approval, and the code fix does not depend on it.
+
+### Verification
+
+`scripts/verify-double-billing.sql` (read-only, `npm run verify:double-billing`)
+asks the one question behind all four findings — can the same charge be invoiced
+twice — as four counts: consumables and surgeries carried on a live bill but not
+flagged, visits in the same state by either route, and any bill source with no
+known handling. It reads `0 / 0 / 3 / none` today; the 3 clears when `0250` runs.

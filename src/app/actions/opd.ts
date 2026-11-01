@@ -126,6 +126,27 @@ export async function startVisit(
     }
   }
 
+  // What this gate does and does not do (F-48, F-49).
+  //
+  // It fires only when a bill already exists for the appointment, and nothing
+  // in the ordinary flow creates one: `bookAppointment` inserts an appointment
+  // and no bill, and `GenerateBillSchema` accepts `visit_id` and
+  // `admission_id` but no `appointment_id`, so the billing screen cannot
+  // produce one either. Measured on production: 451 bills, 14 with an
+  // `appointment_id` — about 3%. For the other 97% `hasBill` is false, this
+  // passes, and the consultation fee is collected after the visit closes from
+  // the unbilled-charges list.
+  //
+  // So the rule "consultation start is payment-gated" holds only where a bill
+  // was raised up front. That is a deliberate product position, not an
+  // oversight to be patched here: making the gate universal means billing at
+  // booking, which decides that every patient pays before being seen. That is
+  // the hospital's commercial call, and it needs the appointment-stage bill to
+  // be creatable in the first place.
+  //
+  // Two comments used to assert the opposite — that "billing happens at booking
+  // time" and that there is "the consultation bill created at booking time" —
+  // which is why this was easy to miss. They are corrected below.
   if (hasBill && !hasPaid && !cashlessCovered) {
     return {
       success: false,
@@ -147,8 +168,36 @@ export async function startVisit(
   })
   if (error) return { success: false, error: error.message }
 
-  // Backfill visit_id onto the consultation bill created at booking time (which only has appointment_id)
-  await supabase.from('bills').update({ visit_id: id }).eq('appointment_id', appointmentId).is('visit_id', null)
+  // Link any appointment-stage bill to the visit it turned into. Such a bill
+  // carries `appointment_id` and no `visit_id` (3% of bills — see the gate
+  // above; it is NOT "created at booking time", which is what this comment used
+  // to claim).
+  const { data: linked } = await supabase
+    .from('bills')
+    .update({ visit_id: id })
+    .eq('appointment_id', appointmentId)
+    .is('visit_id', null)
+    .select('id')
+
+  // And mark the visit billed, which nothing did (F-50).
+  //
+  // Reaching this line means the payment gate passed with a bill present, so
+  // that bill is either paid or covered by an approved cashless claim — and
+  // every appointment-stage bill carries a 'consultation' line (verified on all
+  // 14 in production). The fee is therefore already invoiced, and leaving the
+  // visit 'unbilled' meant `getUnbilledCharges` would offer the same
+  // consultation fee a second time once the visit closed.
+  //
+  // Zero visits are in that state today, and the reason is incidental rather
+  // than designed: all ten visits linked to an appointment-stage bill happen to
+  // have `consultation_fee = 0`, and the preview filters on `fee > 0`. A
+  // priced one would have been double-offered.
+  //
+  // Only when a bill exists. With no bill — the ordinary 97% — the visit must
+  // stay unbilled so the fee is collected after the consultation.
+  if (hasBill && (linked?.length ?? 0) > 0) {
+    await supabase.from('visits').update({ billing_status: 'billed' }).eq('id', id)
+  }
 
   await logAudit(actor.id, 'start', 'visit', id, { appointment_id: appointmentId })
   return { success: true, visitId: id }
@@ -275,8 +324,17 @@ export async function closeVisit(visitId: string): Promise<SimpleResult> {
   const { data: visit } = await supabase
     .from('visits').select('appointment_id').eq('id', visitId).single()
 
-  // Phase 15: billing happens at booking time (not at close).
-  // Only update status; billing_status stays 'unbilled' by default.
+  // billing_status is intentionally left as it is, NOT set here.
+  //
+  // This used to say "billing happens at booking time (not at close)", which
+  // describes a flow that does not exist (F-49): nothing creates a bill at
+  // booking. What actually happens is that a closed visit with an uncollected
+  // fee appears in the unbilled-charges list and is billed from the billing
+  // screen, which is what sets billing_status.
+  //
+  // The exception is a visit that came from an appointment carrying its own
+  // bill, and startVisit has already marked that one 'billed' (F-50) — so
+  // overwriting the field here would undo it.
   const { error } = await supabase
     .from('visits').update({ status: 'closed' }).eq('id', visitId)
   if (error) return { success: false, error: error.message }
