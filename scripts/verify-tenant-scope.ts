@@ -88,6 +88,15 @@ const TENANT_OWNED = new Set([
  * stale exemption is how this check rots.
  */
 const REVIEWED: Record<string, string> = {
+  // These three read tenant_id in order to COMPARE it, which is why a filter
+  // would be wrong. The first version of this script counted them safe for the
+  // wrong reason — it treated `.select('tenant_id')` as a tenant filter.
+  'src/app/actions/hr.ts::profiles':
+    'reads the target row to compare its tenant with the actor\'s (the F-25 guard); filtering would hide a foreign row instead of refusing it',
+  'src/app/actions/onboarding.ts::partners':
+    'looked up by referral_code, which is cross-tenant by design; tenant_id is read to REJECT a self-referral',
+  'src/app/api/webhooks/razorpay/route.ts::partners':
+    'headless webhook, no session; reached via the tenant\'s own referred_by_partner_id, so the link is already tenant-anchored',
   'src/app/actions/devices.ts::analyzer_messages':
     'ownership proven through the USER client first (RLS), then the service role writes',
   'src/app/actions/onboarding.ts::departments':
@@ -188,7 +197,15 @@ for (const file of walk('src')) {
       }
     }
     const stmt = chunk.join('\n')
-    if (!stmt.includes('tenant_id')) {
+    // A mention of tenant_id is not a tenant filter. `.select('tenant_id')`
+    // reads the column and scopes nothing — an earlier version of this script
+    // counted that as safe, which is the exact mistake it exists to catch.
+    // What counts: a filter on the column, or the column set in a written row.
+    const scoped =
+      /\.(eq|in|filter|neq|match|contains)\(\s*['"]tenant_id['"]/.test(stmt)
+      || /\btenant_id\s*:/.test(stmt)
+      || /tenant_id\.eq\./.test(stmt)   // inside an .or() expression
+    if (!scoped) {
       unfiltered.push({ file, line: i + 1, table, stmt })
     }
   }

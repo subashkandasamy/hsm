@@ -28,6 +28,19 @@ export async function hasActiveAdmission(patientId: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
+// Postgres 23505 is unique_violation. With idx_admissions_one_active_per_patient
+// in place (migration 0245) a concurrent admission of the same patient loses
+// here instead of creating a second active admission — the count check inside
+// admitPatient is a read-then-write and cannot see an insert that has not
+// committed yet. Without that translation the counter staff would be shown a
+// raw constraint name.
+const ALREADY_ADMITTED =
+  'This patient is already admitted. Discharge the existing admission before admitting again.'
+
+function admissionInsertError(err: { code?: string; message: string }): string {
+  return err.code === '23505' ? ALREADY_ADMITTED : err.message
+}
+
 export async function admitPatient(
   input: Record<string, unknown>
 ): Promise<{ success: true; admissionId: string } | { success: false; error: string }> {
@@ -50,7 +63,7 @@ export async function admitPatient(
     .eq('patient_id', patient_id)
     .eq('status', 'admitted')
   if ((activeCount ?? 0) > 0) {
-    return { success: false, error: 'This patient is already admitted. Discharge the existing admission before admitting again.' }
+    return { success: false, error: ALREADY_ADMITTED }
   }
 
   if (direct_ot) {
@@ -67,7 +80,7 @@ export async function admitPatient(
       status:              'admitted',
       admitted_at:         new Date().toISOString(),
     })
-    if (insertErr) return { success: false, error: insertErr.message }
+    if (insertErr) return { success: false, error: admissionInsertError(insertErr) }
   } else if (is_temp_ward) {
     // Temp/overflow ward: create a slot on-the-fly, no concurrency claim needed
     if (!ward_id) return { success: false, error: 'Please select a ward' }
@@ -103,7 +116,7 @@ export async function admitPatient(
     })
     if (insertErr) {
       await supabase.from('beds').delete().eq('id', tempBedId)
-      return { success: false, error: insertErr.message }
+      return { success: false, error: admissionInsertError(insertErr) }
     }
   } else {
     if (!bed_id) return { success: false, error: 'Please select a bed' }
