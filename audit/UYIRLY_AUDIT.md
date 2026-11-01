@@ -5635,3 +5635,80 @@ which is right, because each is a separate person.
 The TypeScript count stays as the friendly message; the index is what makes it
 true. The insert now also translates `23505` into something the person at the
 desk can act on rather than a raw constraint name.
+
+## 0255–0258 — dry-run before they touch the hospital
+
+`0253` applied cleanly and did nothing, so these four were run end to end on a
+throwaway local Postgres 16 cluster first, with Supabase's default privileges and
+an `auth.role()` / `auth.uid()` pair driven by a session setting so the
+`service_role` branches could actually be exercised. All four applied; then the
+behaviour, not the exit code:
+
+### `0257` — the MTP lock
+
+```
+PASS  a draft can be edited
+PASS  a draft can be completed
+PASS  a COMPLETED record cannot be edited                     (42501)
+PASS  a completed record CAN be superseded — the one way out
+PASS  a draft can be deleted
+PASS  a completed record cannot be deleted                    (42501)
+PASS  service_role CAN edit a completed record
+PASS  service_role CAN delete a completed record
+```
+
+The last two matter as much as the refusals: `purge_tenant_data` runs as
+`service_role`, and a lock that blocked it would make a tenant undeletable. That
+is the escape hatch the audit recorded for Form F, confirmed to work here too —
+and confirmed to be exactly as wide as recorded, which is the thing to be clear
+about rather than quiet about.
+
+### `0258` — one open casualty case
+
+```
+PASS  first active case for a patient
+PASS  a SECOND active case for the same patient is refused    (23505)
+PASS    ...including via the other active status
+PASS  the same patient id in another hospital is fine
+PASS  discharging the open case, then a new case inserts
+PASS  an admitted case does not block a new one
+PASS  two UNIDENTIFIED arrivals do not collide (NULL patient_id)
+```
+
+`23505` is confirmed as the SQLSTATE, which is what `registerEmergency` now
+translates into a sentence for the person at the desk. The NULL case is the one
+worth having tested: a trolley of unidentified casualties must not collide, and
+distinct NULLs in a unique index do not.
+
+### `0255` — the bucket limits, and whether the two lists agree
+
+After applying, the bucket rows read:
+
+```
+documents    25 MB   application/pdf,image/heic,image/heif,image/jpeg,image/png,image/tiff,image/webp
+radiology    50 MB   application/dicom,application/pdf,image/jpeg,image/png,image/tiff,image/webp
+```
+
+and `allowedMimeTypes()` in `lib/upload/allowedFiles.ts` returns those two
+strings **character for character**, with matching byte limits. That is the
+"two copies of a rule that must agree" risk checked rather than asserted, and
+`verify:uploads` now pins it so they cannot drift.
+
+Its guard was tested by renaming a bucket and re-running the block: it raised
+`expected both PHI buckets to be limited, found 1` instead of reporting success
+for an UPDATE that matched nothing.
+
+### `0256`
+
+All three columns nullable with no default, as intended: a NULL
+`safety_warnings` means "written before the trail existed", which is a different
+fact from "no warnings were raised".
+
+### Two of my own test bugs, recorded
+
+The ER block failed its first two runs with `22P02`, invalid text for a uuid —
+first because I passed `'t1'`/`'p1'` into uuid columns, then because
+`'pppp0000-…'` is not valid hex. Both were the test's fault and neither touched
+the migration. Worth noting only because a test that fails for its own reasons
+is the easiest way to talk yourself out of a real failure, and the sequence here
+was: wrong test, wrong test, then seven genuine passes.
