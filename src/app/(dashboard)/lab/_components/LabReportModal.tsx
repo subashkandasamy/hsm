@@ -77,6 +77,12 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
   const analyteTestIds = new Set(analytes.map((a) => a.test_id))
   const singles = items.filter((i) => !analyteTestIds.has(i.test_id))
 
+  // Counted exactly as LabReportPdf counts it — singles with no result plus
+  // promised analytes with no value — so the screen and the paper cannot
+  // disagree about whether this report is finished.
+  const pendingCount = singles.filter((i) => i.result_value == null && !i.result_text).length
+    + analytes.filter((a) => a.value_num == null && !a.value_text).length
+
   const byTest = new Map<string, { name: string; rows: ReportAnalyte[] }>()
   for (const a of analytes) {
     if (!byTest.has(a.test_id)) byTest.set(a.test_id, { name: a.test_name, rows: [] })
@@ -99,6 +105,20 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
             </span>
           </div>
         </div>
+
+        {/* The same count the printed report uses to title itself
+            "LABORATORY REPORT — INTERIM" (LabReportPdf.tsx). The paper said so
+            and this screen did not, so a technician reading the result here had
+            no way to see the report was incomplete. ISO 15189:2022 §7.4.1.7
+            asks for a result released before completion to be marked
+            preliminary — on every rendering of it, not just the PDF. */}
+        {pendingCount > 0 && (
+          <div className="px-3.5 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+            Interim report — {pendingCount} result{pendingCount > 1 ? 's' : ''} still pending.
+            A final report must follow.
+          </div>
+        )}
 
         {/* Results table */}
         <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>

@@ -461,7 +461,18 @@ export async function verifyOrder(
   // can produce should not hold up twenty-seven that are ready. What is not
   // legitimate is doing it without knowing, so this says how many are missing
   // and asks again rather than refusing.
-  const incomplete = await countMissingAnalytes(supabase, orderId)
+  const completeness = await countMissingAnalytes(supabase, orderId)
+  // Refuse rather than guess. Verifying is an authorisation, and authorising a
+  // report whose completeness we could not read is the one outcome worse than
+  // making the technician try again.
+  if (!completeness.ok) {
+    return {
+      success: false,
+      error: 'Could not check whether every measurement in this order has a value, '
+        + 'so nothing has been verified. Try again in a moment.',
+    }
+  }
+  const incomplete = completeness.missing
   if (incomplete > 0 && !releasePartial) {
     return {
       success: false,
@@ -497,11 +508,21 @@ export async function verifyOrder(
 async function countMissingAnalytes(
   supabase: Awaited<ReturnType<typeof createClient>>,
   orderId: string,
-): Promise<number> {
+): Promise<{ ok: true; missing: number } | { ok: false; error: string }> {
   const { data, error } = await supabase.rpc('get_lab_report_analytes', { p_order_id: orderId })
-  if (error) { console.error('[countMissingAnalytes]', error.message); return 0 }
-  return ((data ?? []) as Array<{ value_num: number | null; value_text: string | null }>)
-    .filter((r) => r.value_num == null && !r.value_text).length
+  // This used to return 0 here, which this function's own caller reads as
+  // "nothing missing" — so an RPC failure skipped the confirmation and
+  // authorised an incomplete panel as though it were complete. A completeness
+  // check that cannot establish completeness must say so, not say "fine".
+  if (error) {
+    console.error('[countMissingAnalytes]', error.message)
+    return { ok: false, error: error.message }
+  }
+  return {
+    ok: true,
+    missing: ((data ?? []) as Array<{ value_num: number | null; value_text: string | null }>)
+      .filter((r) => r.value_num == null && !r.value_text).length,
+  }
 }
 
 /** Release a verified order. This is the point it becomes visible to the patient. */

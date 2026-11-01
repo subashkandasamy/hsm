@@ -166,8 +166,8 @@ on 30 Oct; nothing has been changed since.
 | F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **OPEN** |
 | F-39 | Five-minute partition hole at every month boundary | DB | **OPEN** |
 | F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **OPEN** |
-| F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **OPEN** |
-| F-43 | "Marked interim" is promised and never recorded | 5 | **OPEN** |
+| F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **FIXED** — refuses now; the union makes fail-open a compile error |
+| F-43 | "Marked interim" is promised and never recorded | 5 | **CORRECTED** — the printed report *does* say INTERIM; the screen now does too. Residual = amendment trail |
 | F-48 | Consultation payment gate inert for ~97% of visits | 7 | **OPEN** |
 
 ## Low / informational
@@ -3490,3 +3490,84 @@ Two constants named `GROWTH_ONLY_ROUTES`, the exported one dead. There is now
 one definition in `plans.ts`, imported by `proxy.ts`. Recorded in full under
 F-13, including why the two lists had to be reconciled by hand rather than
 merged.
+
+## F-42 — FIXED — the completeness check refuses instead of guessing
+
+`countMissingAnalytes` returned `number`, and returned **0** when its RPC
+failed. Zero is the same value as "nothing missing", so an RPC failure skipped
+the confirmation at `:465` and authorised an incomplete panel as a complete
+one. Verifying a lab report is an authorisation; authorising one whose
+completeness could not be read is worse than making the technician try again.
+
+Checked before changing it — the important one, because refusing when the RPC
+*routinely* failed would block verification outright:
+
+- `get_lab_report_analytes` is **SECURITY INVOKER** (`prosecdef = false`), so
+  migration `0238`'s revoke of 25 definer functions never touched it, and
+  `authenticated` holds EXECUTE. The fail-open was **not** masking a broken
+  function.
+- Called it as a demo admin against a real order: returns cleanly (0 analyte
+  rows for a single-test order — a legitimate zero, which the fix still treats
+  as "nothing missing").
+
+The return type is now
+`{ ok: true; missing: number } | { ok: false; error: string }`, so the caller
+cannot read a failure as a count.
+
+### The verification is a compile error, which is better than a test
+
+Deleting the new guard does not produce a subtly wrong runtime path — it fails
+to build:
+
+```
+src/app/actions/lab.ts(468,35): error TS2339: Property 'missing' does not exist
+  on type '{ ok: true; missing: number; } | { ok: false; error: string; }'
+```
+
+The old `number` signature could silently be used as 0 forever. This shape
+cannot regress quietly.
+
+## F-43 — CORRECTED — the report *is* marked interim
+
+The finding states: *"Searching the codebase for `interim` finds only that
+message, a button label and a UI comment. **Nothing is written.**"*
+
+The search was case-sensitive and the code is not. In `LabReportPdf.tsx`:
+
+```
+lowercase "interim" : 0 occurrences
+uppercase "INTERIM" : 1 occurrence
+```
+
+```tsx
+const pending = singles.filter((i) => i.result_value == null && !i.result_text).length
+  + analytes.filter((a) => a.value_num == null && !a.value_text).length
+…
+title={pending > 0 ? 'LABORATORY REPORT — INTERIM' : 'LABORATORY REPORT'}
+subtitle={pending > 0 ? `${pending} result(s) still pending — a final report follows` : …}
+```
+
+It counts missing singles **and** missing panel analytes, and the code cites
+**ISO 15189:2022 §7.4.1.7** as the reason. That component serves both
+`/print/lab/[orderId]/pdf` (the hospital's copy) and
+`/portal/print/lab/[orderId]/pdf` (the patient's), so the promise made to the
+technician is kept on every printed report.
+
+It is computed at render time rather than stored, which is **better** than a
+flag for this purpose: when the missing values are entered, the report stops
+calling itself interim by itself, with no stale column to reconcile.
+
+### The real gap, which was smaller and elsewhere
+
+The **on-screen** report modal showed no interim marking at all — only the PDF
+did. A technician reading a result on screen had nothing telling them the panel
+was half-answered. Fixed: the modal now shows an amber interim banner, counting
+pending results with **exactly** the same expression the PDF uses, so screen and
+paper cannot disagree.
+
+What genuinely remains is the finding's last sentence, not its first: there is no
+**amendment trail**, so if the missing values are entered later a reprint
+becomes a full report with no record that an interim one was issued. The finding
+itself routes that to the existing lab amendment-history backlog item, and that
+is where it belongs — it is a feature, not a defect, and inventing half of it
+here would be worse than leaving it named.
