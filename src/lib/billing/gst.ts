@@ -32,6 +32,42 @@ export function gstForSource(
   }
 }
 
+// ── In-patient room rent ─────────────────────────────────────────────────────
+// Healthcare is GST-exempt, but room rent is not, above a threshold: 5% without
+// input tax credit on a non-ICU room charged above ₹5,000 per day (47th GST
+// Council; notification effective 18 July 2022, and still in force — checked
+// against the September 2025 rate rationalisation, which changed medicines and
+// devices, not room rent).
+//
+// Two details that are easy to get wrong and both matter in rupees:
+//
+//  - The threshold is "above ₹5,000", so a room at exactly ₹5,000 is exempt.
+//    One live ward sits on exactly that number.
+//  - The 5% applies to the WHOLE room charge, not only the part above ₹5,000:
+//    a ₹6,000 room is taxed ₹300, not ₹50.
+//
+// ICU / CCU / ICCU / NICU are excluded at any rate.
+export const ROOM_RENT_GST_THRESHOLD = 5000
+export const ROOM_RENT_GST_RATE = 5
+
+/**
+ * The GST rate for one day of room rent. Returns a rate, not a tax amount —
+ * whether the hospital charges GST at all is decided downstream by
+ * `resolveLineGst`, which ignores any rate when the tenant has GST disabled.
+ *
+ * `isIcu` is deliberately checked for `=== false` rather than falsiness: a room
+ * whose type is unknown is treated as exempt. The two failure directions are
+ * not symmetric — wrongly taxing a patient's ICU bill takes money from a family
+ * and appears on the invoice they are handed, whereas wrongly omitting it is
+ * the hospital's own exposure and is recoverable. Every ward currently has a
+ * room type, so this branch is a guard rather than a live path; the
+ * `verify:gst-rooms` check reports any ward that reaches it.
+ */
+export function roomRentGstRate(room: { dailyRate: number; isIcu: boolean | null | undefined }): number {
+  if (room.isIcu !== false) return 0
+  return room.dailyRate > ROOM_RENT_GST_THRESHOLD ? ROOM_RENT_GST_RATE : 0
+}
+
 /**
  * Resolves the effective GST rate / inclusivity / HSN for a line: an explicit
  * per-line override (e.g. a pharmacy line inheriting its batch's rate + HSN)

@@ -163,8 +163,8 @@ on 30 Oct; nothing has been changed since.
 | F-73 | **154 redundant index copies** — the cron hand-created indexes the parent already propagates, and `0012` re-created six of `0011`'s under new names | DB | **FIXED** — `0248`; measured 7 vs 9 indexes on migration- vs cron-created partitions |
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
-| F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
-| F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
+| F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
+| F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
 | F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **FIXED** — `0243`, one transaction; `verify:bill-sources` ties the two maps |
 | F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **FIXED** — `0245` applied; a second admit to a different bed is refused and the bed is released |
 | F-39 | Five-minute partition hole at every month boundary | DB | **FIXED** — `0248` written; daily job, 4 months of runway, so one miss is survivable |
@@ -1398,7 +1398,7 @@ and `updateWardDailyRate`.
 | GST pharmacy by category | **PARTIAL** — one tenant default + per-batch override |
 | **GST non-ICU room rent > ₹5,000 at 5%** | **FAIL** — not implemented |
 | **GST cosmetic / elective 18%** | **FAIL** — not implemented |
-| GST rounding | **PARTIAL** — F-29, CGST+SGST can exceed tax by a paisa |
+| GST rounding | **PASS** — F-29 fixed; CGST + SGST now ties to the tax charged by construction |
 | Plan gating server-side | **PASS** for IPD billing |
 
 ---
@@ -4367,3 +4367,136 @@ It kept the one it could not prove redundant. Then the failure path: dropping
 missing={visits_y2026m12}` **and survive**, while the alarm raised — the
 separation that the single-function version would have destroyed. Re-running the
 creation job healed it, and the healed partition came back hardened.
+
+## F-29 — FIXED — CGST + SGST now ties to the tax charged
+
+`lib/gst.ts`. The finding is exactly right and the suggested fix is the right
+one: round one half, derive the other.
+
+```ts
+const total = round2(v.tax)
+const cgst = round2(total / 2)
+return { rate, taxableValue: round2(v.taxable), cgst, sgst: round2(total - cgst), total }
+```
+
+One thing the finding did not mention turned out to matter more than the paisa
+itself. **An invoice prints these numbers twice, from two different
+computations.** `BillPdf.tsx:50-51` prints the *stored* `bill.cgst` / `bill.sgst`
+(written at bill creation by `summarizeBillGst`), and twenty lines later
+`BillPdf.tsx:86-88` prints a rate-wise summary table it *recomputes* from the
+line items. `BillDetailClient` shows the stored figures while
+`CombinedBillView` shows recomputed ones. So drift was not an abstract
+rounding concern: it was visible on the face of the document, in two places a
+GST officer compares.
+
+Fixing only the halves would have left that open, because the bill-level total
+and the rate rows each rounded independently. So the bill-level CGST/SGST are
+now **summed from the rate rows** rather than computed beside them, and
+`taxTotal` is derived from those — which makes the three figures agree by
+construction rather than by both happening to round the same way.
+
+`scripts/verify-gst.ts` (`npm run verify:gst`) asserts the identities, then
+sweeps **27,000 bills** — every slab the app can apply (0/5/12/18/28), inclusive
+and exclusive, across amounts walking all 100 paise endings, plus 3,000
+random multi-slab bills where the per-slab grouping rounds twice. Worst drift:
+**0**. It also keeps the old behaviour as a test, so the defect stays reproduced
+rather than described:
+
+```
+PASS  rounding both halves gave ₹10.06 against ₹10.05 of tax — the defect, reproduced
+PASS  deriving the second half ties exactly
+```
+
+## F-30 — the room-rent rule is implemented; the audit's live sizing was wrong
+
+### First, the law — checked, because it is dated
+
+The rule is 5% without input tax credit on a **non-ICU** room charged **above
+₹5,000 per day** (47th GST Council, effective 18 July 2022). I verified it is
+still in force rather than relying on recall: the September 2025 rate
+rationalisation reduced medicines and most medical devices, and **did not touch
+room rent**. Two details decide rupees:
+
+- The threshold is *above* ₹5,000, so a room at exactly ₹5,000 is **exempt**.
+- The 5% applies to the **whole** room charge, not the part above ₹5,000 — a
+  ₹6,000 room is taxed ₹300, not ₹50.
+
+Caveat worth passing to whoever signs the returns: the sources for this are
+advisory commentary, not the notification text. The threshold and the ICU
+carve-out are consistent across all of them; the hospital's CA should confirm
+before the first taxed invoice goes out.
+
+### The audit's sizing was wrong — corrected
+
+The finding states that `newtest` has "a ₹25,000/day room that is not an ICU"
+being "invoiced at 0% where the rule requires 5%". That is not so. The ward is
+*named* `102`, but its `room_type_id` resolves to a room type named **ICU with
+`is_icu = true`** — so it is correctly exempt. The audit read the ward's name
+and not its room type.
+
+The real position, from `scripts/verify-gst-rooms.sql`:
+
+```
+  taxable (non-ICU > Rs 5,000) : 0
+  ICU, exempt at any rate      : 2
+  UNCLASSIFIED > Rs 5,000      : 0
+  sitting on exactly Rs 5,000  : 2
+
+    demo / ICU      Rs 9000   ICU (exempt)
+    karur / ICU     Rs 5000   ICU (exempt)  [tenant GST off]
+    newtest / 102   Rs 25000  ICU (exempt)
+    newtest / 101   Rs 5000   at threshold (exempt)
+```
+
+**No room anywhere is currently mis-taxed**, and `karur` has GST disabled
+entirely. So this changes no invoice today — it is the rule being in place
+before the first hospital prices a private room at ₹5,001.
+
+And that last row is why the threshold had to be read carefully: `newtest/101`
+sits on **exactly ₹5,000**. Writing `>=` instead of `>` would have started
+taxing a live room that the rule exempts.
+
+### What was implemented
+
+`roomRentGstRate({ dailyRate, isIcu })` in `lib/billing/gst.ts`, returning a
+*rate* rather than a tax — whether GST applies at all stays with
+`resolveLineGst`, which ignores any rate when the tenant has GST off. No
+migration: `ward_room_types.is_icu` already exists, and every one of the 17 live
+wards has a room type, so the ICU distinction was already in the data.
+
+Wired into **both** bed-charge paths, which is the part worth being careful
+about — `ipdDailyBilling.ts` (the daily room-rent bill) and `billing.ts`'s
+manual `generateBill` (used when auto room rent is switched off). Had I done
+only the first, the same stay would have been taxed differently depending on a
+billing-config flag. Four queries now fetch the room type alongside the rate
+(`ipd.ts` `listAdmissions`, `cron/dailyBilling.ts`, `billing.ts`, and the
+`DailyBillAdmission` shape they all feed).
+
+An unknown room type is treated as **exempt**, on purpose. The two errors are
+not symmetric: wrongly taxing an ICU bill takes money from a family and is
+printed on the invoice they are handed, while wrongly omitting the tax is the
+hospital's own exposure and is recoverable. `verify-gst-rooms.sql` counts that
+case loudly so it cannot sit unnoticed — it reads 0 today.
+
+### What is NOT implemented, and why
+
+**Cosmetic / elective procedures at 18% is not done, and I am not going to
+guess it.** It needs two things I should not invent:
+
+1. **A carrier.** Only `drug_batches` and `drug_brands` have a `gst_rate`
+   column. `procedure_tariffs` has none, so there is nowhere to record that a
+   procedure is taxable — a migration plus a field wherever tariffs are
+   edited.
+2. **A classification.** Which procedures count as cosmetic rather than
+   reconstructive is a clinical and tax judgement (restorative surgery after
+   trauma or for a congenital defect stays exempt; the same operation done
+   electively does not). Deciding that from a procedure name in a catalogue
+   would be fabricating medical and tax policy, and it would be wrong on the
+   exact cases that matter.
+
+My recommendation: add `gst_rate numeric NULL` to `procedure_tariffs`, surface
+it in the tariff editor, and let the hospital's CA mark the handful of
+procedures that qualify — the per-line override machinery already honours it, so
+no billing-path change is needed. That is a small migration and one form field,
+but it is a product change on a live catalogue, so it is yours to approve rather
+than mine to slip in under a tax fix.

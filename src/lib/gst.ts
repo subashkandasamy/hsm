@@ -61,33 +61,39 @@ export interface BillGstSummary {
 export function summarizeBillGst(items: GstBillItem[]): BillGstSummary {
   const byRate = new Map<number, { taxable: number; tax: number }>()
   let subtotal = 0
-  let taxTotal = 0
 
   for (const it of items) {
     const { taxableValue, taxAmount } = computeLineGst(it.amount, it.gst_rate, it.tax_inclusive)
     subtotal += taxableValue
-    taxTotal += taxAmount
     const cur = byRate.get(it.gst_rate) ?? { taxable: 0, tax: 0 }
     cur.taxable += taxableValue
     cur.tax += taxAmount
     byRate.set(it.gst_rate, cur)
   }
 
-  subtotal = round2(subtotal)
-  taxTotal = round2(taxTotal)
-
+  // One half is rounded, the other is derived — never both rounded. Rounding
+  // each independently makes them overshoot on an odd-paisa total (tax 10.05 →
+  // CGST 5.03 + SGST 5.03 = 10.06), and on a tax invoice CGST + SGST must equal
+  // the tax charged. The odd paisa lands on SGST, consistently.
   const rateSummary: RateSummaryRow[] = [...byRate.entries()]
     .filter(([rate]) => rate > 0)
     .sort((a, b) => a[0] - b[0])
-    .map(([rate, v]) => ({
-      rate,
-      taxableValue: round2(v.taxable),
-      cgst: round2(v.tax / 2),
-      sgst: round2(v.tax / 2),
-      total: round2(v.tax),
-    }))
+    .map(([rate, v]) => {
+      const total = round2(v.tax)
+      const cgst = round2(total / 2)
+      return { rate, taxableValue: round2(v.taxable), cgst, sgst: round2(total - cgst), total }
+    })
 
-  return { subtotal, taxTotal, cgst: round2(taxTotal / 2), sgst: round2(taxTotal / 2), rateSummary }
+  // Summed FROM the rate rows rather than computed alongside them. The two must
+  // agree because an invoice shows both: BillPdf prints the stored bill.cgst
+  // (which comes from here) directly above a rate-wise table it recomputes from
+  // the line items, so a paisa of drift between them is visible on the invoice
+  // itself. Deriving one from the other removes the possibility rather than
+  // making it unlikely.
+  const cgst = round2(rateSummary.reduce((s, r) => s + r.cgst, 0))
+  const sgst = round2(rateSummary.reduce((s, r) => s + r.sgst, 0))
+
+  return { subtotal: round2(subtotal), taxTotal: round2(cgst + sgst), cgst, sgst, rateSummary }
 }
 
 /** Nearest-rupee round-off. Returns the signed adjustment and the final total. */

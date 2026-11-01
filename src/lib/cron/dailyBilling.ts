@@ -117,7 +117,7 @@ export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunRes
       // Active admissions for this tenant, in the shape the generator expects.
       const { data: rows } = await service
         .from('admissions')
-        .select('id, patient_id, admitting_doctor_id, admitted_at, ward:wards(name, daily_rate)')
+        .select('id, patient_id, admitting_doctor_id, admitted_at, ward:wards(name, daily_rate, room_type:ward_room_types(is_icu))')
         .eq('tenant_id', tenant.id)
         .eq('status', 'admitted')
         .limit(1000)
@@ -127,7 +127,7 @@ export async function runDailyBillingForAllTenants(): Promise<DailyBillingRunRes
         patient_id: a.patient_id as string,
         admitting_doctor_id: (a.admitting_doctor_id as string | null) ?? null,
         admitted_at: (a.admitted_at as string | null) ?? null,
-        ward: (a.ward as unknown as { name: string; daily_rate: number }) ?? { name: '', daily_rate: 0 },
+        ward: (a.ward as unknown as { name: string; daily_rate: number; room_type?: { is_icu: boolean | null } | null }) ?? { name: '', daily_rate: 0 },
       }))
       if (!admissions.length) continue
 

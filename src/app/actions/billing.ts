@@ -12,7 +12,7 @@ import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData 
 import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
-import { gstForSource, getTenantGstConfig } from '@/lib/billing/gst'
+import { gstForSource, getTenantGstConfig, roomRentGstRate } from '@/lib/billing/gst'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 
@@ -82,14 +82,14 @@ export async function getUnbilledCharges(params: {
   if (!autoRoomRent) {
     let q = supabase
       .from('admissions')
-      .select('id, admitted_at, discharged_at, ward:wards(daily_rate)')
+      .select('id, admitted_at, discharged_at, ward:wards(daily_rate, room_type:ward_room_types(is_icu))')
       .eq('patient_id', patientId)
       .eq('billing_status', 'unbilled')
       .in('status', ['admitted', 'discharged'])
     if (admissionId) q = q.eq('id', admissionId)
     const { data } = await q
     for (const a of data ?? []) {
-      const ward = (a.ward as unknown as { daily_rate: number } | null)
+      const ward = (a.ward as unknown as { daily_rate: number; room_type?: { is_icu: boolean | null } | null } | null)
       const rate = ward?.daily_rate ?? 0
       if (rate === 0) continue
       const from = new Date(a.admitted_at as string)
@@ -102,6 +102,10 @@ export async function getUnbilledCharges(params: {
         qty: nights,
         unit_price: rate,
         amount: nights * rate,
+        // Same room-rent rule as the daily generator; the two bed-charge paths
+        // must agree or the same stay is taxed differently depending on whether
+        // auto room rent is on.
+        gst_rate: roomRentGstRate({ dailyRate: rate, isIcu: ward?.room_type?.is_icu }),
       })
     }
   }

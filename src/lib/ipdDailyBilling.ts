@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { autoIpdBill, syncNursingBillLine, type IpdBillLineItem } from '@/lib/ipdBilling'
+import { roomRentGstRate } from '@/lib/billing/gst'
 import { tenantHasIpd } from '@/lib/billing/ipdAccess'
 import { istDate, istAddDays as addDays } from '@/lib/istDate'
 
@@ -9,7 +10,7 @@ export interface DailyBillAdmission {
   patient_id: string
   admitting_doctor_id?: string | null
   admitted_at?: string | null
-  ward: { name: string; daily_rate: number }
+  ward: { name: string; daily_rate: number; room_type?: { is_icu: boolean | null } | null }
 }
 
 export { istDate }
@@ -87,10 +88,14 @@ export async function generateDailyChargesForAdmissions(
       if (billedToday.get(adm.id)?.has('bed')) continue
       const rate = adm.ward?.daily_rate ?? 0
       if (rate <= 0) continue
+      // Room rent is the one in-patient charge GST reaches: 5% on a non-ICU
+      // room above ₹5,000/day. Passed as a per-line override because
+      // gstForSource('bed') cannot see the room — it has only the source.
+      const roomGst = roomRentGstRate({ dailyRate: rate, isIcu: adm.ward?.room_type?.is_icu })
       await autoIpdBill(supabase, actorId, {
         tenantId, admissionId: adm.id, patientId: adm.patient_id,
         billingDate: today, billSource: 'bed',
-        lineItems: [{ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate }],
+        lineItems: [{ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate, gst_rate: roomGst }],
       })
     }
   }
