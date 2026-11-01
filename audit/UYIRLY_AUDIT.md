@@ -159,7 +159,8 @@ on 30 Oct; nothing has been changed since.
 | F-14 | Read-only and plan enforcement rest on headers stamped in one branch only | 1 | **FIXED** — all three helpers fail closed; before/after proved with a live probe |
 | F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **FIXED** — `getClaims()`; a forged cookie went from `307 /dashboard` to rejected |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **FIXED** — every drop path logs; writes go through the service client so RLS cannot lose a record |
-| F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **OPEN** |
+| F-72 | `ward_room_types.tenant_id` is **text** — the only one of 256, so it has **no FK to `tenants`** | DB | **MIGRATION `0247` WRITTEN, NOT APPLIED** — found by the F-26 scan |
+| F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
 | F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **FIXED** — `0243`, one transaction; `verify:bill-sources` ties the two maps |
@@ -4101,3 +4102,92 @@ any column added to `profiles` later — a token, a hash, a private note — wou
 ship to the browser the day it is created, silently. Naming the columns means a
 new one has to be chosen. Recorded as a **security** change with no performance
 claim attached, rather than letting an INFO finding look like a speed-up.
+
+## F-26 — DETECTOR SHIPPED; the 291 composite FKs recommended against
+
+Numbers confirmed exactly: **294** foreign keys with a tenant-scoped table on
+both sides, **3** composite keys including `tenant_id`, 291 that do not enforce
+it. (450 if partition copies are counted; 294 is the logical figure.)
+
+### The fact that decides the urgency
+
+Scanned all 291 relationships for an actual mismatch — every child row joined to
+its parent, comparing the two `tenant_id`s:
+
+```
+TENANT CONSISTENCY
+  relationships checked : 291
+  mismatched rows       : 0
+  (no child row points at a parent in another hospital)
+  (nothing uncheckable)
+```
+
+**No mismatched row exists anywhere in the database.** Combined with what F-23
+established — all 182 service-role writes read, exactly one tenant defect found
+and fixed — the exposure is materially smaller than when this was filed. The
+honest path cannot obtain a foreign id at all, because reads go through RLS.
+
+### Why 291 composite foreign keys are the wrong fix
+
+Each one needs a `UNIQUE (tenant_id, id)` on the parent, then the constraint
+dropped and recreated — **291 constraint rebuilds, each taking an ACCESS
+EXCLUSIVE lock** on tables belonging to a hospital that is seeing patients. The
+finding rates it Effort: L; the real objection is not effort but that it trades
+a defect with zero present instances for a long window of locking on live
+clinical tables.
+
+### What was shipped instead
+
+`scripts/verify-tenant-consistency.sql` — read-only, raises by design so it can
+never alter anything, and covers all 291. It directly answers the finding's own
+statement of the risk: *"this is the class of defect that produces unexplainable
+mixed data long after the write that caused it, with no constraint to catch it
+at the time."* So catch it at the time. Run it after any bulk or headless write,
+and on a schedule.
+
+It reports **uncheckable** relationships separately and loudly, because a
+detector with a silent blind spot is worse than no detector — which is exactly
+what the first version of it had, and what found the next finding.
+
+### F-72 — NEW — found by the scan, not by reading
+
+The first version of the scan crashed on one relationship:
+
+```
+wards_room_type_id_fkey (wards.room_type_id -> ward_room_types.id)
+  operator does not exist: uuid = text
+```
+
+Chasing it down: **`ward_room_types.tenant_id` is `text`.** It is the only one
+of 256 public tables whose `tenant_id` is not `uuid`, and the consequence is not
+cosmetic:
+
+```
+FK on ward_room_types -> (NO foreign keys)
+```
+
+Every other tenant-scoped table carries `fk_<table>_tenant REFERENCES
+tenants(id)`. This one cannot, because text and uuid have no equality operator,
+so Postgres would refuse the constraint. A row here can hold **any string** as
+its tenant — a deleted hospital's id, a typo, an empty string — and nothing
+objects.
+
+**RLS is not affected**, and that was checked rather than assumed: all four
+policies cast explicitly (`tenant_id = ((SELECT current_tenant_id()))::text`),
+so isolation works correctly today. This is an integrity defect, not a security
+one.
+
+`0247` converts the column and adds the missing FK. Verified first that all 12
+rows hold well-formed uuid strings resolving to live tenants (aes-health 1,
+demo 5, karur 4, newtest 2), so the cast cannot fail and the new FK orphans
+nothing.
+
+**The trap, which is why this is one migration and not two:** the four policies
+must be rewritten in the same transaction. They cast `current_tenant_id()` to
+text; the moment the column becomes uuid that cast produces `uuid = text` and
+**every policy raises**, locking every user out of the room-type screens.
+Converting the column alone would have broken the feature it was meant to
+harden.
+
+**Blocked on approval** — a type change plus four policy rewrites on a live
+hospital's table.
