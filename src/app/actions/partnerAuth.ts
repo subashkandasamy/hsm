@@ -7,6 +7,7 @@ import { hashLoginToken, hashPassword, verifyPassword, getPartnerSession, setPar
 import { sendPartnerPasswordEmail } from '@/lib/email'
 import { DEFAULT_COMMISSION_PCT, referralLink } from '@/lib/referral'
 import type { ReferralOverview, ReferredHospital } from '@/lib/types'
+import { isLookupEmail, likeEscape } from '@/lib/emailLookup'
 
 const SITE = 'https://www.uyirly.com'
 const ALIVE = new Set(['trial', 'active', 'past_due'])
@@ -20,11 +21,11 @@ export async function registerPartner(input: {
   const email = (input.email ?? '').trim().toLowerCase()
   const password = input.password ?? ''
   if (name.length < 2) return { success: false, error: 'Please enter your name' }
-  if (!email.includes('@')) return { success: false, error: 'Please enter a valid email' }
+  if (!isLookupEmail(email)) return { success: false, error: 'Please enter a valid email' }
   if (password.length < 8) return { success: false, error: 'Password must be at least 8 characters' }
 
   const svc = createServiceClient()
-  const { data: existing } = await svc.from('partners').select('id, status').ilike('email', email).maybeSingle()
+  const { data: existing } = await svc.from('partners').select('id, status').ilike('email', likeEscape(email)).maybeSingle()
   if (existing) {
     return existing.status === 'pending'
       ? { success: false, error: 'This email has already applied — we’re reviewing it.' }
@@ -52,10 +53,10 @@ export async function loginPartner(
   email: string, password: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   const e = (email ?? '').trim().toLowerCase()
-  if (!e.includes('@') || !password) return { success: false, error: 'Enter your email and password' }
+  if (!isLookupEmail(e) || !password) return { success: false, error: 'Enter your email and password' }
   const svc = createServiceClient()
   const { data: partner } = await svc.from('partners')
-    .select('id, status, password_hash').ilike('email', e).maybeSingle()
+    .select('id, status, password_hash').ilike('email', likeEscape(e)).maybeSingle()
 
   // Uniform failure message (don't reveal which part was wrong).
   const bad = { success: false, error: 'Incorrect email or password' } as const
@@ -72,10 +73,10 @@ export async function loginPartner(
 // Email a set/reset-password link. Always returns success (no email disclosure).
 export async function requestPartnerPasswordReset(email: string): Promise<{ success: true }> {
   const e = (email ?? '').trim().toLowerCase()
-  if (e.includes('@')) {
+  if (isLookupEmail(e)) {
     const svc = createServiceClient()
     const { data: partner } = await svc.from('partners')
-      .select('id, name, email, status').ilike('email', e).maybeSingle()
+      .select('id, name, email, status').ilike('email', likeEscape(e)).maybeSingle()
     if (partner && partner.status !== 'rejected' && partner.email) {
       const raw = crypto.randomBytes(32).toString('base64url')
       const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString()

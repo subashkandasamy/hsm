@@ -178,12 +178,12 @@ on 30 Oct; nothing has been changed since.
 | F-10 | Four reference tables readable by `anon` | DB | **OPEN** — confirm intent |
 | F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
 | F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
-| F-18 | `enabled_modules` fails open on a null column | 1 | **OPEN** |
+| F-18 | `enabled_modules` fails open on a null column | 1 | **CORRECTED + FIXED** — the column is `jsonb NOT NULL DEFAULT`, so NULL is impossible; the fallback now logs instead of firing silently |
 | F-19 | Four sequential round trips before any dashboard page renders | 1 | **OPEN** |
 | F-20 | Tenant cache per-instance and unbounded; 0–60s suspension lag | 1 | **OPEN** |
 | F-21 | Unknown hostnames trigger an uncached service-role query | 1 | **OPEN** |
 | F-22 | `select('*')` on `profiles` in the hot path | 1 | **OPEN** |
-| F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **OPEN** |
+| F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **FIXED** — proved live: `%@%` matched 2 rows, escaped matched 0 |
 | F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **OPEN** |
 | F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **OPEN** |
 | F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **OPEN** |
@@ -3721,3 +3721,85 @@ with the partition work (F-39, F-40) if those are ever done together, where the
 Recorded rather than quietly skipped: this is the one finding so far where the
 right answer is "do not fix it yet", and the reason is a Postgres constraint
 rather than effort.
+
+## F-27 — FIXED — the partner e-mail can no longer act as a pattern
+
+Confirmed, and confirmed **on the live API** rather than by reading. Queried
+`/rest/v1/partners` with the service key against 10 partner rows:
+
+| Pattern sent | Rows matched |
+|---|---|
+| `email=ilike.*%40*` — PostgREST's `*` alias for `%` | **2** |
+| `email=ilike.%25%40%25` — the finding's `%@%` | **2** |
+| `email=ilike.%5C%25%40%5C%25` — the same, escaped | **0** |
+
+(2 rather than 10 because only two partners carry an e-mail at all.) So the
+pattern really did match every e-mail-bearing partner through the public REST
+interface, and the escape really does neutralise it.
+
+### A plain e-mail regex would not have fixed this
+
+The obvious fix is to reuse `EMAIL_RE` — `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` — which
+already exists in two other files. It does not work: **`%@%.%` satisfies that
+regex**, because `%` is an ordinary character to it, and still matches every
+row. Verified in the test below.
+
+So the fix is two separate jobs, and both are needed:
+
+- `isLookupEmail` rejects `%`, `*` and `\` — none of which appears in an
+  address anyone types, and `*` matters because **PostgREST treats it as an
+  alias for `%`** (demonstrated above: `*@*` matched 2 rows).
+- `likeEscape` makes what is left literal. `_` cannot be rejected —
+  `john_doe@example.com` is an everyday address — so it is escaped instead.
+
+Postgres LIKE semantics verified directly rather than assumed:
+
+| row | `ilike 'john_doe@example.com'` | `ilike 'john\_doe@example.com'` |
+|---|---|---|
+| `john_doe@example.com` | true | **true** |
+| `johnXdoe@example.com` | **true** ← the bug | **false** ← the fix |
+
+Backslash is LIKE's default escape character, so no `ESCAPE` clause is needed,
+and the backslash survives PostgREST intact (row 3 of the live table above).
+
+### Why `ilike` was kept rather than switching to `.eq()`
+
+An exact match would be simpler and would remove the whole class. It would also
+be wrong: `registerPartner` lowercases before inserting, but `platform.ts:693`
+stores admin-created partners as `input.email?.trim()` with their case intact.
+`.eq()` on a lowercased input would silently fail to find those partners —
+turning an injection bug into a "this partner does not exist" bug. Normalising
+on write and backfilling the existing rows is the real answer to *that*, and it
+is a data change; neutralising the pattern needs neither.
+
+Applied at all three call sites — the existence check in `registerPartner`
+(where the finding notes the actual harm: a pattern matching several rows reads
+as "no existing partner" and inserts a junk row), `loginPartner`, and
+`requestPartnerPasswordReset`. No `includes('@')` remains in the file.
+13 assertions in the unit check, all passing.
+
+## F-18 — CORRECTED, then fixed — the stated cause is impossible
+
+The finding says: *"A tenant row with `NULL` there gets everything."* It cannot.
+`tenants.enabled_modules` is **`jsonb NOT NULL`** with a `DEFAULT` of exactly
+the ten modules the TypeScript fallback lists — the fallback mirrors the column
+default deliberately, so a tenant that has never configured anything sees the
+same menu either way. All 8 live tenants hold proper arrays (chennai has 9, one
+switched off on purpose).
+
+What *can* reach the fallback is narrower and was unstated: the tenant row not
+being read at all (a failed `.single()`), or a non-array jsonb value — `'null'
+::jsonb` is a legal value of a `NOT NULL` jsonb column, which is probably what
+the finding was reaching for.
+
+Also worth stating, because it sets the severity: this is the **sidebar**, not a
+security boundary. Anything clicked is still gated by `planHasModule` and by
+RLS. And an empty array is already honoured correctly as "nothing enabled",
+since `Array.isArray([])` is true.
+
+So the fallback is right to exist — blanking a working hospital's menu on a
+transient read error would be worse than showing an item that refuses when
+clicked. What was wrong is that it could not distinguish "this tenant wants
+everything" from "the row could not be read", and chose the first in silence.
+It now logs the tenant id, the error and what it actually received. The fallback
+behaviour is unchanged.

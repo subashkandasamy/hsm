@@ -92,15 +92,37 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const service = createServiceClient()
-  const { data: tenant } = await service
+  const { data: tenant, error: tenantErr } = await service
     .from('tenants')
     .select('enabled_modules')
     .eq('id', profile.tenant_id)
     .single()
 
-  const enabledModules: string[] = Array.isArray(tenant?.enabled_modules)
-    ? tenant.enabled_modules as string[]
-    : ['ipd','emergency','bloodbank','ot','lab','radiology','pharmacy','insurance','inventory','hr']
+  // The fallback mirrors the column's own DEFAULT — enabled_modules is jsonb
+  // NOT NULL with exactly this list as its default — so a tenant that has never
+  // configured anything sees the same menu either way. An empty array is
+  // respected as "nothing enabled", because Array.isArray([]) is true.
+  //
+  // What it cannot do is tell "this tenant wants everything" apart from "the
+  // row could not be read", and silently enabling all ten in the second case is
+  // the wrong default to pick quietly. It is the sidebar rather than a security
+  // boundary — plan gating (planHasModule) and RLS both still apply to anything
+  // clicked — so blanking the menu on a transient read error would make a
+  // working hospital look broken for no safety gain. The fallback stays; it just
+  // no longer happens in silence.
+  const DEFAULT_MODULES =
+    ['ipd','emergency','bloodbank','ot','lab','radiology','pharmacy','insurance','inventory','hr']
+  const configured = Array.isArray(tenant?.enabled_modules)
+  if (!configured) {
+    console.error('[layout] enabled_modules unusable — falling back to the full list', {
+      tenantId: profile.tenant_id,
+      error: tenantErr?.message ?? null,
+      received: tenant?.enabled_modules ?? null,
+    })
+  }
+  const enabledModules: string[] = configured
+    ? tenant!.enabled_modules as string[]
+    : DEFAULT_MODULES
 
   const messagingEnabled = await isMessagingEnabled()
 
