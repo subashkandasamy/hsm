@@ -337,25 +337,50 @@ export async function enterResults(
     // would name the order it was not written to.
     const { data: item } = await supabase
       .from('lab_order_items')
-      .select('test_id, lab_tests_catalog(ref_low, ref_high, crit_low, crit_high)')
+      .select('test_id')
       .eq('id', item_id).eq('lab_order_id', orderId).maybeSingle()
     if (!item) continue
 
+    // The range comes from `effective_test_range`, not from the catalogue
+    // columns directly (F-44).
+    //
+    // Reading `lab_tests_catalog.crit_low/crit_high` here looked right and was
+    // inert: not one of the 22 catalogue rows has either set, in any tenant, so
+    // this path could never produce a critical flag. The same measurement
+    // entered through a panel went through `resolve_reference_range` and did —
+    // a fasting glucose of 500 was `critical_high` as an analyte and merely
+    // `high` as a single test, reaching no queue and telephoning nobody.
+    //
+    // Where a test maps to exactly one analyte, the resolver hands back that
+    // analyte's age- and sex-aware range, so both paths now answer the same
+    // clinical question the same way. Otherwise it hands back the catalogue's
+    // own figures, so nothing is lost for a test with no analyte definition.
+    //
+    // One call per item: result entry is a handful of tests, not a hot path.
+    const { data: rangeRows } = await supabase.rpc('effective_test_range', {
+      p_order_id: orderId,
+      p_test_id: item.test_id,
+    })
+    const range = (Array.isArray(rangeRows) ? rangeRows[0] : rangeRows) as
+      { ref_low: number | null; ref_high: number | null
+        crit_low: number | null; crit_high: number | null } | null
+
     // Critical before reference, because a potassium of 7.0 and one of 5.2 are
-    // not the same fact. This used to compute only high/low/normal, and the
-    // catalogue had no critical bounds to compare against — so a test a
-    // hospital added itself produced a result that could be high but never
-    // critical, appeared in no queue, and telephoned nobody.
-    let flag: LabFlag = 'normal'
+    // not the same fact. The order of these tests, and the final 'unranged',
+    // mirror save_lab_analyte_results exactly — the two paths disagreeing about
+    // precedence would be the same class of defect as them disagreeing about
+    // bounds.
+    let flag: LabFlag
     if (result_value != null) {
-      const cat = (item as Record<string, unknown>)?.lab_tests_catalog as
-        { ref_low: number | null; ref_high: number | null
-          crit_low: number | null; crit_high: number | null } | null
-      if (cat?.crit_high != null && result_value >= cat.crit_high) flag = 'critical_high'
-      else if (cat?.crit_low != null && result_value <= cat.crit_low) flag = 'critical_low'
-      else if (cat?.ref_high != null && result_value > cat.ref_high) flag = 'high'
-      else if (cat?.ref_low != null && result_value < cat.ref_low) flag = 'low'
-      else flag = 'normal'
+      if (range?.crit_high != null && result_value >= range.crit_high) flag = 'critical_high'
+      else if (range?.crit_low != null && result_value <= range.crit_low) flag = 'critical_low'
+      else if (range?.ref_high != null && result_value > range.ref_high) flag = 'high'
+      else if (range?.ref_low != null && result_value < range.ref_low) flag = 'low'
+      // 'normal' only when something was actually compared. This used to fall
+      // through to 'normal' with no range at all, which reports a number nobody
+      // can interpret as a reassurance.
+      else if (range?.ref_low != null || range?.ref_high != null) flag = 'normal'
+      else flag = 'unranged'
     } else {
       flag = 'pending'
     }

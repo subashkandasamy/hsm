@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { explainStockShortfall } from '@/lib/pharmacy/stockShortfall'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
@@ -355,10 +356,11 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
           .limit(1)
 
     if (!batches?.length) {
-      return {
-        success: false,
-        error: `Insufficient stock for one or more items — restock before fulfilling`,
-      }
+      // Not necessarily out of stock — see explainStockShortfall (F-47/F-75).
+      // The sale line carries no description to name, so the message is about
+      // the quantity and the shelf; still better than "one or more items".
+      const why = await explainStockShortfall(supabase, drugRef, item.qty, today, null)
+      return { success: false, error: why.message }
     }
 
     const batch = batches[0]

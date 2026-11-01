@@ -162,6 +162,8 @@ on 30 Oct; nothing has been changed since.
 | F-72 | `ward_room_types.tenant_id` is **text** — the only one of 256, so it has **no FK to `tenants`** | DB | **MIGRATION `0247` WRITTEN, NOT APPLIED** — found by the F-26 scan |
 | F-73 | **154 redundant index copies** — the cron hand-created indexes the parent already propagates, and `0012` re-created six of `0011`'s under new names | DB | **FIXED** — `0248`; measured 7 vs 9 indexes on migration- vs cron-created partitions |
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
+| F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
+| F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **RECORDED, NOT CHANGED** — 7 of 30 patients have no dob; fixing it alters a shared clinical resolver |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -192,8 +194,8 @@ on 30 Oct; nothing has been changed since.
 | F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **FIXED** — admissions paged (ceiling removed), time budget + `complete`/`tenantsNotReached` so a partial pass is reported |
 | F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **FIXED** — comment now states the `suspended` divergence and why syncing them would break billing either way |
 | F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **FIXED** — `0248`; all six get the generous case, one job |
-| F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **OPEN** |
-| F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
+| F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **FIXED** — `0251` adds `effective_test_range`; worse than filed (**0 of 22** tests had any critical bound, so the path could never flag critical) |
+| F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **CORRECTED** — FEFO *is* enforced server-side in all three dispense paths, not by the UI. The real defect is the single-batch quantity filter → **F-75** |
 | F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **FIXED** — both corrected; they were the reason F-48 was easy to miss |
 | F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **FIXED** in code (`startVisit` marks it; preview excludes it). **3 pre-existing rows** need `0250` — a data change, awaiting approval |
 | F-51 | `startVisit` is a write gated on `opd:read` | 7 | **FIXED** — `opd:visit:start`, granted to the identical role set (proved) |
@@ -1821,7 +1823,7 @@ confirming the dispense screen orders by expiry; nothing below it will.
 | Expired batch cannot be dispensed | **PASS** — enforced in SQL |
 | Concurrent dispense of last unit | **PASS** |
 | FEFO on inventory consumption | **PASS** |
-| FEFO on pharmacy dispensing | **PARTIAL** — F-47, caller chooses |
+| FEFO on pharmacy dispensing | **PASS** — F-47 corrected: enforced in the action layer, not the UI. Separate weakness in F-75 (single-batch filter) |
 | Blood: TTI screening before issue | **PASS** |
 | Blood: component match | **PASS** |
 | Blood: compatible cross-match required | **PASS** |
@@ -4797,3 +4799,185 @@ asks the one question behind all four findings — can the same charge be invoic
 twice — as four counts: consumables and surgeries carried on a live bill but not
 flagged, visits in the same state by either route, and any bill source with no
 known handling. It reads `0 / 0 / 3 / none` today; the 3 clears when `0250` runs.
+
+## F-44 — FIXED — and the single-test path could not flag critical at all
+
+The finding describes two sources of truth, with a single test "judged against
+the catalogue's adult figure". Checking the data changed the severity: **there is
+no figure.**
+
+```
+lab_tests_catalog rows            : 22
+...with crit_low or crit_high set :  0
+```
+
+Not one test in any tenant has a critical bound. So `enterResults` could compute
+`high` or `low` but **never `critical_high` or `critical_low`** — the comment
+sitting in that function describes exactly this as a bug that was fixed, and the
+code *was* fixed to read the columns, but the columns are empty, so the fix is
+inert. The same shape as F-48: implemented and unreachable.
+
+Meanwhile the analyte ranges do carry criticals:
+
+```
+FBG / PPBG / RBSG : crit_low 55.0, crit_high 450.0
+HGB               : crit_low 7.0, and sex-specific references
+                    (male 12.3-17.0, female 9.9-14.3)
+```
+
+So, today: **a fasting glucose of 500 entered as a single test is flagged
+`high`, reaches no critical queue and telephones nobody.** The same number
+through a panel is `critical_high`. A haemoglobin of 6.0 in a woman is judged
+against a flat unisex 11.5–17.5 and called `low` rather than `critical_low`.
+Both are call-the-doctor-now numbers.
+
+### One resolver, and the mapping is not where it looks
+
+`lab_test_analytes` already links a catalogue test to its analytes — but on
+**`lab_master_id`**, not `test_id`. A join on the catalogue id finds nothing,
+which is probably why the link went unused here. Where a test maps to exactly
+one analyte it *is* that measurement, so the analyte's age- and sex-aware range
+is the right answer. The live shape makes that safe to apply generically:
+
+```
+panels    CBC 28, URM 18, LFT 9, KFT 7, LIPID 4, TFT 3   -> analyte path already
+singles   CREA, FBG, HB, HBA1C, PPBG, RBS  (1 analyte)   -> effective_test_range
+unmapped  ABO (qualitative), IGA           (0 analytes)  -> catalogue, unchanged
+```
+
+Migration `0251` adds `effective_test_range(order, test)`. Two choices in it
+worth naming:
+
+- The analyte range wins **wholesale** for the reference interval. Merging
+  field-by-field could pair a sex-specific lower bound with a unisex upper one
+  and produce an interval belonging to nobody.
+- Critical bounds `COALESCE` to the catalogue, because a missing critical bound
+  is not a neutral default — it is the difference between a telephone call and
+  silence. If either source names one, it is used.
+
+It is `SECURITY INVOKER`: it reads the order, the patient and the ranges, and
+RLS should confine all three. Nothing here needs to see across tenants.
+
+`enterResults` now also mirrors the analyte path's **precedence and its final
+`unranged`**. It used to fall through to `normal` when no range existed at all —
+reporting a number nobody compared to anything as reassurance. All four
+renderers (`LabReportModal`, `ResultEntryModal`, `HospitalRecords`,
+`LabReportPdf`) already handle `unranged`, so nothing downstream had to change.
+
+### Proved before it ships
+
+The function cannot be created without approval, so the resolution was verified
+with an equivalent read-only query against live data — for a male adult, a
+female adult, and against the catalogue it replaces:
+
+```
+CREA   catalog: 0.6..1.2  crit -/-      ->  F 0.6..1.2 crit -/-        (unchanged)
+FBG    catalog: 70..100   crit -/-      ->  F 70..100  crit 55/450     (gains criticals)
+HB     catalog: 11.5..17.5 crit -/-     ->  F 9.9..14.3 crit 7.0/-     (sex-aware + critical)
+                                            M 12.3..17.0 crit 7.0/-
+HBA1C  catalog: -..5.7    crit -/-      ->  F -..5.7   crit -/-        (unchanged)
+PPBG   catalog: -..140    crit -/-      ->  F -..140   crit 55/450
+RBS    catalog: -..200    crit -/-      ->  F -..200   crit 55/450
+```
+
+It cuts both ways, which is the point: a glucose of 500 becomes
+`critical_high`, a haemoglobin of 6.0 becomes `critical_low`, **and** a
+haemoglobin of 10.5 in a woman stops being falsely flagged `low` — the flat
+unisex range was calling a normal female value abnormal. Tests with nothing to
+gain (`CREA`, `HBA1C`) are byte-identical, so the change is confined to where it
+helps.
+
+Also checked rather than assumed, because the whole fix rests on it:
+`patients.gender` holds exactly `male` / `female` / NULL and
+`lab_reference_ranges.sex` holds `male` / `female` / `any`, and
+`resolve_reference_range` COALESCEs a NULL sex to `any`. The existing panel
+matching is sound.
+
+## F-47 — CORRECTED — FEFO is enforced in the action layer, not by the UI
+
+The finding says *"Whichever batch the dispensing screen chooses is the one
+consumed"* and *"FEFO at the pharmacy counter is a UI property, not an enforced
+one"*, and asks for the dispense screen's ordering to be confirmed. Confirmed,
+and it is the other way round. All three callers of `dispense_drug` choose the
+batch themselves, server-side:
+
+| Path | How the batch is chosen |
+|---|---|
+| `pharmacy.ts` `dispensePrescribedDrug` | `.gt('expiry', today).gte('qty_available', qty).order('expiry', asc).limit(1)` |
+| `vaccination.ts` `fefoBatch` | `.gt('expiry', today).gt('qty_available', 0).order('expiry').limit(1)` |
+| `pharmacySale.ts` | scanned batch if the operator scanned one, else the same FEFO ordering |
+
+The counter is handed no list to pick from. The single exception is a **scanned**
+batch in the counter-sale path, which is deliberate — the operator is holding
+that box — and it is still checked for expiry and stock. `resolveOwnLabel`
+already computes `isEarliestExpiring` by looking for anything of the same
+medicine expiring sooner, precisely so the counter can be told when it is about
+to pass over an older box. So the advisory the finding asks for exists.
+
+The verdict changes from PARTIAL to PASS. What the finding was reaching for is
+real, but it is a different defect:
+
+## F-75 (new) — a dispense cannot be split across batches
+
+All three paths ask for **one** batch that covers the whole quantity
+(`.gte('qty_available', qty)`). Two consequences:
+
+1. **It refuses stock it has.** 5 units in an older batch and 8 in a newer one
+   is 13 on the shelf, and a request for 10 was answered *"Insufficient stock or
+   no valid batch available"*. The medicine is there; the pharmacist is sent
+   away from a prescription they could fill in two movements.
+2. **It steps over the older box** — the wastage F-47 is really about. If the
+   oldest batch holds 5 and a newer one holds 20, dispensing 10 silently takes
+   the newer and leaves the older to expire. FEFO is enforced in the *ordering*
+   and then defeated by the *quantity filter*.
+
+Zero live instances, and once again for an incidental reason: no tenant
+currently has any drug with more than one in-stock batch (demo 9 drugs, newtest
+2, both single-batch). It becomes reachable on the second delivery of anything.
+
+**Fixed:** the message now tells the truth, through one shared
+`explainStockShortfall` rather than two copies — this audit has five findings
+about duplicated logic that drifted. It distinguishes no stock, genuinely
+insufficient stock, and enough stock split across boxes, and in the last case
+names the largest batch and the remainder:
+
+> `13 in stock but no single batch holds 10 — the largest has 8. Dispense 8 from it, then the remaining 2 from the next batch.`
+
+**Not fixed, deliberately:** actual splitting. `dispense_drug` takes a single
+`p_batch_id`, so one dispense across two batches means either several
+non-atomic RPC calls or a new RPC, and it multiplies the dispense rows, labels
+and bill lines downstream. That is a feature with clinical and billing
+consequences, not a bug fix, and it is not mine to decide on a live pharmacy.
+
+## F-76 (new) — an unknown date of birth is treated as age 0
+
+`resolve_reference_range` selects on
+
+```sql
+COALESCE(p_age_days, 0) BETWEEN r.age_min_days AND r.age_max_days
+```
+
+and both result paths derive age as `(taken_at::date - p.dob)`. **7 of 30
+patients have no `dob`**, so for those the expression is NULL and the resolver
+is told the patient is a newborn.
+
+Benign today, and the reason is worth stating because it is the whole risk: no
+reference range currently has an upper age bound below 54,750 days, so an
+unknown age falls through to the full-span range. The six age-specific ranges
+are all `age_min_days = 6570` (18 years) — which an unknown-age adult therefore
+**fails to match**, losing the sex-specific haemoglobin interval and falling
+back to a range with no bounds at all.
+
+The day someone adds a genuine paediatric range — `0`–`30` days for a neonate,
+which is ordinary practice — every patient with a missing date of birth starts
+being judged against it. A critical bound meant for a newborn applied to an
+adult is wrong in the direction that produces false alarms, and the reverse
+pairing produces silence.
+
+**Recorded, not changed.** The fix is not simply passing NULL through: with
+`p_age_days IS NULL` matching every range, the existing
+`ORDER BY (age_max_days - age_min_days) ASC` would prefer the *narrowest* — the
+neonate range — which is precisely the wrong answer. It needs the ordering
+inverted for the unknown case, and that is a change to the resolver both result
+paths share, on a live hospital, for a trap that has not sprung. It should be
+done before the first paediatric range is entered, not after.

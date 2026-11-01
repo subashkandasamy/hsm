@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { explainStockShortfall } from '@/lib/pharmacy/stockShortfall'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
@@ -1069,6 +1070,17 @@ export async function dispense(
   const today = istToday()
 
   // FEFO: pick earliest non-expired batch with enough stock.
+  //
+  // Worth stating plainly, because the audit read it the other way round
+  // (F-47): FEFO here is enforced by this query, not by the dispensing screen.
+  // The counter is given no batch to choose. The one place an operator's choice
+  // is honoured is a SCANNED batch in the counter-sale path, which is
+  // deliberate — they are holding that box — and `resolveOwnLabel` already
+  // tells them when something expires sooner.
+  //
+  // The real weakness is `.gte('qty_available', qty)`: it demands a single
+  // batch, so stock split across two boxes is unreachable and the older box can
+  // be stepped over. See explainStockShortfall.
   // drug_id here is a generic ref — could be drug_master.id or drugs.id.
   const { data: batches } = await supabase
     .from('drug_batches')
@@ -1080,7 +1092,10 @@ export async function dispense(
     .limit(1)
 
   if (!batches?.length) {
-    return { success: false, error: 'Insufficient stock or no valid batch available' }
+    // The query above wants ONE batch big enough for the whole quantity, so
+    // "no batch" does not mean "no stock" (F-47/F-75). Say which it is.
+    const why = await explainStockShortfall(supabase, drug_id, qty, today)
+    return { success: false, error: why.message }
   }
 
   const batch = batches[0] as { id: string; mrp: number; drug_id: string | null; drug_master_id: string | null }
