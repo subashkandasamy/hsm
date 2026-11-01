@@ -15,7 +15,7 @@ interface Props {
 }
 
 export default function RadiologyReportModal({ order, onClose }: Props) {
-  const [image, setImage] = useState<{ url: string | null; isPdf: boolean } | null>(null)
+  const [image, setImage] = useState<{ url: string | null; isPdf: boolean; denied?: boolean } | null>(null)
   const [loadingImage, setLoadingImage] = useState(!!order.image_url)
 
   useEffect(() => {
@@ -65,6 +65,13 @@ export default function RadiologyReportModal({ order, onClose }: Props) {
             </p>
             {loadingImage ? (
               <p className="text-sm" style={{ color: '#94A3B8' }}>Loading image…</p>
+            ) : image?.denied ? (
+              // Distinct from "could not be loaded" on purpose — a refusal is
+              // not a failure, and telling someone their role does not cover
+              // this is more use than letting them retry a broken-looking page.
+              <p className="text-sm" style={{ color: '#B45309' }}>
+                Your role does not include viewing scan images.
+              </p>
             ) : !image?.url ? (
               <p className="text-sm" style={{ color: '#DC2626' }}>Image could not be loaded.</p>
             ) : image.isPdf ? (

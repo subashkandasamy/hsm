@@ -6,7 +6,7 @@ import { signViewerLink, VIEWER_LINK_TTL_SECONDS } from '@/lib/lab/viewerLink'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
-import { requirePermission } from '@/lib/rbac'
+import { hasPermission, requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
 import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
@@ -232,7 +232,16 @@ export async function getRadiologyImageUploadUrl(
 // http(s) URL (older public-URL scheme) — those are returned as-is.
 export async function getRadiologyImageUrl(
   orderId: string,
-): Promise<{ url: string | null; isPdf: boolean }> {
+): Promise<{ url: string | null; isPdf: boolean; denied?: boolean }> {
+  // See getDocumentUrl — same gap, same permission. `denied` is separate from
+  // `url: null` on purpose: "you may not see this" and "there is no image" are
+  // different facts, and collapsing them would quietly show an empty report
+  // instead of saying why.
+  const actor = await getActorProfile()
+  if (!hasPermission(actor.role, 'emr:file:read')) {
+    return { url: null, isPdf: false, denied: true }
+  }
+
   const supabase = await createClient()
   const { data: order } = await supabase
     .from('radiology_orders').select('image_url').eq('id', orderId).maybeSingle()

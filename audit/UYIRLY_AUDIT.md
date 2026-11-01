@@ -155,7 +155,7 @@ on 30 Oct; nothing has been changed since.
 |---|---|---|---|
 | F-06 | Device push tokens readable by anyone from any browser | 2 | **FIXED** `1e7a54b` |
 | F-07 | Razorpay webhook failed open on a missing secret | 2 | **FIXED** `2f53129` |
-| F-08 | Patient documents and scan images readable by any role in the tenant | 2 | **BLOCKED** — who prints reports? |
+| F-08 | Patient documents and scan images readable by any role in the tenant | 2 | **FIXED** — `emr:file:read`, front desk included on the hospital's answer |
 | F-14 | Read-only and plan enforcement rest on headers stamped in one branch only | 1 | **FIXED** — all three helpers fail closed; before/after proved with a live probe |
 | F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **FIXED** — `getClaims()`; a forged cookie went from `307 /dashboard` to rejected |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **FIXED** — every drop path logs; writes go through the service client so RLS cannot lose a record |
@@ -3888,3 +3888,66 @@ unauthenticated request must get "no rows", not an error.
 reaching `karur` the instant it runs, and there is no way to stage it on `demo`
 first. It needs an explicit yes. Nothing is worse while it waits — the current
 policies are correct, merely fragile.
+
+## F-08 — FIXED — the question was answered, so the gate could be built
+
+This was the one finding deliberately left open pending an answer from the
+hospital: *who prints radiology reports and who opens patient documents?*
+Gating it blind would have broken a counter workflow at a live hospital.
+
+**The owner's answer: include the front desk.** They hand printed reports to
+patients at the counter. So `emr:file:read` is granted to **admin, doctor,
+nurse, lab_tech and receptionist**, and withheld from **accountant, pharmacist
+and hr**.
+
+Worth noting what that answer changed: `receptionist` holds neither `emr:read`
+nor `radiology:read`, so every permission that already existed would have shut
+them out. The audit was right to refuse to guess — the obvious gate was the
+wrong one.
+
+Asserted rather than eyeballed, across all eight roles:
+
+```
+PASS  admin         may open patient files
+PASS  doctor        may open patient files
+PASS  nurse         may open patient files
+PASS  lab_tech      may open patient files
+PASS  receptionist  may open patient files
+PASS  accountant    may NOT open patient files
+PASS  pharmacist    may NOT open patient files
+PASS  hr            may NOT open patient files
+```
+
+### One permission, not two
+
+`getDocumentUrl` (uploaded documents) and `getRadiologyImageUrl` (scan images)
+share `emr:file:read` rather than getting one each. From the patient's side both
+are the same thing — a file about them — and this audit has now produced three
+separate findings about duplicated lists that drifted (F-17, F-31, F-67). One
+rule is easier to keep right than two.
+
+### A refusal is not a failure
+
+`getRadiologyImageUrl` returns `{ url, isPdf }`, so the lazy fix is to return
+`url: null` when refused. That would be wrong: "you may not see this" and
+"there is no image" are different facts, and collapsing them shows an empty
+report instead of saying why. The return gained an explicit `denied` flag, and
+all three consumers now distinguish it:
+
+- the report modal says *"Your role does not include viewing scan images"*,
+  separately from its existing *"Image could not be loaded"*;
+- `/print/radiology/[orderId]/pdf` returns **403** rather than rendering a
+  report with the image silently missing;
+- `getDocumentUrl` already returned a `Result`, so it refuses cleanly there.
+
+`requirePermission` was not used in either, deliberately: it throws `FORBIDDEN`,
+which in a server action reaching a client component surfaces as an unhandled
+rejection, and in the print route as a 500. `hasPermission` plus an explicit
+refusal gives the caller something it can render.
+
+### What this does NOT fix
+
+F-65 — that 196 of 282 read actions are role-blind — remains open. F-08 was the
+sharpest instance of it (clinical files), not the whole of it. Closing the rest
+means deciding a read permission per module, which is a policy exercise with the
+hospital rather than a defect list.

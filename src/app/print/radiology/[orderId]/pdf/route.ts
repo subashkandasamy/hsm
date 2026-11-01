@@ -14,6 +14,9 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params
   const [order, profile, stored] = await Promise.all([getRadiologyOrder(orderId), getTenantProfile(), getRadiologyImageUrl(orderId)])
+  if (stored.denied) {
+    return new Response('You do not have permission to open this scan image', { status: 403 })
+  }
   if (!order) return new Response('Radiology order not found', { status: 404 })
   if (order.status !== 'reported') {
     return new Response('This report has not been verified and released yet', { status: 409 })

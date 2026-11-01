@@ -1393,7 +1393,7 @@ export type Permission =
   | 'inventory:read' | 'inventory:manage'
   | 'hr:read' | 'hr:manage' | 'hr:attendance'
   | 'notifications:send' | 'notifications:manage'
-  | 'emr:read' | 'emr:allergy:write' | 'emr:document:upload' | 'emr:document:delete'
+  | 'emr:read' | 'emr:allergy:write' | 'emr:document:upload' | 'emr:document:delete' | 'emr:file:read'
   | 'audit:read'
   | 'account:subscription'
   | 'settings:read' | 'settings:write'

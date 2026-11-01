@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
-import { requirePermission } from '@/lib/rbac'
+import { hasPermission, requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
 import type { PatientDocument, DocumentCategory } from '@/lib/types'
@@ -86,6 +86,20 @@ export async function saveDocumentRecord(input: {
 export async function getDocumentUrl(
   id: string
 ): Promise<{ success: true; url: string } | { success: false; error: string }> {
+  // Tenancy was already safe here — the row is read through the user's client,
+  // so RLS applies — but no PERMISSION was checked, so any authenticated user
+  // in the hospital could open any patient's uploaded document given its id.
+  // There was no permission to check: only upload and delete existed.
+  //
+  // 'emr:file:read' is granted to admin, doctor, nurse, lab_tech and
+  // receptionist. The front desk is included on the hospital's own answer —
+  // they print reports and hand them to patients at the counter. Accountant,
+  // pharmacist and hr are not.
+  const actor = await getActorProfile()
+  if (!hasPermission(actor.role, 'emr:file:read')) {
+    return { success: false, error: 'You do not have permission to open patient documents.' }
+  }
+
   const supabase = await createClient()
   const { data: doc } = await supabase
     .from('patient_documents')
