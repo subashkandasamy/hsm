@@ -164,7 +164,7 @@ on 30 Oct; nothing has been changed since.
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
-| F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **`0253` APPLIED AND DID NOT WORK** (revoked named roles; the grant was held by `PUBLIC`). **`0254` is the real fix** — caught by the detector, not by the migration |
+| F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED by `0254`** — verified live: 0 callable by anon, app path still works, cron unaffected. `0253` applied and did nothing (revoked named roles; `PUBLIC` held the grant) |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5347,3 +5347,61 @@ Three lessons, all of them about verification rather than about grants:
 3. **Look for the existing remedy before writing one.** `0238` had both the
    diagnosis and the correct mechanism, and reading it would have saved the
    round trip.
+
+### F-77 — CLOSED, verified on the live database
+
+`0254` applied. Four checks, because a green migration is what misled me last
+time.
+
+**1. The grant is actually gone.** The ACLs no longer carry the empty grantee:
+
+```
+create_next_month_partitions  {postgres=X/postgres,service_role=X/postgres}
+ensure_partition_for          {postgres=X/postgres,service_role=X/postgres}
+partition_runway              {postgres=X/postgres,service_role=X/postgres}
+record_partition_health       {postgres=X/postgres,service_role=X/postgres}
+alert_missing_next_partition  {postgres=X/postgres,service_role=X/postgres}
+```
+
+**2. The detector agrees.**
+
+```
+AFTER 0254
+  SECURITY DEFINER callable by anon, not allowlisted          : 0
+  SECURITY DEFINER callable by authenticated, not allowlisted : 0
+```
+
+**3. Nothing legitimate broke** — tested as an authenticated admin of `karur`,
+which is the claim the migration's design rests on: a `SECURITY DEFINER`
+function owned by postgres can still reach an inner function the *caller* may
+not execute.
+
+```
+AS AN AUTHENTICATED ADMIN OF karur
+  ensure_appointment_partition  CALLABLE  (as the app needs)
+  ensure_partition_for          refused (insufficient_privilege)
+  create_next_month_partitions  refused
+  record_partition_health       refused
+  (no failures)
+```
+
+So a receptionist booking into 2029 still creates the partition, and nobody can
+call the maintenance surface directly.
+
+**4. Cron is unaffected.** All four jobs run as `postgres`, and
+`has_function_privilege('postgres', …)` is true for each:
+
+```
+alert-missing-partitions       5 9 * * *    postgres   succeeded
+create-next-month-partitions  20 0 * * *    postgres   succeeded
+record-partition-health        0 9 * * *    postgres   (not yet run)
+refresh-dashboard-matviews    */5 * * * *   postgres   succeeded
+```
+
+`record-partition-health` has no run yet because 09:00 had already passed when
+`0248` was applied; its first run is tomorrow. `partition_health` already holds
+the row `0248` wrote directly, and the runway is three months, so nothing waits
+on it.
+
+`effective_test_range` and `ensure_appointment_partition` keep `authenticated`;
+`current_tenant_id` and `current_active_role` keep their policy carve-out.
