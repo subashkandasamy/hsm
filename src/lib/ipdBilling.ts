@@ -105,6 +105,19 @@ export async function autoIpdBill(
       alreadyBilledRefs = new Set((existingItems ?? []).map((i) => i.ref_id as string))
     }
 
+    // A null ref is treated as always-new, which is the only way to append an
+    // unidentified line to an existing bill — and it is also the one case this
+    // function cannot make idempotent (F-36). Appending to a bill that already
+    // exists is precisely when a repeat run would double-charge, so say so
+    // rather than leaving the next caller to discover it from the bill.
+    const nullRefLines = lineItems.filter((i) => !i.ref_id)
+    if (nullRefLines.length) {
+      console.warn('[autoIpdBill] appending line(s) with no ref_id to an existing bill — these cannot be deduped on a re-run', {
+        billSource, billingDate, admissionId,
+        descriptions: nullRefLines.map((i) => i.description),
+      })
+    }
+
     const newItems = lineItems.filter((i) => !i.ref_id || !alreadyBilledRefs.has(i.ref_id))
     if (!newItems.length) return billId
 

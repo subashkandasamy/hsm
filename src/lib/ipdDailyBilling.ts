@@ -39,6 +39,16 @@ export const CATCH_UP_MAX_DAYS = 31
  * client, per-tenant system actor). Idempotent: every write dedups on
  * (tenant, admission, date, bill_source) + ref_id, so it is safe to run
  * repeatedly on the same day.
+ *
+ * That last sentence is now true rather than aspirational. It was asserted here
+ * while all four daily charges passed `ref_id: null`, and autoIpdBill treats a
+ * null ref as always-new (`!i.ref_id ||`), so the claim was false for exactly
+ * the charges this function generates (F-36). The bill itself could never be
+ * duplicated — `idx_bills_ipd_daily_dedup` is a unique index — but a run that
+ * found the bill another run had just created would append the same room-rent
+ * line a second time. Narrow, and reachable: this runs on every IPD ward-board
+ * page load as well as from the daily cron. Each charge now carries a
+ * deterministic ref.
  */
 export async function generateDailyChargesForAdmissions(
   supabase: SupabaseClient,
@@ -95,7 +105,15 @@ export async function generateDailyChargesForAdmissions(
       await autoIpdBill(supabase, actorId, {
         tenantId, admissionId: adm.id, patientId: adm.patient_id,
         billingDate: today, billSource: 'bed',
-        lineItems: [{ source: 'bed', ref_id: null, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate, gst_rate: roomGst }],
+        // ref_id = the admission id, NOT a synthetic chargeRef (F-36). A 'bed'
+        // line's ref is an admission id by convention, and that convention is
+        // enforced in two places: generateBill's TABLE_MAP flips
+        // `admissions.billing_status` by this ref, and admissionOfCharges reads
+        // it as the admission. A synthetic uuid here would match no admission
+        // row and roll the manual bill back. The real id is both correct for
+        // those readers and sufficient for dedup, since autoIpdBill matches
+        // refs within the day's bill and there is one bed bill per day.
+        lineItems: [{ source: 'bed', ref_id: adm.id, description: adm.ward?.name ? `${adm.ward.name} — Room Rent` : 'Room Rent', qty: 1, unit_price: rate, gst_rate: roomGst }],
       })
     }
   }
@@ -121,7 +139,7 @@ export async function generateDailyChargesForAdmissions(
         await autoIpdBill(supabase, actorId, {
           tenantId, admissionId: adm.id, patientId: adm.patient_id,
           billingDate: today, billSource: 'icu',
-          lineItems: [{ source: 'icu', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay }],
+          lineItems: [{ source: 'icu', ref_id: chargeRef(adm.id, 'icu_monitoring'), description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay }],
         })
       }
     } else if (!isBackfill && (icuPerDay > 0 || ventPerDay > 0)) {
@@ -137,8 +155,10 @@ export async function generateDailyChargesForAdmissions(
         // ventilator charge applies wherever the patient is ventilated.
         const inIcuBed = !!((crit?.ward as unknown as { room_type?: { is_icu?: boolean } | null } | null)?.room_type?.is_icu)
         const items: IpdBillLineItem[] = []
-        if (crit?.is_critical_care && inIcuBed && icuPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
-        if (crit?.on_ventilator && ventPerDay > 0) items.push({ source: 'icu', ref_id: null, description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
+        // 'icu' carries no ref convention and two different charges share the
+        // day's bill, so each gets its own deterministic ref.
+        if (crit?.is_critical_care && inIcuBed && icuPerDay > 0) items.push({ source: 'icu', ref_id: chargeRef(adm.id, 'icu_monitoring'), description: 'ICU monitoring charge', qty: 1, unit_price: icuPerDay })
+        if (crit?.on_ventilator && ventPerDay > 0) items.push({ source: 'icu', ref_id: chargeRef(adm.id, 'ventilator'), description: 'Ventilator charge', qty: 1, unit_price: ventPerDay })
         if (!items.length) continue
         await autoIpdBill(supabase, actorId, {
           tenantId, admissionId: adm.id, patientId: adm.patient_id,

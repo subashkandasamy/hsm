@@ -25,6 +25,7 @@
     "verify:upi": "tsx scripts/verify-upi.ts",
     "verify:tenant-scope": "tsx scripts/verify-tenant-scope.ts",
     "verify:gst": "tsx scripts/verify-gst.ts",
+    "verify:rate-limit": "tsx scripts/verify-rate-limit.ts",
     "verify:gst-rooms": "echo 'Run scripts/verify-gst-rooms.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'",
     "verify:bill-sources": "tsx scripts/verify-bill-sources.ts",
     "verify:ttl-cache": "tsx scripts/verify-ttl-cache.ts",

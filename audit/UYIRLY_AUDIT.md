@@ -179,7 +179,7 @@ on 30 Oct; nothing has been changed since.
 |---|---|---|---|
 | F-09 | `patients_tenant_update` queries `profiles` — latent mutual recursion | DB | **FIXED** — `0246` applied; 0 policies now reference `profiles`; `is_active` preserved and proved |
 | F-10 | Four reference tables readable by `anon` | DB | **CORRECTED — NOT A DEFECT**; anon's SELECT was already revoked on exactly those four tables (42501 proved live) |
-| F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **OPEN** |
+| F-11 | `/api/tools/drug-search` unauthenticated, 4 queries, no rate limit | 2 | **FIXED** — normalised cache key, length cap, one query removed, per-IP limit; proved live (30 through, then 429) |
 | F-17 | `GROWTH_ONLY_ROUTES` duplicated and drifted; `plans.ts` copy is dead | 1 | **FIXED** — by the F-13 work; one definition, imported by `proxy.ts` |
 | F-18 | `enabled_modules` fails open on a null column | 1 | **CORRECTED + FIXED** — the column is `jsonb NOT NULL DEFAULT`, so NULL is impossible; the fallback now logs instead of firing silently |
 | F-19 | Four sequential round trips before any dashboard page renders | 1 | **FIXED** — warm path 4→2; proxy 2→1 on a miss, 0 on a hit; `logAudit` 2→1 |
@@ -188,9 +188,9 @@ on 30 Oct; nothing has been changed since.
 | F-22 | `select('*')` on `profiles` in the hot path | 1 | **FIXED for a different reason** — zero perf gain (12 of 12 columns); done so a future column cannot leak to the client |
 | F-27 | Partner e-mail interpolated into an `ilike` pattern | 2 | **FIXED** — proved live: `%@%` matched 2 rows, escaped matched 0 |
 | F-31 | `TABLE_MAP` covers 9 of 17 `BillItemSource` values, skips silently | 3 | **OPEN** |
-| F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **OPEN** |
-| F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **OPEN** |
-| F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **OPEN** |
+| F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **FIXED** — all four daily charges now carry deterministic refs; a real concurrent double-bill, not just a stale comment |
+| F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **FIXED** — admissions paged (ceiling removed), time budget + `complete`/`tenantsNotReached` so a partial pass is reported |
+| F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **FIXED** — comment now states the `suspended` divergence and why syncing them would break billing either way |
 | F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **FIXED** — `0248`; all six get the generous case, one job |
 | F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **OPEN** |
 | F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
@@ -1539,9 +1539,9 @@ doing so would either bill suspended hospitals or stop billing live ones.
 | Duplicate admission | **FAIL** — F-35 |
 | Discharge balance gate | **PASS** — insurance-aware, catch-up first |
 | Daily charge double-billing | **PASS** — guarded at day selection |
-| `autoIpdBill` documented contract | **PARTIAL** — F-36 |
+| `autoIpdBill` documented contract | **PASS** — F-36 fixed; the documented idempotency is now real |
 | Headless plan + read-only enforcement | **PASS** |
-| Cron scale behaviour | **PARTIAL** — F-37 |
+| Cron scale behaviour | **PASS** — F-37 fixed; no silent ceiling, and an incomplete sweep says so |
 | Clinical admission separate from cash | **PASS** — admission succeeds without payment; cash is gated at discharge |
 
 ---
@@ -4500,3 +4500,176 @@ procedures that qualify — the per-line override machinery already honours it, 
 no billing-path change is needed. That is a small migration and one form field,
 but it is a product change on a live catalogue, so it is yours to approve rather
 than mine to slip in under a tax fix.
+
+## F-36 — FIXED — and it was a real double-bill, not just a stale comment
+
+The finding offers a choice: "either make it true, or correct the comment." It
+also says "no harm today — every caller guards." Checking that is what changed
+the verdict.
+
+The guard is `billedToday`, built once per run from today's bills. It holds for
+sequential runs. It does not hold for **concurrent** ones, and this code runs on
+every IPD ward-board page load as well as from the daily cron:
+
+1. Cron and a page load both read `billedToday`; neither sees a `bed` bill.
+2. Both call `autoIpdBill(..., billSource: 'bed')`.
+3. One creates the bill. The other now **finds** it and takes the `existing`
+   branch, appending its room-rent line — which has `ref_id: null`, and
+   `!i.ref_id ||` makes a null ref always-new.
+
+The day's room rent is billed twice, on a real patient's bill. The bill itself
+can never be duplicated (`idx_bills_ipd_daily_dedup` is a unique partial index,
+confirmed live), which is exactly what channels both writers onto one bill and
+makes the line-level gap reachable.
+
+### The fix the finding suggests would have broken manual billing
+
+"A deterministic ref_id per admission+day+charge" — i.e. `chargeRef()`, which
+already exists for custom charges. Applied to room rent that would be wrong,
+because **a `bed` line's `ref_id` is an admission id by convention**, and the
+convention is load-bearing in two places:
+
+```ts
+// generateBill
+const TABLE_MAP = { ..., bed: 'admissions', ... }
+// → UPDATE admissions SET billing_status='billed' WHERE id IN (refs)
+
+// admissionOfCharges
+if (c.source === 'bed') { found.add(c.ref_id); continue }
+```
+
+A synthetic uuid there matches no admission row, so `flipToBilled` reports
+"Some admissions charges were already billed" and **rolls the whole bill back**.
+The suggested fix would have replaced a rare double-charge with a reliably
+failing manual bill.
+
+So: room rent carries `adm.id` — correct for both readers, and sufficient for
+dedup because there is one `bed` bill per day and `autoIpdBill` matches refs
+within it. It also matches the existing precedent, the daily doctor fee, which
+already uses the admission id for the same reason. The two ICU lines
+(monitoring, ventilator) share one `icu` bill and carry no convention, so they
+get `chargeRef(adm.id, 'icu_monitoring')` and `chargeRef(adm.id, 'ventilator')`.
+
+`autoIpdBill` now also warns when it appends a null-ref line to an existing
+bill — the one case it cannot dedup — so the next caller learns it from a log
+line rather than from a patient's bill.
+
+## F-37 — FIXED — the silent ceiling and the silent partial pass
+
+Two separate defects with one theme: the run could do less than it claimed and
+say nothing.
+
+**The ceiling.** `.limit(1000)` on active admissions per tenant is replaced by a
+page loop (`ADMISSION_PAGE = 500`, `.range()`, `.order('id')`). Raising the
+number would have kept the failure mode — beyond any limit, charges are silently
+not generated. Paging removes it. The admissions query also now throws on error
+instead of coercing to `[]`, which previously meant a failed query looked
+identical to a hospital with no inpatients.
+
+**The partial pass.** All tenants are loaded and processed sequentially under
+`maxDuration = 300`. The run reported success whatever it managed. Now a
+`TIME_BUDGET_MS` of 240s stops the sweep on its own terms and records
+`complete: false` with `tenantsNotReached`, and the route logs an incomplete run
+at **error** level so it surfaces like a failure. It still returns HTTP 200
+deliberately: the work done is durable, and a non-2xx would invite the platform
+to retry the entire sweep.
+
+Stopping early rather than being killed is the point. A killed run reports
+nothing at all, so the partial pass becomes invisible — which is the actual
+finding. No charge is lost either way: `catchUpDailyCharges` backfills the
+missed day on the next run. What was missing was any record that it happened.
+
+Worth stating as a known limitation rather than hiding it: tenants are processed
+in a stable order, so if the budget is ever reached it is systematically the
+same tail that waits for tomorrow. At the present scale the budget is nowhere
+near binding; making it fair needs a per-tenant last-billed timestamp to sort
+by, which is the right fix when it matters and premature now.
+
+## F-38 — FIXED — they are not mirrors, and the comment now says so
+
+The comment claimed `isReadOnly` was a "mirror of proxy.computeIsReadOnly". It
+is not, and the divergence is deliberate:
+
+```
+status === 'suspended'  →  proxy returns FALSE, the cron returns TRUE
+```
+
+The proxy returns false because a suspended tenant is hard-blocked earlier in
+the request, so "read-only" would understate it. The cron has no request to
+block, so suspension has to mean "generate nothing". Both are right for their
+own caller.
+
+Nothing is wrong with the code; the comment was the defect, because it invited
+precisely the edit that breaks one of them — syncing them would either start
+billing suspended hospitals or stop billing live ones. The docstring now names
+the divergence, the reason for each side, and the consequence of "fixing" it.
+
+## F-11 — FIXED — a cost amplifier, reduced four ways
+
+`/api/tools/drug-search`: unauthenticated, four queries, no rate limit. The
+finding is right that this is cost rather than a security hole, and right that
+the `,()*%` strip already handles the injection that an `.or()` filter is
+actually vulnerable to.
+
+What the finding missed is that the endpoint already sets
+`Cache-Control: public, s-maxage=86400` — so the CDN was absorbing repeats. But
+**the cache key is the query string**, and nothing normalised it, so
+`Paracetamol`, `paracetamol` and `paracetamol ` were three cache entries and
+three trips to the database for one question. Lower-casing and collapsing
+whitespace is the largest single reduction here and costs nothing; it is now
+done before the value is used for anything. Verified live — all three casings
+return byte-identical results.
+
+Three more, in descending order of effect:
+
+- **A 64-character cap on `q`.** Without it one request could ask for four
+  `ILIKE` scans against a multi-kilobyte pattern. A 4,000-character query now
+  truncates and returns `[]`.
+- **One query removed.** The first query selected only `id`, and a later one
+  re-fetched the same rows with all columns. It now selects the columns up
+  front and fetches only the ids reached via a *brand* match — usually none, so
+  the common case makes three queries instead of four. Verified on the path that
+  needs it: `q=dolo` resolves Paracetamol through its brand name and still
+  returns results.
+- **A per-IP limit**, 30/minute. Deliberately listed last, and
+  `lib/rateLimit.ts` is explicit about why: the counters live in the process, so
+  on a serverless platform the real limit is `limit × instances` and a cold
+  instance starts everyone at zero. It is a cost brake on one client in a loop,
+  **not** a defence against a distributed flood and not a security control.
+  Shared state (Upstash/Redis) is the honest fix if this ever matters. A
+  Postgres counter was the available option and is the wrong one here: it would
+  add a write to every request in order to protect against reads.
+
+A 429 is returned with `Retry-After` and `Cache-Control: no-store` — caching a
+refusal would have the CDN serve it to everyone on that edge, turning a
+per-caller brake into an outage.
+
+Also fixed while in there: `_` and `\` now join the stripped set. `_` is a
+single-character `LIKE` wildcard, so `a_a` was quietly matching more than it
+claimed, and backslash is `LIKE`'s escape character. They are stripped rather
+than escaped, because the pattern is interpolated into an `.or()` filter where
+`,` `(` `)` are structural — in a search box, a wildcard nobody asked for is
+worth less than a filter that parses predictably.
+
+**Proved live**, not reasoned about:
+
+```
+30 × 200, then 429 429 429 429     (one IP)
+different IP → 200                 (buckets are independent)
+4,000-char q → {"results":[]}      (capped)
+q=%          → {"results":[]}      (no wildcard dump)
+retry-after: 55 · cache-control: no-store
+```
+
+`npm run verify:rate-limit` covers the limiter, including the trap it would be
+easy to fall into: if a refused request re-set the cache entry, its TTL would
+restart and a client retrying in a loop would hold its own window open forever,
+never being let back in. The implementation mutates the stored window in place
+to avoid that, and the test proves the window reopens one interval after the
+*first* request rather than after the last knock.
+
+That test failed on the first run, and the failure was the test's fault rather
+than the limiter's — it kept knocking past the reset and then complained that
+the fresh window had been consumed by its own knocking, which is correct
+behaviour. Recorded because a limiter test that asserts the wrong thing is worse
+than none.

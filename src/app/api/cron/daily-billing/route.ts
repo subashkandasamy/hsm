@@ -19,16 +19,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const startedAt = Date.now()
   try {
     const result = await runDailyBillingForAllTenants()
-    const durationMs = Date.now() - startedAt
-    if (result.errors.length) {
-      console.error('[cron daily-billing] completed with errors', result)
+    // A sweep that ran out of time is not a success, and used to be reported as
+    // one (F-37). `complete` distinguishes the two, and an incomplete run is
+    // logged at error level so it surfaces the same way a failure does.
+    if (result.errors.length || !result.complete) {
+      console.error('[cron daily-billing] completed with errors or incomplete', result)
     } else {
-      console.log('[cron daily-billing] completed', { ...result, durationMs })
+      console.log('[cron daily-billing] completed', result)
     }
-    return NextResponse.json({ ok: true, durationMs, ...result })
+    // Still HTTP 200: the work that was done is durable and the platform must
+    // not retry the whole sweep. The payload says what was missed.
+    return NextResponse.json({ ok: true, ...result })
   } catch (e) {
     console.error('[cron daily-billing] fatal', e)
     return NextResponse.json(
