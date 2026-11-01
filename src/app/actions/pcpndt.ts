@@ -688,7 +688,12 @@ export async function saveMtpDraft(id: string, patch: Record<string, unknown>): 
     .from('mtp_records').select('status, serial_no').eq('id', id).maybeSingle()
   if (!cur) return { success: false, error: 'That record no longer exists' }
   if (cur.status !== 'draft') {
-    return { success: false, error: `${cur.serial_no} is already complete` }
+    return {
+      success: false,
+      error: cur.status === 'amended'
+        ? `${cur.serial_no} has been superseded by an amendment and cannot be edited`
+        : `${cur.serial_no} is already complete — raise an amendment to correct it`,
+    }
   }
 
   const { error } = await supabase.from('mtp_records').update(patch).eq('id', id)
@@ -711,6 +716,74 @@ export async function completeMtp(id: string): Promise<SimpleResult> {
   await logAudit(actor.id, 'complete', 'mtp_record', id, {})
   revalidatePath('/pcpndt/mtp')
   return { success: true }
+}
+
+/**
+ * Supersede a completed MTP record, the way Form F and MLC are amended (F-54).
+ *
+ * `0257` locks a completed record and blocks its deletion, which is what the
+ * other two registers already do. That lock is only defensible because this
+ * exists: without an amendment route a typo on a completed record would be
+ * permanent, on a register the Act requires to be accurate.
+ *
+ * The original is kept and marked `amended` — the lock trigger permits exactly
+ * that one transition out of `complete` and nothing else — and the successor
+ * starts as a draft carrying `amends_id` and the reason.
+ */
+export async function amendMtp(
+  id: string, reason: string,
+): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pcpndt:record')
+
+  if (!reason.trim()) {
+    return { success: false, error: 'Say why this is being amended — a correction without a reason looks like tampering' }
+  }
+
+  const supabase = await createClient()
+  const { data: original } = await supabase
+    .from('mtp_records').select('*').eq('id', id).maybeSingle()
+  if (!original) return { success: false, error: 'That MTP record no longer exists' }
+  if (original.status !== 'complete') {
+    return {
+      success: false,
+      error: original.status === 'amended'
+        ? 'That record has already been superseded by an amendment.'
+        : 'Only a completed MTP record is amended. This one is still a draft — just edit it.',
+    }
+  }
+
+  const { data: serial, error: serialErr } = await supabase.rpc('get_next_mtp_no', { p_tenant_id: actor.tenant_id })
+  if (serialErr || !serial) return { success: false, error: 'Could not allocate an MTP number' }
+
+  // Copy everything except the identity and the completion record: the
+  // successor is a fresh draft, not a pre-completed one.
+  const copy = { ...(original as Record<string, unknown>) }
+  delete copy.id
+  delete copy.created_at
+  delete copy.completed_at
+  delete copy.completed_by
+
+  const newId = crypto.randomUUID()
+  const { error: insErr } = await supabase.from('mtp_records').insert({
+    ...copy,
+    id: newId,
+    serial_no: serial as string,
+    status: 'draft',
+    amends_id: id,
+    amend_reason: reason.trim(),
+    created_by: actor.id,
+  })
+  if (insErr) return { success: false, error: insErr.message }
+
+  const { error: markErr } = await supabase
+    .from('mtp_records').update({ status: 'amended' }).eq('id', id)
+  if (markErr) return { success: false, error: markErr.message }
+
+  await logAudit(actor.id, 'amend', 'mtp_record', id, { reason: reason.trim(), replacement: newId })
+  revalidatePath('/pcpndt/mtp')
+  return { success: true, id: newId }
 }
 
 /** Reads are audited, for the same reason Form F reads are. */

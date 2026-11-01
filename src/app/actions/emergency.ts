@@ -92,7 +92,20 @@ export async function registerEmergency(
     // entry. The duty to inform the police starts now, not when the form does.
     is_mlc:       parsed.data.is_mlc ?? false,
   })
-  if (error) return { success: false, error: error.message }
+  if (error) {
+    // The TypeScript count above is the friendly message; this is the one that
+    // fires when two terminals register the same arrival at once (F-55). The
+    // partial unique index from 0258 is what makes the rule true, and a raw
+    // "duplicate key value violates unique constraint" is not what the person
+    // at the desk should read.
+    if (error.code === '23505' || /idx_emergency_one_active_case_per_patient/.test(error.message)) {
+      return {
+        success: false,
+        error: 'This patient already has an active emergency case — somebody may have just registered it. Refresh the board.',
+      }
+    }
+    return { success: false, error: error.message }
+  }
 
   // ER registration fee (Settings → Tariffs), billed against the case.
   const regFee = await getErRegistrationFee()

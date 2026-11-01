@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { RxWarning } from '@/lib/types'
+import { boundaryMatch, namesRelated } from '@/lib/rxMatch'
 
 // Common allergy classes → member generics, so an allergy to "penicillin" flags
 // amoxicillin etc. Keyword/substring matching — a safety aid, not exhaustive.
@@ -12,8 +13,12 @@ const ALLERGY_CLASSES: Record<string, string[]> = {
   cephalosporin: ['cephalexin', 'cefixime', 'ceftriaxone', 'cefuroxime', 'cefpodoxime', 'cefepime'],
 }
 
-// Warn on allergies to the drug (incl. class) and interactions with drugs
-// already on this visit's prescription. Non-blocking — the doctor decides.
+/** How far back a previous prescription still counts as something to warn about. */
+const RX_LOOKBACK_DAYS = 90
+
+// Warn on allergies to the drug (incl. class) and on interactions with drugs on
+// this prescription AND with what the patient was prescribed recently.
+// Non-blocking — the doctor decides.
 export async function checkPrescriptionSafety(
   patientId: string, drugName: string, currentDrugs: string[],
 ): Promise<RxWarning[]> {
@@ -28,7 +33,7 @@ export async function checkPrescriptionSafety(
   for (const a of allergies ?? []) {
     const allergen = ((a.allergen as string) || '').toLowerCase().trim()
     if (allergen.length < 3) continue
-    let hit = name.includes(allergen) || allergen.includes(name)
+    let hit = namesRelated(name, allergen)
     if (!hit) {
       for (const [cls, members] of Object.entries(ALLERGY_CLASSES)) {
         const allergenInClass = allergen.includes(cls) || members.some((m) => allergen.includes(m))
@@ -38,17 +43,56 @@ export async function checkPrescriptionSafety(
     if (hit) warnings.push({ type: 'allergy', severity: 'major', message: `Patient is allergic to "${a.allergen}"` })
   }
 
-  // ---- Interactions with current prescriptions ----
-  const others = currentDrugs.map((d) => (d || '').toLowerCase()).filter((d) => d.length >= 3)
-  if (others.length) {
+  // ---- Interactions ----
+  //
+  // `currentDrugs` comes from the client and holds only the lines on the
+  // prescription being written. The dangerous interaction is usually with
+  // something the patient is ALREADY taking — warfarin from a previous visit —
+  // which was never considered (F-61).
+  //
+  // What can honestly be offered: drugs prescribed to this patient in the last
+  // 90 days. `prescriptions` has no patient_id (it hangs off `visits`) and no
+  // active flag — `duration` is free text like "5 days" — so there is no way to
+  // know what is still being taken. The warning therefore says when it was
+  // prescribed and lets the doctor judge, rather than asserting it is current.
+  const since = new Date(Date.now() - RX_LOOKBACK_DAYS * 86400000).toISOString()
+  const { data: priorRx } = await supabase
+    .from('prescriptions')
+    .select('drug_name, visit:visits!inner(patient_id, visit_date)')
+    .eq('visit.patient_id', patientId)
+    .gte('visit.visit_date', since)
+    .limit(200)
+
+  type PriorRow = { drug_name: string; visit: { visit_date: string | null } | null }
+  // label → drug name, so a hit can say where it came from.
+  const others = new Map<string, string>()
+  for (const d of currentDrugs) {
+    const v = (d || '').toLowerCase().trim()
+    if (v.length >= 3) others.set(v, 'on this prescription')
+  }
+  for (const r of (priorRx ?? []) as unknown as PriorRow[]) {
+    const v = (r.drug_name || '').toLowerCase().trim()
+    if (v.length < 3 || others.has(v)) continue
+    const when = r.visit?.visit_date ? ` on ${r.visit.visit_date.slice(0, 10)}` : ''
+    others.set(v, `prescribed${when}`)
+  }
+
+  if (others.size) {
+    // 38 rows today, global reference data, no WHERE to grow into. Left as the
+    // audit recorded it: filtering needs substring matching that SQL cannot do
+    // on this shape, and inflating it into a performance fix would be dishonest.
     const { data: inter } = await supabase.from('drug_interactions').select('drug_a, drug_b, severity, description')
     for (const row of inter ?? []) {
-      const a = row.drug_a as string, b = row.drug_b as string
-      const nameHasA = name.includes(a), nameHasB = name.includes(b)
+      const a = (row.drug_a as string).toLowerCase(), b = (row.drug_b as string).toLowerCase()
+      const nameHasA = boundaryMatch(name, a), nameHasB = boundaryMatch(name, b)
       if (!nameHasA && !nameHasB) continue
-      for (const o of others) {
-        if ((nameHasA && o.includes(b)) || (nameHasB && o.includes(a))) {
-          warnings.push({ type: 'interaction', severity: row.severity as RxWarning['severity'], message: `Interacts with ${o}: ${row.description}` })
+      for (const [other, provenance] of others) {
+        if ((nameHasA && boundaryMatch(other, b)) || (nameHasB && boundaryMatch(other, a))) {
+          warnings.push({
+            type: 'interaction',
+            severity: row.severity as RxWarning['severity'],
+            message: `Interacts with ${other} (${provenance}): ${row.description}`,
+          })
           break
         }
       }

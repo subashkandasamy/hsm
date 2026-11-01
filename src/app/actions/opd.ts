@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { VitalsSchema, ConsultationSchema, PrescriptionSchema } from '@/lib/schemas'
+import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
@@ -272,6 +273,34 @@ export async function addPrescription(
   }, override)
   if (doseError) return { success: false, error: doseError }
 
+  // ---- The safety trail (F-59) ----
+  //
+  // The allergy/interaction banner was computed in the browser and this function
+  // never learned a warning existed, so a prescription written over one looked
+  // identical to any other afterwards. For an advisory control the override
+  // trail IS the control.
+  //
+  // Recomputed HERE rather than read from the request. A client that simply
+  // declines to mention the warning it was shown must not be able to empty the
+  // record; the only thing taken from the caller is the acknowledgement, which
+  // is the human decision and can come from nowhere else.
+  const { data: siblingRx } = await supabase
+    .from('prescriptions').select('drug_name').eq('visit_id', visitId)
+  const warnings = await checkPrescriptionSafety(
+    visitRow.patient_id as string,
+    parsed.data.drug_name,
+    (siblingRx ?? []).map((r) => (r.drug_name as string) ?? ''),
+  )
+  const major = warnings.filter((w) => w.severity === 'major')
+  const acknowledged = input.safety_acknowledged === true
+
+  if (major.length && !acknowledged) {
+    return {
+      success: false,
+      error: `${major[0].message}. Tick the acknowledgement to prescribe anyway — it will be recorded against this prescription.`,
+    }
+  }
+
   const id = crypto.randomUUID()
   const { error } = await supabase.from('prescriptions').insert({
     id,
@@ -282,9 +311,18 @@ export async function addPrescription(
     frequency:    parsed.data.frequency    ?? null,
     duration:     parsed.data.duration     ?? null,
     instructions: parsed.data.instructions ?? null,
+    safety_warnings: warnings,
+    safety_acknowledged: major.length ? true : null,
+    prescribed_by: actor.id,
   })
   if (error) return { success: false, error: error.message }
   if (override) await logAudit(actor.id, 'dose_override', 'prescription', id, { drug: parsed.data.drug_name, dosage: parsed.data.dosage, frequency: parsed.data.frequency })
+  if (major.length) {
+    await logAudit(actor.id, 'safety_override', 'prescription', id, {
+      drug: parsed.data.drug_name,
+      warnings: major.map((w) => w.message),
+    })
+  }
 
   return {
     success: true,

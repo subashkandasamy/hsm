@@ -148,6 +148,10 @@ export default function ConsultationWorkspace({
   const [removingRx, setRemovingRx] = useState<string | null>(null)
   const [rxWarnings, setRxWarnings] = useState<import('@/lib/types').RxWarning[]>([])
   const [rxOverride, setRxOverride] = useState(false)
+  // Separate from rxOverride, which belongs to the paediatric dose panel: this
+  // one acknowledges an allergy/interaction warning and is recorded against the
+  // prescription (F-59).
+  const [rxAck, setRxAck] = useState(false)
 
   // Prescribing safety — allergy + interaction check as the doctor types a drug.
   useEffect(() => {
@@ -156,7 +160,11 @@ export default function ConsultationWorkspace({
     let active = true
     const t = setTimeout(async () => {
       const w = await checkPrescriptionSafety(patient.id, name, prescriptions.map((p) => p.drug_name))
-      if (active) setRxWarnings(w)
+      if (active) {
+        setRxWarnings(w)
+        // A tick must not survive the drug it was made for.
+        setRxAck(false)
+      }
     }, 400)
     return () => { active = false; clearTimeout(t) }
   }, [newRx.drug_name, isDoctor, isClosed, patient.id, prescriptions])
@@ -252,12 +260,14 @@ export default function ConsultationWorkspace({
       duration: newRx.duration || null,
       instructions: newRx.instructions || null,
       dose_override: rxOverride,
+      safety_acknowledged: rxAck,
     })
     setRxSaving(false)
     if (result.success) {
       setPrescriptions((p) => [...p, result.prescription])
       setNewRx({ drug_name: '', dosage: '', frequency: '', duration: '', instructions: '' })
       setRxOverride(false)
+      setRxAck(false)
     } else {
       setRxError(result.error)
     }
@@ -871,6 +881,19 @@ export default function ConsultationWorkspace({
                       )
                     })}
                   </div>
+                )}
+                {rxWarnings.some((w) => w.severity === 'major') && (
+                  <label className="flex items-start gap-2 mt-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer"
+                    style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B' }}>
+                    <input type="checkbox" checked={rxAck} onChange={(e) => setRxAck(e.target.checked)}
+                      className="mt-0.5" style={{ accentColor: '#DC2626' }} />
+                    <span>
+                      I have reviewed this warning and am prescribing anyway.
+                      <span style={{ fontWeight: 400, display: 'block', color: '#B91C1C' }}>
+                        This is recorded against the prescription with your name.
+                      </span>
+                    </span>
+                  </label>
                 )}
                 <DoseCheckPanel
                   input={{ patientId: patient.id, visitId: visit.id, drugName: newRx.drug_name, dosage: newRx.dosage, frequency: newRx.frequency }}

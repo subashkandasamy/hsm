@@ -159,7 +159,7 @@ on 30 Oct; nothing has been changed since.
 | F-14 | Read-only and plan enforcement rest on headers stamped in one branch only | 1 | **FIXED** — all three helpers fail closed; before/after proved with a live probe |
 | F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **FIXED** — `getClaims()`; a forged cookie went from `307 /dashboard` to rejected |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **FIXED** — every drop path logs; writes go through the service client so RLS cannot lose a record |
-| F-72 | `ward_room_types.tenant_id` is **text** — the only one of 256, so it has **no FK to `tenants`** | DB | **MIGRATION `0247` WRITTEN, NOT APPLIED** — found by the F-26 scan |
+| F-72 | `ward_room_types.tenant_id` is **text** — the only one of 256, so it has **no FK to `tenants`** | DB | **FIXED** — `0247` applied; verified as a real user (karur's admin still sees their 4 room types, no `uuid = text` error) |
 | F-73 | **154 redundant index copies** — the cron hand-created indexes the parent already propagates, and `0012` re-created six of `0011`'s under new names | DB | **FIXED** — `0248`; measured 7 vs 9 indexes on migration- vs cron-created partitions |
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
@@ -201,16 +201,16 @@ on 30 Oct; nothing has been changed since.
 | F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **FIXED** in code (`startVisit` marks it; preview excludes it). **3 pre-existing rows** need `0250` — a data change, awaiting approval |
 | F-51 | `startVisit` is a write gated on `opd:read` | 7 | **FIXED** — `opd:visit:start`, granted to the identical role set (proved) |
 | F-52 | Duplicate-appointment guard is a read-then-write | 7 | **ANALYSED — RECOMMEND DEFER**; the DB fix is blocked by partitioning, reordering trades one harm for another |
-| F-53 | Leave can only be filed on behalf of a nurse | 11 | **OPEN** |
-| F-54 | MTP register has two of the three controls the others have | 9 | **OPEN** |
-| F-55 | Emergency duplicate guards are read-then-write | 8 | **OPEN** |
-| F-58 | Patient documents have no type or size limit, at either layer | 12 | **OPEN** |
-| F-59 | Nothing records that a safety warning was shown or overridden | 12 | **OPEN** |
-| F-60 | Allergen matching is bidirectional and can misfire | 12 | **OPEN** |
-| F-61 | The interaction check sees only this prescription | 12 | **OPEN** |
-| F-62 | Attendance accepts an unvalidated date and an impossible shift | 11 | **OPEN** |
-| F-63 | Approving an already-decided leave reports success | 11 | **OPEN** |
-| F-64 | A manager can approve their own leave | 11 | **OPEN** |
+| F-53 | Leave can only be filed on behalf of a nurse | 11 | **FIXED** — the restriction was only in the page's query; LeavePanel now gets all active staff |
+| F-54 | MTP register has two of the three controls the others have | 9 | **FIXED** — `0257`; the lock needed an **amendment route first** (MTP had no `amended` status), else a typo would be permanent |
+| F-55 | Emergency duplicate guards are read-then-write | 8 | **FIXED** — `0258` partial unique index + a readable message on 23505 |
+| F-58 | Patient documents have no type or size limit, at either layer | 12 | **FIXED** — `0255` limits both PHI buckets (`radiology` had it too, unfiled) + one shared allowlist checked server-side |
+| F-59 | Nothing records that a safety warning was shown or overridden | 12 | **FIXED** — `0256`; warnings **recomputed server-side**, a major one now needs an acknowledgement, and `prescribed_by` was never recorded at all |
+| F-60 | Allergen matching is bidirectional and can misfire | 12 | **FIXED** — boundary matching in `lib/rxMatch`; `verify:rx-match` proves both directions. Also found "Sulfa drugs" only matched by class-table coincidence |
+| F-61 | The interaction check sees only this prescription | 12 | **FIXED** — now also the last 90 days of prescriptions, labelled by provenance; `prescriptions` has no active flag, so it cannot claim "current" |
+| F-62 | Attendance accepts an unvalidated date and an impossible shift | 11 | **FIXED** — real dates + bounds; the shift-ordering check had to move to the action, since 8 of 24 shifts cross midnight |
+| F-63 | Approving an already-decided leave reports success | 11 | **FIXED** — `select('id')` + length check; `cancelLeave` had the identical flaw |
+| F-64 | A manager can approve their own leave | 11 | **FIXED** — HR cannot, admin can (one approver must not deadlock), and `self_review` is recorded either way |
 | F-65 | 196 of 282 read actions are tenant-scoped but role-blind | 13 | **PARTLY FIXED** — detector shipped, method settled, 4 gated; **91 remain** |
 
 ### A gap in this register, and how it happened
@@ -5405,3 +5405,233 @@ on it.
 
 `effective_test_range` and `ensure_appointment_partition` keep `authenticated`;
 `current_tenant_id` and `current_active_role` keep their policy carve-out.
+
+# THE LAST TEN — F-53 to F-64
+
+The ten findings that had been written up in their module sections and never
+entered in the register. Four MEDIUM, six LOW, no criticals. Three of them
+turned out to need something the finding did not mention.
+
+## F-62 — FIXED — and one of its three points is not a schema fix
+
+Points one and two are exactly as filed. `date: z.string().min(1)` accepted
+`"banana"`, which then failed at Postgres and surfaced a raw type error to
+whoever was standing at the screen. Dates are now checked for **shape and for
+existing** — `2026-02-30` is refused, which a bare regex lets through and
+`new Date()` silently rolls forward into March — and bounded to a year back and
+a day ahead. The window is deliberately generous: it still refuses the two
+things that were possible, a date that is not a date and pre-filling a month
+that has not happened.
+
+`LeaveRequestSchema` got the same treatment. Its ordering `refine` was already
+correct and was held up by the finding as the pattern to copy — but it was
+comparing two strings that had never been checked for being dates at all, so
+the pattern had the same hole in it.
+
+**The third point is not a schema fix, and this is the part worth recording.**
+The finding says a row "can record arrival at 18:00 and departure at 09:00, and
+nothing objects". For a night shift that is **correct data**. Measured:
+
+```
+shift_definitions        24
+...crossing midnight      8
+staff_attendance rows    19   of which 14 carry no shift at all
+...with both times        0   and 0 with check_out < check_in
+```
+
+So eight of this hospital's shifts legitimately end the next morning, and
+`check_out < check_in` is only wrong once you know which shift it was — which
+the schema cannot know. The check therefore lives in `markAttendance`, which
+reads `shift_definitions.crosses_midnight`. Where no shift is named — the
+majority of rows — the entry is treated as same-day, and the message tells the
+user to choose the night shift rather than simply refusing, so a legitimate
+entry is one selection away instead of a dead end.
+
+## F-63, F-64 — FIXED, and F-63 had a twin
+
+F-63 as filed: `reviewLeave` updated `.eq('status','pending')` and checked only
+`error`, so a request decided a moment earlier reported success to the second
+manager. Fixed with `select('id')` and a length check, matching `verifyOrder`,
+which guards exactly this and explains why — *"reporting success for an
+authorisation that never happened is the worst possible lie to tell on this
+particular screen."*
+
+**`cancelLeave` had the identical flaw** and is not mentioned in the finding:
+same conditional update, same unchecked result. For a user without
+`leave:approve` it also carries `.eq('profile_id', actor.id)`, so cancelling
+somebody else's request reported success and changed nothing. Fixed with it.
+
+F-64 is a policy question the finding rightly refuses to answer for the
+hospital, so the code now states a position instead of leaving one implied: an
+HR manager cannot decide their own request; an **admin still can**, because
+blocking everyone deadlocks a hospital with a single approver. Either way the
+audit entry records `self_review`, so the decision is visible afterwards rather
+than indistinguishable from any other. Written as a deliberate choice with the
+one-line change marked, not as a discovered rule.
+
+## F-53 — FIXED — the restriction was in one query
+
+The server was never the problem: `requestLeave` accepts any `profile_id` and
+correctly restricts filing-on-behalf to a holder of `leave:approve`. The
+restriction existed solely in the page's own query —
+`.eq('role', 'nurse')` — so of karur's ten staff only the three nurses could
+have leave filed for them.
+
+`LeavePanel` now receives all active staff. The `nurses` list stays and still
+feeds rostering and ward incharges, which is right for them: a roster is a
+nursing artefact, leave is not.
+
+## F-58 — FIXED — and `radiology` had the same hole
+
+Confirmed from the live catalog, and the comparison in the finding is the sharp
+part:
+
+```
+documents            private   file_size_limit NULL   allowed_mime_types NULL
+radiology            private   NULL                   NULL
+tenant-logos         public    2 MB                   {png, jpeg, webp}
+```
+
+The bucket holding the hospital's **logo** was capped at 2 MB with three MIME
+types. The buckets holding **patient records** had nothing, and anyone with
+`emr:document:upload` — the receptionist included — could put a file of any type
+and any size into either.
+
+`radiology` is not named in the finding. It has the identical defect and is
+fixed here rather than filed separately.
+
+Limits set from measurement, not taste: everything in storage today is one 1.4 MB
+PDF and two ~600 kB JPEGs, so 25 MB / 50 MB and the allowlists are already
+generous for what the hospital does, and no existing object violates them. TIFF
+and DICOM are included for radiology because modalities emit them. Office
+formats are deliberately excluded — a discharge summary belongs in the record as
+a PDF, and allowing `.docx` into a PHI bucket means accepting a macro container
+nothing here will scan.
+
+Two layers, one list. The bucket settings are the control that cannot be argued
+with by a crafted client; `lib/upload/allowedFiles.ts` is checked server-side so
+the person uploading gets a sentence they can act on instead of a storage error
+after the attempt, and migration `0255` is set from the same values with a
+comment pointing back at it. One other thing fell out of it: the extension that
+reaches the storage path is now **one of our strings**, looked up from the
+allowlist, where before it was whatever followed the last dot in the client's
+filename.
+
+## F-59 — FIXED — and the obvious implementation would have been bypassable
+
+The finding's prescription is right: pass the warnings into `addPrescription` and
+store them with an acknowledgement. Doing exactly that would have left a hole —
+**a client that simply declines to mention the warning it was shown would store
+an empty trail.** The banner is computed in the browser; trusting the browser to
+report it is trusting the thing being audited.
+
+So `addPrescription` **recomputes** the warnings itself, from the patient's
+allergies and the other lines on the visit, and stores its own result. The only
+thing taken from the caller is the acknowledgement, which is the human decision
+and can come from nowhere else. A `major` warning without one is now refused
+outright, which turns an advisory into a recorded decision.
+
+`0256` also adds `prescribed_by`, because **the table did not record who wrote a
+prescription at all** — it hung off `visits.doctor_id`, the visit's doctor, not
+necessarily the person who typed that line. For an override trail, "who" is half
+the record.
+
+`safety_warnings` is deliberately nullable with no `'[]'` default: an older row
+reads NULL, meaning "this predates the trail", which is a different fact from
+"no warnings were raised". Collapsing the two would invent reassurance about ten
+prescriptions nobody checked.
+
+In the UI the acknowledgement is its own checkbox, not the existing `rxOverride`
+— that one belongs to the paediatric dose panel, and one tick standing for two
+unrelated clinical decisions is how a trail becomes meaningless. It also clears
+whenever the warning set changes, so a tick cannot survive the drug it was made
+for.
+
+## F-60 — FIXED — in both directions, and it found a second thing
+
+The defect as filed: `name.includes(allergen) || allergen.includes(name)` with a
+minimum length of 3, so an allergy recorded as "ACE" flags par-**ace**-tamol.
+Now matched per token, where a token may start or end with the needle but not
+contain it interior — which keeps `benzylpenicillin` matching an allergy to
+`penicillin`, a true positive that plain whole-token equality would have lost.
+Needles under 4 characters get exact-token matching only, so "ACE" matches a
+drug actually called ACE and nothing else.
+
+`verify:rx-match` asserts both halves, and the second half is the new one: six
+false positives that must stay quiet, seven true positives that must still fire.
+
+**The test failed on its first run, and the failure was real.** One of the two
+allergies actually on file is **"Sulfa drugs"** — a phrase. Matching the whole
+phrase as one needle fails, because "sulfamethoxazole" does not start with
+"sulfa drugs". Checking the old code, it failed the same way, and the class
+table in `rxSafety` happened to rescue it via its `sulfa` member list — which is
+protection by coincidence, not by design. Matching is now phrase-aware: each
+side is also compared token by token, with a 4-character floor that keeps an
+allergy to "ACE inhibitors" from flagging acebutolol, a beta blocker. "Sulfa
+drugs" now reaches sulfamethoxazole **directly**.
+
+## F-61 — FIXED — as far as the schema honestly allows
+
+`currentDrugs` comes from the client and holds only the lines on the
+prescription being written, so a patient's existing warfarin was never
+considered — the clinically dangerous interaction being the one least likely to
+be caught.
+
+What can honestly be offered is bounded by the schema, and saying so matters
+more than claiming the fix is complete: `prescriptions` has **no `patient_id`**
+(it hangs off `visits`) and **no active flag** — `duration` is free text like
+"5 days". There is no way to know what is still being taken. So the check now
+also loads the patient's prescriptions from the **last 90 days**, and every
+warning carries its provenance — *"Interacts with warfarin (prescribed
+2026-09-14)"* versus *"(on this prescription)"* — leaving the doctor to judge
+currency rather than asserting it.
+
+The scale caveat the audit recorded is left exactly as recorded: the whole
+`drug_interactions` table is still loaded, at 38 rows, because filtering needs
+substring matching that SQL cannot do on this shape, and dressing that up as a
+performance fix would be inflation.
+
+## F-54 — FIXED — but the lock needed an amendment route first
+
+The table in the finding is correct: `mtp_records` had completeness but neither
+the lock nor the delete block that `form_f_records` and `mlc_records` both have.
+
+**Adding the lock alone would have been worse than leaving it.** Form F and MLC
+allow `('draft','complete','amended')`, and their lock triggers permit exactly
+one transition out of `complete` — into `amended` — so a mistake on a signed
+record can be corrected by superseding it. `mtp_records.status` allowed only
+`('draft','complete')`. Locking it would have made a typo **permanent**, on a
+register the Medical Termination of Pregnancy Act requires to be accurate, with
+no route to a correction at all.
+
+So `0257` adds the status, the `amends_id`/`amend_reason` columns and an
+`amendMtp` action mirroring `amendFormF`, and only then the two triggers. 0 rows
+today, so nothing is locked retroactively. `saveMtpDraft`'s refusal message was
+also wrong for the new state and now distinguishes "already complete — raise an
+amendment" from "superseded by an amendment".
+
+The service-role escape hatch is copied deliberately, with the consequence the
+audit already recorded restated in the migration: it is needed so
+`purge_tenant_data` can remove a tenant, and it means our own backend can edit a
+completed statutory record without the lock firing. The lock protects the
+register from the hospital's users, not from us.
+
+And the lesson of F-77 is applied **in** this migration rather than the one
+after: both new trigger functions have their default `EXECUTE` revoked.
+
+## F-55 — FIXED
+
+`registerEmergency` counted active ER cases in TypeScript and then inserted, so
+two terminals both read zero and both succeeded. Unlike F-52, nothing blocks the
+database from stating the rule here — `emergency_cases` is not partitioned — so
+`0258` adds `UNIQUE (tenant_id, patient_id) WHERE status IN ('waiting',
+'in_treatment')`. Verified first: 5 rows, and 0 patients currently hold more than
+one active case, so it builds without conflict.
+
+`patient_id` is nullable for an unidentified arrival, and distinct NULLs do not
+conflict in a unique index — so a trolley of unknown casualties is unaffected,
+which is right, because each is a separate person.
+
+The TypeScript count stays as the friendly message; the index is what makes it
+true. The insert now also translates `23505` into something the person at the
+desk can act on rather than a raw constraint name.
