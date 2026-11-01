@@ -54,7 +54,15 @@ export async function startVisit(
 ): Promise<{ success: true; visitId: string } | { success: false; error: string }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'opd:read')
+  // Starting a visit WRITES a visits row, so it must not be gated on a read.
+  // This asked for 'opd:read', which happened to express the intent — nurse
+  // holds opd:read and should be able to start a visit; receptionist holds
+  // neither and should not — but by accident rather than by name. Switching it
+  // to 'opd:write' would have been wrong: nurse does not hold that, so nurses
+  // would have stopped being able to start visits at a live hospital.
+  // 'opd:visit:start' is granted to exactly admin, doctor and nurse, which is
+  // the set that could do this before, so behaviour is unchanged.
+  await requirePermission(actor.role, 'opd:visit:start')
 
   const supabase = await createClient()
 

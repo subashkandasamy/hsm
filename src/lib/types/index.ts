@@ -1374,7 +1374,7 @@ export type Permission =
   | 'admin:all'
   | 'patients:read' | 'patients:write'
   | 'appointments:read' | 'appointments:write'
-  | 'opd:read' | 'opd:write' | 'opd:vitals'
+  | 'opd:read' | 'opd:write' | 'opd:vitals' | 'opd:visit:start'
   | 'wards:manage'
   | 'ipd:read' | 'ipd:write' | 'ipd:notes'
   | 'emergency:read' | 'emergency:register' | 'emergency:triage'

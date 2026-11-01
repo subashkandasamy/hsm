@@ -193,8 +193,8 @@ on 30 Oct; nothing has been changed since.
 | F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
 | F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **OPEN** |
 | F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **OPEN** — 0 live instances |
-| F-51 | `startVisit` is a write gated on `opd:read` | 7 | **OPEN** |
-| F-52 | Duplicate-appointment guard is a read-then-write | 7 | **OPEN** |
+| F-51 | `startVisit` is a write gated on `opd:read` | 7 | **FIXED** — `opd:visit:start`, granted to the identical role set (proved) |
+| F-52 | Duplicate-appointment guard is a read-then-write | 7 | **ANALYSED — RECOMMEND DEFER**; the DB fix is blocked by partitioning, reordering trades one harm for another |
 
 ## Suspicions raised and withdrawn
 
@@ -3653,3 +3653,71 @@ schema + function change reaching `karur`, so it is exactly the kind of step
 that needs the owner's explicit yes anyway. Until it is applied, the
 duplicate-admission race remains open — the TypeScript check is unchanged in
 its behaviour, so nothing is worse than before.
+
+## F-51 — FIXED — the write is gated on a write permission
+
+`startVisit` inserts a `visits` row and asked for `opd:read`.
+
+The obvious fix — `opd:write` — would have been **wrong**, and this is why the
+role matrix had to be read before touching it:
+
+| Role | `opd:read` | `opd:write` |
+|---|---|---|
+| admin | yes | yes |
+| doctor | yes | yes |
+| **nurse** | **yes** | **no** |
+
+Switching to `opd:write` would have stopped **nurses starting visits**, at a
+live hospital, as a side effect of a tidy-up. The guard expressed the right
+intent by accident; the fix has to keep the intent and name it.
+
+`opd:visit:start` is granted to exactly admin, doctor and nurse. Proved
+equivalent rather than asserted, by comparing `HEAD` against the working tree:
+
+```
+roles that could start a visit BEFORE (opd:read)     : ['admin', 'doctor', 'nurse']
+roles that can  start a visit NOW  (opd:visit:start) : ['admin', 'doctor', 'nurse']
+IDENTICAL — no behaviour change
+```
+
+## F-52 — ANALYSED — recommend deferring, with the reason on record
+
+Confirmed as filed: `bookAppointment` selects an active appointment for the same
+patient and date, then inserts, so two concurrent bookings both read none and
+both succeed.
+
+### The database fix is not available here
+
+`appointments` is **`RANGE (scheduled_at)`** partitioned, across 21 partitions.
+Postgres requires a unique index on a partitioned table to include every
+partitioning column — and including `scheduled_at` defeats the rule entirely,
+since two appointments at different times on the same day are then distinct.
+
+Per-partition unique indexes would be sound in principle (two appointments on
+one date always land in the same monthly partition), but the index needs an IST
+day expression, and `(scheduled_at AT TIME ZONE 'Asia/Kolkata')::date` is
+**STABLE, not IMMUTABLE**, so Postgres will not index it. Making it work needs a
+stored `appointment_day` column, a trigger to populate it, the index created on
+all 21 existing partitions, and `ensure_appointment_partition` plus the monthly
+cron taught to add it to every new one.
+
+### And the cheap code fix makes things worse
+
+The tempting move is to run the duplicate check immediately before the insert,
+narrowing the window. But `get_next_appointment_token` is called in between, and
+it **consumes a token**. Today the check runs first, so a duplicate attempt
+wastes nothing. Moving it later would waste a token on every duplicate attempt —
+which is precisely the harm this finding names. So the current order is already
+the better of the two, and reordering is a regression dressed as a fix.
+
+### Recommendation
+
+Leave it. The consequence is a duplicate appointment and a wasted token — not
+clinical, not financial — and the correct fix is a schema change with a trigger
+and a partition-creation hook, which is disproportionate to that. It belongs
+with the partition work (F-39, F-40) if those are ever done together, where the
+`ensure_appointment_partition` hook is being touched anyway.
+
+Recorded rather than quietly skipped: this is the one finding so far where the
+right answer is "do not fix it yet", and the reason is a Postgres constraint
+rather than effort.

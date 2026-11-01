@@ -5,7 +5,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'admin:all',
     'patients:read', 'patients:write',
     'appointments:read', 'appointments:write',
-    'opd:read', 'opd:write', 'opd:vitals',
+    'opd:visit:start', 'opd:read', 'opd:write', 'opd:vitals',
     'wards:manage',
     'ipd:read', 'ipd:write', 'ipd:notes',
     'emergency:read', 'emergency:register', 'emergency:triage',
@@ -35,7 +35,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   doctor: [
     'patients:read', 'patients:write',
     'appointments:read', 'appointments:write',
-    'opd:read', 'opd:write', 'opd:vitals',
+    'opd:visit:start', 'opd:read', 'opd:write', 'opd:vitals',
     'ipd:read', 'ipd:write', 'ipd:notes', 'ipd:nursing',
     'emergency:read', 'emergency:register', 'emergency:triage',
     'lab:read', 'lab:order', 'lab:verify',
@@ -56,7 +56,7 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   nurse: [
     'patients:read', 'patients:write',
     'appointments:read',
-    'opd:read', 'opd:vitals',
+    'opd:visit:start', 'opd:read', 'opd:vitals',
     'ipd:read', 'ipd:notes', 'ipd:nursing',
     'emergency:read', 'emergency:register', 'emergency:triage',
     'lab:read',
