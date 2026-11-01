@@ -164,6 +164,7 @@ on 30 Oct; nothing has been changed since.
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
+| F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED** — `0253` revokes them and caps the argument; found by Supabase's advisor after the push |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5185,3 +5186,102 @@ has to be answered per caller rather than per module.
 
 The detector now makes that work incremental and safe: lower `BASELINE` as each
 batch lands, and a new un-gated read fails the script.
+
+## F-77 — a regression I introduced in `0248`, found after the push
+
+Worth the most prominent write-up of any finding here, because it is mine and
+because the mechanism will catch the next person.
+
+Immediately after `supabase db push` I ran Supabase's own security advisor. It
+reported four `SECURITY DEFINER` functions callable by **`anon`** — and all four
+came from `0248`:
+
+```
+create_next_month_partitions(p_months_ahead integer)
+ensure_partition_for(p_table text, p_date date)
+partition_runway()
+record_partition_health()
+```
+
+All reachable unauthenticated at `/rest/v1/rpc/<name>`, with the publishable key
+alone. **Two of them create tables.** `create_next_month_partitions(24)` would
+make 150 partitions per call and had no upper bound on its argument;
+`record_partition_health()` appends a row every time it is called. No PHI is
+disclosed — `partition_runway()` returns partition names — so this is an
+availability and storage problem rather than a confidentiality one. It is still
+one HTTP call away, and I put it there.
+
+### The mechanism, which is the part worth keeping
+
+`pg_default_acl` grants `EXECUTE` on every new function in `public` to `anon`
+and `authenticated` — **the function-level twin of the table grant that F-74 was
+entirely about.** I found that trap for tables, wrote it up, built a detector
+for partitions… and did not apply it to functions in the same migration.
+
+And it explains why only *some* of the partition functions were exposed:
+
+```
+CREATE OR REPLACE  ->  keeps the existing ACL
+DROP + CREATE      ->  takes the default ACL back
+```
+
+`alert_missing_next_partition` and `ensure_appointment_partition` were replaced
+in place, so they kept the revocation they already had.
+`create_next_month_partitions` I **dropped and recreated on purpose** — to avoid
+leaving a stale zero-argument overload behind, which was a real fix for a real
+trap — and the drop took its revocation with it. The other two were new and
+never had one. So a defensive act in one dimension undid a protection in
+another, silently.
+
+### The fix
+
+`0253` revokes `EXECUTE` from `anon` and `authenticated` on all five
+maintenance entry points (including `alert_missing_next_partition`, which
+`authenticated` could still call). pg_cron runs them as the role that scheduled
+them, postgres, so the revocation costs nothing operationally. It also caps
+`p_months_ahead` at 12, so the function cannot be asked for unbounded work even
+by something entitled to call it.
+
+Three things are deliberately left callable, and the reasons matter:
+
+- `ensure_appointment_partition` keeps `authenticated` — the app calls it when
+  someone books beyond the pre-created range. Being `SECURITY DEFINER` owned by
+  postgres, its internal call to `ensure_partition_for` runs with postgres's
+  privileges and is unaffected by the revocation.
+- `effective_test_range` keeps `authenticated` — `lab.ts` calls it as the
+  signed-in user on every result entry. `SECURITY INVOKER`, so RLS applies; only
+  `anon` is removed.
+- `current_tenant_id` and `current_active_role` are left **entirely alone**,
+  though the advisor lists them. They are evaluated *inside RLS policies*, which
+  run as the querying role — revoking `EXECUTE` from `authenticated` would make
+  every policy that calls them fail and lock users out of `patients`. They
+  return NULL without a session, so an anonymous call discloses nothing. This is
+  the one place where "clear the advisor warning" would have broken the
+  application.
+
+### The detector
+
+`scripts/verify-rpc-grants.sql` (`npm run verify:rpc-grants`) lists every
+`SECURITY DEFINER` function in `public` callable by `anon` or `authenticated`
+against an allowlist that carries the reason for each entry. Confirmed it
+reproduces the defect before the fix:
+
+```
+BEFORE 0253 — SECURITY DEFINER callable by anon: 4
+    create_next_month_partitions(p_months_ahead integer)
+    ensure_partition_for(p_table text, p_date date)
+    partition_runway()
+    record_partition_health()
+```
+
+A standing check rather than a one-off revoke, precisely because the revocation
+does not survive the next `DROP`.
+
+### What this says about the audit
+
+Three of the invariants this campaign has found unenforced — F-26, F-31, F-65 —
+were other people's. This one is mine, in a migration whose own header explains
+the default-privileges trap at the table level. An audit that only hardens other
+people's code is not finished; the verification has to point at the fixes too.
+Running the advisor after the push is now part of the routine rather than an
+afterthought.
