@@ -200,6 +200,29 @@ on 30 Oct; nothing has been changed since.
 | F-50 | Nothing marks a visit billed when its appointment bill is paid | 7 | **FIXED** in code (`startVisit` marks it; preview excludes it). **3 pre-existing rows** need `0250` — a data change, awaiting approval |
 | F-51 | `startVisit` is a write gated on `opd:read` | 7 | **FIXED** — `opd:visit:start`, granted to the identical role set (proved) |
 | F-52 | Duplicate-appointment guard is a read-then-write | 7 | **ANALYSED — RECOMMEND DEFER**; the DB fix is blocked by partitioning, reordering trades one harm for another |
+| F-53 | Leave can only be filed on behalf of a nurse | 11 | **OPEN** |
+| F-54 | MTP register has two of the three controls the others have | 9 | **OPEN** |
+| F-55 | Emergency duplicate guards are read-then-write | 8 | **OPEN** |
+| F-58 | Patient documents have no type or size limit, at either layer | 12 | **OPEN** |
+| F-59 | Nothing records that a safety warning was shown or overridden | 12 | **OPEN** |
+| F-60 | Allergen matching is bidirectional and can misfire | 12 | **OPEN** |
+| F-61 | The interaction check sees only this prescription | 12 | **OPEN** |
+| F-62 | Attendance accepts an unvalidated date and an impossible shift | 11 | **OPEN** |
+| F-63 | Approving an already-decided leave reports success | 11 | **OPEN** |
+| F-64 | A manager can approve their own leave | 11 | **OPEN** |
+| F-65 | 196 of 282 read actions are tenant-scoped but role-blind | 13 | **PARTLY FIXED** — detector shipped, method settled, 4 gated; **91 remain** |
+
+### A gap in this register, and how it happened
+
+F-53, F-54, F-55, F-58 through F-64 and F-65 were written up in their module
+sections and **never added to this table**. The table is what the fix campaign
+worked from, so for several rounds I reported "1 open" when eleven were. The
+findings were never lost from the document — they were lost from the index, and
+I was reading the index.
+
+Recorded rather than quietly back-filled, because it is the same class of defect
+as F-31 and F-26: an invariant (every finding appears in the register) that
+nothing enforced. The rows are now present.
 
 ## Suspicions raised and withdrawn
 
