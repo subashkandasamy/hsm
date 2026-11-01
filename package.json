@@ -26,7 +26,8 @@
     "verify:tenant-scope": "tsx scripts/verify-tenant-scope.ts",
     "verify:bill-sources": "tsx scripts/verify-bill-sources.ts",
     "verify:ttl-cache": "tsx scripts/verify-ttl-cache.ts",
-    "verify:tenant-consistency": "echo 'Run scripts/verify-tenant-consistency.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'"
+    "verify:tenant-consistency": "echo 'Run scripts/verify-tenant-consistency.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'",
+    "verify:partitions": "echo 'Run scripts/verify-partitions.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

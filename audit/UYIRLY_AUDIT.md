@@ -160,13 +160,15 @@ on 30 Oct; nothing has been changed since.
 | F-15 | Middleware authenticates with an unverified JWT (`getSession`) | 1 | **FIXED** — `getClaims()`; a forged cookie went from `307 /dashboard` to rejected |
 | F-16 | `logAudit` never checks its insert — compliance records vanish silently | 1 | **FIXED** — every drop path logs; writes go through the service client so RLS cannot lose a record |
 | F-72 | `ward_room_types.tenant_id` is **text** — the only one of 256, so it has **no FK to `tenants`** | DB | **MIGRATION `0247` WRITTEN, NOT APPLIED** — found by the F-26 scan |
+| F-73 | **154 redundant index copies** — the cron hand-created indexes the parent already propagates, and `0012` re-created six of `0011`'s under new names | DB | **FIXED** — `0248`; measured 7 vs 9 indexes on migration- vs cron-created partitions |
+| F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **OPEN** |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **OPEN** |
 | F-33 | `cancelBill` reverts charges before it is allowed to cancel | 3 | **FIXED** — `0243`, one transaction; `verify:bill-sources` ties the two maps |
 | F-35 | A patient can be admitted twice (check in TS, not in the RPC) | 4 | **FIXED** — `0245` applied; a second admit to a different bed is refused and the bed is released |
-| F-39 | Five-minute partition hole at every month boundary | DB | **OPEN** |
-| F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **OPEN** |
+| F-39 | Five-minute partition hole at every month boundary | DB | **FIXED** — `0248` written; daily job, 4 months of runway, so one miss is survivable |
+| F-40 | Partition alarm only `RAISE WARNING`s — reports to nobody | DB | **FIXED** — `0248`; raises (so cron records `failed`) **and** records a `partition_health` row, as two jobs |
 | F-42 | Partial-panel safety check **fails open** on RPC error | 5 | **FIXED** — refuses now; the union makes fail-open a compile error |
 | F-43 | "Marked interim" is promised and never recorded | 5 | **CORRECTED** — the printed report *does* say INTERIM; the screen now does too. Residual = amendment trail |
 | F-48 | Consultation payment gate inert for ~97% of visits | 7 | **OPEN** |
@@ -189,7 +191,7 @@ on 30 Oct; nothing has been changed since.
 | F-36 | `autoIpdBill` documents idempotency it does not provide for null `ref_id` | 4 | **OPEN** |
 | F-37 | Cron `limit(1000)` silent truncation; sequential loop under a 300s cap | 4 | **OPEN** |
 | F-38 | Two copies of the read-only rule, called mirrors, deliberately differing | 4 | **OPEN** |
-| F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **OPEN** |
+| F-41 | `appointments` protected twice; five partitioned tables protected once | DB | **FIXED** — `0248`; all six get the generous case, one job |
 | F-44 | Single tests get flat critical bounds; analytes get age/sex-aware ones | 5 | **OPEN** |
 | F-47 | FEFO governs inventory consumption, not pharmacy dispensing | 6 | **OPEN** |
 | F-49 | Two comments describe a billing-at-booking flow that does not exist | 7 | **OPEN** |
@@ -4191,3 +4193,177 @@ harden.
 
 **Blocked on approval** — a type change plus four policy rewrites on a live
 hospital's table.
+
+## F-39, F-40, F-41 — FIXED, and two more defects found while verifying them
+
+Migration `0248_partition_runway_alarm_and_duplicate_indexes.sql`.
+
+Verified live first, on 2026-11-01, because the findings describe resilience and
+the first question is whether anything is wrong *now*:
+
+```
+cron job 1 create-next-month-partitions   '5 0 1 * *'
+cron job 4 alert-missing-partitions       '0 9 * * *'
+runway: all partitioned tables end y2026m12, except appointments (y2027m12)
+all 70 existing partitions: relrowsecurity = true, anon SELECT = false
+```
+
+Nothing is leaking and nothing is broken today. All three findings stand as
+filed, and the fix is about what happens on a bad month rather than this one.
+
+### F-39 — the obvious fix was the wrong one
+
+The finding suggests `55 23 L * *`. That shrinks the five-minute window but
+keeps a design in which **one missed run is an outage** — it moves the failure
+rather than removing it. Creating four months at once, every day, takes the
+boundary out of the picture: by the time a month starts its partition is weeks
+old, and reaching a hole now takes roughly 90 consecutive failures instead of
+one. The loop starts at month 0, not 1, so a restored or freshly seeded database
+is usable immediately rather than next month.
+
+### F-40 — the first version of my own fix cancelled itself out
+
+The alarm has to do two things: make `cron.job_run_details.status` read
+`failed`, and leave a record the app can show. I wrote both into one function,
+and that is wrong for a reason worth recording — **the `RAISE EXCEPTION` rolls
+back the `INSERT`**, so the row that exists to tell a human what happened is
+discarded by the signal that something happened. That is the same shape as the
+original defect: the signal and the record cancelling each other out.
+
+So: `record_partition_health()` records and never raises;
+`alert_missing_next_partition()` raises and never records; they run as separate
+cron jobs five minutes apart, because pg_cron gives each job its own
+transaction. Both read one `partition_runway()` function rather than keeping two
+copies of the same loop — this audit already has four findings about duplicated
+logic that drifted.
+
+`partition_health` also had to be locked down explicitly, for the reason under
+F-74: without `ENABLE ROW LEVEL SECURITY` and `REVOKE`, a new table in `public`
+is world-readable.
+
+### F-73 (new) — 154 redundant index copies, added monthly, forever
+
+Found while checking F-41's claim that `appointments` is protected twice. The
+parents' indexes are **partitioned** indexes (`relkind = 'I'`), so Postgres
+creates a matching index on every new partition by itself. The cron function
+then created its own copies by hand. The evidence is a clean split:
+
+```
+visits_y2026m04 .. m08   (migration-created)   7 indexes
+visits_y2026m09 .. m12   (cron-created)        9 indexes
+```
+
+Across all partitions, **58** such copies. Every one has an exact-signature
+inherited twin, and **none is UNIQUE or a primary key** — checked before
+dropping anything, because an orphan index is not automatically redundant:
+
+```
+total_orphans 58 | with_exact_twin 58 | no_twin_do_not_drop 0 | unique_or_pk 0
+```
+
+That query is reproduced as the `WHERE` clause of the drop, so it re-derives its
+own safety instead of trusting a count I took once.
+
+Widening the same scan found a second source: migration `0012` re-created six
+indexes that `0011` had already created, under different names, on
+`appointments`, `audit_logs` and `visits`. Those are **parent-level**, so each is
+propagated to every partition — 3×21 + 2×9 + 1×9 = **90** more copies, removed
+by six `DROP INDEX` statements. `0011`'s names are kept; no code references
+index names. Three more plain indexes duplicating a UNIQUE constraint's index
+(`lab_samples`, `partners`, `staff_attendance`) go too.
+
+The 888 kB of storage is not the point. Every insert into `visits` maintained 9
+index entries where 7 would do, on the hot clinical write path, and the bill grew
+by two indexes per table per month for as long as the hospital runs.
+
+### F-74 (new) — the on-demand path created partitions nobody hardened
+
+`ensure_appointment_partition`, called from `appointments.ts:86` and
+`patientPortal.ts:701`, was one `CREATE TABLE ... PARTITION OF` and nothing
+else — no `secure_partition`. Why that is not cosmetic:
+
+```
+pg_default_acl, schema public, objtype r:
+  anon=arwdDxtm/postgres, authenticated=arwdDxtm/postgres
+```
+
+**Every new table in `public` is created with ALL privileges granted to `anon`
+and `authenticated`**, and a fresh partition has `relrowsecurity = false`. A
+partition born on this path would be a PostgREST-reachable table holding every
+tenant's appointments, with no RLS and a full grant to the anonymous role —
+readable and writable cross-tenant by anyone holding the publishable key.
+`secure_partition` is the only thing between a new partition and that.
+
+It has never fired: `0094` pre-created `appointments` through `y2027m12`, so
+`partition_exists` short-circuited every call, which is why all 70 partitions are
+clean. **The hole is latent and opens by itself in January 2028**, or the first
+time someone books beyond the pre-created range.
+
+Proved rather than argued, on a throwaway local Postgres 16 cluster with
+Supabase's default privileges reproduced — `y2028m04` created by the old body,
+`y2028m03` by the new one:
+
+```
+        relname        | rls_on | anon_select | anon_insert | anon_delete
+-----------------------+--------+-------------+-------------+-------------
+ appointments_y2028m03 | t      | f           | f           | f
+ appointments_y2028m04 | f      | t           | t           | t
+```
+
+The anonymous role could have selected, inserted and deleted every tenant's
+appointments in that partition.
+
+Fixed by giving partition creation one owner, `ensure_partition_for(table,
+date)`, which hardens what it creates and rejects any table name not on the
+known-partitioned list. `ensure_appointment_partition(p_date date)` keeps its
+exact signature — two app call sites use it by name — and delegates.
+
+One more self-inflicted trap caught before it shipped: `create_next_month_
+partitions` gained a defaulted argument, and `CREATE OR REPLACE` with a new
+argument list creates an **overload**, not a replacement. The stale zero-arg body
+would have stayed callable with the old single-month behaviour. Dropped
+explicitly.
+
+### F-52 stays deferred
+
+The audit noted F-52's fix "belongs with the partition work, where the
+`ensure_appointment_partition` hook is being touched anyway". The hook is now a
+single function, which makes that fix cheaper than it was — but it still needs a
+stored `appointment_day` column, a trigger, and a unique index created on 21
+existing partitions and every future one, which means re-introducing per-table
+index logic that `0248` deliberately removed. That is a schema change on a live
+hospital's appointment table for a defect whose cost is a duplicate appointment
+and a wasted token. Still deferred, now with a cheaper path when it is wanted.
+
+### Verification
+
+`scripts/verify-partitions.sql` (read-only, raises by design, `npm run
+verify:partitions` prints how to run it) answers four questions: runway, any
+partition missing RLS or granted to `anon`, any redundant index copy returning,
+and whether the three cron jobs are registered and last succeeded.
+
+`0248` was **run end to end before being handed over**, on a local Postgres 16
+cluster with the six partitioned parents, Supabase's `pg_default_acl` grants, a
+stub `cron` schema, and four months of partitions carrying the old
+hand-made index copies. It applied cleanly and the results were checked, not
+assumed:
+
+- every partition afterwards: `relrowsecurity = true`, `anon` SELECT false
+- `partition_health`: `ok = t`, `runway_months = 3`
+- three cron jobs registered, creation daily at 00:20
+- `verify-partitions.sql`: 0 unhardened, 0 redundant, 3 of 3 jobs
+
+The drop's safety condition was tested against a deliberate near-miss. One
+hand-made copy on each `visits` partition was `(tenant_id, visit_date DESC)`
+while the inherited index is ASC — a different signature, so no twin:
+
+```
+ visits_y2026m09_tenant_id_visit_date_idx1           | inherited f | DESC  <- KEPT
+ visits_y2026m09_tenant_id_patient_id_visit_date_idx | inherited t |       <- twin dropped
+```
+
+It kept the one it could not prove redundant. Then the failure path: dropping
+`visits_y2026m12` made the recorder write `ok=f, runway_months=0,
+missing={visits_y2026m12}` **and survive**, while the alarm raised — the
+separation that the single-function version would have destroyed. Re-running the
+creation job healed it, and the healed partition came back hardened.
