@@ -163,7 +163,7 @@ on 30 Oct; nothing has been changed since.
 | F-73 | **154 redundant index copies** — the cron hand-created indexes the parent already propagates, and `0012` re-created six of `0011`'s under new names | DB | **FIXED** — `0248`; measured 7 vs 9 indexes on migration- vs cron-created partitions |
 | F-74 | `ensure_appointment_partition` never hardened what it created — a partition born on that path would be **anon-readable cross-tenant** | DB | **FIXED** — `0248`; latent, 0 instances, opens by itself Jan 2028 |
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
-| F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **RECORDED, NOT CHANGED** — 7 of 30 patients have no dob; fixing it alters a shared clinical resolver |
+| F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -4981,3 +4981,66 @@ neonate range — which is precisely the wrong answer. It needs the ordering
 inverted for the unknown case, and that is a change to the resolver both result
 paths share, on a live hospital, for a trap that has not sprung. It should be
 done before the first paediatric range is entered, not after.
+
+## F-76 — FIXED — an unknown age is no longer a newborn
+
+Recorded as "not changed" an hour ago, then done, because the fix turned out to
+be provable in both directions rather than a judgement call on a live clinical
+resolver.
+
+### The trap, demonstrated rather than argued
+
+A hypothetical paediatric row — the kind a hospital adds the first time it runs
+a children's clinic — was put into a CTE alongside the real haemoglobin ranges
+(nothing inserted), and each rule asked what it would pick for an adult woman
+with no recorded date of birth:
+
+```
+OLD (age coerced to 0)  ->  neonate range 0-30 days : ref 14.0..22.0, crit 11.0/24.0
+NEW (age unknown)       ->  age-agnostic  0-54750   : crit 7.0
+```
+
+Under the old rule her haemoglobin of 10.5 — low-normal for an adult woman — is
+`critical_low` against a newborn's 11.0, telephoning a doctor about a number
+that does not warrant it, while her real adult critical bound of 7.0 is
+displaced. False alarms one way, somebody else's reference interval the other.
+**7 of 30 patients have no `dob`**, so this is not a rare shape.
+
+### Why "pass NULL through" would have been worse
+
+The obvious fix is to let a NULL age match every range. That reaches the same
+wrong answer by a longer route: the existing
+`ORDER BY (age_max_days - age_min_days) ASC` prefers the **narrowest** window,
+so a NULL age would match the neonate range *and rank it first*. The predicate
+and the tie-break had to change together.
+
+When the age is unknown the resolver now considers only ranges that make no age
+claim (`age_min_days = 0`) and, among those, prefers the **widest** window. So
+an unknown age gets the most general statement about the analyte, or nothing —
+never a band belonging to an age nobody recorded. The two branches share one
+negated expression so they cannot drift apart.
+
+### Proved both ways before it ships
+
+This function is shared by `save_lab_analyte_results` (every panel result) and
+by `effective_test_range` from `0251`, so "it probably doesn't change anything"
+was not good enough.
+
+- **Unknown age:** OLD vs NEW across every analyte that has ranges —
+  `analytes checked 31 | selection changed 0 | gained 0 | lost 0`.
+- **Known age:** a sweep of 31 analytes × {male, female, NULL} × twelve ages
+  chosen to sit either side of every boundary in the data (0, 1, 29, 30, 364,
+  365, 6569, 6570, 6571, 20000, 54749, 54750) —
+  **1,140 combinations, 0 differences.**
+
+So the migration is a no-op on today's data and closes the trap for tomorrow's.
+`SET search_path` is deliberately not added — it would block SQL-function
+inlining — and the table is schema-qualified instead, which buys the same safety
+here.
+
+### What is not fixed
+
+The missing dates of birth themselves. Seven patient records have no `dob`, and
+no code change can supply one; the resolver now fails safe instead of guessing,
+which is the most that belongs in software. Worth a look at registration, since
+a date of birth also drives paediatric dosing.
