@@ -166,7 +166,7 @@ on 30 Oct; nothing has been changed since.
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
 | F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED by `0254`** — verified live: 0 callable by anon, app path still works, cron unaffected. `0253` applied and did nothing (revoked named roles; `PUBLIC` held the grant) |
 | F-78 | **`0238` swept only `SECURITY DEFINER`** — 30 of our INVOKER functions were `anon`-callable, including `cancel_bill`, `issue_credit_note`, `refund_admission_advance` | DB | **FIXED** — `0259` applied; verified 0 anon-callable, app fns keep `authenticated`, 9 statutory triggers intact, RLS proved on a tenant with data |
-| F-79 | **Self-inflicted by F-31** — `cancel_bill` reverted 9 of 10 sources, so a cancelled bill left OT consumables `billed` **forever** | 3 | **`0260` WRITTEN** — caught by `verify:bill-sources`; the detector itself was pinned to one filename and could not see its own fix |
+| F-79 | **Self-inflicted by F-31** — `cancel_bill` reverted 9 of 10 sources, so a cancelled bill left OT consumables `billed` **forever** | 3 | **FIXED** — `0260` applied; the **deployed** function and `TABLE_MAP` verified to agree on all 10 source→table pairs |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5958,3 +5958,38 @@ finding has itself closed.
 TypeScript verifiers: 17 of 19 pass. The two that do not —
 `verify:platform-admin` and `verify:phrases` — are Playwright walks that require
 `npm run dev`, as their own headers state. They are not failures.
+
+### F-79 — CLOSED, verified against the deployed function
+
+`0260` applied. The live `cancel_bill` now reverts **10** sources, the ACL from
+`0259` survived the `CREATE OR REPLACE` (`anon` false, `authenticated` true,
+`service_role` true), and the two maps were compared pair by pair — not counted,
+but matched on both the source and the table it reverts into:
+
+```
+source          TABLE_MAP (TypeScript)   deployed cancel_bill
+bed             admissions               admissions
+blood           blood_issues             blood_issues
+consultation    visits                   visits
+dental          dental_treatments        dental_treatments
+ipd_pharmacy    ipd_pharmacy_requests    ipd_pharmacy_requests
+lab             lab_orders               lab_orders
+ot              ot_schedules             ot_schedules
+ot_consumable   ot_consumables           ot_consumables
+pharmacy        dispenses                dispenses
+radiology       radiology_orders         radiology_orders
+```
+
+### A known limit of that detector, stated rather than left implied
+
+`verify:bill-sources` compares the TypeScript map against the **migration
+file**, because it is a pure file check that runs without database access and
+belongs in the fast suite. The file is not the same thing as what is deployed —
+which is the whole lesson of `0253`, where a migration applied cleanly and
+changed nothing.
+
+The comparison above closes that gap once, by hand, against the live catalog. It
+is not continuous. If the two ever need to be kept in step automatically, the
+honest fix is a second check that reads `pg_get_functiondef` — and the reason it
+has not been added is that it would make the fast suite need credentials, not
+that the gap does not exist.
