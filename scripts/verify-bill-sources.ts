@@ -37,10 +37,29 @@ for (const m of mapBlock[1].matchAll(/(\w+)\s*:\s*'([a-z_]+)'/g)) tsMap.set(m[1]
 
 // ── The SQL statements in the cancel_bill migration ─────────────────────────
 const migDir = 'supabase/migrations'
-const migName = readdirSync(migDir).find((f) => f.includes('cancel_bill'))
+// The LAST migration that defines the function, not the first file whose name
+// mentions it.
+//
+// This read `0243` by name, and `.find()` returns the first match — so when
+// `0260` redefined cancel_bill to revert OT consumables, the check went on
+// comparing against the superseded body and reported a failure that had already
+// been fixed. A detector pinned to one filename decays the moment the thing it
+// watches is edited anywhere else, which is the same staleness it exists to
+// catch (and the same shape as 0238's prosecdef filter in F-78).
+//
+// Matching on the CREATE, not on the filename, so only files that actually
+// define it count.
+const defines = readdirSync(migDir)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .filter((f) => /CREATE OR REPLACE FUNCTION\s+public\.cancel_bill/.test(readFileSync(join(migDir, f), 'utf8')))
+const migName = defines.at(-1)
 if (!migName) {
-  console.error(`FAIL  no cancel_bill migration found in ${migDir}`)
+  console.error(`FAIL  no migration defines cancel_bill in ${migDir}`)
   process.exit(1)
+}
+if (defines.length > 1) {
+  console.log(`cancel_bill is defined in ${defines.length} migrations; reading the latest (${migName})`)
 }
 const sql = readFileSync(join(migDir, migName), 'utf8')
 const sqlMap = new Map<string, string>()
