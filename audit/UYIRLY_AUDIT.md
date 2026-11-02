@@ -165,7 +165,7 @@ on 30 Oct; nothing has been changed since.
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
 | F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED by `0254`** — verified live: 0 callable by anon, app path still works, cron unaffected. `0253` applied and did nothing (revoked named roles; `PUBLIC` held the grant) |
-| F-78 | **`0238` swept only `SECURITY DEFINER`** — 30 of our INVOKER functions were `anon`-callable, including `cancel_bill`, `issue_credit_note`, `refund_admission_advance` | DB | **`0259` WRITTEN** — not exploitable (RLS requires `auth.role() = 'authenticated'`), but protection by side effect. My own F-77 detector inherited the same blind spot |
+| F-78 | **`0238` swept only `SECURITY DEFINER`** — 30 of our INVOKER functions were `anon`-callable, including `cancel_bill`, `issue_credit_note`, `refund_admission_advance` | DB | **FIXED** — `0259` applied; verified 0 anon-callable, app fns keep `authenticated`, 9 statutory triggers intact, RLS proved on a tenant with data |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5815,3 +5815,81 @@ touching the protection.
 The migration also asserts its own outcome before `COMMIT` — nothing of ours
 callable by `anon` except the five policy helpers — so it cannot do what `0253`
 did and report success having changed nothing.
+
+### F-78 — CLOSED, verified on the live database
+
+`0259` applied. Both assertions read zero:
+
+```
+RPC GRANTS  (0259 recorded: t)
+  callable by anon beyond the policy helpers : 0
+  maintenance fns callable by authenticated   : 0
+```
+
+And the four branches landed as intended, which matters more than the counts —
+a sweep that over-revoked would have broken the app rather than secured it:
+
+```
+                              anon   auth   service_role
+cancel_bill                    f      t         t     app fn, still callable
+issue_credit_note              f      t         t
+refund_admission_advance       f      t         t
+save_lab_analyte_results       f      t         t
+effective_test_range           f      t         t
+ensure_appointment_partition   f      t         t
+resolve_reference_range        f      t         t
+current_tenant_id              t      t         t     policy helper, untouched
+current_active_role            t      t         t
+form_f_lock_completed          f      f         t     trigger fn, closed
+mlc_no_delete                  f      f         t
+refresh_dashboard_views        f      f         t     maintenance, closed
+```
+
+`9` statutory triggers still attached across `form_f_records`, `mlc_records` and
+`mtp_records`; 60 triggers in `public` in total, unchanged.
+
+**And RLS still works, proved on a tenant that has data.** The first run of this
+check looked alarming — `patients 0, bills 0` for an authenticated karur admin —
+until the obvious question: karur has **10 active staff, 4 room types and zero
+patients**. It is live for staff and has not yet seen a patient, so the zeroes
+were the data, not the policy. Re-run against `newtest`:
+
+```
+AS AN AUTHENTICATED ADMIN OF newtest — after 0259
+  own patients        : 9    (expect 9)
+  own bills           : 348  (expect 348)
+  own ward_room_types : 2    (expect 2)
+  ANOTHER tenant's patients visible : 0   (must be 0)
+```
+
+Worth recording the near-miss: a zero can mean "blocked" or "none", and reading
+it as the first would have had me reverting a correct migration on a live
+hospital. The isolation half of that test — another tenant's 14 patients
+returning 0 — is the half that makes the other numbers meaningful.
+
+## Sweep — the F-74 class at the table level
+
+F-74 was about **partitions** created without hardening. The same question for
+ordinary tables had not been asked, so:
+
+```
+public tables (non-partition)        181
+RLS disabled                           0
+RLS enabled with no policy            11
+anon holds SELECT                    162
+anon holds INSERT/UPDATE/DELETE      166
+```
+
+**No table has RLS disabled**, which is the finding that matters: there is no
+table relying on grants alone. The 162/166 figures are the Supabase default
+(`GRANT ALL ON ALL TABLES TO anon, authenticated`) with RLS as the intended
+defence, which is the posture this audit established under F-10 and confirmed
+live — and the `bills` policy quoted under F-78 shows the shape: `anon` fails
+both the tenant test and the `auth.role()` test independently.
+
+The 11 RLS-enabled-no-policy tables are the deny-all set — the `*_no_seq`
+counters, `partition_health`, the patient-portal token tables — where "no policy"
+is the policy. Supabase's advisor lists them as INFO for that reason.
+
+Nothing to fix. Recorded because "0 tables with RLS off" is a sentence worth
+being able to say with a query behind it rather than an impression.
