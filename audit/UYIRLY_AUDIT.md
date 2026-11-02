@@ -166,6 +166,7 @@ on 30 Oct; nothing has been changed since.
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
 | F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED by `0254`** — verified live: 0 callable by anon, app path still works, cron unaffected. `0253` applied and did nothing (revoked named roles; `PUBLIC` held the grant) |
 | F-78 | **`0238` swept only `SECURITY DEFINER`** — 30 of our INVOKER functions were `anon`-callable, including `cancel_bill`, `issue_credit_note`, `refund_admission_advance` | DB | **FIXED** — `0259` applied; verified 0 anon-callable, app fns keep `authenticated`, 9 statutory triggers intact, RLS proved on a tenant with data |
+| F-79 | **Self-inflicted by F-31** — `cancel_bill` reverted 9 of 10 sources, so a cancelled bill left OT consumables `billed` **forever** | 3 | **`0260` WRITTEN** — caught by `verify:bill-sources`; the detector itself was pinned to one filename and could not see its own fix |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5893,3 +5894,67 @@ is the policy. Supabase's advisor lists them as INFO for that reason.
 
 Nothing to fix. Recorded because "0 tables with RLS off" is a sentence worth
 being able to say with a query behind it rather than an impression.
+
+## F-79 — a regression from F-31, caught by the detector written for F-33
+
+Running the whole verifier suite after the migrations landed turned this up:
+
+```
+TABLE_MAP (generateBill, TypeScript) : 10 sources
+cancel_bill (0243)                   :  9 sources
+FAIL  source 'ot_consumable' is billed into 'ot_consumables'
+      but cancel_bill never reverts it
+```
+
+F-31 added `ot_consumable -> ot_consumables` to `TABLE_MAP`, and `0249` gave the
+table its `billing_status`. `cancel_bill` was never updated to match.
+
+**The consequence is the exact mirror of what F-31 fixed.** Bill a surgery with
+consumables, then cancel the bill: the surgery goes back to unbilled and the
+consumables stay `billed` **permanently** — they leave the unbilled list and can
+never be invoiced again. F-31 was "billed twice"; this is "billed never", and
+it is money the hospital has spent and cannot charge for. 0 rows affected today,
+because no `ot_consumable` line has ever been billed, so it is closed before it
+can happen rather than after.
+
+`0260` adds the one missing statement, and restates the ACL even though
+`CREATE OR REPLACE` preserves it — because F-77 was precisely that assumption
+going unstated.
+
+### The detector could not see its own fix
+
+It located the function with
+`readdirSync(migDir).find(f => f.includes('cancel_bill'))`, and `.find()`
+returns the **first** match — `0243`. After `0260`, it would have gone on
+comparing against the superseded body and reporting a failure that was already
+fixed. It now takes the **last** migration containing a
+`CREATE OR REPLACE FUNCTION public.cancel_bill`, and prints how many define it.
+
+A detector pinned to one filename decays the moment the thing it watches moves,
+which is the same staleness it exists to catch — and the same shape as `0238`'s
+`prosecdef` filter in F-78.
+
+**Third time a detector has earned its keep on a fix rather than on the original
+defect:** F-77 (`0253` applied and did nothing), F-78 (`0238` swept half the
+problem), and this.
+
+## Full sweep — live, after `0247`–`0260`
+
+```
+double billing   consumables 0 | surgeries 0 | visits 0
+partitions       runway 3 months | missing none | unhardened 0 | redundant idx 0
+gst rooms        taxable 0 | UNCLASSIFIED 0 | at threshold 2
+rpc grants       anon beyond policy helpers 0 | maintenance via authenticated 0
+tenant scope     293 relationships checked | 0 mismatched | 0 uncheckable
+```
+
+The tenant-consistency figure is worth a note: it was **291 checked with one
+uncheckable** when F-26 shipped the detector, and the uncheckable one was
+`ward_room_types`, whose `text` tenant_id made the comparison fail to parse —
+which is how F-72 was found in the first place. With `0247` applied it is now
+293 relationships and **nothing uncheckable**. The blind spot that produced a
+finding has itself closed.
+
+TypeScript verifiers: 17 of 19 pass. The two that do not —
+`verify:platform-admin` and `verify:phrases` — are Playwright walks that require
+`npm run dev`, as their own headers state. They are not failures.
