@@ -165,6 +165,7 @@ on 30 Oct; nothing has been changed since.
 | F-75 | Dispensing demands **one** batch covering the whole quantity — stock split across boxes is unreachable and the older box is stepped over | 6 | **PARTLY FIXED** — the misleading "insufficient stock" now tells the truth; true multi-batch splitting needs a product decision |
 | F-76 | `resolve_reference_range` treats an **unknown date of birth as age 0** — benign today, becomes "every adult judged as a newborn" the day a paediatric range is added | 5 | **FIXED** — `0252`; proved a no-op on current data (1,140 known-age combinations, 0 differences) and proved to close the trap |
 | F-77 | **Self-inflicted by `0248`** — four partition-maintenance RPCs became callable by `anon`; two of them create tables | DB | **FIXED by `0254`** — verified live: 0 callable by anon, app path still works, cron unaffected. `0253` applied and did nothing (revoked named roles; `PUBLIC` held the grant) |
+| F-78 | **`0238` swept only `SECURITY DEFINER`** — 30 of our INVOKER functions were `anon`-callable, including `cancel_bill`, `issue_credit_note`, `refund_admission_advance` | DB | **`0259` WRITTEN** — not exploitable (RLS requires `auth.role() = 'authenticated'`), but protection by side effect. My own F-77 detector inherited the same blind spot |
 | F-26 | 294 FKs tenant-scoped both sides; **3** enforce the tenants match | DB | **DETECTOR SHIPPED; 0 mismatches today.** 291 composite FKs recommended against — see the entry |
 | F-29 | CGST + SGST can exceed the tax charged by one paisa | 3 | **FIXED** — one half derived, not both rounded; `verify:gst` sweeps 27,000 bills |
 | F-30 | GST room-rent >₹5,000 and cosmetic/elective bands not implemented | 3 | **PARTLY FIXED** — room rent implemented + verified; the audit's live sizing was **wrong** (0 rooms mis-taxed, not 1). Cosmetic/elective has no carrier — needs a decision, see below |
@@ -5712,3 +5713,105 @@ first because I passed `'t1'`/`'p1'` into uuid columns, then because
 the migration. Worth noting only because a test that fails for its own reasons
 is the easiest way to talk yourself out of a real failure, and the sequence here
 was: wrong test, wrong test, then seven genuine passes.
+
+## F-78 — `0238` swept half the problem, and my detector inherited the other half
+
+Found while verifying `0257`'s own grants. The two new MTP trigger functions were
+correctly locked; the equivalent Form F pair was not:
+
+```
+mtp_lock_completed     {postgres=X/postgres,service_role=X/postgres}
+form_f_lock_completed  {=X/postgres,postgres=X/postgres,anon=X/postgres,…}
+                        ^^^^^^^^^^^ PUBLIC
+```
+
+Widening the question found **30 of our own functions callable by `anon`** —
+twelve of them trigger functions, and among the rest:
+
+```
+cancel_bill(p_bill_id)
+issue_credit_note(p_bill_id, p_amount, p_method, p_reason)
+refund_admission_advance(p_admission_id, p_amount, p_method)
+apply_advance_to_bill(p_bill_id, p_admission_id)
+save_lab_analyte_results(p_order_id, p_items, …)
+withdraw_stale_critical(…) / withdraw_stale_critical_item(…)
+refresh_dashboard_views()
+```
+
+Cancel a bill, issue a credit note, refund a deposit. Plus
+`refresh_dashboard_views()` callable by **any signed-in user**.
+
+### Not exploitable — and that is the finding
+
+Checked rather than assumed, because `anon` does hold the table grants:
+
+```
+bills       anon SELECT = true, anon UPDATE = true
+lab_orders  anon SELECT = true, anon UPDATE = true
+```
+
+So only RLS stands in the way, and the policy is:
+
+```sql
+tenant_id = (SELECT current_tenant_id()) AND (SELECT auth.role()) = 'authenticated'
+```
+
+An anonymous caller fails **both halves independently** — no tenant, and the
+wrong role. `cancel_bill` therefore reaches an UPDATE matching zero rows and
+returns its own "not found". Nothing is reachable today.
+
+Which is word for word the situation `0238` described in its own header —
+*"Most were harmless by accident rather than by design. They open by asking
+current_tenant_id() which hospital the caller belongs to; a stranger has no
+answer, so the work fails. **Protection as a side effect is not protection.**"* —
+and then it fixed only the SECURITY DEFINER half.
+
+### Why it was missed, including by me
+
+`0238` filtered on `p.prosecdef`, and for its own risk that was the right
+filter: a DEFINER function runs as postgres with RLS out of the way entirely. An
+INVOKER function is bounded by the caller's RLS, which is a genuinely weaker
+exposure. But "bounded by RLS" is a statement about today's policies, not a
+decision that `cancel_bill` belongs in the public API.
+
+`scripts/verify-rpc-grants.sql`, which I wrote for F-77 **to stop exactly this
+class of thing recurring**, carried the same `prosecdef` filter and so could
+never have seen it. It is rewritten here around the two assertions that actually
+match the policy: `anon` may call only the five policy helpers (an allowlist,
+since the set is tiny), and the maintenance entry points may not be called by
+`authenticated` (a denylist, since after `0259` nearly every app function is
+authenticated-callable by design and an allowlist would be noise nobody
+maintains).
+
+### Dry-run, including the one thing that could have broken
+
+`0259` is a loop over four branches, so each was proved on a throwaway cluster
+with one function per branch and pgcrypto installed:
+
+```
+                         before          after
+current_tenant_id        anon t auth t   anon t auth t   (policy helper — untouched)
+cancel_bill              anon t auth t   anon f auth t   (app fn)
+form_f_no_delete         anon t auth t   anon f auth f   (trigger fn)
+refresh_dashboard_views  anon t auth t   anon f auth f   (maintenance)
+36 pgcrypto functions                    untouched
+```
+
+**The real risk was the trigger branch.** `0259` revokes EXECUTE on the Form F
+and MLC lock triggers; if Postgres checked the caller's EXECUTE when firing a
+trigger, that would have silently disabled the statutory locks — turning a
+tidy-up into the worst possible regression. Tested directly: with EXECUTE
+revoked from `public, anon, authenticated`, acting as `authenticated`,
+
+```
+UPDATE locked_reg SET status='tampered' WHERE id=1;   ERROR: locked
+UPDATE locked_reg SET status='edited'   WHERE id=2;   (succeeds)
+```
+
+The trigger still fires and still refuses. Postgres does not check the caller's
+EXECUTE for trigger invocation, so revoking it removes an API surface without
+touching the protection.
+
+The migration also asserts its own outcome before `COMMIT` — nothing of ours
+callable by `anon` except the five policy helpers — so it cannot do what `0253`
+did and report success having changed nothing.
