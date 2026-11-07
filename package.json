@@ -39,7 +39,8 @@
     "verify:partitions": "echo 'Run scripts/verify-partitions.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'",
     "verify:guess-form": "tsx scripts/verify-guess-form.ts",
     "verify:page-all": "tsx scripts/verify-page-all.ts",
-    "verify:unbounded-reads": "tsx scripts/verify-unbounded-reads.ts"
+    "verify:unbounded-reads": "tsx scripts/verify-unbounded-reads.ts",
+    "verify:min-qty": "tsx scripts/verify-min-qty.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

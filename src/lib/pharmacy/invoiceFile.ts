@@ -10,7 +10,7 @@
 /** A column we can use. Everything else in the file is ignored. */
 export type InvoiceField =
   | 'name' | 'batch' | 'expiry' | 'packs' | 'free'
-  | 'rate' | 'mrp' | 'packSize' | 'hsn' | 'gst' | 'manufacturer'
+  | 'rate' | 'mrp' | 'packSize' | 'hsn' | 'gst' | 'manufacturer' | 'minQty'
 
 export const INVOICE_FIELDS: Array<{ key: InvoiceField; label: string; needed?: boolean }> = [
   { key: 'name',         label: 'Medicine', needed: true },
@@ -24,6 +24,7 @@ export const INVOICE_FIELDS: Array<{ key: InvoiceField; label: string; needed?: 
   { key: 'hsn',          label: 'HSN' },
   { key: 'gst',          label: 'GST %' },
   { key: 'manufacturer', label: 'Company' },
+  { key: 'minQty',       label: 'Alert below' },
 ]
 
 /** Header names seen on Indian pharmacy invoices, lowercase and punctuation-free. */
@@ -39,6 +40,14 @@ const SYNONYMS: Record<InvoiceField, string[]> = {
   hsn:          ['hsn', 'hsn code', 'hsncode', 'hsn sac'],
   gst:          ['gst', 'gst %', 'gstp', 'tax', 'tax %', 'igst', 'cgst'],
   manufacturer: ['company', 'company name', 'mfr', 'manufacturer', 'mfg', 'marketed by', 'comp'],
+  // The low-stock threshold, if the old system exported one. Without a column
+  // here every imported line lands on the default instead, which is how a
+  // whole opening stock ended up with no alerts at all.
+  // A bare `min` is deliberately not here. The loose second pass matches on
+  // `startsWith`, so a three-letter `min` would also claim a column headed
+  // "Mint" or "Minimum Margin". The short names live in PREFERRED, which
+  // only ever matches a header exactly.
+  minQty:       ['reorder level', 'reorderlevel', 'reorder qty', 'minimum qty', 'minimum stock', 'alert below', 'safety stock', 'minimum'],
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim()
@@ -58,6 +67,8 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim()
 const PREFERRED: Partial<Record<InvoiceField, string[]>> = {
   mrp:  ['unit mrp', 'mrp unit', 'mrp per unit', 'rate per unit mrp'],
   rate: ['unit purchase value', 'purchase value', 'unit purchase price', 'purchase price', 'unit cost', 'cost price'],
+  // Short enough that a loose match would misfire — see SYNONYMS.minQty.
+  minQty: ['min', 'min qty', 'minqty', 'min stock', 'reorder', 'danger level', 'reorder point'],
 }
 
 /** Which delimiter the file uses — a comma, a tab (pasted from Excel) or a semicolon. */
@@ -226,6 +237,7 @@ export interface ParsedInvoiceRow {
   hsn: string
   gst: string
   manufacturer: string
+  minQty: string
 }
 
 /** Reads the data rows under the header using the column map. */
@@ -259,6 +271,7 @@ export function readRows(rows: string[][], headerIndex: number, map: ColumnMap):
       hsn: at(r, 'hsn').replace(/\D/g, ''),
       gst: parseNumberCell(at(r, 'gst')),
       manufacturer: at(r, 'manufacturer'),
+      minQty: parseNumberCell(at(r, 'minQty')),
     })
   }
   return out
