@@ -1,4 +1,5 @@
 import { Text, View } from '@react-pdf/renderer'
+import { isGstRegistered, isCompositionDealer, COMPOSITION_DECLARATION } from '@/lib/gst'
 import { rupeesInWords, summarizeBillGst } from '@/lib/gst'
 import type { CombinedBillData, CombinedBillSection, TenantProfile } from '@/lib/types'
 import {
@@ -57,7 +58,8 @@ export function SummaryBillPdf({ data, profile, detailed, logo }: { data: Combin
 
   const allRows = data.sections.flatMap((x) => x.rows)
   const liveRows = allRows.filter((r) => !r.cancelled)
-  const gstRegistered = !!profile?.gst_enabled
+  const gstRegistered = isGstRegistered(profile)
+  const composition = isCompositionDealer(profile)
   const taxed = liveRows.some((r) => (r.gstRate ?? 0) > 0)
   const showHsn = gstRegistered && liveRows.some((r) => !!r.hsn_sac)
 
@@ -151,6 +153,8 @@ export function SummaryBillPdf({ data, profile, detailed, logo }: { data: Combin
                 <Text key={r.rate} style={{ fontSize: 8, color: C.muted }}>{r.rate}%  ·  taxable {money(r.taxableValue)}  ·  CGST {money(r.cgst)}  ·  SGST {money(r.sgst)}</Text>
               ))}
             </View>
+          ) : composition ? (
+            <Text style={{ fontSize: 8, color: C.muted }}>{COMPOSITION_DECLARATION}</Text>
           ) : gstRegistered ? (
             <Text style={{ fontSize: 8, color: C.faint }}>Healthcare services are exempt from GST.</Text>
           ) : null}

@@ -12,7 +12,7 @@ import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData 
 import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
-import { gstForSource, getTenantGstConfig, roomRentGstRate } from '@/lib/billing/gst'
+import { getTenantGstConfig, roomRentGstRate, resolveLineGst, canTax } from '@/lib/billing/gst'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 import { pageAll } from '@/lib/supabase/pageAll'
@@ -456,10 +456,12 @@ export async function generateBill(
   const buildItem = (
     base: { source: BillItemSource; ref_id: string | null; description: string; qty: number; unit_price: number; amount: number; gst_rate?: number | null; hsn_sac?: string | null },
   ): BillItemInsert => {
-    const { rate: defRate, inclusive } = gstForSource(base.source, gstCfg)
-    // Prefer the charge's own GST/HSN (e.g. a pharmacy line inherits its batch's
-    // rate + HSN); fall back to the per-source default.
-    const rate = gstCfg.enabled && base.gst_rate != null ? base.gst_rate : defRate
+    // resolveLineGst, not a copy of it. This used to repeat the rule inline —
+    // which meant the composition-dealer guard had to be remembered twice, and
+    // room rent reaches a bill through exactly this path as a per-line override.
+    const { rate, inclusive, hsn } = resolveLineGst(base.source, gstCfg, {
+      gst_rate: base.gst_rate ?? null, hsn_sac: base.hsn_sac ?? null,
+    })
     const { taxableValue, taxAmount } = computeLineGst(base.amount, rate, inclusive)
     return {
       id: crypto.randomUUID(),
@@ -473,7 +475,7 @@ export async function generateBill(
       amount: base.amount,
       gst_rate: rate,
       tax_inclusive: inclusive,
-      hsn_sac: gstCfg.enabled ? (base.hsn_sac ?? null) : null,
+      hsn_sac: hsn,
       taxable_value: taxableValue,
       tax_amount: taxAmount,
     }
@@ -691,6 +693,17 @@ export async function updateBillItemGst(
   }
 
   const supabase = await createClient()
+
+  // A composition dealer may not collect tax, so this hand override is the one
+  // route left by which a rate could still reach their bill. Refused rather
+  // than silently zeroed, so whoever typed it is told why.
+  const cfg = await getTenantGstConfig(supabase, actor.tenant_id)
+  if (!canTax(cfg) && rate > 0) {
+    return {
+      success: false,
+      error: 'Your hospital is registered under the GST composition scheme and cannot charge GST on a bill. Change this in Settings → GST if that is wrong.',
+    }
+  }
   const { data: item } = await supabase
     .from('bill_items')
     .select('id, bill_id, amount, tax_inclusive, gst_rate, hsn_sac, taxable_value, tax_amount, bill:bills(status)')

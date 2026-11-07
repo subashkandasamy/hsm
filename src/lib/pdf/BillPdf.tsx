@@ -1,4 +1,5 @@
 import { Text, View } from '@react-pdf/renderer'
+import { billDocKind, isGstRegistered, isCompositionDealer, COMPOSITION_DECLARATION } from '@/lib/gst'
 import { rupeesInWords, summarizeBillGst } from '@/lib/gst'
 import type { Bill, CreditNote, TenantProfile } from '@/lib/types'
 import {
@@ -31,10 +32,13 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
     sec.subtotal += Number(it.amount)
   }
 
-  const gstRegistered = !!profile?.gst_enabled
+  const gstRegistered = isGstRegistered(profile)
+  const composition = isCompositionDealer(profile)
   const taxed = items.some((i) => Number(i.gst_rate ?? 0) > 0)
   const showHsn = gstRegistered && items.some((i) => !!i.hsn_sac)
-  const title = gstRegistered ? (taxed ? 'TAX INVOICE' : 'BILL OF SUPPLY') : 'BILL'
+  const title = { tax_invoice: 'TAX INVOICE', bill_of_supply: 'BILL OF SUPPLY', plain: 'BILL' }[
+    billDocKind(profile, taxed)
+  ]
   const kind = bill.admission_id ? 'In-patient (IPD)' : bill.visit_id || bill.appointment_id ? 'Out-patient (OPD)' : null
   const sectionNames = [...new Set(sections.map((x) => x.label))].join(', ')
 
@@ -89,6 +93,10 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
             </Text>
           ))}
         </View>
+      ) : composition ? (
+        /* The declaration a composition taxpayer must carry. Not a note — it is
+           the line that makes this a lawful bill of supply. */
+        <Text style={{ fontSize: 8, color: C.muted }}>{COMPOSITION_DECLARATION}</Text>
       ) : gstRegistered ? (
         <Text style={{ fontSize: 8, color: C.faint }}>Healthcare services on this bill are exempt from GST.</Text>
       ) : null} />

@@ -5,6 +5,66 @@
 // computed per line, then split equally into CGST + SGST for intra-state supply
 // (the place of supply for healthcare is the hospital, so IGST rarely applies).
 
+// ── Which document is this, and may the hospital tax at all? ─────────────────
+//
+// Three states, not two. The one that is easy to miss is the middle row: a
+// composition taxpayer (s.10 CGST Act) holds a GSTIN but may NOT collect tax
+// from the patient — they pay a flat percentage of turnover themselves. Issuing
+// them a tax invoice is the violation, not the compliance.
+//
+//   registered?  composition?  →  document            tax charged
+//   no           –                BILL                 none
+//   yes          yes              BILL OF SUPPLY       never, at any rate
+//   yes          no               TAX INVOICE          per line
+//                                 (BILL OF SUPPLY when nothing on it is taxable)
+//
+// Every bill surface asks these helpers rather than reading the flags itself,
+// because the rule was previously spelt out at four render sites and a fifth
+// place decided the rate — which is how a per-drug GST rate could have put tax
+// back on a composition dealer's bill.
+
+/** The only parts of a tenant profile these rules depend on. */
+export interface GstStatus {
+  gst_enabled?: boolean | null
+  gst_composition?: boolean | null
+}
+
+/** Composition dealers are registered too — they just cannot charge tax. */
+export function isGstRegistered(p?: GstStatus | null): boolean {
+  return !!(p?.gst_enabled || p?.gst_composition)
+}
+
+export function isCompositionDealer(p?: GstStatus | null): boolean {
+  return !!p?.gst_composition
+}
+
+/** True when the hospital may put tax on a bill at all. */
+export function mayChargeGst(p?: GstStatus | null): boolean {
+  return !!p?.gst_enabled && !p?.gst_composition
+}
+
+export type BillDocKind = 'tax_invoice' | 'bill_of_supply' | 'plain'
+
+/**
+ * What this bill is, as a document. `taxed` is whether any line actually
+ * carries tax; it is ignored for a composition dealer, whose bill is a Bill of
+ * Supply even if a stray taxed line somehow reached it — the wording follows
+ * the registration, not the arithmetic.
+ */
+export function billDocKind(p: GstStatus | null | undefined, taxed: boolean): BillDocKind {
+  if (isCompositionDealer(p)) return 'bill_of_supply'
+  if (!isGstRegistered(p)) return 'plain'
+  return taxed ? 'tax_invoice' : 'bill_of_supply'
+}
+
+/**
+ * The declaration a composition taxpayer must carry on every bill of supply,
+ * as worded in the CGST Rules. Defined once: it is a legal string that appears
+ * on a patient's bill, so it is changed here and nowhere else.
+ */
+export const COMPOSITION_DECLARATION =
+  'Composition taxable person, not eligible to collect tax on supplies'
+
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100
 }

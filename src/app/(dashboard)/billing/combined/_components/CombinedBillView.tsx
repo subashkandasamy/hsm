@@ -1,7 +1,7 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
-import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
+import { summarizeBillGst, rupeesInWords, billDocKind, isGstRegistered, isCompositionDealer, COMPOSITION_DECLARATION } from '@/lib/gst'
 import type { CombinedBillData, TenantProfile } from '@/lib/types'
 
 function fmt(n: number) {
@@ -46,7 +46,8 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
   ].filter(Boolean)
 
   // GST tax-invoice mode — compute the tax summary across every section row.
-  const gstRegistered = !!profile?.gst_enabled
+  const gstRegistered = isGstRegistered(profile)
+  const composition = isCompositionDealer(profile)
   const gstSummary = gstRegistered
     ? summarizeBillGst(
         data.sections.flatMap((s) => s.rows).filter((r) => !r.cancelled).map((r) => ({
@@ -60,7 +61,9 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
   const advanceUnapplied = Math.max(
     0, data.advanceCollected - (data.advanceAdjusted ?? 0) - data.advanceRefunded,
   )
-  const bannerLabel = gstRegistered ? (hasGst ? 'Tax Invoice' : 'Bill of Supply') : 'Summary Bill'
+  const bannerLabel = { tax_invoice: 'Tax Invoice', bill_of_supply: 'Bill of Supply', plain: 'Summary Bill' }[
+    billDocKind(profile, hasGst)
+  ]
   const gstCols = gstRegistered ? 7 : 5
 
   return (
@@ -282,6 +285,14 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Required on a composition dealer's bill of supply, in place of the
+              tax summary they are not allowed to have. */}
+          {composition && (
+            <div style={{ borderTop: '1px solid #E2E8F0', padding: '12px 24px' }}>
+              <p style={{ fontSize: '12px', color: '#475569', margin: 0 }}>{COMPOSITION_DECLARATION}</p>
             </div>
           )}
 

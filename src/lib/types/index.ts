@@ -31,6 +31,8 @@ export interface TenantProfile {
   upi_payee_name?: string | null
   // GST tax-invoice config
   gst_enabled?: boolean
+  /** Composition scheme (s.10 CGST Act): registered, but may not collect tax. */
+  gst_composition?: boolean
   gst_state_code?: string | null
   pharmacy_default_gst_rate?: number
   updated_at: string

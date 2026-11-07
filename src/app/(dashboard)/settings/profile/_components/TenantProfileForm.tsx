@@ -112,7 +112,13 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
   }
 
   // GST tax-invoice config (boolean + number, so kept out of the text-field map)
-  const [gstEnabled, setGstEnabled]   = useState<boolean>(initialProfile?.gst_enabled ?? false)
+  // Three mutually exclusive registrations, not two independent booleans: a
+  // hospital cannot be both "charges GST" and "composition" at once, and a
+  // composition dealer IS registered. Stored as two columns, chosen as one.
+  const [gstMode, setGstMode] = useState<'none' | 'composition' | 'regular'>(
+    initialProfile?.gst_composition ? 'composition' : initialProfile?.gst_enabled ? 'regular' : 'none',
+  )
+  const gstEnabled = gstMode === 'regular'
   const [gstStateCode, setGstStateCode] = useState<string>(initialProfile?.gst_state_code ?? '')
   const [pharmacyRate, setPharmacyRate] = useState<string>(
     initialProfile?.pharmacy_default_gst_rate != null ? String(initialProfile.pharmacy_default_gst_rate) : '12'
@@ -135,7 +141,8 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
     )
     const input = {
       ...textInput,
-      gst_enabled: gstEnabled,
+      gst_enabled: gstMode === 'regular',
+      gst_composition: gstMode === 'composition',
       gst_state_code: gstStateCode.trim() || null,
       pharmacy_default_gst_rate: pharmacyRate.trim() ? Number(pharmacyRate) : 12,
     } as Parameters<typeof upsertTenantProfile>[0]
@@ -337,16 +344,59 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
       <GlassCard className="p-6">
         <p className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>GST / Tax Invoice</p>
         <p className="text-xs mb-4" style={{ color: '#64748B' }}>
-          Turn this on if your hospital is GST-registered. Bills then print as a GST <strong>Tax Invoice</strong> with
-          per-item GST, CGST/SGST split and a tax summary. Healthcare services stay exempt; pharmacy is taxed on the
-          MRP (GST-inclusive). Your GSTIN is set under <strong>Legal / Registration</strong> above.
+          How your hospital is registered decides what every bill is headed and whether tax can be charged at all.
+          Your GSTIN is set under <strong>Legal / Registration</strong> above.
         </p>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: gstEnabled ? '16px' : 0 }}>
-          <input type="checkbox" checked={gstEnabled} onChange={(e) => { setGstEnabled(e.target.checked); setSaveMsg(null) }}
-            style={{ width: '18px', height: '18px', accentColor: '#0D9488', cursor: 'pointer' }} />
-          <span className="text-sm font-medium" style={{ color: '#0F172A' }}>Issue GST tax invoices</span>
-        </label>
+        <div style={{ display: 'grid', gap: '10px', marginBottom: gstEnabled ? '16px' : 0 }}>
+          {([
+            {
+              key: 'none' as const,
+              title: 'Not GST-registered',
+              body: <>Bills print as a plain <strong>Bill</strong>. No tax, no HSN, no tax summary.</>,
+            },
+            {
+              key: 'composition' as const,
+              title: 'Registered — composition scheme',
+              body: <>
+                You pay a flat percentage of turnover and <strong>may not collect GST from patients</strong>.
+                Bills print as a <strong>Bill of Supply</strong> carrying the required declaration, and no tax is
+                charged on any line even where a medicine has a GST rate against it.
+              </>,
+            },
+            {
+              key: 'regular' as const,
+              title: 'Registered — charges GST',
+              body: <>
+                Bills print as a <strong>Tax Invoice</strong> with per-item GST, the CGST/SGST split and a rate-wise
+                summary. Healthcare services stay exempt; pharmacy is taxed on the MRP (GST-inclusive).
+              </>,
+            },
+          ]).map((o) => (
+            <label key={o.key} style={{
+              display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer',
+              padding: '12px 14px', borderRadius: '12px',
+              border: `1px solid ${gstMode === o.key ? '#0D9488' : '#E2E8F0'}`,
+              background: gstMode === o.key ? 'rgba(13,148,136,0.05)' : 'rgba(255,255,255,0.6)',
+            }}>
+              <input type="radio" name="gst-mode" checked={gstMode === o.key}
+                onChange={() => { setGstMode(o.key); setSaveMsg(null) }}
+                style={{ width: '16px', height: '16px', marginTop: '2px', accentColor: '#0D9488', cursor: 'pointer' }} />
+              <span>
+                <span className="text-sm font-medium block" style={{ color: '#0F172A' }}>{o.title}</span>
+                <span className="text-xs block mt-0.5" style={{ color: '#64748B' }}>{o.body}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {gstMode === 'composition' && (
+          <p className="text-xs" style={{ color: '#B45309', marginTop: '12px' }}>
+            Issuing a tax invoice under this scheme is the breach, not the compliance — so the tax columns and the
+            CGST/SGST split are switched off for every bill, and cannot be re-enabled per medicine. Confirm the exact
+            declaration wording with your accountant before your first bill goes out.
+          </p>
+        )}
 
         {gstEnabled && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>

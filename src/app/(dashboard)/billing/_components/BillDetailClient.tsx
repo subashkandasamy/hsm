@@ -21,7 +21,7 @@ import { sendBillNotification } from '@/app/actions/notifications'
 import { useAuth } from '@/context/AuthContext'
 import { useMessagingEnabled } from '@/context/MessagingContext'
 import { hasPermission } from '@/lib/rbac'
-import { summarizeBillGst, rupeesInWords } from '@/lib/gst'
+import { summarizeBillGst, rupeesInWords, billDocKind, isGstRegistered, isCompositionDealer, COMPOSITION_DECLARATION } from '@/lib/gst'
 import UpiCollectPanel from './UpiCollectPanel'
 import { showSuccess as showPaidOnDisplay } from '@/lib/counterDisplay'
 import type { Bill, BillItemSource, TenantProfile, DiscountRequestRow, CreditNote } from '@/lib/types'
@@ -515,9 +515,12 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
         // GST tax-invoice mode: hospital is GST-registered → show HSN/GST columns,
         // CGST/SGST split and a rate-wise tax summary. All-exempt bills read as a
         // "Bill of Supply"; a plain bill (not registered) keeps the old label.
-        const gstRegistered = !!p?.gst_enabled
+        const gstRegistered = isGstRegistered(p)
+        const composition = isCompositionDealer(p)
         const hasGst = (bill.tax ?? 0) > 0
-        const docLabel = gstRegistered ? (hasGst ? 'TAX INVOICE' : 'BILL OF SUPPLY') : billTypeLabel
+        const docLabel = { tax_invoice: 'TAX INVOICE', bill_of_supply: 'BILL OF SUPPLY', plain: billTypeLabel }[
+          billDocKind(p, hasGst)
+        ]
         const gstCols = gstRegistered ? 6 : 4
         const gstSummary = gstRegistered
           ? summarizeBillGst((bill.items ?? []).map((i) => ({
@@ -677,6 +680,15 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* A composition dealer may not collect tax, so there is no tax
+                summary to print — but the declaration is required on the
+                document, so it takes that place rather than being omitted. */}
+            {composition && (
+              <div style={{ borderTop: '1px solid #E2E8F0', padding: '12px 24px' }}>
+                <p style={{ fontSize: '12px', color: '#475569', margin: 0 }}>{COMPOSITION_DECLARATION}</p>
               </div>
             )}
 

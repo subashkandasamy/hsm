@@ -4,21 +4,33 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BillItemSource } from '@/lib/types'
-import { summarizeBillGst, computeRoundOff } from '@/lib/gst'
+import { summarizeBillGst, computeRoundOff, mayChargeGst, isGstRegistered } from '@/lib/gst'
 
 export interface GstConfig {
+  /** GST invoicing switched on for this hospital. */
   enabled: boolean
+  /** Registered under the composition scheme — registered, but may not tax. */
+  composition: boolean
   pharmacyRate: number
 }
 
+/** True when this hospital may put tax on a bill at all. */
+export const canTax = (cfg: GstConfig) =>
+  mayChargeGst({ gst_enabled: cfg.enabled, gst_composition: cfg.composition })
+
+/** True when the bill is a GST document at all (tax invoice or bill of supply). */
+export const isRegistered = (cfg: GstConfig) =>
+  isGstRegistered({ gst_enabled: cfg.enabled, gst_composition: cfg.composition })
+
 // Per-source GST treatment. Healthcare services are GST-exempt; pharmacy is
 // billed at MRP (GST-inclusive); consumables sold to the patient are taxable on
-// top. Everything is 0% when the hospital hasn't enabled GST invoicing.
+// top. Everything is 0% when the hospital hasn't enabled GST invoicing — or
+// when it is a composition dealer, which may not collect tax at any rate.
 export function gstForSource(
   source: BillItemSource,
   cfg: GstConfig,
 ): { rate: number; inclusive: boolean } {
-  if (!cfg.enabled) return { rate: 0, inclusive: false }
+  if (!canTax(cfg)) return { rate: 0, inclusive: false }
   switch (source) {
     case 'pharmacy':
     case 'ipd_pharmacy':
@@ -79,8 +91,15 @@ export function resolveLineGst(
   override?: { gst_rate?: number | null; hsn_sac?: string | null },
 ): { rate: number; inclusive: boolean; hsn: string | null } {
   const { rate: defRate, inclusive } = gstForSource(source, cfg)
-  const rate = cfg.enabled && override?.gst_rate != null ? override.gst_rate : defRate
-  const hsn = cfg.enabled ? (override?.hsn_sac ?? null) : null
+  // The override is the one route by which tax could reach a composition
+  // dealer's bill: a pharmacy line inherits its batch's gst_rate, and those
+  // batches carry 5% or 12% from the goods receipt whatever the hospital's own
+  // registration is. So the override is only consulted when the hospital may
+  // charge tax at all — `canTax`, not `enabled`.
+  const rate = canTax(cfg) && override?.gst_rate != null ? override.gst_rate : defRate
+  // HSN is shown on a bill of supply too, so this follows registration rather
+  // than the right to tax.
+  const hsn = isRegistered(cfg) ? (override?.hsn_sac ?? null) : null
   return { rate, inclusive, hsn }
 }
 
@@ -90,11 +109,12 @@ export async function getTenantGstConfig(
 ): Promise<GstConfig> {
   const { data } = await supabase
     .from('tenant_profiles')
-    .select('gst_enabled, pharmacy_default_gst_rate')
+    .select('gst_enabled, gst_composition, pharmacy_default_gst_rate')
     .eq('tenant_id', tenantId)
     .maybeSingle()
   return {
     enabled: !!data?.gst_enabled,
+    composition: !!data?.gst_composition,
     pharmacyRate: Number(data?.pharmacy_default_gst_rate ?? 12),
   }
 }
