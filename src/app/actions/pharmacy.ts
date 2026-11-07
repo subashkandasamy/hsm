@@ -146,6 +146,42 @@ export async function updateBatch(
   return { success: true }
 }
 
+/**
+ * The category shown beside a medicine's name — "Syringe / needle", "Tablet".
+ *
+ * Its own action rather than `updateDrug`, for a reason worth writing down:
+ * `updateDrug` validates with `DrugSchema`, which requires `name` and declares
+ * `reorder_level: z.number().default(0)`. Calling it with just a form would
+ * therefore reset the reorder level to zero and switch off the running-low
+ * warning for that medicine, silently. A narrow action cannot do that.
+ *
+ * Only a hospital's own records can be edited here. A `drug_master` row is
+ * shared by every hospital on the platform, so its form is not one tenant's to
+ * change — the UI does not offer the field for those, and this refuses it.
+ */
+export async function updateDrugCategory(drugId: string, form: string | null): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+
+  const value = (form ?? '').trim().slice(0, 60) || null
+  const supabase = await createClient()
+
+  // RLS already confines this to the caller's hospital; the tenant_id test is
+  // belt and braces on a write that names a row by id.
+  const { data: drug } = await supabase.from('drugs').select('id, name, form')
+    .eq('id', drugId).eq('tenant_id', actor.tenant_id).maybeSingle()
+  if (!drug) {
+    return { success: false, error: 'This medicine comes from the shared catalogue — its category is the same for every hospital and cannot be changed here.' }
+  }
+  if ((drug.form ?? null) === value) return { success: true }
+
+  const { error } = await supabase.from('drugs').update({ form: value }).eq('id', drugId).eq('tenant_id', actor.tenant_id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update_category', 'drug', drugId, { from: drug.form, to: value, name: drug.name })
+  return { success: true }
+}
+
 export async function updateDrugReorderLevel(drugId: string, reorderLevel: number): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()

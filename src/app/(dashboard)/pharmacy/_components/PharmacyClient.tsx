@@ -17,7 +17,7 @@ import {
   listPendingPrescriptions, getStock, getAlerts,
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
   dispense as dispenseDrug, listPackedAwaitingDispatch,
-  updateBatch, updateDrugReorderLevel, ensureBatchLabels,
+  updateBatch, updateDrugReorderLevel, updateDrugCategory, ensureBatchLabels,
 } from '@/app/actions/pharmacy'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import VaccinesView from './VaccinesView'
@@ -965,6 +965,7 @@ function StockView({ stock, canManage, onRefresh }: {
   const [openId, setOpenId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [reorderDraft, setReorderDraft] = useState('')
+  const [categoryDraft, setCategoryDraft] = useState('')
   const [batchDrafts, setBatchDrafts] = useState<Record<string, BatchDraft>>({})
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
@@ -1004,6 +1005,10 @@ function StockView({ stock, canManage, onRefresh }: {
     : filter === 'vaccines' ? !!r.drug.is_vaccine
     : true)
 
+  // The categories this hospital already uses, so the box suggests their own
+  // words rather than inventing a taxonomy for them.
+  const categoryOptions = [...new Set(rows.map((r) => r.drug.form).filter(Boolean) as string[])].sort()
+
   const sorted = [...filtered].sort((a, b) => {
     if (sort === 'qty') return a.drug.total_qty - b.drug.total_qty || a.title.localeCompare(b.title)
     if (sort === 'value') return b.value - a.value || a.title.localeCompare(b.title)
@@ -1022,6 +1027,7 @@ function StockView({ stock, canManage, onRefresh }: {
     setEditId(drug.id)
     setOpenId(drug.id)
     setReorderDraft(String(drug.reorder_level ?? 0))
+    setCategoryDraft(drug.form ?? '')
     const drafts: Record<string, BatchDraft> = {}
     drug.batches.forEach(b => {
       drafts[b.id] = {
@@ -1045,6 +1051,13 @@ function StockView({ stock, canManage, onRefresh }: {
     // Save reorder level if changed
     if (reorder !== (drug.reorder_level ?? 0)) {
       const res = await updateDrugReorderLevel(drug.id, reorder)
+      if (!res.success) { setSaveErr(res.error); setSaving(false); return }
+    }
+
+    // Category — only on a hospital's own record; a catalogue drug's form is
+    // shared by every hospital, so the field is not shown for those.
+    if (!drug.is_global && categoryDraft.trim() !== (drug.form ?? '')) {
+      const res = await updateDrugCategory(drug.id, categoryDraft.trim() || null)
       if (!res.success) { setSaveErr(res.error); setSaving(false); return }
     }
 
@@ -1277,6 +1290,27 @@ function StockView({ stock, canManage, onRefresh }: {
                     className={inp} style={{ ...bdr, maxWidth: 100 }} />
                   <span className="text-xs" style={{ color: '#94A3B8' }}>warn below this many {unit}</span>
                 </div>
+
+                {/* Category. Free text with the categories already in use offered
+                    as suggestions, so a hospital keeps its own vocabulary
+                    instead of being given ours — and so a list of 600 medicines
+                    does not grow 600 one-off spellings either. Not offered for a
+                    catalogue medicine: that form is shared by every hospital. */}
+                {!drug.is_global && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Category</label>
+                    <input list="drug-category-options" value={categoryDraft}
+                      onChange={e => setCategoryDraft(e.target.value)}
+                      placeholder="e.g. Syringe / needle"
+                      className={inp} style={{ ...bdr, maxWidth: 240 }} />
+                    <datalist id="drug-category-options">
+                      {categoryOptions.map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                    <span className="text-xs" style={{ color: '#94A3B8' }}>
+                      shown beside the name, and searchable — leave blank if none fits
+                    </span>
+                  </div>
+                )}
 
                 {/* Batch rows — card layout on mobile, grid on desktop */}
                 {drug.batches.length > 0 && (
