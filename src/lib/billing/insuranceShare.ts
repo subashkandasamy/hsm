@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { INSURANCE_CREDIT_COLUMNS, totalInsuranceCredit, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 export interface EncounterInsurance {
   /** Insurance credit per claimInsuranceCredit (eligibility receivable / settled amount). */
@@ -41,10 +42,11 @@ export async function encounterInsurance(
   const credit = totalInsuranceCredit(claims)
   if (!claims.length) return { credit: 0, received: 0, outstanding: 0 }
 
-  const { data: pays } = await supabase
+  const pays = await pageAll<{ amount: number }>((f, t) => supabase
     .from('payments').select('amount')
     .eq('method', 'insurance')
     .in('reference', claims.map((c) => `Claim ${c.id}`))
-  const received = (pays ?? []).reduce((s, p) => s + Number(p.amount), 0)
+    .order('id').range(f, t))
+  const received = pays.reduce((s, p) => s + Number(p.amount), 0)
   return { credit, received, outstanding: Math.max(0, credit - received) }
 }

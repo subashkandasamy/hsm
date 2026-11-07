@@ -15,6 +15,7 @@ import { computeLineGst, summarizeBillGst, computeRoundOff } from '@/lib/gst'
 import { gstForSource, getTenantGstConfig, roomRentGstRate } from '@/lib/billing/gst'
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -856,32 +857,37 @@ export async function getBillingStats(): Promise<{
   const today = istToday()
   const { from, to } = istDayBoundsISO(today)
 
-  const [{ data: todayBills }, { data: todayUnpaid }, { data: pastUnpaid }, collection] = await Promise.all([
+  // Paged, all three. `pastUnpaid` has no lower bound at all — it is every
+  // unpaid bill the hospital has ever raised — so it is the first of these to
+  // cross a thousand rows, and the symptom would be outstanding money quietly
+  // shrinking on the dashboard. See lib/supabase/pageAll.
+  type BillTotal = { total: number; paid: number }
+  const [todayBills, todayUnpaid, pastUnpaid, collection] = await Promise.all([
     // Today's non-cancelled service bills — for "Billed Today" (value of new bills raised)
-    supabase.from('bills').select('total')
+    pageAll<{ total: number }>((f, t) => supabase.from('bills').select('total')
       .gte('created_at', from).lt('created_at', to)
       .not('status', 'eq', 'cancelled')
-      .or(SERVICE_BILLS_ONLY),
-    supabase.from('bills').select('total, paid')
+      .or(SERVICE_BILLS_ONLY).order('id').range(f, t)),
+    pageAll<BillTotal>((f, t) => supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
       .gte('created_at', from)
-      .or(SERVICE_BILLS_ONLY),
-    supabase.from('bills').select('total, paid')
+      .or(SERVICE_BILLS_ONLY).order('id').range(f, t)),
+    pageAll<BillTotal>((f, t) => supabase.from('bills').select('total, paid')
       .in('status', ['unpaid', 'partial'])
       .lt('created_at', from)
-      .or(SERVICE_BILLS_ONLY),
+      .or(SERVICE_BILLS_ONLY).order('id').range(f, t)),
     // "Collected Today" = actual money received today (payments + advances − refunds)
     getCollectionSummary(supabase, actor.tenant_id, from, to),
   ])
 
   return {
-    todayBilled:       (todayBills  ?? []).reduce((s, b) => s + (b.total as number), 0),
+    todayBilled:       todayBills.reduce((s, b) => s + (b.total as number), 0),
     todayCollected:    collection.total,
     collectedPayments: collection.billPayments,
     collectedAdvances: collection.advances,
     collectedRefunds:  collection.refunds,
-    todayOutstanding:  (todayUnpaid ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
-    pastOutstanding:   (pastUnpaid  ?? []).reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    todayOutstanding:  todayUnpaid.reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
+    pastOutstanding:   pastUnpaid.reduce((s, b) => s + Math.max(0, (b.total as number) - (b.paid as number)), 0),
   }
 }
 

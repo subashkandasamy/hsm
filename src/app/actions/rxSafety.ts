@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { RxWarning } from '@/lib/types'
 import { boundaryMatch, namesRelated } from '@/lib/rxMatch'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 // Common allergy classes → member generics, so an allergy to "penicillin" flags
 // amoxicillin etc. Keyword/substring matching — a safety aid, not exhaustive.
@@ -78,11 +79,14 @@ export async function checkPrescriptionSafety(
   }
 
   if (others.size) {
-    // 38 rows today, global reference data, no WHERE to grow into. Left as the
-    // audit recorded it: filtering needs substring matching that SQL cannot do
-    // on this shape, and inflating it into a performance fix would be dishonest.
-    const { data: inter } = await supabase.from('drug_interactions').select('drug_a, drug_b, severity, description')
-    for (const row of inter ?? []) {
+    // 38 rows today, global reference data, read whole because the match needs
+    // substring comparison that SQL cannot do on this shape. Paged anyway: this
+    // is the interaction check, and the failure mode of a short read is a
+    // dangerous pair that simply does not get flagged.
+    const inter = await pageAll<{ drug_a: string; drug_b: string; severity: string; description: string }>(
+      (f, t) => supabase.from('drug_interactions')
+        .select('drug_a, drug_b, severity, description').order('id').range(f, t))
+    for (const row of inter) {
       const a = (row.drug_a as string).toLowerCase(), b = (row.drug_b as string).toLowerCase()
       const nameHasA = boundaryMatch(name, a), nameHasB = boundaryMatch(name, b)
       if (!nameHasA && !nameHasB) continue

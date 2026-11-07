@@ -10,6 +10,7 @@ import { istDate, istToday, istAddDays, istDayBoundsISO, istDayStartISO, istDayE
 import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 /**
  * One day of money, as an accountant reads it.
@@ -144,17 +145,18 @@ async function collectedByMethod(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string, from: string, to: string,
 ): Promise<Record<string, number>> {
+  // Paged: this is the cash-book, and a month at a busy hospital runs past a
+  // thousand receipts. See lib/supabase/pageAll.
+  type Taking = { amount: number; method: string | null }
   const [pays, advs] = await Promise.all([
-    supabase.from('payments').select('amount, method').eq('tenant_id', tenantId)
-      .gte('received_at', from).lt('received_at', to).neq('method', 'advance'),
-    supabase.from('admission_advances').select('amount, method').eq('tenant_id', tenantId)
-      .gte('received_at', from).lt('received_at', to),
+    pageAll<Taking>((f, t) => supabase.from('payments').select('amount, method').eq('tenant_id', tenantId)
+      .gte('received_at', from).lt('received_at', to).neq('method', 'advance').order('id').range(f, t)),
+    pageAll<Taking>((f, t) => supabase.from('admission_advances').select('amount, method').eq('tenant_id', tenantId)
+      .gte('received_at', from).lt('received_at', to).order('id').range(f, t)),
   ])
-  if (pays.error) throw new Error(`Could not read payments: ${pays.error.message}`)
-  if (advs.error) throw new Error(`Could not read advances: ${advs.error.message}`)
 
   const out: Record<string, number> = {}
-  for (const r of [...(pays.data ?? []), ...(advs.data ?? [])] as Array<{ amount: number; method: string | null }>) {
+  for (const r of [...pays, ...advs]) {
     const k = (r.method ?? 'other').toLowerCase()
     out[k] = round2((out[k] ?? 0) + Number(r.amount))
   }

@@ -791,14 +791,19 @@ export async function listDrugs(): Promise<Drug[]> {
     pack_size: number | null; pack_unit: string | null
   }
 
-  const [{ data: masterDrugs }, { data: tenantDrugs }] = await Promise.all([
-    supabase.from('drug_master')
+  // `drug_master` holds 14,866 molecules. Unpaged this returned the first
+  // thousand by name — everything from "Abacavir" to roughly the letter C —
+  // and nothing else existed as far as the caller was concerned.
+  const [masterDrugs, tenantDrugs] = await Promise.all([
+    pageAll<Record<string, unknown>>((f, t) => supabase.from('drug_master')
       .select('id, name, generic_name, form, strength, unit, is_active, drug_brands(brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit)')
-      .eq('is_active', true).order('name'),
-    supabase.from('drugs').select('id, name, generic_name, form, strength, unit, reorder_level, is_active').eq('is_active', true).order('name'),
+      .eq('is_active', true).order('name').order('id').range(f, t)),
+    pageAll<Record<string, unknown>>((f, t) => supabase.from('drugs')
+      .select('id, name, generic_name, form, strength, unit, reorder_level, is_active')
+      .eq('is_active', true).order('name').order('id').range(f, t)),
   ])
 
-  const global: Drug[] = (masterDrugs ?? []).map(d => {
+  const global: Drug[] = masterDrugs.map(d => {
     const brands = ((d as Record<string, unknown>).drug_brands as BrandRow[] | null) ?? []
     return {
       id: d.id as string,
@@ -1433,9 +1438,13 @@ export async function listPackedAwaitingDispatch(): Promise<AwaitingDispatchPati
     .in('patient_id', patientIds)
 
   if (undispensedRxs?.length) {
+    // Every dispense the hospital has ever made, so it must be paged: a short
+    // read here does not error, it silently forgets that a prescription was
+    // dispensed and leaves the patient showing as still waiting at the counter.
     const dispensedRxIds = new Set(
-      (await supabase.from('dispenses').select('prescription_id').not('prescription_id', 'is', null))
-        .data?.map((d) => d.prescription_id as string) ?? []
+      (await pageAll<{ prescription_id: string }>((f, t) => supabase
+        .from('dispenses').select('prescription_id').not('prescription_id', 'is', null)
+        .order('id').range(f, t))).map((d) => d.prescription_id)
     )
     const stillPackingPatients = new Set(
       undispensedRxs.filter((rx) => !dispensedRxIds.has(rx.id as string)).map((rx) => rx.patient_id as string)

@@ -11,6 +11,7 @@ import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentCh
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -70,8 +71,10 @@ export async function addDonor(
 
 export async function listDonors(): Promise<BloodDonor[]> {
   const supabase = await createClient()
-  const { data } = await supabase.from('blood_donors').select('*').order('name')
-  return (data ?? []) as BloodDonor[]
+  // A blood bank's donor register only grows, and a donor missing from it is a
+  // donor who cannot be called when their group is needed.
+  return await pageAll<BloodDonor>((f, t) => supabase
+    .from('blood_donors').select('*').order('name').order('id').range(f, t))
 }
 
 // ---- Blood Units ----
@@ -422,7 +425,11 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
 
 export async function getStockSummary(): Promise<BloodStockSummary> {
   const supabase = await createClient()
-  const { data } = await supabase.from('blood_units').select('status, screening_status, expiry')
+  // Every unit ever registered. This is the same shape of bug the pharmacy
+  // stock screen had: a short read does not error, it just reports less blood
+  // on the shelf than there is.
+  const data = await pageAll<{ status: string; screening_status: string; expiry: string }>(
+    (f, t) => supabase.from('blood_units').select('status, screening_status, expiry').order('id').range(f, t))
   const today = istToday()
   const soon = istAddDays(istToday(), 7)
   const s: BloodStockSummary = { total: 0, available: 0, reserved: 0, issued: 0, unscreened: 0, nearExpiry: 0, expired: 0, separated: 0 }

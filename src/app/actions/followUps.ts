@@ -8,6 +8,7 @@ import { FollowUpCreateSchema, FollowUpConvertSchema } from '@/lib/schemas'
 import { bookAppointment } from './appointments'
 import type { Appointment, FollowUp } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -72,8 +73,10 @@ export async function listFollowUps(filters?: {
     ? q.order('suggested_date', { ascending: true, nullsFirst: false })
     : q.order('created_at', { ascending: false })
 
-  const { data } = await q
-  return (data ?? []) as unknown as FollowUp[]
+  // Paged: the pending list is every follow-up nobody has closed, which only
+  // grows. Capped at a thousand it would quietly stop showing the oldest ones —
+  // exactly the patients this list exists to chase.
+  return await pageAll<unknown>((f, t) => q.order('id').range(f, t)) as unknown as FollowUp[]
 }
 
 // ── Convert a pending follow-up into a real appointment (books + bills) ───────

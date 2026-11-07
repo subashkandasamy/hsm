@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { revalidatePath } from 'next/cache'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 /**
  * Form F — the record the PC&PNDT Act is enforced through.
@@ -996,14 +997,15 @@ export async function listFormFForReturn(month: string): Promise<Record<string, 
   const [y, m] = month.split('-').map(Number)
   const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
 
-  const { data, error } = await supabase
+  // Paged. This is the monthly statutory return filed with the authority; a
+  // row dropped for being the 1,001st is a row missing from a legal document.
+  const data = await pageAll<Record<string, unknown>>((f, t) => supabase
     .from('form_f_records').select('*')
     .eq('status', 'complete')
     .gte('procedure_date', start).lt('procedure_date', end)
-    .order('procedure_date').order('serial_no')
-  if (error) { console.error('[listFormFForReturn]', error.message); return [] }
-  await logAudit(actor.id, 'read', 'form_f_return', month, { rows: (data ?? []).length })
-  return (data ?? []) as Record<string, unknown>[]
+    .order('procedure_date').order('serial_no').range(f, t))
+  await logAudit(actor.id, 'read', 'form_f_return', month, { rows: data.length })
+  return data
 }
 
 /** Full MTP rows for Report IV, same shape of thing. */
@@ -1015,13 +1017,13 @@ export async function listMtpForReturn(month: string): Promise<Record<string, un
   const [y, m] = month.split('-').map(Number)
   const end = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
 
-  const { data, error } = await supabase
+  // Paged, for the same reason as Form F above — this is a filed return.
+  const data = await pageAll<Record<string, unknown>>((f, t) => supabase
     .from('mtp_records').select('*')
     .eq('status', 'complete')
     .gte('procedure_date', start).lt('procedure_date', end)
-    .order('procedure_date').order('serial_no')
-  if (error) { console.error('[listMtpForReturn]', error.message); return [] }
-  await logAudit(actor.id, 'read', 'mtp_return', month, { rows: (data ?? []).length })
+    .order('procedure_date').order('serial_no').range(f, t))
+  await logAudit(actor.id, 'read', 'mtp_return', month, { rows: data.length })
   return (data ?? []) as Record<string, unknown>[]
 }
 

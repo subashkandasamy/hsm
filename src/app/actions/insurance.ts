@@ -24,6 +24,7 @@ import type {
   Admission, Visit,
 } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -1378,11 +1379,13 @@ export async function listRemittanceBatches(): Promise<InsuranceRemittanceBatch[
   if (rows.length === 0) return rows
 
   // Roll up how many claims are reconciled to each batch, and their settled total.
-  const { data: claims } = await supabase
-    .from('insurance_claims').select('remittance_batch_id, settled_amount')
-    .in('remittance_batch_id', rows.map((b) => b.id))
+  // Paged: several batches of a few hundred claims each passes a thousand, and
+  // the undercount would land directly on the reconciled amount.
+  const claims = await pageAll<{ remittance_batch_id: string; settled_amount: number | null }>(
+    (f, t) => supabase.from('insurance_claims').select('remittance_batch_id, settled_amount')
+      .in('remittance_batch_id', rows.map((b) => b.id)).order('id').range(f, t))
   for (const b of rows) {
-    const linked = (claims ?? []).filter((c) => c.remittance_batch_id === b.id)
+    const linked = claims.filter((c) => c.remittance_batch_id === b.id)
     b.claim_count = linked.length
     b.reconciled_amount = linked.reduce((s, c) => s + ((c.settled_amount as number | null) ?? 0), 0)
   }

@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { BatchLabelsPdf, type BatchLabel } from '@/lib/pdf/BatchLabelsPdf'
 import { renderPdfResponse } from '@/lib/pdf/render'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,10 +34,14 @@ export async function GET(request: Request) {
                   brand_name, storage_location, drug_master_id, drug_id,
                   master:drug_master(name, generic_name, form, strength),
                   drug:drugs(name, generic_name, form, strength)`
-  const query = supabase.from('drug_batches').select(select).order('expiry')
-  const { data } = receipt ? await query.eq('receipt_id', receipt) : await query.in('id', ids.slice(0, 200))
-
-  const rows = (data ?? []) as unknown as Row[]
+  // Paged on the receipt branch. An opening-stock import is one receipt, and a
+  // real one carried 1,027 batches — unpaged, this printed the first thousand
+  // labels and gave no sign that 27 shelves would go unlabelled.
+  const rows = (receipt
+    ? await pageAll<unknown>((f, t) => supabase.from('drug_batches').select(select)
+        .eq('receipt_id', receipt).order('expiry').order('id').range(f, t))
+    : ((await supabase.from('drug_batches').select(select).order('expiry')
+        .in('id', ids.slice(0, 200))).data ?? [])) as unknown as Row[]
   // Row security already limits this to the caller's own hospital.
   const labelled = rows.filter((r) => r.label_code)
   if (!labelled.length) return new Response('These batches have no label code yet', { status: 404 })

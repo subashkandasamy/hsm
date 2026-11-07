@@ -6,6 +6,7 @@
 // − advance refunds − credit-note refunds.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100 }
 
@@ -42,23 +43,26 @@ export async function getCollectionSummary(
   fromISO: string,
   toISO: string,
 ): Promise<CollectionSummary> {
+  // Paged. A day's takings fit in a thousand rows; a month's, at a busy
+  // hospital, do not — and a short page here does not error, it just reports
+  // less money than was collected. See lib/supabase/pageAll.
   const [pRes, aRes, arRes, cnRes] = await Promise.all([
-    supabase.from('payments').select('amount, method').eq('tenant_id', tenantId)
-      .gte('received_at', fromISO).lt('received_at', toISO),
-    supabase.from('admission_advances').select('amount').eq('tenant_id', tenantId)
-      .gte('received_at', fromISO).lt('received_at', toISO),
-    supabase.from('admission_advance_refunds').select('amount').eq('tenant_id', tenantId)
-      .gte('refunded_at', fromISO).lt('refunded_at', toISO),
-    supabase.from('credit_notes').select('amount').eq('tenant_id', tenantId)
-      .gte('created_at', fromISO).lt('created_at', toISO),
+    pageAll<{ amount: number; method: string }>((f, t) => supabase.from('payments').select('amount, method').eq('tenant_id', tenantId)
+      .gte('received_at', fromISO).lt('received_at', toISO).order('id').range(f, t)),
+    pageAll<{ amount: number }>((f, t) => supabase.from('admission_advances').select('amount').eq('tenant_id', tenantId)
+      .gte('received_at', fromISO).lt('received_at', toISO).order('id').range(f, t)),
+    pageAll<{ amount: number }>((f, t) => supabase.from('admission_advance_refunds').select('amount').eq('tenant_id', tenantId)
+      .gte('refunded_at', fromISO).lt('refunded_at', toISO).order('id').range(f, t)),
+    pageAll<{ amount: number }>((f, t) => supabase.from('credit_notes').select('amount').eq('tenant_id', tenantId)
+      .gte('created_at', fromISO).lt('created_at', toISO).order('id').range(f, t)),
   ])
 
-  const billPayments = ((pRes.data ?? []) as Array<{ amount: number; method: string }>)
+  const billPayments = pRes
     .filter((p) => p.method !== 'advance')
     .reduce((s, p) => s + Number(p.amount), 0)
-  const advances = ((aRes.data ?? []) as Array<{ amount: number }>).reduce((s, a) => s + Number(a.amount), 0)
-  const refunds = ((arRes.data ?? []) as Array<{ amount: number }>).reduce((s, r) => s + Number(r.amount), 0)
-    + ((cnRes.data ?? []) as Array<{ amount: number }>).reduce((s, c) => s + Number(c.amount), 0)
+  const advances = aRes.reduce((s, a) => s + Number(a.amount), 0)
+  const refunds = arRes.reduce((s, r) => s + Number(r.amount), 0)
+    + cnRes.reduce((s, c) => s + Number(c.amount), 0)
 
   return {
     total: round2(billPayments + advances - refunds),

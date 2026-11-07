@@ -12,6 +12,7 @@ import type {
 } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -772,8 +773,8 @@ export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> 
 
 export async function listLabCatalogForIpd(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
-  const { data } = await supabase.from('lab_tests_catalog').select('*').eq('is_active', true).order('name')
-  const tests = (data ?? []) as LabTestCatalog[]
+  const tests = await pageAll<LabTestCatalog>((f, t) => supabase
+    .from('lab_tests_catalog').select('*').eq('is_active', true).order('name').order('id').range(f, t))
 
   // Same panel counts the OPD list shows — a ward doctor ordering a CBC should
   // see it is twenty measurements, not guess from the name.

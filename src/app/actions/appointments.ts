@@ -11,6 +11,7 @@ import { refundCancelledConsultation, type RefundOutcome } from '@/lib/billing/r
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { createServiceBill } from '@/lib/billing/serviceBill'
 import { istToday, istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -389,13 +390,17 @@ export async function getTodaysQueue(doctorId?: string): Promise<Appointment[]> 
   // Patients currently admitted to IPD or active in Emergency must not appear
   // in the OPD worklist — the visit-start server action also blocks them, but
   // hiding them here prevents a confusing "Start Consultation" button showing.
+  // Paged: a patient missing from this set is an admitted patient appearing on
+  // the OPD worklist with a "Start Consultation" button.
   const [ipdRes, emRes] = await Promise.all([
-    supabase.from('admissions').select('patient_id').eq('status', 'admitted'),
-    supabase.from('emergency_cases').select('patient_id').in('status', ['waiting', 'in_treatment']),
+    pageAll<{ patient_id: string }>((f, t) => supabase.from('admissions')
+      .select('patient_id').eq('status', 'admitted').order('id').range(f, t)),
+    pageAll<{ patient_id: string }>((f, t) => supabase.from('emergency_cases')
+      .select('patient_id').in('status', ['waiting', 'in_treatment']).order('id').range(f, t)),
   ])
   const blockedPatientIds = new Set<string>([
-    ...(ipdRes.data ?? []).map((r) => r.patient_id as string),
-    ...(emRes.data ?? []).map((r) => r.patient_id as string),
+    ...ipdRes.map((r) => r.patient_id),
+    ...emRes.map((r) => r.patient_id),
   ])
 
   const appts = await listAppointments({

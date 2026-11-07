@@ -15,6 +15,7 @@ import type {
   RosterPattern, DutyRoster, ShiftCoverage, WardRosterData,
 } from '@/lib/types'
 import { istAddDays } from '@/lib/istDate'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type Result = { success: true } | { success: false; error: string }
 
@@ -503,10 +504,12 @@ export async function generateRoster(input: Record<string, unknown>): Promise<{ 
   if (activeCodes.size === 0) return { success: false, error: 'No active shifts configured' }
 
   // occupied slots = existing roster rows for these nurses in the range (any unit — one shift/day)
-  const { data: existingRows } = await supabase
+  // Paged: nurses x days passes a thousand inside a single month for a ward of
+  // any size, and a slot missing from `occupied` is a nurse rostered twice.
+  const existingRows = await pageAll<{ profile_id: string; date: string }>((f, t) => supabase
     .from('duty_roster').select('profile_id, date')
-    .gte('date', d.start_date).lte('date', d.end_date)
-  const occupied = new Set((existingRows ?? []).map(r => `${r.profile_id}|${r.date}`))
+    .gte('date', d.start_date).lte('date', d.end_date).order('id').range(f, t))
+  const occupied = new Set(existingRows.map(r => `${r.profile_id}|${r.date}`))
   const blocked = await leaveBlockedSlots(d.start_date, d.end_date)
 
   // staged[profileId|date] = { shift, source } — new rows to insert

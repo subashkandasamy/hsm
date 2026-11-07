@@ -10,6 +10,7 @@ import { isBillCashlessCovered, resolveServiceBill, billsCashlessCovered } from 
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
 import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -120,16 +121,16 @@ async function withAnalyteCounts(
 
 export async function listLabCatalog(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('lab_tests_catalog').select('*').eq('is_active', true).order('name')
-  return withAnalyteCounts(supabase, (data ?? []) as LabTestCatalog[])
+  const data = await pageAll<LabTestCatalog>((f, t) => supabase
+    .from('lab_tests_catalog').select('*').eq('is_active', true).order('name').order('id').range(f, t))
+  return withAnalyteCounts(supabase, data)
 }
 
 export async function listAllLabCatalog(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('lab_tests_catalog').select('*').order('name')
-  return withAnalyteCounts(supabase, (data ?? []) as LabTestCatalog[])
+  const data = await pageAll<LabTestCatalog>((f, t) => supabase
+    .from('lab_tests_catalog').select('*').order('name').order('id').range(f, t))
+  return withAnalyteCounts(supabase, data)
 }
 
 export async function updateLabTest(

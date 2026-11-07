@@ -8,6 +8,7 @@ import { getActorProfile } from '@/lib/server-utils'
 import type { AdminKPIs, DoctorKPIs, ReceptionistKPIs, PharmacistKPIs } from '@/lib/types'
 import { istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { listPendingPrescriptions, getAlerts } from '@/app/actions/pharmacy'
+import { pageAll } from '@/lib/supabase/pageAll'
 
 /**
  * Today, as the hospital means it.
@@ -56,16 +57,19 @@ export async function getReceptionistDashboard(): Promise<ReceptionistKPIs> {
   const supabase = await createClient()
   const { start, end } = todayRange()
 
-  const [apptRes, registrationRes] = await Promise.all([
-    supabase.from('appointments').select('id, status').gte('scheduled_at', start).lt('scheduled_at', end),
-    supabase.from('patients').select('id').gte('created_at', start).lt('created_at', end),
+  // These are counted by array length, so a capped read is a wrong number on
+  // the front page rather than an error anybody would notice.
+  const [appts, registrations] = await Promise.all([
+    pageAll<{ id: string; status: string }>((f, t) => supabase.from('appointments')
+      .select('id, status').gte('scheduled_at', start).lt('scheduled_at', end).order('id').range(f, t)),
+    pageAll<{ id: string }>((f, t) => supabase.from('patients')
+      .select('id').gte('created_at', start).lt('created_at', end).order('id').range(f, t)),
   ])
 
-  const appts = (apptRes.data ?? []) as Array<{ status: string }>
   return {
     todayAppointments: appts.length,
     todayCheckedIn:    appts.filter((a) => a.status === 'checked_in').length,
-    todayRegistrations: registrationRes.data?.length ?? 0,
+    todayRegistrations: registrations.length,
   }
 }
 
@@ -136,25 +140,26 @@ export async function exportReport(params: {
   }
 
   else if (params.type === 'patient_footfall') {
+    // Paged. An export is chosen by date range, so the row count is whatever
+    // the user asked for — a year of a working hospital is far past a thousand,
+    // and the file would simply end early with no error and no gap to see.
     const [apptRes, erRes] = await Promise.all([
-      rd.from('appointments').select('scheduled_at, status')
+      pageAll<{ scheduled_at: string; status: string }>((f, t) => rd.from('appointments').select('scheduled_at, status')
         .eq('tenant_id', actor.tenant_id)
-        .gte('scheduled_at', from).lte('scheduled_at', to).order('scheduled_at'),
+        .gte('scheduled_at', from).lte('scheduled_at', to).order('scheduled_at').order('id').range(f, t)),
       // arrived_at, not created_at: emergency_cases has no created_at, so this
       // half silently returned nothing and every day reported zero ER cases.
-      rd.from('emergency_cases').select('arrived_at')
+      pageAll<{ arrived_at: string }>((f, t) => rd.from('emergency_cases').select('arrived_at')
         .eq('tenant_id', actor.tenant_id)
-        .gte('arrived_at', from).lte('arrived_at', to),
+        .gte('arrived_at', from).lte('arrived_at', to).order('id').range(f, t)),
     ])
-    if (apptRes.error) throw new Error(`Footfall export failed: ${apptRes.error.message}`)
-    if (erRes.error) throw new Error(`Footfall export failed: ${erRes.error.message}`)
     const byDay: Record<string, { appointments: number; emergency: number }> = {}
-    for (const a of (apptRes.data ?? [])) {
+    for (const a of apptRes) {
       const d = istDate(a.scheduled_at as string)
       byDay[d] = byDay[d] ?? { appointments: 0, emergency: 0 }
       byDay[d].appointments++
     }
-    for (const e of (erRes.data ?? [])) {
+    for (const e of erRes) {
       const d = istDate(e.arrived_at as string)
       byDay[d] = byDay[d] ?? { appointments: 0, emergency: 0 }
       byDay[d].emergency++
@@ -164,16 +169,15 @@ export async function exportReport(params: {
   }
 
   else if (params.type === 'bed_occupancy') {
-    const { data, error } = await rd
-      .from('admissions')
-      .select('admitted_at, discharged_at, bed:beds(ward:wards(name))')
-      .eq('tenant_id', actor.tenant_id)
-      .gte('admitted_at', from)
-      .lte('admitted_at', to)
-      .order('admitted_at')
-    if (error) throw new Error(`Bed occupancy export failed: ${error.message}`)
+    const data = await pageAll<{ admitted_at: string; discharged_at: string | null; bed: unknown }>(
+      (f, t) => rd.from('admissions')
+        .select('admitted_at, discharged_at, bed:beds(ward:wards(name))')
+        .eq('tenant_id', actor.tenant_id)
+        .gte('admitted_at', from)
+        .lte('admitted_at', to)
+        .order('admitted_at').order('id').range(f, t))
     csv = 'Admitted At,Discharged At,Ward\n' +
-      (data ?? []).map((r) => {
+      data.map((r) => {
         const ward = (r.bed as { ward?: { name?: string } } | null)?.ward?.name ?? ''
         const out  = r.discharged_at ? istDate(r.discharged_at as string) : 'active'
         return `${istDate(r.admitted_at as string)},${out},${csvCell(ward)}`
@@ -189,22 +193,20 @@ export async function exportReport(params: {
     // Test Volumes and one order routinely carries several tests. A lab doing
     // forty orders of three tests did not do forty tests.
     const [labRes, radRes] = await Promise.all([
-      rd.from('lab_order_items').select('created_at')
+      pageAll<{ created_at: string }>((f, t) => rd.from('lab_order_items').select('created_at')
         .eq('tenant_id', actor.tenant_id)
-        .gte('created_at', from).lte('created_at', to),
-      rd.from('radiology_orders').select('ordered_at')
+        .gte('created_at', from).lte('created_at', to).order('id').range(f, t)),
+      pageAll<{ ordered_at: string }>((f, t) => rd.from('radiology_orders').select('ordered_at')
         .eq('tenant_id', actor.tenant_id)
-        .gte('ordered_at', from).lte('ordered_at', to),
+        .gte('ordered_at', from).lte('ordered_at', to).order('id').range(f, t)),
     ])
-    if (labRes.error) throw new Error(`Test volumes export failed: ${labRes.error.message}`)
-    if (radRes.error) throw new Error(`Test volumes export failed: ${radRes.error.message}`)
     const byDay: Record<string, { lab: number; radiology: number }> = {}
-    for (const l of (labRes.data ?? [])) {
+    for (const l of labRes) {
       const d = istDate(l.created_at as string)
       byDay[d] = byDay[d] ?? { lab: 0, radiology: 0 }
       byDay[d].lab++
     }
-    for (const r of (radRes.data ?? [])) {
+    for (const r of radRes) {
       const d = istDate(r.ordered_at as string)
       byDay[d] = byDay[d] ?? { lab: 0, radiology: 0 }
       byDay[d].radiology++
