@@ -623,7 +623,12 @@ export async function matchInvoiceNames(names: string[]): Promise<NameMatch[]> {
   await requirePermission(actor.role, 'pharmacy:read')
   if (!names.length) return []
 
-  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 200)
+  // 200 was fine for a distributor invoice and far too small for a migration:
+  // a hospital's opening stock report carried 712 distinct names, so 512 of them
+  // were returned unmatched without ever being looked up — which reads as "the
+  // catalogue does not have it" when nothing was asked. The work is still
+  // batched 8 at a time below, so the ceiling costs round trips, not load.
+  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 1500)
   const found = new Map<string, NameMatch>()
 
   // A handful at a time: enough to hide the network, not enough to flood the pool.

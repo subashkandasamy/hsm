@@ -43,6 +43,23 @@ const SYNONYMS: Record<InvoiceField, string[]> = {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim()
 
+/**
+ * Headers that must win when a file carries both a general and a specific one.
+ *
+ * A stock report can have `MRP` (per pack) AND `Unit MRP` (per tablet) side by
+ * side. `mapRow` takes the first column that matches a field, and `MRP` is
+ * usually printed first — so the pack price was being read as the unit price
+ * and a 6.68 tablet was priced at 100.13. The MRP basis control can only
+ * correct that when a pack size is present, and a stock report rarely has one.
+ *
+ * The same applies to cost: a report often prints a selling price and a
+ * purchase value, and `rate` means what the pharmacy PAID.
+ */
+const PREFERRED: Partial<Record<InvoiceField, string[]>> = {
+  mrp:  ['unit mrp', 'mrp unit', 'mrp per unit', 'rate per unit mrp'],
+  rate: ['unit purchase value', 'purchase value', 'unit purchase price', 'purchase price', 'unit cost', 'cost price'],
+}
+
 /** Which delimiter the file uses — a comma, a tab (pasted from Excel) or a semicolon. */
 function sniffDelimiter(text: string): string {
   const line = text.split(/\r?\n/).find((l) => l.trim()) ?? ''
@@ -92,6 +109,16 @@ export type ColumnMap = Partial<Record<InvoiceField, number>>
 function mapRow(cells: string[]): ColumnMap {
   const map: ColumnMap = {}
   const used = new Set<number>()
+
+  // The specific header wins before anything else looks. A report carrying both
+  // `MRP` and `Unit MRP` must map the unit one, whichever is printed first.
+  for (const [field, names] of Object.entries(PREFERRED) as Array<[InvoiceField, string[]]>) {
+    for (let i = 0; i < cells.length; i++) {
+      if (used.has(i)) continue
+      if (names.includes(norm(cells[i]))) { map[field] = i; used.add(i); break }
+    }
+  }
+
   // Exact header names first, so a "Rate" column is not stolen by a loose match.
   for (const pass of [0, 1]) {
     for (const [field, names] of Object.entries(SYNONYMS) as Array<[InvoiceField, string[]]>) {
@@ -209,7 +236,11 @@ export function readRows(rows: string[][], headerIndex: number, map: ColumnMap):
     const name = at(r, 'name')
     if (!name) continue
     // Totals and section lines carry no batch and no quantity.
-    if (/^(total|grand total|sub total|subtotal|net|amount)\b/i.test(name)) continue
+    //
+    // "item count" is here because a SWIFTEHR stock report ends with
+    // `,Item Count,1127,,40417,...` — a trailer that is not called a total, so
+    // it imported as a medicine with 40,417 units and a batch of "1127".
+    if (/^(total|grand total|sub total|subtotal|net|amount|item count|count|no of items|records?)\b/i.test(name)) continue
     out.push({
       name,
       batch: at(r, 'batch'),
