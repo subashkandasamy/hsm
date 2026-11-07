@@ -1,19 +1,20 @@
 /**
- * The minimum quantity that drives the low-stock alert.
+ * The minimum stock quantity that drives the low-stock alert.
  *
  *   npm run verify:min-qty
  *
- * The cases below are the shapes that actually reached this code: a 456-medicine
- * opening stock where every pack_size was 1, the strips and bottles a distributor
- * invoice carries, and the empty and malformed cells a spreadsheet produces.
+ * The rule is small on purpose. 0 means "no alert", which is a real answer for
+ * the things a hospital stocks once and never reorders, so the figure is never
+ * invented — it comes from the field, or from what the medicine was last
+ * stocked at, or it stays off.
  *
- * The second half is the one that matters. A default that is merely non-zero is
- * not an improvement — it has to stay out of the way of a figure a pharmacist
- * typed, including a deliberate 0, which is how a hospital silences the alert on
- * a device it will never restock.
+ * Deriving a default from pack size was built and then removed. KMCH's export
+ * carries no pack size, so all 1,127 batches would have been written at 1 — an
+ * alert that fires when the last unit is gone, and 456 medicines that look
+ * configured when nobody chose anything. The cases below pin that out.
  */
 
-import { defaultMinQty, minQtyForLine } from '../src/lib/pharmacy/minQty'
+import { minQtyForLine, minQtyField } from '../src/lib/pharmacy/minQty'
 
 let failed = 0
 function check(ok: boolean, label: string, detail?: unknown) {
@@ -21,51 +22,50 @@ function check(ok: boolean, label: string, detail?: unknown) {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${!ok && detail !== undefined ? `  — got ${JSON.stringify(detail)}` : ''}`)
 }
 
-console.log('\nOne pack is the minimum, because one pack is what you can buy')
-for (const [size, want] of [[10, 10], [15, 15], [1, 1], [100, 100], [1000, 1000]] as [number, number][]) {
-  const got = defaultMinQty(size)
-  check(got === want, `pack of ${size} → ${want}`, got)
-}
+console.log('\nWhat the counter typed is what gets stored')
+check(minQtyForLine('30', 50) === 30, 'typed 30 beats last time', minQtyForLine('30', 50))
+check(minQtyForLine('30', null) === 30, 'typed 30 with nothing else to go on')
+check(minQtyForLine(' 45 ', 50) === 45, 'spaces are trimmed')
+check(minQtyForLine('7.9', null) === 7, 'a fraction floors')
+check(minQtyForLine('1000', null) === 1000, 'a large figure is kept')
 
-console.log('\nNo pack size, no nonsense — fall back to 1, never 0')
-for (const bad of [null, undefined, 0, -5, NaN, Infinity, '', '  ', 'abc', 'ten'] as const) {
-  const got = defaultMinQty(bad as never)
-  check(got === 1, `${JSON.stringify(bad)} → 1`, got)
-}
-check(defaultMinQty(2.7) === 2, 'a fractional pack floors to 2', defaultMinQty(2.7))
-check(defaultMinQty('10') === 10, 'a numeric string is read', defaultMinQty('10'))
-check(defaultMinQty(' 15 ') === 15, 'whitespace is trimmed', defaultMinQty(' 15 '))
-check(defaultMinQty(0.4) === 1, 'a pack under 1 still yields 1', defaultMinQty(0.4))
+console.log('\nA typed 0 is an instruction — it turns the alert off')
+check(minQtyForLine('0', 50) === 0, 'typed 0 overrides last time\'s 50', minQtyForLine('0', 50))
+check(minQtyForLine('0', null) === 0, 'and stands on its own')
 
-console.log('\nWhat the counter typed always wins')
-check(minQtyForLine('30', 50, 10) === 30, 'typed 30 beats last time and the pack', minQtyForLine('30', 50, 10))
-check(minQtyForLine('30', null, null) === 30, 'typed 30 with nothing else to go on')
-check(minQtyForLine(' 45 ', 50, 10) === 45, 'typed with spaces')
-check(minQtyForLine('7.9', null, 10) === 7, 'a typed fraction floors')
+console.log('\nBlank → what this medicine was last stocked at')
+check(minQtyForLine('', 50) === 50, 'last time said 50', minQtyForLine('', 50))
+check(minQtyForLine(null, 50) === 50, 'a null field is blank, not a zero')
+check(minQtyForLine(undefined, 50) === 50, 'so is undefined')
+check(minQtyForLine('  ', 50) === 50, 'so is whitespace')
 
-console.log('\nA typed 0 is an instruction, not a blank')
-check(minQtyForLine('0', 50, 10) === 0,
-  'typed 0 silences the alert, even when the pack would say 10', minQtyForLine('0', 50, 10))
-check(minQtyForLine('0', null, 1000) === 0, 'and even against a 1,000-unit pack')
-
-console.log('\nNothing typed → what this medicine was bought at last time')
-check(minQtyForLine('', 50, 10) === 50, 'last time said 50', minQtyForLine('', 50, 10))
-check(minQtyForLine(null, 50, 10) === 50, 'a null field is blank, not a zero')
-check(minQtyForLine(undefined, 50, 10) === 50, 'so is undefined')
-check(minQtyForLine('', 0, 10) === 10,
-  'last time was 0 — that is the old silence, so use the pack instead', minQtyForLine('', 0, 10))
-check(minQtyForLine('', null, 10) === 10, 'never bought before → one pack')
-
-console.log('\nThe shelf this was written for — 1,027 batches, every pack_size 1')
-check(minQtyForLine('', null, 1) === 1, 'a pack of 1 gives a minimum of 1, not 0')
-check(minQtyForLine('', 0, 1) === 1, 'and the existing zeros do not win')
+console.log('\nNothing to go on → off, and never a number nobody chose')
+check(minQtyForLine('', null) === 0, 'never bought before → 0, no alert', minQtyForLine('', null))
+check(minQtyForLine('', 0) === 0, 'last time was 0 → still 0')
+check(minQtyForLine('', undefined) === 0, 'undefined last time → 0')
 
 console.log('\nNothing silly')
-check(minQtyForLine('-5', null, 10) === 10, 'a negative is not a figure — fall through', minQtyForLine('-5', null, 10))
-check(minQtyForLine('abc', null, 10) === 10, 'nor is text', minQtyForLine('abc', null, 10))
-check(Number.isInteger(minQtyForLine('', null, 2.5)), 'the result is always a whole number')
+check(minQtyForLine('-5', null) === 0, 'a negative is not a figure', minQtyForLine('-5', null))
+check(minQtyForLine('abc', null) === 0, 'nor is text', minQtyForLine('abc', null))
+check(minQtyForLine('abc', 50) === 50, 'text falls through to last time', minQtyForLine('abc', 50))
+check(minQtyForLine('', NaN) === 0, 'a NaN last time is not a figure either')
+check(minQtyForLine('', Infinity) === 0, 'nor is Infinity')
+check(Number.isInteger(minQtyForLine('2.5', null)), 'the result is always a whole number')
+
+console.log('\nThe box shows a figure, never a 0 dressed up as one')
+check(minQtyField(50) === '50', '50 → "50"', minQtyField(50))
+check(minQtyField(0) === '', '0 → blank, so the box reads "off"', minQtyField(0))
+check(minQtyField(null) === '', 'null → blank')
+check(minQtyField(undefined) === '', 'undefined → blank')
+check(minQtyField(2.7) === '2', 'a fraction floors')
+
+console.log('\nThe import this was written for — no pack size, no guessing')
+check(minQtyForLine('', null) === 0,
+  '1,127 SwiftEHR batches carry no minimum, so none is invented', minQtyForLine('', null))
+check(minQtyField(null) === '',
+  'and the field is blank for the pharmacist to fill, not pre-filled with 1')
 
 console.log(failed === 0
-  ? '\nEvery received line gets a minimum, and a typed one is never overruled.\n'
+  ? '\nThe figure is stored when given, carried when known, and off otherwise.\n'
   : `\n${failed} check(s) FAILED.\n`)
 process.exit(failed === 0 ? 0 : 1)

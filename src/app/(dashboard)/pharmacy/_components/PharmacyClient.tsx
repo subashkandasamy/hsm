@@ -1046,7 +1046,7 @@ function StockView({ stock, canManage, onRefresh }: {
   async function saveEdit(drug: DrugWithStock) {
     setSaving(true); setSaveErr('')
     const reorder = parseInt(reorderDraft, 10)
-    if (isNaN(reorder) || reorder < 0) { setSaveErr('Reorder level must be 0 or more'); setSaving(false); return }
+    if (isNaN(reorder) || reorder < 0) { setSaveErr('The alert quantity must be 0 or more'); setSaving(false); return }
 
     // Save reorder level if changed
     if (reorder !== (drug.reorder_level ?? 0)) {
@@ -1100,7 +1100,7 @@ function StockView({ stock, canManage, onRefresh }: {
   const emptyTitle = q ? 'Nothing matched' : filter === 'all' ? 'No medicines yet' : 'Nothing here'
   const emptyDesc =
     q ? `No medicine, brand, batch or rack matches "${query}"`
-    : filter === 'low' ? 'Every medicine is above its reorder level.'
+    : filter === 'low' ? 'Every medicine is above the quantity it alerts at.'
     : filter === 'expiring' ? `No batch expires within ${EXPIRING_DAYS} days.`
     : filter === 'out' ? 'Nothing has run out.'
     : filter === 'vaccines' ? 'No vaccine is linked to a stocked product yet.'
@@ -1217,7 +1217,7 @@ function StockView({ stock, canManage, onRefresh }: {
                     {drug.total_qty} <span className="text-xs font-normal" style={{ color: '#64748B' }}>{unit}</span>
                   </span>
                   <span className="block text-xs mt-0.5" style={{ color: '#94A3B8' }}>
-                    {(drug.reorder_level ?? 0) > 0 ? <>reorder at {drug.reorder_level}</> : <Money amount={value} />}
+                    {(drug.reorder_level ?? 0) > 0 ? <>alerts below {drug.reorder_level}</> : <Money amount={value} />}
                   </span>
                 </span>
               </button>
@@ -1282,13 +1282,21 @@ function StockView({ stock, canManage, onRefresh }: {
             {/* ── Edit mode ── */}
             {isEditing && (
               <div className="mt-3 pl-6 space-y-3">
-                {/* Reorder level */}
+                {/* The minimum stock quantity the low-stock alert runs on.
+                    Called the same thing here as on the receive screen, because
+                    it is the same number — and 0 is a real answer, not a blank:
+                    plenty on a hospital's shelf is never reordered. */}
                 <div className="flex items-center gap-3">
-                  <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Reorder level</label>
+                  <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Alert below</label>
                   <input type="number" min={0} step={1} value={reorderDraft}
                     onChange={e => setReorderDraft(e.target.value)}
+                    placeholder="off"
                     className={inp} style={{ ...bdr, maxWidth: 100 }} />
-                  <span className="text-xs" style={{ color: '#94A3B8' }}>warn below this many {unit}</span>
+                  <span className="text-xs" style={{ color: '#94A3B8' }}>
+                    {Number(reorderDraft) > 0
+                      ? <>show as running low at or below {reorderDraft} {unit}</>
+                      : <>0 — no low-stock alert for this medicine</>}
+                  </span>
                 </div>
 
                 {/* Category. Free text with the categories already in use offered
@@ -1478,7 +1486,7 @@ function AlertsView({ alerts }: { alerts: PharmacyAlerts }) {
                   <DrugMeta d={d} />
                   <div className="text-xs text-right flex-shrink-0" style={{ color: '#B45309' }}>
                     <div className="font-semibold">{d.total_qty} remaining</div>
-                    <div className="mt-0.5" style={{ color: '#94A3B8' }}>Reorder at {d.reorder_level}</div>
+                    <div className="mt-0.5" style={{ color: '#94A3B8' }}>Alerts below {d.reorder_level}</div>
                     {d.batches[0]?.storage_location && <div className="mt-0.5" style={{ color: '#7C3AED' }}>📍 {d.batches[0].storage_location}</div>}
                   </div>
                 </div>

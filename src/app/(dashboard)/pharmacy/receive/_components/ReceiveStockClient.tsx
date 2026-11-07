@@ -8,7 +8,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import { createDrugsBulk, ensureReceiptLabels, lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
 import { guessForm } from '@/lib/pharmacy/invoiceFile'
-import { defaultMinQty, minQtyForLine } from '@/lib/pharmacy/minQty'
+import { minQtyForLine, minQtyField } from '@/lib/pharmacy/minQty'
 import { useScanListener } from '@/lib/hooks/useScanListener'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
@@ -272,7 +272,7 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         hsn: last?.hsn_code ?? b?.hsn_code ?? '30049099',
         gst: String(last?.gst_rate ?? b?.gst_rate ?? 12),
         manufacturer: last?.manufacturer ?? b?.manufacturer ?? '',
-        reorder: String(minQtyForLine(null, last?.reorder_level, last?.pack_size ?? b?.pack_size)),
+        reorder: minQtyField(last?.reorder_level),
         ...(last ? {
           mrp: last.mrp != null ? String(last.mrp) : '',
           rate: last.purchase_price != null ? String(last.purchase_price) : '',
@@ -343,7 +343,7 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         purchase_price: num(l.rate), mrp,
         pack_size: num(l.packSize), pack_unit: l.packUnit || null,
         hsn_code: l.hsn || null, gst_rate: num(l.gst),
-        reorder_level: minQtyForLine(l.reorder, null, l.packSize), storage_location: l.storage || null,
+        reorder_level: minQtyForLine(l.reorder, null), storage_location: l.storage || null,
       })
     }
     if (!payload.length) { setError('Add at least one medicine'); return }
@@ -588,7 +588,7 @@ function fromPrefill(p: PrefillLine): Line {
     hsn: p.hsn ?? '30049099',
     gst: p.gst != null ? String(p.gst) : '12',
     manufacturer: p.manufacturer ?? '',
-    reorder: String(minQtyForLine(null, p.reorderLevel, p.packSize)),
+    reorder: minQtyField(p.reorderLevel),
   }
 }
 
@@ -614,8 +614,6 @@ function applyDrug(l: Line, d: Drug, brand: string | null): Line {
     hsn: b?.hsn_code ?? (l.hsn || '30049099'),
     gst: b?.gst_rate != null ? String(b.gst_rate) : (l.gst || '12'),
     manufacturer: b?.manufacturer ?? l.manufacturer,
-    // A minimum, so the line alerts even if nobody touches the field.
-    reorder: l.reorder || String(defaultMinQty(b?.pack_size ?? l.packSize)),
   }
 }
 
@@ -838,16 +836,16 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast, onPicked }: {
             placeholder="10.50" inputMode="decimal" style={input} />
         </label>
         {/* The figure the low-stock alert runs on. It used to sit behind "edit
-            details", where it was left empty — and an empty minimum means the
-            medicine never appears as running low. Now it is on the line, with
-            one pack's worth filled in, so a line can be left alone and still
-            alert. */}
-        <label className="w-[86px]">
+            details", where nobody found it and every line saved at 0 — and 0
+            means the medicine never shows as running low. On the line, it gets
+            filled in; left blank it stays off, which is right for the things a
+            hospital stocks once and never reorders. */}
+        <label className="w-[90px]">
           <span className="block text-[11px] mb-0.5" style={{ color: '#94A3B8' }}>Alert below</span>
           <input value={l.reorder} onChange={(e) => set(l.key, { reorder: e.target.value })}
             onKeyDown={(e) => { if (e.key === 'Enter' && isLast) { e.preventDefault(); onAddLine() } }}
-            placeholder={String(defaultMinQty(l.packSize))} inputMode="numeric" style={input}
-            title="Show this medicine as running low once stock falls to this many units. 0 turns the alert off." />
+            placeholder="off" inputMode="numeric" style={input}
+            title="Show this medicine as running low once stock falls to this many units. Leave blank for no alert." />
         </label>
         <button onClick={remove} title="Remove line" className="mt-5" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#CBD5E1' }}>
           <Trash2 className="w-4 h-4" />

@@ -4,15 +4,16 @@
  *   npm run verify:swiftehr-mapping -- "<path to the export>"
  *
  * The question this answers: does the file the hospital downloads carry a
- * minimum-quantity column at all? It does not — and that is why a 456-medicine
- * opening stock loaded with every alert threshold at 0. This script proves the
- * absence against the real header rather than asserting it, and shows what each
- * column IS mapped to, so a future export that adds the column is noticed.
+ * minimum-quantity column at all? It does not — which is why a 456-medicine
+ * opening stock loaded with every alert threshold at 0, and why nothing here
+ * tries to make one up. This proves the absence against the real header rather
+ * than asserting it, and shows what each column IS mapped to, so an export
+ * that later adds the column is noticed instead of silently ignored.
  */
 
 import fs from 'node:fs'
 import { parseDelimited, detectHeader, readRows, INVOICE_FIELDS } from '../src/lib/pharmacy/invoiceFile'
-import { defaultMinQty, minQtyForLine } from '../src/lib/pharmacy/minQty'
+import { minQtyForLine } from '../src/lib/pharmacy/minQty'
 
 const file = process.argv[2]
 if (!file) { console.error('Pass the export file path.'); process.exit(2) }
@@ -47,23 +48,28 @@ const parsed = readRows(rows, headerIndex, map)
 console.log(`\nData rows read: ${parsed.length}`)
 
 if (missingMin) {
-  console.log('\n  No minimum-quantity column in this export.')
-  console.log('  Every line therefore falls back to the default. Worked example:')
+  console.log('\n  No minimum-quantity column in this export, so nothing is imported')
+  console.log('  into the field and no figure is invented for it. Worked example:')
   for (const r of parsed.slice(0, 5)) {
-    const min = minQtyForLine(r.minQty, null, r.packSize)
-    console.log(`    ${r.name.slice(0, 30).padEnd(30)} pack ${(r.packSize || '—').padEnd(4)} → alert below ${min}`)
+    const min = minQtyForLine(r.minQty, null)
+    console.log(`    ${r.name.slice(0, 30).padEnd(30)} → alert below ${min === 0 ? 'off' : min}`)
   }
-  const nonDefault = parsed.filter((r) => r.minQty !== '').length
-  console.log(`\n  Lines carrying their own minimum: ${nonDefault} of ${parsed.length}`)
-  console.log(`  Lines on the default:             ${parsed.length - nonDefault} of ${parsed.length}`)
+  console.log('\n  The pharmacist sets these on the stock screen, or on the next')
+  console.log('  invoice line — after which "same as last time" carries it forward.')
 } else {
   const own = parsed.filter((r) => r.minQty !== '')
-  console.log(`\n  Minimum column found. ${own.length} of ${parsed.length} rows carry a value.`)
+  console.log(`\n  Minimum column found: ${own.length} of ${parsed.length} rows carry a value.`)
+  for (const r of own.slice(0, 5)) {
+    console.log(`    ${r.name.slice(0, 30).padEnd(30)} → alert below ${minQtyForLine(r.minQty, null)}`)
+  }
 }
 
-// The one hard assertion: no row may end up at 0 unless the file said 0.
-const silent = parsed.filter((r) => r.minQty === '' && minQtyForLine(r.minQty, null, r.packSize) === 0)
-console.log(silent.length === 0
-  ? '\nPASS  no row lands on a silent 0 — every imported line will alert.\n'
-  : `\nFAIL  ${silent.length} row(s) would import with alerts off.\n`)
-process.exit(silent.length === 0 ? 0 : 1)
+// What this script asserts: the required columns were found, and no row was
+// given a minimum the file did not contain.
+const missingRequired = INVOICE_FIELDS.filter((f) => f.needed && map[f.key] == null)
+const invented = parsed.filter((r) => r.minQty === '' && minQtyForLine(r.minQty, null) !== 0)
+const bad = missingRequired.length > 0 || invented.length > 0
+if (missingRequired.length) console.log(`\nFAIL  required column(s) not found: ${missingRequired.map((f) => f.label).join(', ')}`)
+if (invented.length) console.log(`\nFAIL  ${invented.length} row(s) given a minimum the file did not contain`)
+if (!bad) console.log('\nPASS  every required column mapped, and no minimum invented.\n')
+process.exit(bad ? 1 : 0)
