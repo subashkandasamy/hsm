@@ -54,10 +54,22 @@ is('AMBU BAG-ADULT(RESQ BAG)', 'Airway / respiratory')
 is('ACCU-CHEK ACTIVE STRIP', 'Diagnostic device')
 is('B.P. APPARATUS', 'Diagnostic device')
 is('B.P DIAMOND STAND CLOCK', 'Diagnostic device')
-is('AIR BED', 'Hospital ware')
+is('AIR BED', 'Orthopaedic / support')
 is('ARM/LEG RESTRAINER ADHSIVE', 'Orthopaedic / support')
 // Bare "BP" must stay out of it — a medicine is likelier than a monitor.
 is('BPL 40MG', null)
+
+console.log('\nThe mis-categorisations this put into a live hospital')
+// Every one of these was read wrongly by the first version of the word list and
+// written to a real pharmacy's records. They are here so it cannot happen twice.
+is('BP HANDLE SIZE 3', 'Surgical instrument')     // Bard-Parker, not blood pressure
+is('BP HANDLE 4', 'Surgical instrument')
+is('B.P. APPARATUS', 'Diagnostic device')         // and the real one still works
+is('ARTERIAL CANNULA 20G', 'IV administration')
+is('BD VENFLON BLUE 22G', 'IV administration')
+is('BED SHEET (GREEN)', 'Protective wear / linen')
+is('AIR BED', 'Orthopaedic / support')
+is('DISPOVAN 5ML SYRINGE', 'Syringe / needle')    // a syringe is still a syringe
 
 console.log('\nNo guess is better than a wrong one')
 is('', null)

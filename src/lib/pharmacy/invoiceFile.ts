@@ -448,11 +448,16 @@ export function hasBlocking(issues: FileIssue[]): boolean {
 const FORM_WORDS: Array<[RegExp, string]> = [
   // Equipment and consumables first: "IV SET" must not be read as an injection,
   // and "DISPOSABLE CAP" is not a capsule. Both are real lines from a migration.
-  [/\b(syringe|needle|lancet|cannula)\b/i, 'Syringe / needle'],
+  [/\b(syringe|needle|lancet)\b/i, 'Syringe / needle'],
   [/\b(catheter|foley|sheath|drain|stent|urobag|urine bag)\b/i, 'Catheter / drain'],
   [/\b(mask|oxy|oxygen|nebuli[sz]er|airway|ett|tracheostomy|bougie|stylet|lma|suction)\b/i, 'Airway / respiratory'],
   [/\b(gauze|bandage|dressing|plaster|tape|cotton|pad|swab|crepe)\b/i, 'Dressing / adhesive'],
   [/\b(suture|stapler|prolene|vicryl|catgut|silk)\b/i, 'Suture / stapler'],
+  // "BP HANDLE SIZE 3" is a Bard-Parker scalpel handle, not a blood-pressure
+  // anything. The blood-pressure rule below used to claim it, and did — in a
+  // real hospital's data, filed under Diagnostic device. Tested before it,
+  // because the two spellings are identical up to the last word.
+  [/\bb\.?\s?p\.?\s*(handle|blade)\b/i, 'Surgical instrument'],
   // `forc` because invoices abbreviate: "DISSECTING TOOTH FORC" is a forceps.
   [/\b(forceps?|forc|scissor|clamp|retractor|trocar|scalpel|blade|probe|speculum)\b/i, 'Surgical instrument'],
   [/\b(glove|gloves)\b/i, 'Gloves'],
@@ -461,11 +466,13 @@ const FORM_WORDS: Array<[RegExp, string]> = [
   // likely to be a medicine than a sphygmomanometer.
   [/\b(ambu\s*bag|resuscitator)\b/i, 'Airway / respiratory'],
   [/\b(accu[\s-]?chek|glucometer|glucose strip|test strip)\b/i, 'Diagnostic device'],
-  [/\bb\.?\s?p\.?(?:\s+\w+){0,3}\s+(apparatus|stand|handle|bulb|cuff|monitor)\b/i, 'Diagnostic device'],
-  [/\b(air\s*bed|water\s*bed|mattress|bed\s*sheet)\b/i, 'Hospital ware'],
+  [/\bb\.?\s?p\.?(?:\s+\w+){0,3}\s+(apparatus|stand|bulb|cuff|monitor)\b/i, 'Diagnostic device'],
+  // An air bed is a pressure-relieving mattress — it belongs with the other
+  // things that hold a patient's body, not with the trays and bowls.
+  [/\b(air\s*bed|water\s*bed|mattress)\b/i, 'Orthopaedic / support'],
   [/\b(restrainer|restraint)\b/i, 'Orthopaedic / support'],
   [/\b(tray|bowl|bowel|bedpan|bedfan|kidney tray|jar|container)\b/i, 'Hospital ware'],
-  [/\b(iv set|infusion set|blood set|burette|three way|3 way)\b/i, 'IV administration'],
+  [/\b(iv set|infusion set|blood set|burette|three way|3 way|cannula|venflon)\b/i, 'IV administration'],
   [/\b(apron|gown|cap|sheet|linen|shoe cover)\b/i, 'Protective wear / linen'],
   [/\b(binder|splint|collar|support|sling|crepe|traction)\b/i, 'Orthopaedic / support'],
   // Ultrasound gel sits with the scanner it is used on, and must be tested
