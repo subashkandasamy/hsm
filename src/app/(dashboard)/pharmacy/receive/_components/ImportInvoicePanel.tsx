@@ -8,6 +8,7 @@ import { matchInvoiceNames, type NameMatch } from '@/app/actions/pharmacy'
 import {
   detectHeader, parseDelimited, readRows,
   INVOICE_FIELDS, applyMrpBasis, detectMrpBasis,
+  checkFile, hasBlocking,
   type ColumnMap, type MrpBasis, type ParsedInvoiceRow,
 } from '@/lib/pharmacy/invoiceFile'
 
@@ -62,8 +63,21 @@ export default function ImportInvoicePanel({ onLoad, onClose }: {
   const perPackShown = raw.some((r) => Number(r.packSize) > 1 && Number(r.mrp))
   const missing = INVOICE_FIELDS.filter((f) => f.needed && map[f.key] == null)
 
+  // Everything wrong with the file, found before a single line is loaded. Rows
+  // under the header that readRows threw away are counted so the skip is said
+  // out loud rather than silently changing the total.
+  const dataRows = rows ? Math.max(0, rows.length - headerIndex - 1) : 0
+  const issues = useMemo(
+    () => (rows ? checkFile(preview, map, { skipped: Math.max(0, dataRows - preview.length) }) : []),
+    [rows, preview, map, dataRows],
+  )
+  const blocked = hasBlocking(issues)
+  const toFix = issues.filter((i) => i.level === 'fix')
+  const fixRows = new Set(toFix.flatMap((i) => i.lines)).size
+
   function load() {
     if (!preview.length) { setError('No medicine rows found under that header.'); return }
+    if (blocked) { setError('Fix the file first — see the list above.'); return }
     setError('')
     startTransition(async () => {
       const matches = await matchInvoiceNames(preview.map((r) => r.name))
@@ -149,6 +163,50 @@ export default function ImportInvoicePanel({ onLoad, onClose }: {
             ))}
           </div>
 
+          {/* What is wrong with the file, before anything is loaded */}
+          {issues.length > 0 && (
+            <div className="rounded-xl p-3 text-xs" style={{
+              border: `1px solid ${blocked ? '#FECACA' : toFix.length ? '#FDE68A' : '#E2E8F0'}`,
+              background: blocked ? '#FEF2F2' : toFix.length ? '#FFFBEB' : '#F8FAFC',
+            }}>
+              <p className="font-medium mb-2" style={{ color: blocked ? '#991B1B' : toFix.length ? '#92400E' : '#475569' }}>
+                {blocked
+                  ? 'This file cannot be imported yet'
+                  : toFix.length
+                    ? `${fixRows} row${fixRows === 1 ? '' : 's'} will be refused when you save — correct them in the file and load it again`
+                    : 'Worth knowing'}
+              </p>
+              <ul className="space-y-1.5">
+                {issues.map((it, i) => (
+                  <li key={i} style={{ color: '#334155' }}>
+                    <span style={{
+                      color: it.level === 'blocking' ? '#DC2626' : it.level === 'fix' ? '#B45309' : '#64748B',
+                      fontWeight: 500,
+                    }}>
+                      {it.level === 'note' ? '·' : '•'} {it.title}
+                    </span>
+                    {it.lines.length > 0 && (
+                      <span style={{ color: '#64748B' }}>
+                        {' '}— {it.lines.length} row{it.lines.length === 1 ? '' : 's'}:
+                        {' '}line {it.lines.slice(0, 12).join(', ')}
+                        {it.lines.length > 12 ? ` and ${it.lines.length - 12} more` : ''}
+                      </span>
+                    )}
+                    {it.example && (
+                      <span className="block mt-0.5" style={{ color: '#64748B', paddingLeft: '0.9rem' }}>
+                        e.g. {it.example}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2" style={{ color: '#64748B' }}>
+                Line numbers are the rows of <strong>{fileName || 'the file'}</strong> as your
+                spreadsheet shows them.
+              </p>
+            </div>
+          )}
+
           {/* What that mapping produces */}
           {preview.length > 0 && (
             <div className="rounded-xl overflow-x-auto" style={{ border: '1px solid #E2E8F0' }}>
@@ -204,10 +262,16 @@ export default function ImportInvoicePanel({ onLoad, onClose }: {
           {error && <p className="text-xs font-medium" style={{ color: '#B91C1C' }}>{error}</p>}
 
           <div className="flex items-center gap-2">
-            <button onClick={load} disabled={isPending || !preview.length}
+            <button onClick={load} disabled={isPending || !preview.length || blocked}
               className="px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
-              style={{ ...btn(true), opacity: isPending || !preview.length ? 0.7 : 1 }}>
-              {isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Matching medicines…</> : `Load ${preview.length} line${preview.length === 1 ? '' : 's'}`}
+              style={{ ...btn(true), opacity: isPending || !preview.length || blocked ? 0.7 : 1 }}>
+              {isPending
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Matching medicines…</>
+                : blocked
+                  ? 'Fix the file first'
+                  : toFix.length
+                    ? `Load ${preview.length} lines anyway`
+                    : `Load ${preview.length} line${preview.length === 1 ? '' : 's'}`}
             </button>
             <span className="text-xs" style={{ color: '#94A3B8' }}>Nothing is saved until you press Receive stock.</span>
           </div>

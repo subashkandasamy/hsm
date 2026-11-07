@@ -211,6 +211,10 @@ export function parseNumberCell(raw: string): string {
 }
 
 export interface ParsedInvoiceRow {
+  /** 1-based line in the file, so a problem can name the row to open and fix. */
+  line: number
+  /** The expiry exactly as the file wrote it, kept for the error message. */
+  expiryRaw: string
   name: string
   batch: string
   expiry: string
@@ -242,6 +246,8 @@ export function readRows(rows: string[][], headerIndex: number, map: ColumnMap):
     // it imported as a medicine with 40,417 units and a batch of "1127".
     if (/^(total|grand total|sub total|subtotal|net|amount|item count|count|no of items|records?)\b/i.test(name)) continue
     out.push({
+      line: i + 1,
+      expiryRaw: at(r, 'expiry'),
       name,
       batch: at(r, 'batch'),
       expiry: parseExpiryCell(at(r, 'expiry')),
@@ -287,4 +293,143 @@ export function applyMrpBasis(rows: ParsedInvoiceRow[], basis: MrpBasis): Parsed
     if (!mrp || !size || size <= 1) return r
     return { ...r, mrp: String(Math.round((mrp / size) * 100) / 100) }
   })
+}
+
+// ── Checking the file before anything is loaded ──────────────────────────────
+
+export type IssueLevel = 'blocking' | 'fix' | 'note'
+
+export interface FileIssue {
+  level: IssueLevel
+  /** What is wrong, in the words of the person who has to fix it. */
+  title: string
+  /** The file's own line numbers, so they can be opened and corrected. */
+  lines: number[]
+  /** One concrete example, quoted from the file. */
+  example?: string
+}
+
+/**
+ * Batch numbers Excel has damaged.
+ *
+ * Narrow on purpose. A first attempt flagged any five-digit batch as a date
+ * serial and called out 21 rows of a real file, including "50924" — an ordinary
+ * batch number. A check that cries wolf on good data gets ignored on bad data,
+ * so only the two shapes that cannot be a batch number are flagged:
+ *
+ *   45597.229166666664   a date AND time serial — no batch has a fraction
+ *   6.26e+60             scientific notation — Excel ate an alphanumeric code
+ *
+ * A plain integer is left alone: it may well be the real batch, and the file
+ * cannot tell us otherwise.
+ */
+const EXCEL_DATETIME_SERIAL = /^\d{4,6}\.\d+$/
+// Needs a decimal point or an explicit sign in the exponent. Without that it
+// also matched "26E80110" and "5253E68501" — ordinary alphanumeric batch codes
+// that merely contain an E, which is the second false positive this check
+// produced before it was narrowed.
+const SCIENTIFIC = /^\d+\.\d+e[+-]?\d+$|^\d+e[+-]\d+$/i
+
+/**
+ * Everything wrong with the file, found in one pass and reported together.
+ *
+ * The import used to load whatever it could parse and let the problems surface
+ * one at a time at the very end — the save refuses on the first bad line, so a
+ * 1,127-row file told you about row 3, then row 40, then row 112. Worse, some
+ * problems never surfaced at all: a batch number Excel had mangled imported
+ * silently and only looked wrong on a shelf months later.
+ *
+ * Three levels, because they need different actions:
+ *   blocking  nothing can be imported until the file changes
+ *   fix       these rows will be refused at save — correct them in the file
+ *   note      handled automatically; said out loud so it is not a surprise
+ */
+export function checkFile(
+  rows: ParsedInvoiceRow[],
+  map: ColumnMap,
+  opts: { skipped?: number } = {},
+): FileIssue[] {
+  const issues: FileIssue[] = []
+  const add = (level: IssueLevel, title: string, lines: number[], example?: string) => {
+    if (lines.length) issues.push({ level, title, lines, example })
+  }
+
+  // ── Columns ──
+  const missing = INVOICE_FIELDS.filter((f) => f.needed && map[f.key] == null)
+  if (missing.length) {
+    issues.push({
+      level: 'blocking',
+      title: `${missing.map((m) => m.label).join(', ')} — no column in the file holds this. Pick it above, or add the column to the file.`,
+      lines: [],
+    })
+  }
+  if (map.mrp == null) {
+    issues.push({
+      level: 'blocking',
+      title: 'MRP — no column is mapped, and a batch cannot be saved without a selling price.',
+      lines: [],
+    })
+  }
+
+  // ── Rows ──
+  const noBatch: number[] = [], badExp: number[] = [], pastExp: number[] = []
+  const noQty: number[] = [], noMrp: number[] = [], oddBatch: number[] = []
+  let badExpEg = '', oddBatchEg = '', pastExpEg = ''
+
+  const now = new Date()
+  const thisMonth = now.getFullYear() * 12 + now.getMonth()
+
+  for (const r of rows) {
+    if (!r.batch.trim()) noBatch.push(r.line)
+    else if (EXCEL_DATETIME_SERIAL.test(r.batch) || SCIENTIFIC.test(r.batch)) {
+      oddBatch.push(r.line)
+      oddBatchEg ||= `${r.name} → batch "${r.batch}"`
+    }
+
+    if (!r.expiry) {
+      badExp.push(r.line)
+      badExpEg ||= `${r.name} → expiry "${r.expiryRaw}"`
+    } else {
+      const [mm, yy] = r.expiry.split('/').map(Number)
+      const m = (2000 + yy) * 12 + (mm - 1)
+      if (m < thisMonth) { pastExp.push(r.line); pastExpEg ||= `${r.name} → ${r.expiry}` }
+    }
+
+    if (!(Number(r.packs) > 0)) noQty.push(r.line)
+    if (!(Number(r.mrp) > 0)) noMrp.push(r.line)
+  }
+
+  add('fix', 'Batch number is empty. Every batch needs one.', noBatch)
+  add('fix', 'Expiry could not be read. Write it as MM/YY, or DD-MM-YYYY.', badExp, badExpEg)
+  add('fix', 'This expiry has already passed — expired stock cannot be received.', pastExp, pastExpEg)
+  add('fix', 'Quantity is missing or zero.', noQty)
+  add('fix', 'MRP is missing or zero.', noMrp)
+  add('fix',
+    'Batch number looks like Excel damaged it — a date serial or a number in scientific notation. Open the original and retype it as text.',
+    oddBatch, oddBatchEg)
+
+  // ── Duplicates: the same batch of the same medicine twice ──
+  const seen = new Map<string, number>()
+  const dup: number[] = []
+  for (const r of rows) {
+    const k = `${r.name.toLowerCase()}|${r.batch.toLowerCase()}|${r.expiry}`
+    if (seen.has(k)) dup.push(r.line)
+    else seen.set(k, r.line)
+  }
+  add('note', 'The same medicine, batch and expiry appears more than once. The quantities will be added together.', dup)
+
+  if (opts.skipped) {
+    issues.push({
+      level: 'note',
+      title: `${opts.skipped} line${opts.skipped === 1 ? '' : 's'} skipped — totals and report footers, not medicines.`,
+      lines: [],
+    })
+  }
+
+  return issues
+}
+
+/** True when the file cannot be imported at all until it is changed. */
+export function hasBlocking(issues: FileIssue[]): boolean {
+  return issues.some((i) => i.level === 'blocking')
 }
