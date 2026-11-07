@@ -773,8 +773,11 @@ export async function cancelIpdLabOrder(orderId: string): Promise<SimpleResult> 
 
 export async function listLabCatalogForIpd(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
+  // Same rule as the OPD list: panel components are not ordered on their own.
   const tests = await pageAll<LabTestCatalog>((f, t) => supabase
-    .from('lab_tests_catalog').select('*').eq('is_active', true).order('name').order('id').range(f, t))
+    .from('lab_tests_catalog').select('*')
+    .eq('is_active', true).eq('package_only', false)
+    .order('name').order('id').range(f, t))
 
   // Same panel counts the OPD list shows — a ward doctor ordering a CBC should
   // see it is twenty measurements, not guess from the name.

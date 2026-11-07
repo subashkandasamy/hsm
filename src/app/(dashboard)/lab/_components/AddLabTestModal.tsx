@@ -24,21 +24,22 @@ const LAB_CATEGORIES = [
 
 type TestForm = {
   name: string; code: string; category: string; sample_type: string; unit: string
-  ref_low: string; ref_high: string; reference_range: string; price: string
+  ref_low: string; ref_high: string; reference_range: string; price: string; package_only: boolean
 }
-const BLANK: TestForm = { name: '', code: '', category: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '' }
+const BLANK: TestForm = { name: '', code: '', category: '', sample_type: '', unit: '', ref_low: '', ref_high: '', reference_range: '', price: '', package_only: false }
 
 function parseNum(s: string): number | null { const n = parseFloat(s); return isNaN(n) ? null : n }
 function testToForm(t: LabTestCatalog): TestForm {
   return { name: t.name, code: t.code ?? '', category: t.category ?? '', sample_type: t.sample_type ?? '', unit: t.unit ?? '',
     ref_low: t.ref_low != null ? String(t.ref_low) : '', ref_high: t.ref_high != null ? String(t.ref_high) : '',
-    reference_range: t.reference_range ?? '', price: String(t.price) }
+    reference_range: t.reference_range ?? '', price: String(t.price), package_only: t.package_only === true }
 }
 function formToPayload(f: TestForm) {
   return { name: f.name.trim(), code: f.code.trim() || null, category: f.category.trim() || 'General',
     sample_type: f.sample_type.toLowerCase() || null,
     unit: f.unit.trim() || null, ref_low: parseNum(f.ref_low), ref_high: parseNum(f.ref_high),
-    reference_range: f.reference_range.trim() || null, price: parseFloat(f.price) || 0 }
+    reference_range: f.reference_range.trim() || null, price: parseFloat(f.price) || 0,
+    package_only: f.package_only }
 }
 function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
   return arr.reduce<Record<string, T[]>>((acc, item) => {
@@ -152,7 +153,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
 
   async function submitEdit() {
     if (!editId || !editForm.name.trim()) { setEditErr('Name is required'); return }
-    if (!editForm.price) { setEditErr('Price is required'); return }
+    if (!editForm.package_only && !editForm.price) { setEditErr('Enter a price, or tick "part of a panel only"'); return }
     setEditSaving(true); setEditErr('')
     const res = await updateLabTest(editId, formToPayload(editForm))
     setEditSaving(false)
@@ -233,7 +234,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
 
   async function submitCustom() {
     if (!customForm.name.trim()) { setCustomErr('Name is required'); return }
-    if (!customForm.price) { setCustomErr('Price is required'); return }
+    if (!customForm.package_only && !customForm.price) { setCustomErr('Enter a price, or tick "part of a panel only"'); return }
     setCustomSaving(true); setCustomErr('')
     const res = await createLabTest(formToPayload(customForm))
     setCustomSaving(false)
@@ -557,7 +558,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
 interface FormProps {
   form: TestForm; err: string; saving: boolean
   accent: string; title: string; saveLabel: string
-  onSet: (f: string, v: string) => void
+  onSet: (f: string, v: string | boolean) => void
   onSave: () => void; onCancel: () => void
 }
 
@@ -619,11 +620,37 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
           <input value={form.reference_range} onChange={e => onSet('reference_range', e.target.value)} className={inp} style={bdr} placeholder="70–110 mg/dL" />
         </div>
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: accent }}>Price (₹) *</label>
-          <input type="number" min={0} step="0.01" value={form.price} onChange={e => onSet('price', e.target.value)}
-            className={inp} style={{ borderColor: accent, color: accent, background: '#fff', fontWeight: 600 }} placeholder="150" />
+          <label className="text-xs font-medium block mb-1" style={{ color: form.package_only ? '#94A3B8' : accent }}>
+            Price (₹){form.package_only ? '' : ' *'}
+          </label>
+          <input type="number" min={0} step="0.01" value={form.package_only ? '' : form.price}
+            disabled={form.package_only}
+            onChange={e => onSet('price', e.target.value)}
+            className={inp}
+            style={form.package_only
+              ? { borderColor: '#E2E8F0', color: '#94A3B8', background: '#F8FAFC' }
+              : { borderColor: accent, color: accent, background: '#fff', fontWeight: 600 }}
+            placeholder={form.package_only ? 'not sold on its own' : '150'} />
         </div>
       </div>
+
+      {/* Part of a panel only.
+          A Liver Function Test costs ₹800 and prints Total Protein, Albumin,
+          Globulin, A/G Ratio. Nobody orders A/G Ratio by itself, and a test
+          with no price on an order screen ends up on a bill as a zero. */}
+      <label className="flex items-start gap-2 text-xs rounded-lg px-3 py-2"
+        style={{ background: form.package_only ? '#F0FDFA' : '#F8FAFC', border: `1px solid ${form.package_only ? '#99F6E4' : '#E2E8F0'}` }}>
+        <input type="checkbox" checked={!!form.package_only} className="mt-0.5"
+          onChange={e => onSet('package_only', e.target.checked)} />
+        <span>
+          <span className="font-medium" style={{ color: '#0F172A' }}>Part of a panel only</span>
+          <span className="block mt-0.5" style={{ color: '#64748B' }}>
+            A measurement inside a report, like A/G Ratio or MCV. It still appears
+            when results are entered — it just cannot be ordered or billed on its own,
+            so it needs no price.
+          </span>
+        </span>
+      </label>
 
       <div className="flex justify-end gap-2 pt-1">
         <button onClick={onCancel} className="px-3 py-1.5 rounded-lg text-xs font-medium"

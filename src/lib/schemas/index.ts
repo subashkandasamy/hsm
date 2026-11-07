@@ -362,7 +362,14 @@ export const LabTestCatalogSchema = z.object({
   ref_low: z.number().nullable().optional(),
   ref_high: z.number().nullable().optional(),
   reference_range: z.string().nullable().optional(),
-  price: z.number().positive('Enter a price greater than 0'),
+  /** A measurement inside a panel: never ordered or billed on its own. */
+  package_only: z.boolean().optional().default(false),
+  price: z.number().min(0),
+}).refine((v) => v.package_only || v.price > 0, {
+  // A component has no price because it is not for sale. Everything else must
+  // have one, or it goes on a bill as a zero and the hospital works for free.
+  message: 'Enter a price greater than 0, or tick "part of a panel only"',
+  path: ['price'],
 })
 
 export const LabOrderSchema = z.object({

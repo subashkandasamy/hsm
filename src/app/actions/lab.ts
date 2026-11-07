@@ -42,7 +42,6 @@ export async function activateFromMaster(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'lab:manage')
-  if (!(price > 0)) return { success: false, error: 'Enter a price greater than 0' }
   const supabase = await createClient()
 
   // Guard: don't duplicate if already activated by this tenant
@@ -57,6 +56,11 @@ export async function activateFromMaster(
   const { data: master } = await supabase
     .from('lab_tests_master').select('*').eq('id', masterTestId).single()
   if (!master) return { success: false, error: 'Master test not found' }
+
+  // A panel component is activated at 0 deliberately — it is not for sale.
+  // Everything else must carry a price or it bills as a zero.
+  const isComponent = (master as Record<string, unknown>).package_only === true
+  if (!isComponent && !(price > 0)) return { success: false, error: 'Enter a price greater than 0' }
 
   const id = crypto.randomUUID()
   const { error } = await supabase.from('lab_tests_catalog').insert({
@@ -79,6 +83,9 @@ export async function activateFromMaster(
     ref_low:         master.ref_low ?? null,
     ref_high:        master.ref_high ?? null,
     reference_range: master.reference_range ?? null,
+    // Whether a test is a panel component is true of the test, not of one
+    // hospital, so it comes down with the clinical detail.
+    package_only:    (master as Record<string, unknown>).package_only === true,
     price,
     is_active:       true,
   })
@@ -121,8 +128,13 @@ async function withAnalyteCounts(
 
 export async function listLabCatalog(): Promise<LabTestCatalog[]> {
   const supabase = await createClient()
+  // `package_only` rows are the measurements inside a panel. They are real
+  // records with real results, but nobody orders A/G Ratio on its own, and a
+  // test with no price on an order screen ends up on a bill as a zero.
   const data = await pageAll<LabTestCatalog>((f, t) => supabase
-    .from('lab_tests_catalog').select('*').eq('is_active', true).order('name').order('id').range(f, t))
+    .from('lab_tests_catalog').select('*')
+    .eq('is_active', true).eq('package_only', false)
+    .order('name').order('id').range(f, t))
   return withAnalyteCounts(supabase, data)
 }
 

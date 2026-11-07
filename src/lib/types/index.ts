@@ -360,6 +360,8 @@ export interface LabTestCatalog {
   sample_type: string | null; unit: string | null
   ref_low: number | null; ref_high: number | null
   reference_range: string | null; price: number; is_active: boolean
+  /** A measurement inside a panel — hidden from ordering, shown on results. */
+  package_only?: boolean
   lab_master_id?: string | null
 }
 
