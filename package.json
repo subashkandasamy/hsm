@@ -37,7 +37,8 @@
     "verify:ttl-cache": "tsx scripts/verify-ttl-cache.ts",
     "verify:tenant-consistency": "echo 'Run scripts/verify-tenant-consistency.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'",
     "verify:partitions": "echo 'Run scripts/verify-partitions.sql against the database (psql -f, or the SQL editor). It is read-only and raises by design.'",
-    "verify:guess-form": "tsx scripts/verify-guess-form.ts"
+    "verify:guess-form": "tsx scripts/verify-guess-form.ts",
+    "verify:page-all": "tsx scripts/verify-page-all.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",

@@ -12,6 +12,7 @@ import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
+import { pageAll } from '@/lib/supabase/pageAll'
 import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
 import { parseScan, type ScannedCode } from '@/lib/pharmacy/scan'
 
@@ -902,13 +903,24 @@ export async function getStock(): Promise<DrugWithStock[]> {
   const supabase = await createClient()
   const today = istToday()
 
-  // All batches for this tenant (all expiry/qty states — to show full inventory)
-  const { data: allBatches } = await supabase
+  // All batches for this tenant (all expiry/qty states — to show full inventory).
+  //
+  // Paged, because PostgREST stops at 1,000 rows and says nothing. A hospital
+  // with 1,027 batches saw this screen under-report its stock by 49 units and
+  // ₹48,007 — and because the order is by expiry, what disappeared was the
+  // equipment, whose placeholder expiries sort last. See lib/supabase/pageAll.
+  const allBatches = await pageAll<{
+    id: string; drug_id: string | null; drug_master_id: string | null; batch_no: string
+    expiry: string; qty_available: number; purchase_price: number | null; mrp: number
+    reorder_level: number | null; storage_location: string | null; brand_name: string | null
+    supplier_name: string | null; purchase_date: string | null
+  }>((from, to) => supabase
     .from('drug_batches')
     .select('id, drug_id, drug_master_id, batch_no, expiry, qty_available, purchase_price, mrp, reorder_level, storage_location, brand_name, supplier_name, purchase_date')
-    .order('expiry', { ascending: true })
+    .order('expiry', { ascending: true }).order('id')
+    .range(from, to))
 
-  if (!allBatches?.length) return []
+  if (!allBatches.length) return []
 
   // Separate by source
   const masterIds = [...new Set(allBatches.filter(b => b.drug_master_id).map(b => b.drug_master_id as string))]
@@ -1053,11 +1065,14 @@ export async function getAlerts(): Promise<PharmacyAlerts> {
     drug:drugs(name, generic_name, form, strength)
   `
 
-  const [{ data: nearRaw }, { data: expiredRaw }] = await Promise.all([
-    supabase.from('drug_batches').select(batchSelect)
-      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0).order('expiry'),
-    supabase.from('drug_batches').select(batchSelect)
-      .lte('expiry', today).gt('qty_available', 0).order('expiry'),
+  // Paged for the same reason getStock is: a long-running hospital accumulates
+  // expired batches it has not written off, and the 1,001st would vanish from
+  // the alert silently — the one place where a missing row is the whole point.
+  const [nearRaw, expiredRaw] = await Promise.all([
+    pageAll<Record<string, unknown>>((from, to) => supabase.from('drug_batches').select(batchSelect)
+      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0).order('expiry').order('id').range(from, to)),
+    pageAll<Record<string, unknown>>((from, to) => supabase.from('drug_batches').select(batchSelect)
+      .lte('expiry', today).gt('qty_available', 0).order('expiry').order('id').range(from, to)),
   ])
 
   type MasterJoin = { name: string; generic_name: string | null; form: string | null; strength: string | null; drug_brands?: Array<{ brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }> }
