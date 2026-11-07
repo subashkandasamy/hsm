@@ -26,6 +26,7 @@
     "verify:tenant-scope": "tsx scripts/verify-tenant-scope.ts",
     "verify:gst": "tsx scripts/verify-gst.ts",
     "verify:rx-match": "tsx scripts/verify-rx-match.ts",
+    "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",
     "verify:rate-limit": "tsx scripts/verify-rate-limit.ts",

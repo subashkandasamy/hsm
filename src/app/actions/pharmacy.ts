@@ -12,6 +12,7 @@ import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
+import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
 import { parseScan, type ScannedCode } from '@/lib/pharmacy/scan'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -35,6 +36,86 @@ export async function createDrug(
   await logAudit(actor.id, 'create', 'drug', id, { name: parsed.data.name })
   const { data: drug } = await supabase.from('drugs').select('*').eq('id', id).single()
   return { success: true, drug: drug as Drug }
+}
+
+/**
+ * Creates the medicines an imported file names but the catalogue does not have.
+ *
+ * Without this, a stock migration dead-ends. The importer matches what it can
+ * and leaves the rest with no medicine, the save refuses on the first such line,
+ * and the only way forward is to pick a medicine on every unmatched row by hand
+ * — roughly 400 of them on a real hospital's opening stock, and impossible for
+ * the ~200 items that are gloves, catheters and forceps, which exist in no drug
+ * catalogue at all and cannot be picked because they are not there.
+ *
+ * These go to the hospital's OWN list (`drugs`, carrying tenant_id), never to
+ * `drug_master`. The master has no tenant_id — every hospital on the platform
+ * reads it — and it is a drug catalogue where all 242,699 brands carry an HSN
+ * code, a GST rate, a pack size and a manufacturer. One hospital's forceps,
+ * with none of those, do not belong in it.
+ *
+ * Nothing is invented. The name comes from the file; the form is the category
+ * word the file already appended; strength is left NULL rather than guessed,
+ * because a wrong strength on a medicine record is worse than a missing one.
+ *
+ * Idempotent by name within the hospital, so running an import twice adds
+ * nothing the second time.
+ */
+export async function createDrugsBulk(
+  items: Array<{ name: string; form?: string | null }>,
+): Promise<{ success: true; drugs: Drug[]; created: number; existing: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+
+  const wanted = new Map<string, { name: string; form: string | null }>()
+  for (const it of items) {
+    const name = (it.name ?? '').trim()
+    if (!name) continue
+    const key = name.toLowerCase()
+    if (!wanted.has(key)) wanted.set(key, { name, form: (it.form ?? null) || null })
+  }
+  if (!wanted.size) return { success: true, drugs: [], created: 0, existing: 0 }
+  if (wanted.size > 2000) return { success: false, error: 'Too many medicines in one go — split the file.' }
+
+  const supabase = await createClient()
+
+  // Anything the hospital already has keeps its existing record.
+  const { data: have } = await supabase
+    .from('drugs').select('*').in('name', [...wanted.values()].map((w) => w.name))
+  const byName = new Map<string, Drug>()
+  for (const d of (have ?? []) as Drug[]) byName.set(d.name.trim().toLowerCase(), d)
+
+  const toInsert = [...wanted.entries()]
+    .filter(([k]) => !byName.has(k))
+    .map(([, w]) => ({
+      id: crypto.randomUUID(),
+      tenant_id: actor.tenant_id,
+      name: w.name,
+      form: w.form,
+      strength: null,
+      reorder_level: 0,
+      is_active: true,
+    }))
+
+  if (toInsert.length) {
+    const { error } = await supabase.from('drugs').insert(toInsert)
+    if (error) return { success: false, error: error.message }
+    const { data: made } = await supabase
+      .from('drugs').select('*').in('id', toInsert.map((d) => d.id))
+    for (const d of (made ?? []) as Drug[]) byName.set(d.name.trim().toLowerCase(), d)
+    await logAudit(actor.id, 'create_bulk', 'drug', null, {
+      created: toInsert.length,
+      names: toInsert.slice(0, 50).map((d) => d.name),
+    })
+  }
+
+  return {
+    success: true,
+    drugs: [...wanted.keys()].map((k) => byName.get(k)).filter(Boolean) as Drug[],
+    created: toInsert.length,
+    existing: wanted.size - toInsert.length,
+  }
 }
 
 export async function updateDrug(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
@@ -658,25 +739,27 @@ export async function matchInvoiceNames(names: string[]): Promise<NameMatch[]> {
 function scoreMatch(raw: string, cleaned: string, hits: Drug[]): NameMatch {
   if (!hits.length) return { raw, drug: null, brand: null, confidence: 'none', options: [] }
 
+  // Word by word, not whole string (see lib/pharmacy/nameMatch). The old test
+  // compared the two as single strings, so "GLYMIPRL M1" never reached
+  // "Glymiprl M 1mg/500mg Tablet" — one space apart. On a real 712-name
+  // migration it matched 42.
   let best: { drug: Drug; brand: string | null; score: number } | null = null
   for (const d of hits) {
     for (const brand of d.brand_aliases ?? []) {
-      const b = brand.toLowerCase()
-      const score = b === cleaned ? 100
-        : cleaned.startsWith(b) || b.startsWith(cleaned) ? 80
-        : cleaned.includes(b) && b.length >= 4 ? 65
-        : 0
+      const score = nameMatchScore(cleaned, brand)
       if (score && (!best || score > best.score)) best = { drug: d, brand, score }
     }
-    const name = d.name.toLowerCase()
-    const nameScore = name === cleaned ? 90 : cleaned.startsWith(name) ? 70 : 0
+    // The molecule's own name, for a line written as the generic.
+    const nameScore = nameMatchScore(cleaned, d.name)
     if (nameScore && (!best || nameScore > best.score)) best = { drug: d, brand: null, score: nameScore }
   }
 
-  if (!best || best.score < 65) return { raw, drug: null, brand: null, confidence: 'none', options: hits }
+  if (!best || best.score < WEAK) return { raw, drug: null, brand: null, confidence: 'none', options: hits }
   return {
     raw, drug: best.drug, brand: best.brand,
-    confidence: best.score >= 90 ? 'sure' : 'likely',
+    // Below SURE the brand agrees but the strength does not, or none was given.
+    // Those are shown with the "check this" marker rather than accepted quietly.
+    confidence: best.score >= SURE ? 'sure' : 'likely',
     options: hits.filter((d) => d.id !== best!.drug.id),
   }
 }
