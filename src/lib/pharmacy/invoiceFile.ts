@@ -433,3 +433,64 @@ export function checkFile(
 export function hasBlocking(issues: FileIssue[]): boolean {
   return issues.some((i) => i.level === 'blocking')
 }
+
+/**
+ * The kind of thing a line names, read out of its own wording.
+ *
+ * Used when a line matches nothing in the catalogue and the hospital chooses to
+ * add it to their own list as it is written. `drugs.form` is a free-text label
+ * shown beside the name, so the honest value is the word the file already uses
+ * — "SYRINGE", "RESPULES", "SUPPOSITORY" — not a guess at a dosage class.
+ *
+ * Returns null rather than inventing one. A null form is a blank field the
+ * pharmacist can fill; a wrong form is a wrong record.
+ */
+const FORM_WORDS: Array<[RegExp, string]> = [
+  // Equipment and consumables first: "IV SET" must not be read as an injection,
+  // and "DISPOSABLE CAP" is not a capsule. Both are real lines from a migration.
+  [/\b(syringe|needle|lancet|cannula)\b/i, 'Syringe / needle'],
+  [/\b(catheter|foley|sheath|drain|stent|urobag|urine bag)\b/i, 'Catheter / drain'],
+  [/\b(mask|oxy|oxygen|nebuli[sz]er|airway|ett|tracheostomy|bougie|stylet|lma|suction)\b/i, 'Airway / respiratory'],
+  [/\b(gauze|bandage|dressing|plaster|tape|cotton|pad|swab|crepe)\b/i, 'Dressing / adhesive'],
+  [/\b(suture|stapler|prolene|vicryl|catgut|silk)\b/i, 'Suture / stapler'],
+  // `forc` because invoices abbreviate: "DISSECTING TOOTH FORC" is a forceps.
+  [/\b(forceps?|forc|scissor|clamp|retractor|trocar|scalpel|blade|probe|speculum)\b/i, 'Surgical instrument'],
+  [/\b(glove|gloves)\b/i, 'Gloves'],
+  // Device words the first pass over a real stock file showed were missing.
+  // `b.p` only ever as part of a named part, never bare: a line is far more
+  // likely to be a medicine than a sphygmomanometer.
+  [/\b(ambu\s*bag|resuscitator)\b/i, 'Airway / respiratory'],
+  [/\b(accu[\s-]?chek|glucometer|glucose strip|test strip)\b/i, 'Diagnostic device'],
+  [/\bb\.?\s?p\.?(?:\s+\w+){0,3}\s+(apparatus|stand|handle|bulb|cuff|monitor)\b/i, 'Diagnostic device'],
+  [/\b(air\s*bed|water\s*bed|mattress|bed\s*sheet)\b/i, 'Hospital ware'],
+  [/\b(restrainer|restraint)\b/i, 'Orthopaedic / support'],
+  [/\b(tray|bowl|bowel|bedpan|bedfan|kidney tray|jar|container)\b/i, 'Hospital ware'],
+  [/\b(iv set|infusion set|blood set|burette|three way|3 way)\b/i, 'IV administration'],
+  [/\b(apron|gown|cap|sheet|linen|shoe cover)\b/i, 'Protective wear / linen'],
+  [/\b(binder|splint|collar|support|sling|crepe|traction)\b/i, 'Orthopaedic / support'],
+  // Ultrasound gel sits with the scanner it is used on, and must be tested
+  // before the bare `jelly` rule below.
+  [/\b(ultra\s*sound|ultrasound|usg)\b/i, 'Diagnostic device'],
+  [/\b(monitor|thermometer|scale|meter|transducer|stethoscope|sphygmo)\b/i, 'Diagnostic device'],
+  [/\b(jelly|lubricant|lignocaine jelly)\b/i, 'Lubricant gel'],
+  [/\b(sterillium|bacillocid|disinfectant|handrub|sanitiser|sanitizer)\b/i, 'Antiseptic / disinfectant'],
+  // Dosage forms.
+  [/\b(respule|respules|resp)\b/i, 'Respules'],
+  [/\b(suppositor\w*|supposit)\b/i, 'Suppository'],
+  [/\b(tablet|tablets|tabs?)\b/i, 'Tablet'],
+  [/\b(capsule|capsules|caps?)\b/i, 'Capsule'],
+  [/\b(injection|inj|ampoule|amp|vial)\b/i, 'Injection'],
+  [/\b(syrup|syp|syr|suspension|susp|elixir)\b/i, 'Syrup'],
+  [/\b(ointment|oint|cream|gel|lotion)\b/i, 'Ointment / cream'],
+  [/\b(drops?|eye drop|ear drop)\b/i, 'Drops'],
+  [/\b(spray|inhaler|rotacap|puff)\b/i, 'Inhaler / spray'],
+  [/\b(sachet|granules|powder)\b/i, 'Sachet / powder'],
+  [/\b(solution|soln|infusion|fluid|ns|rl|dns)\b/i, 'IV fluid'],
+]
+
+export function guessForm(raw: string): string | null {
+  const s = (raw ?? '').trim()
+  if (!s) return null
+  for (const [re, form] of FORM_WORDS) if (re.test(s)) return form
+  return null
+}

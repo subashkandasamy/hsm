@@ -2,11 +2,12 @@
 
 import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Loader2, Plus, ScanBarcode, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Loader2, Plus, ScanBarcode, Search, Trash2, Wand2, X } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import PageHeader from '@/components/ui/PageHeader'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
-import { ensureReceiptLabels, lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
+import { createDrugsBulk, ensureReceiptLabels, lastBatchFor, receiveStock, resolveProductCode, rememberProductCode, type PrefillLine, type StockReceiptLine, type StockReceiptSummary } from '@/app/actions/pharmacy'
+import { guessForm } from '@/lib/pharmacy/invoiceFile'
 import { useScanListener } from '@/lib/hooks/useScanListener'
 import { istToday } from '@/lib/istDate'
 import type { Drug } from '@/lib/types'
@@ -40,6 +41,9 @@ interface Line {
   rawName?: string
   /** The catalogue match was a guess — worth a glance before saving. */
   needsCheck?: boolean
+  /** What the catalogue search turned up for an unmatched name, best first.
+   *  Shown as one-click suggestions rather than making the counter retype. */
+  options?: Drug[]
 }
 
 let seq = 0
@@ -107,6 +111,14 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
 
   const [importing, setImporting] = useState(false)
   const [imported, setImported] = useState<{ total: number; unmatched: number; unsure: number } | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [addedMsg, setAddedMsg] = useState('')
+
+  // An imported line still waiting for a decision. A blank row the counter
+  // added by hand has no rawName, so it is never dragged into that group.
+  const numbered = lines.map((l, i) => ({ l, i }))
+  const unpicked = numbered.filter(({ l }) => !l.drug && (l.rawName ?? '').trim())
+  const rest = numbered.filter(({ l }) => l.drug || !(l.rawName ?? '').trim())
 
   const set = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   const addLine = () => setLines((ls) => [...ls, newLine()])
@@ -138,6 +150,9 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         if (row.manufacturer) l.manufacturer = row.manufacturer
         l.needsCheck = match.confidence !== 'sure'
       }
+      // Kept for a matched line too: "change medicine" clears the pick and the
+      // suggestions should still be there.
+      l.options = match.options ?? []
       return l
     })
     // Keep anything already typed in; drop the untouched blank row.
@@ -149,6 +164,55 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
       unsure: next.filter((l) => l.needsCheck).length,
     })
     setImporting(false)
+  }
+
+  /**
+   * Adds every unmatched imported line to THIS hospital's own medicine list,
+   * under the name the file already uses, and puts each new record on its line.
+   *
+   * This is the answer to a migration the shared catalogue cannot cover. A
+   * hospital's opening stock is full of things no drug catalogue holds —
+   * syringes, forceps, oxygen sets, local brands — and the alternative was the
+   * counter typing several hundred names by hand to get past a screen.
+   *
+   * Nothing is invented and nothing is shared: the name is the file's own, the
+   * form is the word the file already uses (`guessForm`), strength is left
+   * blank rather than guessed, and the rows land in `drugs`, which is this
+   * hospital's table alone — never in the catalogue other hospitals read.
+   *
+   * HSN, GST and pack size stay as the file stated them, because a brand-new
+   * record has no defaults to offer and the file is the only source there is.
+   */
+  async function addAllUnmatched() {
+    const pending = lines.filter((l) => !l.drug && (l.rawName ?? '').trim())
+    if (!pending.length) return
+    setAdding(true)
+    setError('')
+    const res = await createDrugsBulk(
+      pending.map((l) => ({ name: l.rawName!.trim(), form: guessForm(l.rawName!) })),
+    )
+    setAdding(false)
+    if (!res.success) { setError(res.error); return }
+
+    const byName = new Map(res.drugs.map((d) => [d.name.trim().toLowerCase(), d]))
+    setLines((ls) => ls.map((l) => {
+      if (l.drug || !(l.rawName ?? '').trim()) return l
+      const d = byName.get(l.rawName!.trim().toLowerCase())
+      if (!d) return l
+      const next = applyDrug(l, d, null)
+      // The file outranks applyDrug's fallbacks on a record that has no brand
+      // data to fall back to. Without this a syringe would be saved as
+      // HSN 30049099 at 12% — a medicine's defaults on a device.
+      if (l.packSize) next.packSize = l.packSize
+      if (l.hsn) next.hsn = l.hsn
+      if (l.gst) next.gst = l.gst
+      if (l.manufacturer) next.manufacturer = l.manufacturer
+      next.needsCheck = false
+      return next
+    }))
+    setAddedMsg(res.created === 0
+      ? `All ${res.existing} were already on your list — linked.`
+      : `${res.created} added to your list${res.existing ? `, ${res.existing} were already there` : ''}.`)
   }
 
   function flashScan(tone: 'ok' | 'warn', text: string) {
@@ -429,9 +493,47 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         )}
       </div>
 
-      {/* Lines */}
+      {/* Lines.
+          Imported lines with no medicine picked are listed on their own, above
+          the rest. Mixed in, a few hundred of them are invisible — the counter
+          scrolls a thousand rows looking for the ones that still need a
+          decision. Separated, the whole job is one block you work down and
+          finish. Numbering stays the file's own, so a row here and a row in the
+          spreadsheet are the same row. */}
+      {unpicked.length > 0 && (
+        <div className="mb-4 rounded-2xl p-3" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: '#B45309' }} />
+            <span className="text-sm font-semibold" style={{ color: '#92400E' }}>
+              {unpicked.length} line{unpicked.length === 1 ? '' : 's'} not in the catalogue
+            </span>
+            <span className="text-xs" style={{ color: '#B45309' }}>
+              Pick a suggestion, search for it, or add it to your own list as the file spells it.
+            </span>
+            <button onClick={() => void addAllUnmatched()} disabled={adding}
+              className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+              style={{ ...btn(true), opacity: adding ? 0.7 : 1 }}>
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              {adding ? 'Adding…' : `Add all ${unpicked.length} to our list`}
+            </button>
+          </div>
+          {addedMsg && (
+            <p className="text-xs mb-2 px-2 py-1.5 rounded-lg" style={{ background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }}>
+              {addedMsg}
+            </p>
+          )}
+          <div className="space-y-2">
+            {unpicked.map(({ l, i }) => (
+              <LineRow key={l.key} line={l} index={i} set={set} remove={() => removeLine(l.key)}
+                onAddLine={addLine} isLast={false}
+                onPicked={(drugId, isGlobal, brand) => void teachPendingCode(l, drugId, isGlobal, brand)} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
-        {lines.map((l, i) => (
+        {rest.map(({ l, i }) => (
           <LineRow key={l.key} line={l} index={i} set={set} remove={() => removeLine(l.key)}
             onAddLine={addLine} isLast={i === lines.length - 1}
             onPicked={(drugId, isGlobal, brand) => void teachPendingCode(l, drugId, isGlobal, brand)} />
@@ -523,6 +625,17 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast, onPicked }: {
   const [active, setActive] = useState(0)
   const results = useDrugSearch(query, 8)
   const batchRef = useRef<HTMLInputElement>(null)
+  const [addingOne, setAddingOne] = useState(false)
+
+  /** Adds just this line's name to the hospital's own list. See addAllUnmatched. */
+  async function addAsWritten() {
+    const name = (l.rawName ?? query).trim()
+    if (!name) return
+    setAddingOne(true)
+    const res = await createDrugsBulk([{ name, form: guessForm(name) }])
+    setAddingOne(false)
+    if (res.success && res.drugs[0]) pick(res.drugs[0], null)
+  }
 
   const expiryIso = expiryToDate(l.expiry)
   const months = expiryIso ? monthsUntil(expiryIso) : null
@@ -531,9 +644,15 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast, onPicked }: {
 
   function pick(d: Drug, brand: string | null) {
     const next = applyDrug(l, d, brand)
-    // On an imported line the invoice's own pack size is what actually arrived,
-    // so it outranks the catalogue's default for that brand.
-    if (l.rawName && l.packSize) next.packSize = l.packSize
+    // On an imported line the invoice's own figures are what actually arrived,
+    // so they outrank the catalogue's defaults for that brand.
+    if (l.rawName) {
+      if (l.packSize) next.packSize = l.packSize
+      if (l.hsn) next.hsn = l.hsn
+      if (l.gst) next.gst = l.gst
+      if (l.manufacturer) next.manufacturer = l.manufacturer
+    }
+    next.needsCheck = false
     set(l.key, next)
     // A pack scanned a moment ago now has a name: remember it for next time.
     if (l.scanCode) onPicked?.(d.id, !!d.is_global, next.brandName ?? brand)
@@ -596,6 +715,39 @@ function LineRow({ line: l, index, set, remove, onAddLine, isLast, onPicked }: {
                 <p className="text-xs mb-1 font-mono truncate" style={{ color: '#B45309' }}>
                   scanned {l.scanCode} — which medicine?
                 </p>
+              )}
+              {l.rawName && (
+                <p className="text-sm font-semibold mb-1 truncate" style={{ color: '#0F172A' }} title={l.rawName}>
+                  {l.rawName}
+                </p>
+              )}
+              {/* Everything the catalogue search turned up, best first. The
+                  match was not confident enough to accept on its own — a
+                  person deciding between four named candidates is, and it
+                  costs one click instead of retyping the name. */}
+              {!!l.options?.length && (
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <span className="text-[11px]" style={{ color: '#94A3B8' }}>did you mean</span>
+                  {l.options.slice(0, 4).map((d) => {
+                    const brand = (d.brand_aliases ?? [])[0] ?? null
+                    return (
+                      <button key={d.id} onClick={() => pick(d, brand)}
+                        title={`${d.name}${d.strength ? ` · ${d.strength}` : ''}`}
+                        className="text-xs px-2 py-1 rounded-lg font-medium"
+                        style={{ background: '#fff', color: '#0F766E', border: '1px solid #99F6E4', cursor: 'pointer', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {brand ?? d.name}{d.strength ? ` ${d.strength}` : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {(l.rawName || query.trim().length >= 2) && (
+                <button onClick={() => void addAsWritten()} disabled={addingOne}
+                  className="flex items-center gap-1 text-xs mb-1.5 px-2 py-1 rounded-lg font-medium"
+                  style={{ background: '#fff', color: '#475569', border: '1px dashed #CBD5E1', cursor: 'pointer', opacity: addingOne ? 0.6 : 1 }}>
+                  {addingOne ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                  none of these — add &ldquo;{((l.rawName ?? query).trim()).slice(0, 34)}&rdquo; to our list
+                </button>
               )}
               <div className="flex items-center gap-1.5 px-2 rounded-lg" style={{ border: `1px solid ${l.scanCode ? '#FDE68A' : '#E2E8F0'}`, background: '#fff', minHeight: '38px' }}>
                 <Search className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
