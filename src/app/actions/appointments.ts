@@ -12,6 +12,7 @@ import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { createServiceBill } from '@/lib/billing/serviceBill'
 import { istToday, istDate, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { requiresPaymentFirst } from '@/lib/payGate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -431,9 +432,11 @@ export async function getAppointmentBill(appointmentId: string): Promise<{
 // Bulk: returns a map of appointmentId → bill status for a list of appointments.
 // cashlessCovered marks bills with an approved/settled claim against them —
 // the worklist treats these as clear-to-start without collecting payment.
+// payFirst says whether this hospital makes the consultation wait for payment
+// at all (Settings → Billing & Collections) — the same rule startVisit applies.
 export async function getAppointmentsBillStatuses(
   appointmentIds: string[]
-): Promise<Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }>> {
+): Promise<Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean; payFirst: boolean }>> {
   if (appointmentIds.length === 0) return {}
   const supabase = await createClient()
   const { data } = await supabase
@@ -453,12 +456,15 @@ export async function getAppointmentsBillStatuses(
     for (const c of claims ?? []) if (c.bill_id) coveredBillIds.add(c.bill_id as string)
   }
 
-  const map: Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }> = {}
+  const actor = await getActorProfile()
+  const payFirst = await requiresPaymentFirst(supabase, actor.tenant_id, 'consultation')
+  const map: Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered: boolean; payFirst: boolean }> = {}
   for (const b of data ?? []) {
     if (b.appointment_id) {
       map[b.appointment_id as string] = {
         id: b.id as string, status: b.status as string, total: b.total as number, paid: b.paid as number,
         cashlessCovered: coveredBillIds.has(b.id as string),
+        payFirst,
       }
     }
   }

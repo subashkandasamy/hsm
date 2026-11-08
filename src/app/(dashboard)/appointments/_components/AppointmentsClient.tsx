@@ -21,7 +21,7 @@ import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 interface Doctor { id: string; full_name: string; role: string }
 interface Department { id: string; name: string }
-type BillStatusMap = Record<string, { id: string; status: string; total: number; paid: number }>
+type BillStatusMap = Record<string, { id: string; status: string; total: number; paid: number; cashlessCovered?: boolean; payFirst?: boolean }>
 
 interface Props {
   initialAppointments: Appointment[]
@@ -224,7 +224,9 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
             {displayed.map((a) => {
               const b = billStatuses[a.id]
               const isPaid = !b || b.status === 'paid'
-              const isUnpaid = b && b.status !== 'paid'
+              // Red only when the consultation must wait for this payment — not when
+              // it is cashless, or this hospital takes the fee after the visit.
+              const isUnpaid = b && b.status !== 'paid' && !b.cashlessCovered && b.payFirst !== false
               const busy = actionLoading === a.id
               const statusStyle = STATUS_STYLES[a.status] ?? { bg: '#F1F5F9', color: '#64748B' }
               const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })

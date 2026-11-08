@@ -5,7 +5,7 @@ import { explainStockShortfall } from '@/lib/pharmacy/stockShortfall'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { isBillCashlessCovered } from '@/lib/cashlessCover'
+import { unpaidAllowed } from '@/lib/payGate'
 import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
@@ -1420,7 +1420,7 @@ export async function dispatchMedicines(params: {
   if (!bill) return { success: false, error: 'Bill not found' }
   // Cashless-approved patients don't pay cash up front — an eligibility-approved
   // claim on this bill's encounter lifts the dispatch gate.
-  if (bill.status !== 'paid' && !(await isBillCashlessCovered(supabase, bill as { id: string; status: string; visit_id: string | null; admission_id: string | null }))) {
+  if (bill.status !== 'paid' && !(await unpaidAllowed(supabase, actor.tenant_id, 'pharmacy', bill as { id: string; visit_id: string | null; admission_id: string | null }))) {
     return { success: false, error: `Cannot dispatch — bill is "${bill.status}". Full payment must be received before dispatch.` }
   }
 

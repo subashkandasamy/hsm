@@ -11,7 +11,7 @@ import { startVisit } from '@/app/actions/opd'
 import type { Appointment } from '@/lib/types'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
-type BillStatus = { id: string; status: string; total: number; paid: number; cashlessCovered: boolean }
+type BillStatus = { id: string; status: string; total: number; paid: number; cashlessCovered: boolean; payFirst: boolean }
 
 interface Props {
   initialQueue: Appointment[]
@@ -81,7 +81,12 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
             const bill = billStatuses[a.id]
             const isCashless = !!bill && bill.status !== 'paid' && bill.cashlessCovered
             const isPaid = !bill || bill.status === 'paid'
-            const isUnpaid = !!bill && bill.status !== 'paid' && !bill.cashlessCovered
+            // isUnpaid = the consultation must wait for payment. When this hospital
+            // takes payment after the visit, the fee is still owed (isDueLater) but
+            // nothing waits on it — the same rule startVisit enforces.
+            const owed = !!bill && bill.status !== 'paid' && !bill.cashlessCovered
+            const isUnpaid = owed && bill.payFirst !== false
+            const isDueLater = owed && bill.payFirst === false
             const busy = actionId === a.id
             const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
@@ -120,6 +125,13 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
                               style={{ background: 'rgba(239,68,68,0.1)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.2)' }}>
                               <CreditCard className="w-3 h-3" />
                               ₹{bill.total.toFixed(0)} due
+                            </span>
+                          )}
+                          {isDueLater && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
+                              <CreditCard className="w-3 h-3" />
+                              ₹{bill.total.toFixed(0)} due after visit
                             </span>
                           )}
                           {isPaid && bill && (

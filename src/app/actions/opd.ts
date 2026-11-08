@@ -9,6 +9,7 @@ import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
 import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientLocation'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
+import { requiresPaymentFirst } from '@/lib/payGate'
 import type { Visit, Prescription, VisitFinancials } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -127,28 +128,22 @@ export async function startVisit(
     }
   }
 
-  // What this gate does and does not do (F-48, F-49).
+  // What this gate does (F-48, F-49), corrected 2026-11-08.
   //
-  // It fires only when a bill already exists for the appointment, and nothing
-  // in the ordinary flow creates one: `bookAppointment` inserts an appointment
-  // and no bill, and `GenerateBillSchema` accepts `visit_id` and
-  // `admission_id` but no `appointment_id`, so the billing screen cannot
-  // produce one either. Measured on production: 451 bills, 14 with an
-  // `appointment_id` — about 3%. For the other 97% `hasBill` is false, this
-  // passes, and the consultation fee is collected after the visit closes from
-  // the unbilled-charges list.
+  // It fires when a bill exists for the appointment — and one usually does:
+  // `bookAppointment` (actions/appointments.ts) raises an unpaid consultation
+  // bill at booking whenever the doctor has a fee, and so does a booking from
+  // the patient app. An earlier version of this comment said booking raised no
+  // bill. It was wrong, and it is why "patients are made to pay before seeing
+  // the doctor" looked like it could not happen. The low share of bills with an
+  // appointment_id in production reflects mostly-inpatient data, not an absence
+  // of booking bills; as outpatient volume grows, so does this gate.
   //
-  // So the rule "consultation start is payment-gated" holds only where a bill
-  // was raised up front. That is a deliberate product position, not an
-  // oversight to be patched here: making the gate universal means billing at
-  // booking, which decides that every patient pays before being seen. That is
-  // the hospital's commercial call, and it needs the appointment-stage bill to
-  // be creatable in the first place.
-  //
-  // Two comments used to assert the opposite — that "billing happens at booking
-  // time" and that there is "the consultation bill created at booking time" —
-  // which is why this was easy to miss. They are corrected below.
-  if (hasBill && !hasPaid && !cashlessCovered) {
+  // Whether the visit waits for that payment is the hospital's choice
+  // (Settings → Billing & Collections, src/lib/payGate.ts). Off, the bill is
+  // still raised at booking and collected afterwards from Billing; only the
+  // wait is removed. A cashless encounter goes ahead either way.
+  if (hasBill && !hasPaid && !cashlessCovered && await requiresPaymentFirst(supabase, actor.tenant_id, 'consultation')) {
     return {
       success: false,
       error: hasActiveUnpaid

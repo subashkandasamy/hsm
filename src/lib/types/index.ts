@@ -632,7 +632,8 @@ export interface BloodRequest {
   urgency: BloodUrgency; indication: string | null; required_by: string | null
   recipient_sample_no: string | null
   // OPD only — the pre-issue billing status of the request's blood bill.
-  payment_status?: 'paid' | 'unpaid' | 'cashless' | null
+  /** unpaid = blocks issue; due = owed, but this hospital does not hold blood for payment. */
+  payment_status?: 'paid' | 'unpaid' | 'due' | 'cashless' | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   requester?: Pick<Profile, 'id' | 'full_name'> | null
 }

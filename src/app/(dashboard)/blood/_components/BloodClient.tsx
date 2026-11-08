@@ -49,6 +49,7 @@ const URGENCY_STYLE: Record<string, { bg: string; color: string; label: string }
 const PAYMENT_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   paid:     { bg: '#DCFCE7', color: '#15803D', label: 'Paid' },
   unpaid:   { bg: '#FEE2E2', color: '#DC2626', label: 'Awaiting payment' },
+  due:      { bg: '#F1F5F9', color: '#475569', label: 'Payment due' },
   cashless: { bg: '#DBEAFE', color: '#1D4ED8', label: 'Cashless' },
 }
 

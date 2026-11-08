@@ -6,7 +6,8 @@ import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { isBillCashlessCovered, resolveServiceBill, billsCashlessCovered } from '@/lib/cashlessCover'
+import { resolveServiceBill, billsCashlessCovered } from '@/lib/cashlessCover'
+import { requiresPaymentFirst, unpaidAllowed } from '@/lib/payGate'
 import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib/schemas'
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
 import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
@@ -269,7 +270,7 @@ export async function collectSample(orderId: string): Promise<SimpleResult> {
   const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
   // Cashless-approved patients don't pay cash up front — the insurer settles
   // later — so an eligibility-approved claim on this encounter lifts the gate.
-  if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
+  if (linkedBill && linkedBill.status !== 'paid' && !(await unpaidAllowed(supabase, actor.tenant_id, 'lab', linkedBill))) {
     return { success: false, error: 'Awaiting payment — please collect payment before collecting the sample' }
   }
 
@@ -592,7 +593,7 @@ export async function reportOrder(orderId: string): Promise<SimpleResult> {
   if (!cur.admission_id) {
     const linkedBill = await resolveServiceBill(supabase, 'lab', orderId)
     if (linkedBill && linkedBill.status !== 'paid'
-        && !(await isBillCashlessCovered(supabase, linkedBill))) {
+        && !(await unpaidAllowed(supabase, actor.tenant_id, 'lab', linkedBill))) {
       return {
         success: false,
         error: 'This test has not been paid for — take the payment before releasing the report',
@@ -685,6 +686,10 @@ export async function listLabOrders(filters?: {
 export async function labOrdersAwaitingPayment(orderIds: string[]): Promise<string[]> {
   if (!orderIds.length) return []
   const supabase = await createClient()
+  // A hospital that does not take payment before lab work has nothing waiting
+  // on money — the same rule the collection and release gates apply.
+  const actor = await getActorProfile()
+  if (!(await requiresPaymentFirst(supabase, actor.tenant_id, 'lab'))) return []
 
   const { data: orders } = await supabase
     .from('lab_orders').select('id, admission_id').in('id', orderIds)

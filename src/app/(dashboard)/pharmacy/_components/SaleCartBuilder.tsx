@@ -21,9 +21,11 @@ interface Props {
   initialReadySales: PharmacySale[]
   initialFulfilledSales?: PharmacySale[]
   allPatients?: Patient[]
+  /** false = this hospital hands medicines over before payment; the bill is collected later. */
+  payFirst?: boolean
 }
 
-export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfilledSales = [], allPatients = [] }: Props) {
+export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfilledSales = [], allPatients = [], payFirst = true }: Props) {
   // Cart builder state
   const [patientQuery, setPatientQuery]       = useState('')
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
@@ -642,6 +644,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
               const bs = billStatusMap.get(sale.id) ?? { status: sale.bill?.status ?? 'unpaid', paid: sale.bill?.paid ?? 0, total: sale.bill?.total ?? 0 }
               const isPaid    = bs.status === 'paid'
               const isPartial = bs.status === 'partial'
+              const canHandOver = isPaid || (!payFirst && bs.status !== 'cancelled')
               const balance   = bs.total - bs.paid
               const isExpanded = expandedSales.has(sale.id)
 
@@ -684,7 +687,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
 
                     {/* Row 2: actions */}
                     <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ paddingLeft: '48px' }}>
-                      {isPaid ? (
+                      {canHandOver ? (
                         <button onClick={() => handleHandOver(sale)}
                           disabled={handingOver.has(sale.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"

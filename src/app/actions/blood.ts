@@ -6,7 +6,8 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
-import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
+import { resolveServiceBill } from '@/lib/cashlessCover'
+import { requiresPaymentFirst, unpaidAllowed } from '@/lib/payGate'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
 import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
@@ -409,12 +410,14 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
       }
     }
 
+    const bloodPayFirst = await requiresPaymentFirst(supabase, (await getActorProfile()).tenant_id, 'blood')
     for (const r of opd) {
       const bill = billByReq.get(r.id)
       if (!bill) { r.payment_status = null; continue }
       if (bill.status === 'paid') r.payment_status = 'paid'
       else if ((r.visit_id && coveredVisits.has(r.visit_id)) || coveredBills.has(bill.id)) r.payment_status = 'cashless'
-      else r.payment_status = 'unpaid'
+      // Unpaid, but this hospital does not hold blood for payment: owed, not blocking.
+      else r.payment_status = bloodPayFirst ? 'unpaid' : 'due'
     }
   }
 
@@ -671,7 +674,7 @@ export async function issueUnit(input: {
   const isOpd = !!req.visit_id && !req.admission_id && !req.ot_schedule_id
   if (isOpd && req.urgency !== 'emergency') {
     const bill = await resolveServiceBill(supabase, 'blood', input.requestId)
-    if (bill && bill.status !== 'paid' && !(await isBillCashlessCovered(supabase, bill))) {
+    if (bill && bill.status !== 'paid' && !(await unpaidAllowed(supabase, actor.tenant_id, 'blood', bill))) {
       return { success: false, error: 'Awaiting payment — collect payment before issuing blood (or mark the request emergency)' }
     }
   }

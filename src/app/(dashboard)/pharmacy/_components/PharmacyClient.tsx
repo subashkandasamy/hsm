@@ -49,12 +49,15 @@ interface Props {
   initialOpdHistory: DispatchedPatientHistory[]
   initialVaccineOrders: VaccineOrder[]
   initialVaccineStock: VaccineSupply[]
+  /** Whether this hospital makes medicines wait for payment (Settings → Billing & Collections). */
+  pharmacyPayFirst?: boolean
 }
 
 export default function PharmacyClient({
   initialPending, initialStock, initialAlerts,
   initialReadySales, initialFulfilledSales, allPatients, initialAwaitingDispatch,
   initialIpdRequests, initialOpdHistory, initialVaccineOrders, initialVaccineStock,
+  pharmacyPayFirst = true,
 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
@@ -246,7 +249,7 @@ export default function PharmacyClient({
       </div>
 
       {tab === 'cart' && canSale && (
-        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} initialFulfilledSales={fulfilledSales} allPatients={allPatients} />
+        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} initialFulfilledSales={fulfilledSales} allPatients={allPatients} payFirst={pharmacyPayFirst} />
       )}
       {tab === 'cart' && !canSale && (
         <p className="text-sm p-4" style={{ color: '#64748B' }}>You don&apos;t have permission to manage sale carts.</p>
@@ -262,6 +265,7 @@ export default function PharmacyClient({
           billInfoMap={billInfoMap}
           dispatchedPatients={dispatchedPatients}
           canDispense={canDispense}
+          payFirst={pharmacyPayFirst}
           dispatchedHistory={opdHistory}
           onDispense={setDispenseRx}
           onSkipRx={(rxId) => setSkippedRxIds((prev) => new Set([...prev, rxId]))}
@@ -367,9 +371,11 @@ function AddDrugSelect({ onSelect }: { onSelect: (id: string) => void }) {
 function DispenseQueue({
   pending, awaitingDispatch,
   skippedRxIds, dispensedIds, extraByPatient, billInfoMap, dispatchedPatients,
-  canDispense, dispatchedHistory,
+  canDispense, payFirst, dispatchedHistory,
   onDispense, onSkipRx, onUnSkipRx, onAddAndPack, onCheckPayment, onDispatch,
 }: {
+  /** false = this hospital hands medicines over before payment; the bill is collected later. */
+  payFirst: boolean
   pending: PrescriptionWithVisit[]
   awaitingDispatch: AwaitingDispatchPatient[]
   skippedRxIds: Set<string>
@@ -475,6 +481,8 @@ function DispenseQueue({
         const isExpanded = expandedSet.has(group.patient_id)
         const isBilled = !!billInfo
         const isPaid = billInfo && billInfo.status === 'paid'
+        // Dispatch waits for payment only where the hospital takes it first.
+        const canDispatch = isPaid || (!payFirst && isBilled && billInfo!.status !== 'cancelled')
 
         const headerBg = isPaid
           ? 'rgba(16,185,129,0.07)'
@@ -516,11 +524,11 @@ function DispenseQueue({
 
               {/* Row 2: status badges + action buttons */}
               <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ paddingLeft: '48px' }}>
-                {isPaid ? (
+                {canDispatch ? (
                   <>
                     <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0"
-                      style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
-                      {billInfo!.billNo}
+                      style={isPaid ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' } : { background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
+                      {isPaid ? '' : 'Unpaid — collect at billing · '}{billInfo!.billNo}
                     </span>
                     <button
                       onClick={() => handleDispatch(group.patient_id)}
@@ -744,6 +752,7 @@ function DispenseQueue({
       {awaitingOnlyGroups.map((ap) => {
         const billInfo = billInfoMap.get(ap.patient_id) ?? (ap.bill ? { billId: ap.bill.id, billNo: ap.bill.bill_no, status: ap.bill.status } : null)
         const isPaid = billInfo && billInfo.status === 'paid'
+        const canDispatch = isPaid || (!payFirst && !!billInfo && billInfo.status !== 'cancelled')
         const isExpanded = expandedSet.has(ap.patient_id)
 
         return (
@@ -775,12 +784,19 @@ function DispenseQueue({
 
               {/* Row 2: status + actions */}
               <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ paddingLeft: '48px' }}>
-                {isPaid ? (
+                {canDispatch ? (
                   <>
-                    <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0"
-                      style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
-                      <CheckCircle2 className="w-3 h-3" /> Bill Paid
-                    </span>
+                    {isPaid ? (
+                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0"
+                        style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                        <CheckCircle2 className="w-3 h-3" /> Bill Paid
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0"
+                        style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
+                        Unpaid — collect at billing{billInfo ? ` · ${billInfo.billNo}` : ''}
+                      </span>
+                    )}
                     <button
                       onClick={() => handleDispatch(ap.patient_id)}
                       disabled={dispatching.has(ap.patient_id)}

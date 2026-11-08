@@ -10,7 +10,8 @@ import { hasPermission, requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
 import { RADIOLOGY_UPLOAD, checkUploadName, checkUploadSize } from '@/lib/upload/allowedFiles'
-import { isBillCashlessCovered, resolveServiceBill } from '@/lib/cashlessCover'
+import { resolveServiceBill } from '@/lib/cashlessCover'
+import { unpaidAllowed } from '@/lib/payGate'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
 
@@ -143,7 +144,7 @@ export async function markPerformed(orderId: string): Promise<SimpleResult> {
   const linkedBill = await resolveServiceBill(supabase, 'radiology', orderId)
   // Cashless-approved patients don't pay cash up front — an eligibility-approved
   // claim on this encounter lifts the payment gate.
-  if (linkedBill && linkedBill.status !== 'paid' && !(await isBillCashlessCovered(supabase, linkedBill))) {
+  if (linkedBill && linkedBill.status !== 'paid' && !(await unpaidAllowed(supabase, actor.tenant_id, 'radiology', linkedBill))) {
     return { success: false, error: 'Awaiting payment — please collect payment before performing this scan' }
   }
 

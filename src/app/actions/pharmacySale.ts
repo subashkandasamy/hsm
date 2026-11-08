@@ -9,6 +9,7 @@ import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import type { PharmacySale } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { requiresPaymentFirst } from '@/lib/payGate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -323,9 +324,15 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
     return { success: false, error: 'Sale must be finalized (billed) before fulfillment' }
   }
 
-  // Gate: bill must be paid
+  // Gate: a bill must exist and be live; whether it must also be PAID first is
+  // the hospital's choice (Settings → Billing & Collections). No cashless check
+  // here: the counter is walk-in only — a sale is never linked to a visit or a
+  // prescription, so no insurer approval can reach it.
   const bill = sale.bill as unknown as { id: string; status: string } | null
-  if (!bill || bill.status !== 'paid') {
+  if (!bill || bill.status === 'cancelled') {
+    return { success: false, error: 'This sale has no live bill — finalize it again before handing over' }
+  }
+  if (bill.status !== 'paid' && await requiresPaymentFirst(supabase, actor.tenant_id, 'pharmacy')) {
     return { success: false, error: 'Awaiting payment — hand over medicines only after payment is confirmed' }
   }
 
