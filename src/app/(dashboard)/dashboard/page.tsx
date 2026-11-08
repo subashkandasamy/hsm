@@ -23,9 +23,12 @@ export default async function DashboardPage({
 }) {
   const { welcome } = await searchParams
   const user = await getCachedUser()
+  // A session that ended mid-flight (signed out in another tab, idle sign-out,
+  // revoked) goes to sign-in rather than crashing on a missing user.
+  if (!user) redirect('/login')
   const supabase = await createClient()
   const { data: profile } = await supabase
-    .from('profiles').select('role').eq('id', user!.id).single()
+    .from('profiles').select('role').eq('id', user.id).single()
   const role = (profile?.role as string) ?? 'nurse'
 
   // An accountant opening Uyirly wants the day's money, not bed occupancy and
