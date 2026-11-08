@@ -599,6 +599,14 @@ export const RecordPaymentSchema = z.object({
   reference: z.string().nullable().optional(),
 })
 
+/** One amount received, spread over several of a patient's bills (record_encounter_payment, 0266). Insurance has its own settlement path. */
+export const RecordGroupPaymentSchema = z.object({
+  bill_ids:  z.array(z.string().uuid()).min(1, 'Choose at least one bill').max(50, 'Too many bills in one payment'),
+  amount:    z.number().positive('Amount must be positive'),
+  method:    z.enum(['cash','card','upi','bank_transfer']),
+  reference: z.string().nullable().optional(),
+})
+
 // ---- Cost estimates / quotations ----
 export const CostEstimateItemInputSchema = z.object({
   category:    z.enum(['room','surgery','consultation','lab','radiology','pharmacy','consumables','other']),

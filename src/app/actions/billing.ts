@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, hasModule, isReadOnlyRequest } from '@/lib/server-utils'
 import {
-  GenerateBillSchema, ApplyDiscountSchema, RecordPaymentSchema,
+  GenerateBillSchema, ApplyDiscountSchema, RecordPaymentSchema, RecordGroupPaymentSchema,
 } from '@/lib/schemas'
 import type { Bill, ChargePreviewLine, BillItemSource, Tariff, CombinedBillData } from '@/lib/types'
 import { catchUpDailyCharges, type DailyBillAdmission } from '@/lib/ipdDailyBilling'
@@ -811,6 +811,46 @@ export async function generateMissingDailyCharges(
 }
 
 // ---- Payments ----
+
+/**
+ * One payment across several of a patient's bills — the consultation, lab and
+ * pharmacy bills of one visit, paid once. The database spreads the amount over
+ * the bills oldest first and writes one payment row per bill, sharing a
+ * payment_group_id, so the cash book and every report read it unchanged.
+ */
+export async function recordGroupPayment(
+  input: Record<string, unknown>,
+): Promise<{ success: true; allocated: Array<{ bill_id: string; bill_no: string; amount: number; status: string }> } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:write')
+
+  const parsed = RecordGroupPaymentSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+
+  const supabase = await createClient()
+  const { data: res, error: rpcErr } = await supabase.rpc('record_encounter_payment', {
+    p_bill_ids: parsed.data.bill_ids,
+    p_amount: parsed.data.amount,
+    p_method: parsed.data.method,
+    p_reference: parsed.data.reference?.trim() || null,
+  })
+  if (rpcErr) {
+    // PostgREST cannot find the function: migration 0266 is not applied yet.
+    if (rpcErr.code === 'PGRST202' || rpcErr.code === '42883') {
+      return { success: false, error: 'Collecting several bills at once needs a database update that has not been applied yet (migration 0266). Collect each bill on its own until then.' }
+    }
+    return { success: false, error: rpcErr.message }
+  }
+  const result = res as { ok: boolean; error?: string; group_id?: string; allocated?: Array<{ bill_id: string; bill_no: string; amount: number; status: string }> }
+  if (!result?.ok) return { success: false, error: result?.error ?? 'Payment failed' }
+
+  await logAudit(actor.id, 'payment_group', 'bill', parsed.data.bill_ids[0], {
+    group_id: result.group_id, amount: parsed.data.amount, method: parsed.data.method,
+    allocated: result.allocated,
+  })
+  return { success: true, allocated: result.allocated ?? [] }
+}
 
 export async function recordPayment(
   input: Record<string, unknown>

@@ -8,7 +8,7 @@ import { getUnbilledCharges, generateBill } from '@/app/actions/billing'
 import { searchPatients } from '@/app/actions/patients'
 import type { Patient, ChargePreviewLine } from '@/lib/types'
 
-const SOURCE_LABELS: Record<string, string> = {
+export const SOURCE_LABELS: Record<string, string> = {
   consultation:      'Consultation',
   bed:               'Bed Charges',
   lab:               'Laboratory',

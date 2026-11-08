@@ -19,6 +19,7 @@ import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
+import CollectVisitModal from './CollectVisitModal'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 import { istToday, istDate } from '@/lib/istDate'
 
@@ -181,17 +182,32 @@ interface Props {
   initialStats: BillingStats
   initialDeposits: AdvanceDepositRequest[]
   initialAdvanceSummaries: Record<string, AdvanceSummary>
+  /** The hospital's UPI id, for the payment QR when collecting a visit's bills together. */
+  upi?: { vpa: string | null; payeeName: string }
 }
 
 type ViewMode = 'list' | 'patient'
 
-export default function BillingClient({ initialBills, initialStats, initialDeposits, initialAdvanceSummaries }: Props) {
+/**
+ * Bills a single payment can be taken against: open, with something still owed,
+ * and a real charge — not a refund wrapper or a consolidated cover sheet.
+ */
+function payableBills(bills: Bill[]): Bill[] {
+  return bills.filter((b) =>
+    (b.status === 'unpaid' || b.status === 'partial')
+    && !['appointment_refund', 'advance_refund', 'consolidated'].includes(b.bill_source ?? '')
+    && b.total - b.paid > 0.004)
+}
+
+export default function BillingClient({ initialBills, initialStats, initialDeposits, initialAdvanceSummaries, upi }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canWrite   = !!role && hasPermission(role, 'billing:write')
   const canAdvance = !!role && hasPermission(role, 'billing:advance')
   const canManage  = !!role && hasPermission(role, 'billing:manage')
   const isReadOnly = useIsReadOnly()
+  // A visit whose bills are being collected in one payment.
+  const [collectFor, setCollectFor] = useState<{ key: string; bills: Bill[] } | null>(null)
   const router = useRouter()
 
   const [bills, setBills]       = useState(initialBills)
@@ -853,7 +869,24 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       .map(b => (b as unknown as { appointment_id: string | null }).appointment_id)
                                       .filter(Boolean) as string[]
                                   )
-                                  return opdVisit.bills.map((bill, i) => {
+                                  const due = payableBills(opdVisit.bills)
+                                  const dueTotal = due.reduce((t, b) => t + (b.total - b.paid), 0)
+                                  return (<>
+                                  {canWrite && !isReadOnly && due.length >= 2 && (
+                                    <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+                                      style={{ background: 'rgba(13,148,136,0.05)', borderBottom: '1px solid #F1F5F9' }}>
+                                      <span className="text-xs" style={{ color: '#475569' }}>
+                                        <Money amount={dueTotal} /> due across {due.length} bills — collect it in one payment
+                                      </span>
+                                      <button type="button"
+                                        onClick={() => setCollectFor({ key: ovKey, bills: due })}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                        Collect <Money amount={dueTotal} />
+                                      </button>
+                                    </div>
+                                  )}
+                                  {opdVisit.bills.map((bill, i) => {
                                   const balance = Math.max(0, bill.total - bill.paid)
                                   const apptId = (bill as unknown as { appointment_id: string | null }).appointment_id
                                   // Refunded = an old-style refund bill exists, or credit notes were issued
@@ -910,7 +943,8 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                       </div>
                                     </div>
                                   )
-                                  })
+                                  })}
+                                  </>)
                                   })()}
                               </div>
                               )
@@ -1288,6 +1322,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
         <BillBuilderModal
           onClose={() => setShowBuilder(false)}
           onGenerated={(billId) => { setShowBuilder(false); router.push(`/billing/${billId}`) }}
+        />
+      )}
+
+      {collectFor && (
+        <CollectVisitModal
+          key={collectFor.key}
+          open
+          bills={collectFor.bills}
+          upi={upi ?? { vpa: null, payeeName: 'Hospital' }}
+          onClose={() => setCollectFor(null)}
+          onDone={() => { void refresh() }}
         />
       )}
     </div>
