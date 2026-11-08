@@ -17,8 +17,9 @@ import {
   listPendingPrescriptions, getStock, getAlerts,
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
   dispense as dispenseDrug, listPackedAwaitingDispatch,
-  updateBatch, updateDrugReorderLevel, updateDrugCategory, ensureBatchLabels,
+  updateBatch, updateDrugReorderLevel, updateDrugCategory, updateDrugSchedule, ensureBatchLabels,
 } from '@/app/actions/pharmacy'
+import { DRUG_SCHEDULES, SCHEDULE_HINT, isDrugSchedule } from '@/lib/pharmacy/schedule'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import VaccinesView from './VaccinesView'
 import H1RegisterView from './H1RegisterView'
@@ -982,6 +983,7 @@ function StockView({ stock, canManage, onRefresh }: {
   const [editId, setEditId] = useState<string | null>(null)
   const [reorderDraft, setReorderDraft] = useState('')
   const [categoryDraft, setCategoryDraft] = useState('')
+  const [scheduleDraft, setScheduleDraft] = useState('')
   const [batchDrafts, setBatchDrafts] = useState<Record<string, BatchDraft>>({})
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
@@ -1044,6 +1046,7 @@ function StockView({ stock, canManage, onRefresh }: {
     setOpenId(drug.id)
     setReorderDraft(String(drug.reorder_level ?? 0))
     setCategoryDraft(drug.form ?? '')
+    setScheduleDraft(drug.schedule ?? '')
     const drafts: Record<string, BatchDraft> = {}
     drug.batches.forEach(b => {
       drafts[b.id] = {
@@ -1074,6 +1077,14 @@ function StockView({ stock, canManage, onRefresh }: {
     // shared by every hospital, so the field is not shown for those.
     if (!drug.is_global && categoryDraft.trim() !== (drug.form ?? '')) {
       const res = await updateDrugCategory(drug.id, categoryDraft.trim() || null)
+      if (!res.success) { setSaveErr(res.error); setSaving(false); return }
+    }
+
+    // Schedule — likewise only the hospital's own record; a catalogue drug's
+    // schedule is national. Setting H1 or X here is what enters the medicine's
+    // supplies in the H1 register.
+    if (!drug.is_global && scheduleDraft !== (drug.schedule ?? '')) {
+      const res = await updateDrugSchedule(drug.id, scheduleDraft || null)
       if (!res.success) { setSaveErr(res.error); setSaving(false); return }
     }
 
@@ -1335,6 +1346,24 @@ function StockView({ stock, canManage, onRefresh }: {
                     </span>
                   </div>
                 )}
+
+                {!drug.is_global ? (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Schedule</label>
+                    <select value={scheduleDraft} onChange={e => setScheduleDraft(e.target.value)}
+                      className={inp} style={{ ...bdr, maxWidth: 140 }}>
+                      <option value="">None</option>
+                      {DRUG_SCHEDULES.map((sc) => <option key={sc} value={sc}>Schedule {sc}</option>)}
+                    </select>
+                    <span className="text-xs" style={{ color: '#94A3B8' }}>
+                      {isDrugSchedule(scheduleDraft) ? SCHEDULE_HINT[scheduleDraft] : 'not a scheduled drug'}
+                    </span>
+                  </div>
+                ) : drug.schedule ? (
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>
+                    Schedule {drug.schedule} — set by the national catalogue for every hospital.
+                  </p>
+                ) : null}
 
                 {/* Batch rows — card layout on mobile, grid on desktop */}
                 {drug.batches.length > 0 && (

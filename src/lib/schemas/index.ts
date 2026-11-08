@@ -408,6 +408,8 @@ export const DrugSchema = z.object({
   strength: z.string().nullable().optional(),
   unit: z.string().nullable().optional(),
   reorder_level: z.number().int().min(0).default(0),
+  // Without this key Zod strips the field, so no form could ever set it.
+  schedule: z.enum(['H', 'H1', 'X', 'G']).nullable().optional(),
 })
 
 export const DrugBatchSchema = z.object({

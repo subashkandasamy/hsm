@@ -27,6 +27,7 @@
     "verify:gst": "tsx scripts/verify-gst.ts",
     "verify:rx-match": "tsx scripts/verify-rx-match.ts",
     "verify:pay-gate": "tsx scripts/verify-pay-gate.ts",
+    "verify:drug-schedule": "tsx scripts/verify-drug-schedule.ts",
     "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",

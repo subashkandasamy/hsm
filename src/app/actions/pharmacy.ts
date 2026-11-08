@@ -14,6 +14,7 @@ import { istToday, istAddDays } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
 import { pageAll } from '@/lib/supabase/pageAll'
 import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
+import { isDrugSchedule } from '@/lib/pharmacy/schedule'
 import { parseScan, type ScannedCode } from '@/lib/pharmacy/scan'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -159,6 +160,40 @@ export async function updateBatch(
  * shared by every hospital on the platform, so its form is not one tenant's to
  * change — the UI does not offer the field for those, and this refuses it.
  */
+/**
+ * A hospital's own medicine's schedule (H / H1 / X / G, or none).
+ *
+ * Its own action rather than `updateDrug`, for the reason updateDrugCategory
+ * gives: DrugSchema defaults reorder_level to 0, so a partial update through it
+ * silently switches off the running-low alert. And only the hospital's own
+ * records — a catalogue medicine's schedule is national and shared by every
+ * hospital, so it is read, never edited here.
+ *
+ * This is what makes the H1 register work for the hospital's own catalogue:
+ * log_h1_supply (0168) reads drugs.schedule, which nothing could set before.
+ */
+export async function updateDrugSchedule(drugId: string, schedule: string | null): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:manage')
+
+  const value = schedule === null || schedule === '' ? null : schedule
+  if (value !== null && !isDrugSchedule(value)) return { success: false, error: 'Choose H, H1, X, G or none' }
+
+  const supabase = await createClient()
+  const { data: drug } = await supabase.from('drugs').select('id, name, schedule')
+    .eq('id', drugId).eq('tenant_id', actor.tenant_id).maybeSingle()
+  if (!drug) {
+    return { success: false, error: 'This medicine comes from the national catalogue — its schedule is set there and cannot be changed here.' }
+  }
+  if ((drug.schedule ?? null) === value) return { success: true }
+
+  const { error } = await supabase.from('drugs').update({ schedule: value }).eq('id', drugId).eq('tenant_id', actor.tenant_id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update_schedule', 'drug', drugId, { from: drug.schedule, to: value, name: drug.name })
+  return { success: true }
+}
+
 export async function updateDrugCategory(drugId: string, form: string | null): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
