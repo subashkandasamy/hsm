@@ -10,6 +10,8 @@ import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/li
 import type { PharmacySale } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
 import { requiresPaymentFirst } from '@/lib/payGate'
+import { requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
+import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -46,7 +48,9 @@ export async function addSaleItem(params: {
   qty: number
   /** The exact box, when a label of ours was scanned. */
   batchId?: string | null
-}): Promise<{ success: true; itemId: string } | { success: false; error: string }> {
+  /** Why it is supplied — required for Schedule X (0269). */
+  reason?: string | null
+}): Promise<{ success: true; itemId: string } | { success: false; error: string; needsReason?: boolean }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:sale')
@@ -66,6 +70,13 @@ export async function addSaleItem(params: {
   const { data: tenantDrug } = await supabase
     .from('drugs').select('id').eq('id', drugId).maybeSingle()
   const isMasterDrug = !tenantDrug
+
+  // A Schedule X medicine is asked for its reason here, as it goes in the cart,
+  // so the hand-over never stops on it.
+  const reason = cleanSupplyReason(params.reason)
+  if (!reason && requiresSupplyReason(await scheduleOfDrug(supabase, isMasterDrug ? { drugMasterId: drugId } : { drugId }))) {
+    return { success: false, error: NEEDS_REASON_MESSAGE, needsReason: true }
+  }
 
   // The price comes from the box being sold: the scanned one, else the earliest
   // to expire.
@@ -101,6 +112,7 @@ export async function addSaleItem(params: {
     qty,
     unit_price: unitPrice,
     amount: qty * unitPrice,
+    supply_reason: reason,
   })
   if (error) return { success: false, error: error.message }
 
@@ -338,10 +350,19 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
 
   const items = (sale.items ?? []) as Array<{
     drug_id: string | null; drug_master_id: string | null; prescription_id: string | null; qty: number; unit_price: number
-    drug_batch_id: string | null
+    drug_batch_id: string | null; supply_reason?: string | null
   }>
 
   const today = istToday()
+
+  // A Schedule X line added before reasons were asked for has none: stop
+  // before anything leaves the shelf, rather than half-way through the sale.
+  for (const item of items) {
+    if (!cleanSupplyReason(item.supply_reason)
+        && requiresSupplyReason(await scheduleOfDrug(supabase, { drugId: item.drug_id, drugMasterId: item.drug_master_id }))) {
+      return { success: false, error: 'A Schedule X medicine in this sale has no reason recorded. Remove it and add it again — you will be asked for the reason.' }
+    }
+  }
 
   // The box that was scanned onto the line leaves the shelf. Where none was
   // scanned — or it has since been emptied — the earliest to expire goes first.
@@ -383,6 +404,7 @@ export async function fulfillSale(saleId: string): Promise<SimpleResult> {
       p_qty:             item.qty,
       p_price_snapshot:  batch.mrp,
       p_dispensed_by:    actor.id,
+      p_reason:          cleanSupplyReason(item.supply_reason),
     })
 
     if (rpcErr) return { success: false, error: rpcErr.message }

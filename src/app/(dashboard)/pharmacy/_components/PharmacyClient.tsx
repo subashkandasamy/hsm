@@ -34,6 +34,7 @@ import Select from '@/components/ui/Select'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
 import SaleCartBuilder from './SaleCartBuilder'
+import SupplyReasonField from './SupplyReasonField'
 
 type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts' | 'h1'
 type BillInfo = { billId: string; billNo: string; status: string }
@@ -101,6 +102,10 @@ export default function PharmacyClient({
   const [dispatchedPatients, setDispatchedPatients] = useState<Set<string>>(new Set())
   const [ipdRequests, setIpdRequests] = useState(initialIpdRequests)
   const [dispensingIpdId, setDispensingIpdId] = useState<string | null>(null)
+  // A ward supply that failed, or a Schedule X one waiting for its reason (0269).
+  const [ipdError, setIpdError] = useState('')
+  const [ipdPendingX, setIpdPendingX] = useState<{ requestId: string; price: number; name: string } | null>(null)
+  const [ipdReason, setIpdReason] = useState('')
   const [opdHistory, setOpdHistory] = useState(initialOpdHistory)
   const [fulfilledSales, setFulfilledSales] = useState(initialFulfilledSales)
 
@@ -126,13 +131,23 @@ export default function PharmacyClient({
     setLoading(false)
   }
 
-  async function handleIpdDispense(requestId: string, pricePerUnit: number) {
+  async function handleIpdDispense(requestId: string, pricePerUnit: number, reason?: string) {
     setDispensingIpdId(requestId)
-    const res = await dispenseIpdRequest(requestId, pricePerUnit)
+    setIpdError('')
+    const res = await dispenseIpdRequest(requestId, pricePerUnit, undefined, reason ?? null)
     setDispensingIpdId(null)
     if (res.success) {
+      setIpdPendingX(null); setIpdReason('')
       setIpdRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'dispensed' as const, price_snapshot: pricePerUnit, billing_status: 'unbilled' as const } : r))
+      return
     }
+    if ('needsReason' in res && res.needsReason) {
+      const name = ipdRequests.find((r) => r.id === requestId)?.item_name ?? 'This medicine'
+      setIpdPendingX({ requestId, price: pricePerUnit, name }); setIpdReason('')
+      return
+    }
+    // Shown, not swallowed: a supply that did not go through must say so.
+    setIpdError(res.error)
   }
 
   // Try to auto-generate bill once all non-skipped RXs + extras for a patient are packed.
@@ -277,6 +292,29 @@ export default function PharmacyClient({
         />
       )}
 
+      {tab === 'ipd' && ipdPendingX && (
+        <div className="mb-3 p-3 rounded-xl space-y-2" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+          <p className="text-sm" style={{ color: '#92400E' }}><strong>{ipdPendingX.name}</strong> is a Schedule X medicine.</p>
+          <SupplyReasonField value={ipdReason} onChange={setIpdReason} />
+          <div className="flex gap-2">
+            <button type="button" disabled={dispensingIpdId === ipdPendingX.requestId || ipdReason.trim().length < 2}
+              onClick={() => handleIpdDispense(ipdPendingX.requestId, ipdPendingX.price, ipdReason)}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold"
+              style={{ background: ipdReason.trim().length < 2 ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              Dispense
+            </button>
+            <button type="button" onClick={() => { setIpdPendingX(null); setIpdReason('') }}
+              className="px-3 py-1.5 rounded-lg text-sm" style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {tab === 'ipd' && ipdError && (
+        <div className="mb-3 px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+          {ipdError}
+        </div>
+      )}
       {tab === 'ipd' && (
         <IpdWardQueue
           requests={ipdRequests}

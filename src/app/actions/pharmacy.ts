@@ -14,7 +14,8 @@ import { istToday, istAddDays, istDayStartISO, istDayEndISO } from '@/lib/istDat
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
 import { pageAll } from '@/lib/supabase/pageAll'
 import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
-import { isDrugSchedule } from '@/lib/pharmacy/schedule'
+import { isDrugSchedule, requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
+import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
 import { parseScan, type ScannedCode } from '@/lib/pharmacy/scan'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -454,6 +455,10 @@ export interface H1Entry {
   batch_no: string | null
   qty: number
   supplied_by_name: string | null
+  /** Why it was supplied (required for Schedule X since 0269); null on older entries. */
+  reason: string | null
+  /** Supplied to an admitted patient on a ward, not over the counter. */
+  ward: boolean
 }
 
 /**
@@ -574,7 +579,7 @@ export async function listH1Register(from: string, to: string, schedule?: 'H1' |
 
   const data = await pageAll<Record<string, unknown>>((f, t) => {
     let q = supabase.from('h1_register')
-      .select('entry_no, supplied_on, schedule, patient_name, patient_uhid, patient_address, prescriber_name, drug_name, brand_name, batch_no, qty, supplier:profiles!h1_register_supplied_by_fkey(full_name)')
+      .select('entry_no, supplied_on, schedule, patient_name, patient_uhid, patient_address, prescriber_name, drug_name, brand_name, batch_no, qty, reason, ipd_request_id, supplier:profiles!h1_register_supplied_by_fkey(full_name)')
       .gte('supplied_on', from).lte('supplied_on', to)
     if (schedule) q = q.eq('schedule', schedule)
     return q.order('entry_no', { ascending: false }).range(f, t)
@@ -593,6 +598,8 @@ export async function listH1Register(from: string, to: string, schedule?: 'H1' |
     batch_no: (r.batch_no as string | null) ?? null,
     qty: r.qty as number,
     supplied_by_name: ((r.supplier as unknown as { full_name: string } | null)?.full_name) ?? null,
+    reason: (r.reason as string | null) ?? null,
+    ward: !!r.ipd_request_id,
   }))
 }
 
@@ -1341,7 +1348,7 @@ export async function listPendingPrescriptions(): Promise<PrescriptionWithVisit[
 
 export async function dispense(
   input: Record<string, unknown>
-): Promise<{ success: true; dispenseId: string } | { success: false; error: string }> {
+): Promise<{ success: true; dispenseId: string } | { success: false; error: string; needsReason?: boolean }> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:dispense')
@@ -1352,6 +1359,12 @@ export async function dispense(
   const { patient_id, prescription_id, admission_id, drug_id, qty } = parsed.data
   const supabase = await createClient()
   const today = istToday()
+
+  // A Schedule X supply goes in the X register with the reason it was given.
+  const reason = cleanSupplyReason(parsed.data.reason)
+  if (!reason && requiresSupplyReason(await scheduleOfDrug(supabase, drug_id))) {
+    return { success: false, error: NEEDS_REASON_MESSAGE, needsReason: true }
+  }
 
   // FEFO: pick earliest non-expired batch with enough stock.
   //
@@ -1397,6 +1410,7 @@ export async function dispense(
     p_qty:             qty,
     p_price_snapshot:  batch.mrp,
     p_dispensed_by:    actor.id,
+    p_reason:          reason,
   })
 
   if (rpcErr) return { success: false, error: rpcErr.message }
@@ -1410,7 +1424,7 @@ export async function dispense(
 
   await logAudit(actor.id, 'dispense', 'drug', drug_id, {
     patient_id, qty, batch_id: batch.id, price: batch.mrp,
-    is_master: isMasterDrug, admission_id: admission_id ?? null,
+    is_master: isMasterDrug, admission_id: admission_id ?? null, reason,
   })
   return { success: true, dispenseId }
 }

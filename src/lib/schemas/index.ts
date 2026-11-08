@@ -445,6 +445,8 @@ export const DispenseSchema = z.object({
   admission_id: z.string().uuid().nullable().optional(),
   drug_id: z.string().uuid('Please select a drug'),
   qty: z.number().int().min(1, 'Quantity must be at least 1'),
+  /** Why it is supplied — required for Schedule X (0269). */
+  reason: z.string().max(500).nullable().optional(),
 })
 
 // ---- Phase 4: OT ----

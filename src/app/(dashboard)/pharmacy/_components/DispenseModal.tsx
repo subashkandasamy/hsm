@@ -10,6 +10,7 @@ import DateText from '@/components/ui/DateText'
 import { dispense, getFefoPreview, searchDrugs } from '@/app/actions/pharmacy'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import type { Drug, DrugBatch, PrescriptionWithVisit } from '@/lib/types'
+import SupplyReasonField from './SupplyReasonField'
 
 interface Props {
   open: boolean
@@ -86,6 +87,9 @@ export default function DispenseModal({ open, prescription, onClose, onSuccess }
   const [fefoLoading, setFefoLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+  // Set once the server says this medicine is Schedule X (0269).
+  const [needsReason, setNeedsReason] = useState(false)
+  const [reason, setReason]   = useState('')
 
   const filteredDrugs = useDrugSearch(drugSearch, 10)
 
@@ -118,15 +122,20 @@ export default function DispenseModal({ open, prescription, onClose, onSuccess }
     if (!selectedDrug) { setError('Please select a drug from the catalog'); return }
     const qtyNum = parseInt(qty, 10)
     if (!qtyNum || qtyNum < 1) { setError('Enter a valid quantity'); return }
+    if (needsReason && reason.trim().length < 2) { setError('Enter the reason for supplying this Schedule X medicine.'); return }
     setLoading(true); setError(null)
     const result = await dispense({
       patient_id: prescription.patient_id,
       prescription_id: prescription.id,
       drug_id: selectedDrug.id,
       qty: qtyNum,
+      reason: reason.trim() || null,
     })
     setLoading(false)
-    if (!result.success) { setError(result.error); return }
+    if (!result.success) {
+      if (result.needsReason) { setNeedsReason(true); setError(null); return }
+      setError(result.error); return
+    }
     onSuccess(result.dispenseId)
   }
 
@@ -279,6 +288,8 @@ export default function DispenseModal({ open, prescription, onClose, onSuccess }
             )}
           </div>
         )}
+
+        {needsReason && <SupplyReasonField value={reason} onChange={setReason} />}
 
         {error && (
           <div className="text-sm rounded-xl px-3 py-2" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>

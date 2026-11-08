@@ -12,6 +12,7 @@ import {
   startPharmacySale, addSaleItem, updateSaleItemQty, removeSaleItem,
   finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
 } from '@/app/actions/pharmacySale'
+import SupplyReasonField from './SupplyReasonField'
 import { checkBillStatus, resolveProductCode, rememberProductCode, type ScannedBatch, type ScannedProduct } from '@/app/actions/pharmacy'
 import { useScanListener } from '@/lib/hooks/useScanListener'
 import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
@@ -35,6 +36,9 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
   const [addQty, setAddQty]                 = useState(1)
   const [cartPending, setCartPending]       = useState(false)
   const [cartError, setCartError]           = useState('')
+  // A Schedule X medicine waiting for its reason before it goes in the cart (0269).
+  const [pendingX, setPendingX] = useState<{ drugId: string; qty: number; batchId: string | null; label: string } | null>(null)
+  const [xReason, setXReason]   = useState('')
   // drugId → brand/display name chosen by the pharmacist — persists through finalize so
   // the fulfillment queue also shows the brand label in the same session
   const [displayNameMap, setDisplayNameMap] = useState<Map<string, string>>(new Map())
@@ -125,9 +129,25 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     if (!activeSale || !selectedDrugId || addQty < 1) return
     setCartError(''); setCartPending(true)
     const res = await addSaleItem({ saleId: activeSale.id, drugId: selectedDrugId, qty: addQty })
-    if (!res.success) { setCartError(res.error); setCartPending(false); return }
+    if (!res.success) {
+      if (res.needsReason) { setPendingX({ drugId: selectedDrugId, qty: addQty, batchId: null, label: drugQuery || 'This medicine' }); setXReason('') }
+      else setCartError(res.error)
+      setCartPending(false); return
+    }
     const updated = await getPharmacySale(activeSale.id)
     setActiveSale(updated); setSelectedDrugId(''); setDrugQuery(''); setAddQty(1); setCartPending(false)
+  }
+
+  /** Adds the Schedule X medicine that was waiting, now with its reason. */
+  async function addPendingX() {
+    if (!activeSale || !pendingX) return
+    if (xReason.trim().length < 2) { setCartError('Enter the reason for supplying this Schedule X medicine.'); return }
+    setCartError(''); setCartPending(true)
+    const res = await addSaleItem({ saleId: activeSale.id, drugId: pendingX.drugId, qty: pendingX.qty, batchId: pendingX.batchId, reason: xReason })
+    setCartPending(false)
+    if (!res.success) { setCartError(res.error); return }
+    setPendingX(null); setXReason('')
+    setActiveSale(await getPharmacySale(activeSale.id)); setSelectedDrugId(''); setDrugQuery(''); setAddQty(1)
   }
 
   /** Puts a scanned medicine in the cart, or adds one to the line already there. */
@@ -156,7 +176,14 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     const res = existing
       ? await updateSaleItemQty(existing.id, existing.qty + 1)
       : await addSaleItem({ saleId: sale.id, drugId: product.id, qty: 1, batchId: batch?.id ?? null })
-    if (!res.success) { flashScan('warn', res.error); return }
+    if (!res.success) {
+      if ('needsReason' in res && res.needsReason) {
+        setPendingX({ drugId: product.id, qty: 1, batchId: batch?.id ?? null, label }); setXReason('')
+        flashScan('warn', `${label} is Schedule X — enter the reason to add it`)
+        return
+      }
+      flashScan('warn', res.error); return
+    }
 
     setActiveSale(await getPharmacySale(sale.id))
     const what = `${label}${product.strength ? ` ${product.strength}` : ''}`
@@ -395,6 +422,27 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                     Cancel Cart
                   </button>
                 </div>
+
+                {pendingX && (
+                  <div className="p-3 rounded-xl space-y-2" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                    <p className="text-xs" style={{ color: '#92400E' }}>
+                      <strong>{pendingX.label}</strong> is a Schedule X medicine.
+                    </p>
+                    <SupplyReasonField value={xReason} onChange={setXReason} compact />
+                    <div className="flex gap-2">
+                      <button type="button" onClick={addPendingX} disabled={cartPending}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: cartPending ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                        Add to cart
+                      </button>
+                      <button type="button" onClick={() => { setPendingX(null); setXReason(''); setCartError('') }}
+                        className="px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {cartError && (
                   <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"

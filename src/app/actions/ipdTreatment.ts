@@ -14,6 +14,8 @@ import { istToday } from '@/lib/istDate'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
 import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
+import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -586,8 +588,10 @@ export async function listIpdPharmacyRequests(): Promise<IpdPharmacyRequest[]> {
 export async function dispenseIpdRequest(
   requestId: string,
   pricePerUnit: number,
-  notes?: string
-): Promise<SimpleResult> {
+  notes?: string,
+  /** Why it is supplied — required for Schedule X; written to the register (0269). */
+  reason?: string | null,
+): Promise<SimpleResult | { success: false; error: string; needsReason: true }> {
   await requireWriteAccess()
   await requireModule('ipd')
   const actor = await getActorProfile()
@@ -608,6 +612,14 @@ export async function dispenseIpdRequest(
     if (!gate.success) return gate
   }
 
+  // A Schedule X supply to the ward goes in the X register with its reason.
+  const supplyReason = cleanSupplyReason(reason)
+  if (!supplyReason && requiresSupplyReason(await scheduleOfDrug(supabase, {
+    drugId: (req?.drug_id as string | null) ?? null, drugMasterId: (req?.drug_master_id as string | null) ?? null,
+  }))) {
+    return { success: false, error: NEEDS_REASON_MESSAGE, needsReason: true }
+  }
+
   // billing_status stays 'unbilled' until we confirm the bill was created;
   // zero-price items have nothing to bill so they are immediately 'billed'
   const { error } = await supabase
@@ -619,6 +631,7 @@ export async function dispenseIpdRequest(
       notes:          notes ?? null,
       price_snapshot: pricePerUnit,
       billing_status: pricePerUnit <= 0 ? 'billed' : 'unbilled',
+      supply_reason:  supplyReason,
     })
     .eq('id', requestId)
 

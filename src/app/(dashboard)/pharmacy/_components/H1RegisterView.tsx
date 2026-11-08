@@ -57,12 +57,17 @@ export default function H1RegisterView({ schedule = 'H1' }: { schedule?: 'H1' | 
     return () => { live = false }
   }, [from, to, schedule])
 
+  // Schedule X records why each supply was made (0269); older entries say so rather than show a blank.
+  const showReason = schedule === 'X'
+  const reasonText = (r: H1Entry) => r.reason ?? 'not recorded'
+
   function download() {
     downloadCsv(`${copy.file}_${from}_to_${to}.csv`,
-      ['Entry', 'Date', 'Schedule', 'Patient', 'UHID', 'Address', 'Prescriber', 'Drug', 'Brand', 'Batch', 'Qty', 'Supplied by'],
+      ['Entry', 'Date', 'Schedule', 'Patient', 'UHID', 'Address', 'Prescriber', 'Drug', 'Brand', 'Batch', 'Qty', 'Supplied to', ...(showReason ? ['Reason'] : []), 'Supplied by'],
       (rows ?? []).map((r) => [
         r.entry_no, r.supplied_on, r.schedule, r.patient_name, r.patient_uhid, r.patient_address,
-        r.prescriber_name, r.drug_name, r.brand_name, r.batch_no, r.qty, r.supplied_by_name,
+        r.prescriber_name, r.drug_name, r.brand_name, r.batch_no, r.qty, r.ward ? 'Ward' : 'Counter',
+        ...(showReason ? [reasonText(r)] : []), r.supplied_by_name,
       ]))
   }
 
@@ -109,7 +114,7 @@ export default function H1RegisterView({ schedule = 'H1' }: { schedule?: 'H1' | 
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ background: '#F8FAFC', color: '#64748B' }}>
-                {['Entry', 'Date', 'Patient', 'Prescriber', 'Medicine', 'Batch', 'Qty', 'Supplied by'].map((h) => (
+                {['Entry', 'Date', 'Patient', 'Prescriber', 'Medicine', 'Batch', 'Qty', ...(showReason ? ['Reason'] : []), 'Supplied by'].map((h) => (
                   <th key={h} className="text-left px-3 py-2 font-semibold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -122,6 +127,7 @@ export default function H1RegisterView({ schedule = 'H1' }: { schedule?: 'H1' | 
                   <td className="px-3 py-2">
                     {r.patient_name}
                     {r.patient_uhid && <span className="block" style={{ color: '#94A3B8' }}>{r.patient_uhid}</span>}
+                    {r.ward && <span className="inline-block mt-0.5 px-1.5 rounded text-[10px] font-semibold" style={{ background: '#EEF2FF', color: '#4338CA' }}>Ward</span>}
                   </td>
                   <td className="px-3 py-2">{r.prescriber_name ?? '—'}</td>
                   <td className="px-3 py-2">
@@ -130,6 +136,9 @@ export default function H1RegisterView({ schedule = 'H1' }: { schedule?: 'H1' | 
                   </td>
                   <td className="px-3 py-2 font-mono">{r.batch_no ?? '—'}</td>
                   <td className="px-3 py-2 font-semibold">{r.qty}</td>
+                  {showReason && (
+                    <td className="px-3 py-2" style={{ color: r.reason ? '#0F172A' : '#B45309' }}>{reasonText(r)}</td>
+                  )}
                   <td className="px-3 py-2">{r.supplied_by_name ?? '—'}</td>
                 </tr>
               ))}
