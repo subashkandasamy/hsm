@@ -56,6 +56,16 @@ export function isDepartmentKey(v: unknown): v is DepartmentKey {
   return typeof v === 'string' && (DEPARTMENT_KEYS as readonly string[]).includes(v)
 }
 
+/**
+ * IPD advance deposits are routed like a department (0268) but are not a
+ * bill-line source: the whole deposit goes into one account.
+ */
+export const ADVANCE_KEY = 'advance'
+export type RouteKey = DepartmentKey | typeof ADVANCE_KEY
+export function isRouteKey(v: unknown): v is RouteKey {
+  return v === ADVANCE_KEY || isDepartmentKey(v)
+}
+
 /** The main account has no row; this key stands for it everywhere outside the database (where it is NULL). */
 export const MAIN = 'main'
 export type AccountKey = string   // an insurance_bank_accounts id, or MAIN
@@ -77,7 +87,7 @@ export interface PlanBill {
  * is not in `activeAccounts`, goes to MAIN.
  */
 export function accountForDepartment(
-  dept: DepartmentKey, routes: Partial<Record<string, string | null>>, activeAccounts: ReadonlySet<string>,
+  dept: DepartmentKey | 'advance', routes: Partial<Record<string, string | null>>, activeAccounts: ReadonlySet<string>,
 ): AccountKey {
   const id = routes[dept]
   return id && activeAccounts.has(id) ? id : MAIN

@@ -171,22 +171,31 @@ async function collectedByDepartment(
 }
 
 /**
- * UPI and bank-transfer bill payments, by the account they went into (0267).
- * An empty account_id is the main account — the profile UPI id, which before
- * 0267 was the only one. Cash, card and insurance go to no particular account
- * and are not listed; deposits (admission_advances) carry no account yet.
+ * UPI and bank-transfer money, by the account it went into: bill payments
+ * (0267) and IPD advance deposits (0268). An empty account_id is the main
+ * account — the profile UPI id, which before 0267 was the only one. Cash, card
+ * and insurance go to no particular account and are not listed. Applying an
+ * advance to a bill (method 'advance') is not money arriving, so it is not
+ * counted twice.
  */
 async function collectedByAccount(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string, from: string, to: string,
 ): Promise<DayEndAccountLine[]> {
-  const pays = await pageAll<{ amount: number; account_id: string | null }>((f, t) => supabase.from('payments')
-    .select('amount, account_id').eq('tenant_id', tenantId)
-    .gte('received_at', from).lt('received_at', to).in('method', ['upi', 'bank_transfer'])
-    .order('id').range(f, t))
-  if (!pays.length) return []
+  type Row = { amount: number; account_id: string | null }
+  const [pays, advs] = await Promise.all([
+    pageAll<Row>((f, t) => supabase.from('payments')
+      .select('amount, account_id').eq('tenant_id', tenantId)
+      .gte('received_at', from).lt('received_at', to).in('method', ['upi', 'bank_transfer'])
+      .order('id').range(f, t)),
+    pageAll<Row>((f, t) => supabase.from('admission_advances')
+      .select('amount, account_id').eq('tenant_id', tenantId)
+      .gte('received_at', from).lt('received_at', to).in('method', ['upi', 'bank_transfer'])
+      .order('id').range(f, t)),
+  ])
+  if (!pays.length && !advs.length) return []
 
-  const ids = [...new Set(pays.map((p) => p.account_id).filter((x): x is string => !!x))]
+  const ids = [...new Set([...pays, ...advs].map((p) => p.account_id).filter((x): x is string => !!x))]
   const names = new Map<string, string>()
   if (ids.length) {
     const { data } = await supabase.from('insurance_bank_accounts').select('id, account_name').in('id', ids)
@@ -194,13 +203,19 @@ async function collectedByAccount(
   }
 
   const out = new Map<string, DayEndAccountLine>()
-  for (const p of pays) {
-    const key = p.account_id ?? 'main'
-    const cur = out.get(key) ?? { key, name: p.account_id ? (names.get(p.account_id) ?? 'Removed account') : 'Main account', amount: 0, payments: 0 }
-    cur.amount = round2(cur.amount + Number(p.amount))
+  const add = (r: Row, isAdvance: boolean) => {
+    const key = r.account_id ?? 'main'
+    const cur = out.get(key) ?? {
+      key, name: r.account_id ? (names.get(r.account_id) ?? 'Removed account') : 'Main account',
+      amount: 0, payments: 0, advances: 0,
+    }
+    cur.amount = round2(cur.amount + Number(r.amount))
     cur.payments += 1
+    if (isAdvance) cur.advances = round2(cur.advances + Number(r.amount))
     out.set(key, cur)
   }
+  for (const p of pays) add(p, false)
+  for (const a of advs) add(a, true)
   return [...out.values()].sort((a, b) => (a.key === 'main' ? -1 : b.key === 'main' ? 1 : b.amount - a.amount))
 }
 

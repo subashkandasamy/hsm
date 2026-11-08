@@ -18,13 +18,15 @@ import * as display from '@/lib/counterDisplay'
  * Nothing here records a payment. The money moves bank-to-bank and tells us
  * nothing, so the cashier still marks it received — see the note at the foot.
  */
-export default function UpiCollectPanel({ vpa, payeeName, amount, billNo, accountName }: {
+export default function UpiCollectPanel({ vpa, payeeName, amount, billNo, accountName, note }: {
   vpa: string | null | undefined
   payeeName: string
   amount: number
   billNo: string
   /** Set when collecting into one of the hospital's other accounts (0267), not the main one. */
   accountName?: string
+  /** What the patient's UPI app shows. Defaults to "Bill <billNo>". */
+  note?: string
 }) {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy]           = useState(false)
@@ -37,7 +39,7 @@ export default function UpiCollectPanel({ vpa, payeeName, amount, billNo, accoun
 
   const supported = display.isSupported()
   const intent = buildUpiIntent({
-    vpa: vpa ?? '', payeeName, amount, note: `Bill ${billNo}`, ref: billNo,
+    vpa: vpa ?? '', payeeName, amount, note: note ?? `Bill ${billNo}`, ref: billNo,
   })
 
   // Re-adopt a port this browser was already granted, so the cashier connects

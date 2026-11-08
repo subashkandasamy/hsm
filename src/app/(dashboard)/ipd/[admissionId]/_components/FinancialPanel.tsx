@@ -7,6 +7,7 @@ import {
 import GlassCard from '@/components/ui/GlassCard'
 import Money from '@/components/ui/Money'
 import Select from '@/components/ui/Select'
+import AdvanceUpiQr from '@/app/(dashboard)/billing/_components/AdvanceUpiQr'
 import {
   recordAdvance,
   recordAdvanceRefund,
@@ -233,6 +234,11 @@ export default function FinancialPanel({
                 ))}
               </Select>
             </div>
+            {advanceMethod === 'upi' && (
+              <div className="mb-2">
+                <AdvanceUpiQr amount={parseFloat(advanceAmount) || 0} admissionId={admissionId} />
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={submitAdvance}

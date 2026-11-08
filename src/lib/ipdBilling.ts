@@ -47,7 +47,8 @@ export type IpdBillSource = 'bed' | 'lab' | 'radiology' | 'ipd_pharmacy' | 'nurs
 /**
  * Find-or-create the daily IPD bill for a given (admission, date, source) and
  * append any line items that don't already exist (idempotent by ref_id).
- * After creating/updating, auto-applies any unused advance credit inline.
+ * After creating/updating, auto-applies any unused advance credit through the
+ * locking apply_advance_to_bill function.
  * Returns the bill_id, or null on error.
  */
 export async function autoIpdBill(
@@ -87,11 +88,9 @@ export async function autoIpdBill(
     .maybeSingle()
 
   let billId: string
-  let currentSubtotal = 0
 
   if (existing) {
     billId = existing.id as string
-    currentSubtotal = existing.subtotal as number
 
     // Find which ref_ids already have items on this bill (dedup)
     const refIds = lineItems.map((i) => i.ref_id).filter(Boolean) as string[]
@@ -129,7 +128,7 @@ export async function autoIpdBill(
     }
 
     // Re-derive GST aggregates + total from ALL items on the bill.
-    currentSubtotal = await recomputeBillGstTotals(supabase, billId)
+    await recomputeBillGstTotals(supabase, billId)
 
   } else {
     // ── 2. Create new bill ───────────────────────────────────────────────────
@@ -173,70 +172,28 @@ export async function autoIpdBill(
     }
 
     // Set GST aggregates + total now that items exist.
-    currentSubtotal = await recomputeBillGstTotals(supabase, billId)
+    await recomputeBillGstTotals(supabase, billId)
   }
 
-  // ── 3. Auto-apply available advance credit (inline — same logic as generateBill) ──
-  const { data: advRows } = await supabase
-    .from('admission_advances')
-    .select('amount')
-    .eq('admission_id', admissionId)
-  const totalAdvance = (advRows ?? []).reduce((s, a) => s + (a.amount as number), 0)
-
-  if (totalAdvance > 0) {
-    const { data: refRows } = await supabase
-      .from('admission_advance_refunds')
-      .select('amount')
-      .eq('admission_id', admissionId)
-    const totalRefunded = (refRows ?? []).reduce((s, r) => s + (r.amount as number), 0)
-
-    // Count advance applied to EVERY live bill of the admission, this one included —
-    // excluding this bill made its own advance look unused, so appending a line to
-    // an already-covered bill applied the same advance again (more than deposited).
-    const { data: priorBills } = await supabase
-      .from('bills')
-      .select('id')
-      .eq('admission_id', admissionId)
-      .not('status', 'eq', 'cancelled')
-    const priorIds = (priorBills ?? []).map((b) => b.id as string)
-
-    let advanceApplied = 0
-    if (priorIds.length > 0) {
-      const { data: advPmts } = await supabase
-        .from('payments')
-        .select('amount')
-        .in('bill_id', priorIds)
-        .eq('method', 'advance')
-      advanceApplied = (advPmts ?? []).reduce((s, p) => s + (p.amount as number), 0)
-    }
-
-    const unusedAdvance = Math.max(0, totalAdvance - totalRefunded - advanceApplied)
-
-    // What's still due on this bill, from its actual payments (bills.paid can drift).
-    const [{ data: billNow }, { data: billPays }] = await Promise.all([
-      supabase.from('bills').select('total').eq('id', billId).single(),
-      supabase.from('payments').select('amount').eq('bill_id', billId),
-    ])
-    const alreadyPaid = (billPays ?? []).reduce((s, p) => s + Number(p.amount), 0)
-    const billTotal   = (billNow?.total as number) ?? currentSubtotal
-    const remaining   = Math.max(0, billTotal - alreadyPaid)
-
-    const applyAmount = Math.min(unusedAdvance, remaining)
-    if (applyAmount > 0) {
-      await supabase.from('payments').insert({
-        id: crypto.randomUUID(),
-        tenant_id: tenantId,
-        bill_id: billId,
-        amount: applyAmount,
-        method: 'advance',
-        received_by: actorId,
-      })
-    }
-  }
-
-  // Always settle paid/status from the payments — a new line on an already-paid
-  // day bill must show as due again, and any over-applied advance is released.
+  // ── 3. Auto-apply available advance credit ────────────────────────────────
+  // Settle paid/status from the payments first — a new line on an already-paid
+  // day bill must show as due again (the advance step refuses a bill whose
+  // status still says paid), and any advance applied beyond a lowered total
+  // is released back to the pool.
   await reconcileBill(supabase, billId, { allowOverpaid: true })
+
+  // Then the same locking function the billing counter and generateBill use
+  // (0241). It locks the admission — the advance balance is derived from its
+  // rows — so two bills raised at the same moment cannot both draw the same
+  // unused advance. This used to be a third, hand-written copy of the
+  // arithmetic with no lock, which could apply more than was deposited.
+  // A not-ok result is normal: usually there is simply no unused advance.
+  const { error: advErr } = await supabase.rpc('apply_advance_to_bill', {
+    p_bill_id: billId,
+    p_admission_id: admissionId,
+  })
+  if (advErr) console.error('[autoIpdBill] applying the advance failed', { billId, admissionId, error: advErr.message })
+
   return billId
 }
 

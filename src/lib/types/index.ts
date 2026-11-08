@@ -1061,7 +1061,11 @@ export interface CollectionAccountDue {
 }
 
 /** Day End: UPI / bank money by the account it went into. */
-export interface DayEndAccountLine { key: string; name: string; amount: number; payments: number }
+export interface DayEndAccountLine {
+  key: string; name: string; amount: number; payments: number
+  /** Of `amount`, IPD advance deposits (0268). */
+  advances: number
+}
 
 export interface InsuranceTariffPackage {
   id: string; provider: string | null; tpa_id: string | null
@@ -1807,7 +1811,7 @@ export interface DayEndSheet {
     bySource: DayEndSourceLine[]
     /** Payments on a bill with no lines, which cannot be placed in a department. */
     unattributed: number
-    /** UPI and bank-transfer bill payments by the account they went into (0267). */
+    /** UPI and bank-transfer money — bill payments and IPD advance deposits — by the account it went into (0267, 0268). */
     byAccount: DayEndAccountLine[]
   }
   /** Value raised. Splits by department exactly; is not the same as collected. */

@@ -20,6 +20,7 @@ import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
 import BillBuilderModal from './BillBuilderModal'
 import CollectVisitModal from './CollectVisitModal'
+import AdvanceUpiQr from './AdvanceUpiQr'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 import { istToday, istDate } from '@/lib/istDate'
 
@@ -1038,6 +1039,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                               <button onClick={() => { setTopUpAdmissionId(null); setTopUpAmount(''); setTopUpError('') }}
                                                 className="px-2 py-1 rounded-lg text-xs"
                                                 style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>✕</button>
+                                              {topUpMethod === 'upi' && (
+                                                <AdvanceUpiQr amount={parseFloat(topUpAmount) || 0} admissionId={ipd.admissionId} />
+                                              )}
                                             </div>
                                           ) : (
                                             <button onClick={() => { setTopUpAdmissionId(ipd.admissionId); setTopUpAmount(''); setTopUpError('') }}
@@ -1132,6 +1136,9 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                                     <button onClick={() => { setCollectingId(null); setCollectError('') }}
                                                       className="px-2 py-1.5 rounded-lg text-xs"
                                                       style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                    {collectMethod === 'upi' && (
+                                                      <AdvanceUpiQr amount={Number(dep.amount)} admissionId={dep.admission_id} />
+                                                    )}
                                                   </div>
                                                 ) : (
                                                   <button onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}

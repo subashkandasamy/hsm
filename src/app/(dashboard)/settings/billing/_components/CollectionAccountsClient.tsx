@@ -7,7 +7,7 @@ import GlassCard from '@/components/ui/GlassCard'
 import Select from '@/components/ui/Select'
 import { getCollectionSetup, setDepartmentAccount, type CollectionSetup } from '@/app/actions/billingSettings'
 import { upsertBankAccount } from '@/app/actions/insurance'
-import { DEPARTMENTS } from '@/lib/billing/collectionAccounts'
+import { ADVANCE_KEY, DEPARTMENTS } from '@/lib/billing/collectionAccounts'
 import { isValidVpa } from '@/lib/upi'
 import type { InsuranceBankAccount } from '@/lib/types'
 
@@ -18,6 +18,12 @@ interface Props {
 }
 
 const BLANK = { account_name: '', upi_vpa: '', upi_payee_name: '', bank_name: '', account_number: '', ifsc_code: '' }
+
+/** Every department, then IPD advance deposits, which take one account for the whole deposit (0268). */
+const ROUTE_ROWS: Array<{ key: string; label: string; hint?: string }> = [
+  ...DEPARTMENTS.map((d) => ({ key: d.key as string, label: d.label as string })),
+  { key: ADVANCE_KEY, label: 'Advance deposits (IPD)', hint: 'The QR shown when taking an admitted patient\'s advance.' },
+]
 
 const input: React.CSSProperties = {
   background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', minHeight: '40px', outline: 'none',
@@ -244,7 +250,7 @@ export default function CollectionAccountsClient({ initialSetup, loadError }: Pr
           </p>
 
           <div>
-            {DEPARTMENTS.map((d, i) => {
+            {ROUTE_ROWS.map((d, i) => {
               const id = setup.routes[d.key]
               const acct = id ? accounts.find((a) => a.id === id) : undefined
               const fallsBack = !!id && (!acct || !acct.is_active)
@@ -254,6 +260,7 @@ export default function CollectionAccountsClient({ initialSetup, loadError }: Pr
                   style={i ? { borderTop: '1px solid #F1F5F9' } : undefined}>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm" style={{ color: '#0F172A' }}>{d.label}</p>
+                    {d.hint && <p className="text-xs" style={{ color: '#94A3B8' }}>{d.hint}</p>}
                     {fallsBack && (
                       <p className="text-xs" style={{ color: '#B45309' }}>
                         Set to {acct?.account_name ?? 'a removed account'}, which is inactive — paying into the main account.
@@ -276,6 +283,7 @@ export default function CollectionAccountsClient({ initialSetup, loadError }: Pr
 
           <div className="mt-6 pt-4 text-xs space-y-1" style={{ borderTop: '1px solid #F1F5F9', color: '#94A3B8' }}>
             <p>Cash and card are not tied to an account — they go into the counter drawer as before.</p>
+            <p>An advance pays the admitted patient&rsquo;s bills from every department. Moving that money between your own accounts afterwards is up to you.</p>
             <p>Changing an account here changes the QR for payments from now on. Money already received stays where it was paid.</p>
           </div>
         </div>

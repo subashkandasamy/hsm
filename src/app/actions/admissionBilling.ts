@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
+import { loadAdvanceAccount } from '@/lib/billing/collectionPlan'
+import { isDirected, MAIN } from '@/lib/billing/collectionAccounts'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
@@ -36,6 +38,38 @@ export async function suggestAdvance(params: {
 
 // ---- Record advance ----
 
+/**
+ * The account an IPD advance is collected into, with its UPI id — so the
+ * deposit screen shows that account's QR (0268). Main unless the admin chose
+ * another under Settings → Billing & Collections.
+ */
+export async function getAdvanceCollectAccount(): Promise<
+  { success: true; account: { key: string; name: string; vpa: string | null; payeeName: string } } | { success: false; error: string }
+> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:advance')
+  const supabase = await createClient()
+  try { return { success: true, account: await loadAdvanceAccount(supabase, actor.tenant_id) } }
+  catch (e) { return { success: false, error: (e as Error).message } }
+}
+
+/**
+ * UPI / bank deposits record the account they went into; cash and card go to
+ * no particular account. Decided here from the hospital's current setting —
+ * the same one the QR on screen was built from — never taken from the browser.
+ */
+async function advanceAccountFor(
+  supabase: Awaited<ReturnType<typeof createClient>>, tenantId: string, method: string,
+): Promise<{ accountId: string | null } | { error: string }> {
+  if (!isDirected(method)) return { accountId: null }
+  try {
+    const acct = await loadAdvanceAccount(supabase, tenantId)
+    return { accountId: acct.key === MAIN ? null : acct.key }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+}
+
 export async function recordAdvance(params: {
   admissionId: string
   amount: number
@@ -51,17 +85,20 @@ export async function recordAdvance(params: {
 
   const id = crypto.randomUUID()
   const supabase = await createClient()
+  const routed = await advanceAccountFor(supabase, actor.tenant_id, method)
+  if ('error' in routed) return { success: false, error: routed.error }
   const { error } = await supabase.from('admission_advances').insert({
     id,
     tenant_id: actor.tenant_id,
     admission_id: admissionId,
     amount,
     method,
+    account_id: routed.accountId,
     received_by: actor.id,
   })
   if (error) return { success: false, error: error.message }
 
-  await logAudit(actor.id, 'record', 'admission_advance', id, { admissionId, amount, method })
+  await logAudit(actor.id, 'record', 'admission_advance', id, { admissionId, amount, method, account_id: routed.accountId })
   return { success: true, advanceId: id }
 }
 
@@ -247,23 +284,31 @@ export async function collectAdvanceDeposit(
     return { success: false, error: 'This deposit has already been collected' }
 
   const advanceId = crypto.randomUUID()
+  const routed = await advanceAccountFor(supabase, actor.tenant_id, method)
+  if ('error' in routed) return { success: false, error: routed.error }
 
   // Claim the request FIRST, conditional on it still being pending, and only
   // credit the advance if this call is the one that won. Crediting first and
   // flipping afterwards meant a double-click — or two counters — could both
   // pass the check above and credit the deposit twice.
-  const { data: claimed } = await supabase
+  //
+  // advance_id is NOT set here: it is a foreign key to admission_advances and
+  // the advance does not exist yet, so setting it made every claim fail — and
+  // the failure was reported as "already collected". No request could be
+  // collected from be8efad (2026-10-31) until this. It is linked below, once
+  // the advance row exists.
+  const { data: claimed, error: claimErr } = await supabase
     .from('advance_deposit_requests')
     .update({
       status:       'collected',
       method,
-      advance_id:   advanceId,
       collected_by: actor.id,
       collected_at: new Date().toISOString(),
     })
     .eq('id', requestId)
     .eq('status', 'pending')
     .select('id')
+  if (claimErr) return { success: false, error: claimErr.message }
   if (!claimed || claimed.length === 0)
     return { success: false, error: 'This deposit has already been collected' }
 
@@ -273,19 +318,26 @@ export async function collectAdvanceDeposit(
     admission_id: req.admission_id,
     amount:       req.amount,
     method,
+    account_id:   routed.accountId,
     received_by:  actor.id,
   })
   if (advErr) {
     // Hand the request back so the counter can try again, rather than leaving
     // it marked collected with no advance behind it.
     await supabase.from('advance_deposit_requests').update({
-      status: 'pending', advance_id: null, collected_by: null, collected_at: null,
+      status: 'pending', method: null, collected_by: null, collected_at: null,
     }).eq('id', requestId)
     return { success: false, error: advErr.message }
   }
 
+  // Now that the advance exists, point the request at it. The money is already
+  // recorded, so a failure here is logged rather than undone.
+  const { error: linkErr } = await supabase.from('advance_deposit_requests')
+    .update({ advance_id: advanceId }).eq('id', requestId)
+  if (linkErr) console.error('[collectAdvanceDeposit] could not link the request to its advance', { requestId, advanceId, error: linkErr.message })
+
   await logAudit(actor.id, 'collect_advance_deposit', 'admission_advance', advanceId, {
-    requestId, method,
+    requestId, method, account_id: routed.accountId,
   })
   return { success: true, advanceId }
 }

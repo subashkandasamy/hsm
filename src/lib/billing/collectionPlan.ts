@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { pageAll } from '@/lib/supabase/pageAll'
-import { dueByAccount, MAIN, type PlanBill } from '@/lib/billing/collectionAccounts'
+import { accountForDepartment, dueByAccount, ADVANCE_KEY, MAIN, type PlanBill } from '@/lib/billing/collectionAccounts'
 import type { CollectionAccountDue, InsuranceBankAccount } from '@/lib/types'
 
 /**
@@ -82,4 +82,23 @@ export async function loadCollectionPlan(
       bills: d.bills.map((b) => ({ bill_id: b.bill_id, bill_no: billNo.get(b.bill_id) ?? '', due: b.due })),
     }
   })
+}
+
+/**
+ * The account an IPD advance deposit is collected into (0268): the one the
+ * admin chose for "Advance deposits", while it is active, else main.
+ */
+export async function loadAdvanceAccount(supabase: SupabaseClient, tenantId: string): Promise<{
+  key: string; name: string; vpa: string | null; payeeName: string
+}> {
+  const setup = await loadCollectionSetup(supabase, tenantId)
+  const active = setup.accounts.filter((a) => a.is_active)
+  const key = accountForDepartment(ADVANCE_KEY, setup.routes, new Set(active.map((a) => a.id)))
+  const acct = key === MAIN ? null : active.find((a) => a.id === key)!
+  return {
+    key,
+    name: acct ? acct.account_name : 'Main account',
+    vpa: acct ? (acct.upi_vpa ?? null) : setup.main.vpa,
+    payeeName: acct ? (acct.upi_payee_name || setup.main.hospitalName) : setup.main.payeeName,
+  }
 }

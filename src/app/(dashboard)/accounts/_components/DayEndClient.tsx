@@ -277,15 +277,17 @@ export default function DayEndClient({ today, monthStart, initialSheet, hospital
                 </div>
                 <div className="max-w-xl">
                   {sheet.collected.byAccount.map((a) => (
-                    <Row key={a.key} label={`${a.name} — ${a.payments} payment${a.payments === 1 ? '' : 's'}`} value={a.amount} />
+                    <Row key={a.key}
+                      label={`${a.name} — ${a.payments} payment${a.payments === 1 ? '' : 's'}${a.advances > 0 ? `, incl. ₹${a.advances.toLocaleString('en-IN', { minimumFractionDigits: 2 })} advance` : ''}`}
+                      value={a.amount} />
                   ))}
                   <Row label="Total by UPI and bank transfer"
                     value={Math.round(sheet.collected.byAccount.reduce((t, a) => t + a.amount, 0) * 100) / 100} strong border />
                 </div>
                 <p className="mt-2" style={{ fontSize: '11px', color: '#94A3B8', lineHeight: 1.5 }}>
-                  Bill payments by UPI or bank transfer, by the account the patient paid into — check each line
-                  against that account&rsquo;s bank statement. Cash and card go to no particular account and are
-                  not listed; advance deposits are not listed here yet.
+                  Bill payments and advance deposits by UPI or bank transfer, by the account the patient paid
+                  into — check each line against that account&rsquo;s bank statement. Cash and card go to no
+                  particular account and are not listed.
                 </p>
               </GlassCard>
             )}

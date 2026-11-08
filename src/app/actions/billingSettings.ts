@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getPrepayRules, rulesFromRow, DEFAULT_PREPAY, PREPAY_COLUMNS, type PayGateService, type PrepayRules } from '@/lib/payGate'
 import { loadCollectionSetup } from '@/lib/billing/collectionPlan'
-import { isDepartmentKey } from '@/lib/billing/collectionAccounts'
+import { isRouteKey } from '@/lib/billing/collectionAccounts'
 import type { InsuranceBankAccount } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -103,12 +103,12 @@ export async function getCollectionSetup(): Promise<{ setup: CollectionSetup | n
   }
 }
 
-/** Point a department at an account, or back at the main account (accountId null). */
+/** Point a department — or IPD advance deposits ('advance') — at an account, or back at main (accountId null). */
 export async function setDepartmentAccount(department: string, accountId: string | null): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'settings:write')
-  if (!isDepartmentKey(department)) return { success: false, error: 'Unknown department' }
+  if (!isRouteKey(department)) return { success: false, error: 'Unknown department' }
   if (accountId !== null && (typeof accountId !== 'string' || !/^[0-9a-f-]{36}$/i.test(accountId))) {
     return { success: false, error: 'Unknown account' }
   }
