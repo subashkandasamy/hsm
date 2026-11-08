@@ -30,7 +30,6 @@
     "verify:drug-schedule": "tsx scripts/verify-drug-schedule.ts",
     "verify:csv": "tsx scripts/verify-csv.ts",
     "verify:collected-by-source": "tsx scripts/verify-collected-by-source.ts",
-    "verify:payment-reference": "tsx scripts/verify-payment-reference.ts",
     "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",

@@ -226,11 +226,6 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
     const amt = Math.round(parseFloat(payAmount) * 100) / 100
     if (!amt || amt <= 0) { setPayError('Enter a valid amount'); return }
     if (Math.round(amt * 100) > Math.round(balance * 100)) { setPayError(`Amount cannot exceed balance due (₹${balance.toFixed(2)})`); return }
-    // The same rule the server enforces (RecordPaymentSchema): without a gateway,
-    // the UTR is what ties this payment to the bank statement.
-    if ((payMethod === 'upi' || payMethod === 'bank_transfer') && payRef.trim().length < 6) {
-      setPayError('Enter the UPI / bank transaction id (UTR) — it is how this payment is found in the bank statement.'); return
-    }
     setPaying(true)
     setPayError(null)
     const res = await recordPayment({
@@ -982,12 +977,10 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
-              {payMethod === 'upi' || payMethod === 'bank_transfer' ? <>Transaction id (UTR) <span style={{ color: '#DC2626' }}>*</span></> : 'Reference (optional)'}
-            </label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reference (optional)</label>
             <input
               type="text"
-              placeholder={payMethod === 'upi' ? 'UTR / UPI transaction ID' : payMethod === 'bank_transfer' ? 'UTR of the bank transfer' : 'Transaction ID, cheque no…'}
+              placeholder={payMethod === 'upi' ? 'UTR / UPI transaction ID' : 'Transaction ID, cheque no…'}
               value={payRef}
               onChange={(e) => setPayRef(e.target.value)}
               className="w-full px-3 py-3 rounded-xl text-sm"

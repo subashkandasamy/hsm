@@ -153,8 +153,7 @@ export default function UpiCollectPanel({ vpa, payeeName, amount, billNo }: {
 
       <p className="text-xs mt-3" style={{ color: '#94A3B8', lineHeight: 1.5 }}>
         The patient pays your bank directly, so Uyirly is not told when it lands. Once their app shows it paid, record
-        it below with the transaction id (UTR) from their app — it is required, because it is how this payment is
-        matched to your bank statement later.
+        it below — and put the UTR in Reference if they can read it out, so this matches your bank statement later.
       </p>
     </div>
   )

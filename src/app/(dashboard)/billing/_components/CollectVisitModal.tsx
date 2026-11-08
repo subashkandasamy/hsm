@@ -42,13 +42,9 @@ export default function CollectVisitModal({ open, onClose, bills, upi, onDone }:
 
   const amt = Number(amount)
   const amountOk = Number.isFinite(amt) && amt > 0 && amt <= totalDue + 0.001
-  // The server's rule too (RecordGroupPaymentSchema): a UPI or bank payment needs its UTR.
-  const needsRef = method === 'upi' || method === 'bank_transfer'
-  const refOk = !needsRef || reference.trim().length >= 6
 
   function submit() {
     if (!amountOk) { setError(`Enter an amount up to ₹${totalDue.toFixed(2)}`); return }
-    if (!refOk) { setError('Enter the UPI / bank transaction id (UTR) — it is how this payment is found in the bank statement.'); return }
     setError('')
     startTransition(async () => {
       const res = await recordGroupPayment({
@@ -73,9 +69,9 @@ export default function CollectVisitModal({ open, onClose, bills, upi, onDone }:
           Done
         </button>
       ) : (
-        <button type="button" onClick={submit} disabled={isPending || !amountOk || !refOk}
+        <button type="button" onClick={submit} disabled={isPending || !amountOk}
           className="w-full py-2.5 rounded-xl text-sm font-semibold"
-          style={{ background: isPending || !amountOk || !refOk ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none' }}>
+          style={{ background: isPending || !amountOk ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none' }}>
           {isPending ? 'Recording…' : <>Collect <Money amount={amountOk ? amt : 0} /></>}
         </button>
       )}>
@@ -143,11 +139,9 @@ export default function CollectVisitModal({ open, onClose, bills, upi, onDone }:
           )}
 
           <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>
-              {needsRef ? <>Transaction id (UTR) <span style={{ color: '#DC2626' }}>*</span></> : 'Reference (optional)'}
-            </label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>Reference (optional)</label>
             <input type="text" value={reference} onChange={(e) => setReference(e.target.value)}
-              placeholder={method === 'upi' ? 'UPI transaction id (UTR)' : method === 'bank_transfer' ? 'UTR of the bank transfer' : method === 'card' ? 'Card slip number' : ''}
+              placeholder={method === 'upi' ? 'UPI transaction id (UTR)' : method === 'card' ? 'Card slip number' : ''}
               className="w-full px-3 py-2 rounded-xl text-sm border" style={{ borderColor: '#CBD5E1', color: '#0F172A' }} />
           </div>
 
