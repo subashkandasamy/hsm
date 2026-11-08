@@ -240,7 +240,7 @@ export const NAV_CONFIG: NavGroup[] = [
     items: [
       { label: 'Refer & Earn',  href: '/referrals',            icon: 'Gift',          requiredPermission: 'account:subscription' },
       { label: 'Subscription', href: '/account/subscription', icon: 'CreditCard',    requiredPermission: 'account:subscription' },
-      { label: 'Audit Log',    href: '/audit',                icon: 'ClipboardList', requiredPermission: 'audit:read' },
+      { label: 'Activity log', href: '/audit',                icon: 'ClipboardList', requiredPermission: 'audit:read' },
     ],
   },
 ]
