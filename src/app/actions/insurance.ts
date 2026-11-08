@@ -1270,33 +1270,52 @@ export async function listBankAccounts(): Promise<InsuranceBankAccount[]> {
   return (data ?? []) as InsuranceBankAccount[]
 }
 
+/**
+ * Add or change one of the hospital's bank accounts. Admin only (settings:write,
+ * and RLS since 0267): an account can carry the UPI id patients' money is paid
+ * into. The UPI fields are changed only when sent, so the insurance desk's
+ * form, which does not show them, can never clear them.
+ */
 export async function upsertBankAccount(input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'insurance:write')
+  await requirePermission(actor.role, 'settings:write')
   const parsed = InsuranceBankAccountSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const d = parsed.data
   const supabase = await createClient()
-  const row = {
+  const row: Record<string, unknown> = {
     tenant_id: actor.tenant_id, account_name: d.account_name, bank_name: d.bank_name ?? null,
     account_number: d.account_number ?? null, ifsc_code: d.ifsc_code ?? null, is_active: d.is_active,
   }
-  const { error } = d.id
-    ? await supabase.from('insurance_bank_accounts').update(row).eq('id', d.id)
-    : await supabase.from('insurance_bank_accounts').insert({ id: crypto.randomUUID(), ...row })
+  if (d.upi_vpa !== undefined) row.upi_vpa = d.upi_vpa || null
+  if (d.upi_payee_name !== undefined) row.upi_payee_name = d.upi_payee_name || null
+
+  // .select() so an update RLS refused (0 rows, no error) is not reported as saved.
+  const { data, error } = d.id
+    ? await supabase.from('insurance_bank_accounts').update(row).eq('id', d.id).select('id')
+    : await supabase.from('insurance_bank_accounts').insert({ id: crypto.randomUUID(), ...row }).select('id')
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, d.id ? 'update' : 'create', 'insurance_bank_account', d.id ?? d.account_name, { account_name: d.account_name })
+  if (!data?.length) return { success: false, error: 'Not saved — only an active admin can change the hospital\'s accounts.' }
+  await logAudit(actor.id, d.id ? 'update' : 'create', 'insurance_bank_account', d.id ?? d.account_name, {
+    account_name: d.account_name, is_active: d.is_active,
+    ...(d.upi_vpa !== undefined ? { upi_vpa: d.upi_vpa || null } : {}),
+  })
   return { success: true }
 }
 
 export async function deleteBankAccount(id: string): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'insurance:write')
+  await requirePermission(actor.role, 'settings:write')
   const supabase = await createClient()
-  const { error } = await supabase.from('insurance_bank_accounts').delete().eq('id', id)
-  if (error) return { success: false, error: error.message }
+  const { data, error } = await supabase.from('insurance_bank_accounts').delete().eq('id', id).select('id')
+  if (error) {
+    // 23503: payments or a claim settlement point at it (0267 keeps that history).
+    if (error.code === '23503') return { success: false, error: 'This account has received money, so it is kept as a record. Mark it inactive instead.' }
+    return { success: false, error: error.message }
+  }
+  if (!data?.length) return { success: false, error: 'Not deleted — only an active admin can change the hospital\'s accounts.' }
   await logAudit(actor.id, 'delete', 'insurance_bank_account', id, {})
   return { success: true }
 }

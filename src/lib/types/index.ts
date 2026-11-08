@@ -719,6 +719,8 @@ export interface BillItem {
 export interface Payment {
   id: string; bill_id: string; amount: number; method: PaymentMethod
   reference: string | null; received_by: string | null; received_at: string
+  /** UPI / bank: the account it went into; null = main (0267). */
+  account_id?: string | null
   receiver?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
@@ -1043,7 +1045,23 @@ export interface InsuranceBankAccount {
   id: string; account_name: string; bank_name: string | null
   account_number: string | null; ifsc_code: string | null
   is_active: boolean; created_at?: string
+  upi_vpa?: string | null; upi_payee_name?: string | null
 }
+
+/** One account a payment can be collected into, and what the chosen bills still owe it. */
+export interface CollectionAccountDue {
+  /** An insurance_bank_accounts id, or 'main'. */
+  key: string
+  name: string
+  /** null = no UPI id set for this account, so no QR can be shown. */
+  vpa: string | null
+  payeeName: string
+  due: number
+  bills: Array<{ bill_id: string; bill_no: string; due: number }>
+}
+
+/** Day End: UPI / bank money by the account it went into. */
+export interface DayEndAccountLine { key: string; name: string; amount: number; payments: number }
 
 export interface InsuranceTariffPackage {
   id: string; provider: string | null; tpa_id: string | null
@@ -1789,6 +1807,8 @@ export interface DayEndSheet {
     bySource: DayEndSourceLine[]
     /** Payments on a bill with no lines, which cannot be placed in a department. */
     unattributed: number
+    /** UPI and bank-transfer bill payments by the account they went into (0267). */
+    byAccount: DayEndAccountLine[]
   }
   /** Value raised. Splits by department exactly; is not the same as collected. */
   billed: {

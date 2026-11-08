@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Role } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
+import { VPA_PATTERN } from '@/lib/upi'
 
 // ---- Dates and times that are actually dates and times ----
 //
@@ -599,6 +600,8 @@ export const RecordPaymentSchema = z.object({
   amount:    z.number().positive('Amount must be positive'),
   method:    z.enum(['cash','card','upi','bank_transfer','insurance']),
   reference: z.string().nullable().optional(),
+  /** UPI / bank only: the account it was paid into. Empty = the main account (0267). */
+  account_id: z.string().uuid().nullable().optional(),
 })
 
 /** One amount received, spread over several of a patient's bills (record_encounter_payment, 0266). Insurance has its own settlement path. */
@@ -607,6 +610,8 @@ export const RecordGroupPaymentSchema = z.object({
   amount:    z.number().positive('Amount must be positive'),
   method:    z.enum(['cash','card','upi','bank_transfer']),
   reference: z.string().nullable().optional(),
+  /** UPI / bank only: the account it was paid into. Empty = the main account (0267). */
+  account_id: z.string().uuid().nullable().optional(),
 })
 
 // ---- Cost estimates / quotations ----
@@ -861,6 +866,11 @@ export const InsuranceBankAccountSchema = z.object({
   account_number: z.string().max(40).nullable().optional(),
   ifsc_code:      z.string().max(20).nullable().optional(),
   is_active:      z.boolean().optional().default(true),
+  /** Left out = unchanged. The insurance desk's form does not send these, so it can never clear them. */
+  upi_vpa:        z.string().trim().max(130)
+                    .refine((v) => v === '' || VPA_PATTERN.test(v), 'That does not look like a UPI id — it should read something like pharmacy@okicici.')
+                    .nullable().optional(),
+  upi_payee_name: z.string().trim().max(99).nullable().optional(),
 })
 
 // ---- Type exports ----

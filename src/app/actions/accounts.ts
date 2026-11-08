@@ -8,7 +8,7 @@ import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collecti
 import { collectedBySource } from '@/lib/billing/collectedBySource'
 import { CASH_LIMIT } from '@/lib/billing/cashLimit'
 import { istDate, istToday, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
-import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
+import type { DayEndSheet, DayEndSourceLine, DayEndAccountLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
 import { pageAll } from '@/lib/supabase/pageAll'
@@ -121,6 +121,7 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
       byMethod:     await collectedByMethod(supabase, actor.tenant_id, from, to),
       bySource:     byDepartment.bySource,
       unattributed: byDepartment.unattributed,
+      byAccount:    await collectedByAccount(supabase, actor.tenant_id, from, to),
     },
     billed: {
       bills:    bills.length,
@@ -167,6 +168,40 @@ async function collectedByDepartment(
   }
   const { bySource, unattributed } = collectedBySource(pays, items)
   return { bySource, unattributed }
+}
+
+/**
+ * UPI and bank-transfer bill payments, by the account they went into (0267).
+ * An empty account_id is the main account — the profile UPI id, which before
+ * 0267 was the only one. Cash, card and insurance go to no particular account
+ * and are not listed; deposits (admission_advances) carry no account yet.
+ */
+async function collectedByAccount(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string, from: string, to: string,
+): Promise<DayEndAccountLine[]> {
+  const pays = await pageAll<{ amount: number; account_id: string | null }>((f, t) => supabase.from('payments')
+    .select('amount, account_id').eq('tenant_id', tenantId)
+    .gte('received_at', from).lt('received_at', to).in('method', ['upi', 'bank_transfer'])
+    .order('id').range(f, t))
+  if (!pays.length) return []
+
+  const ids = [...new Set(pays.map((p) => p.account_id).filter((x): x is string => !!x))]
+  const names = new Map<string, string>()
+  if (ids.length) {
+    const { data } = await supabase.from('insurance_bank_accounts').select('id, account_name').in('id', ids)
+    for (const a of data ?? []) names.set(a.id as string, a.account_name as string)
+  }
+
+  const out = new Map<string, DayEndAccountLine>()
+  for (const p of pays) {
+    const key = p.account_id ?? 'main'
+    const cur = out.get(key) ?? { key, name: p.account_id ? (names.get(p.account_id) ?? 'Removed account') : 'Main account', amount: 0, payments: 0 }
+    cur.amount = round2(cur.amount + Number(p.amount))
+    cur.payments += 1
+    out.set(key, cur)
+  }
+  return [...out.values()].sort((a, b) => (a.key === 'main' ? -1 : b.key === 'main' ? 1 : b.amount - a.amount))
 }
 
 /**

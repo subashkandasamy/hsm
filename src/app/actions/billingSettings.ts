@@ -5,6 +5,9 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getPrepayRules, rulesFromRow, DEFAULT_PREPAY, PREPAY_COLUMNS, type PayGateService, type PrepayRules } from '@/lib/payGate'
+import { loadCollectionSetup } from '@/lib/billing/collectionPlan'
+import { isDepartmentKey } from '@/lib/billing/collectionAccounts'
+import type { InsuranceBankAccount } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -74,4 +77,66 @@ export async function getPayFirst(service: PayGateService): Promise<boolean> {
   const actor = await getActorProfile()
   const supabase = await createClient()
   return (await getPrepayRules(supabase, actor.tenant_id))[service]
+}
+
+// ── Collection accounts (0267) ──────────────────────────────────────────────
+
+export interface CollectionSetup {
+  /** The UPI id on the hospital profile: where everything goes unless a department is pointed elsewhere. */
+  main: { vpa: string | null; payeeName: string }
+  accounts: InsuranceBankAccount[]
+  /** department → account id. Missing = main. */
+  routes: Record<string, string>
+}
+
+/** The accounts and which department goes where, for the settings page. */
+export async function getCollectionSetup(): Promise<{ setup: CollectionSetup | null; error?: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'settings:write')
+  const supabase = await createClient()
+  try {
+    const s = await loadCollectionSetup(supabase, actor.tenant_id)
+    return { setup: { main: { vpa: s.main.vpa, payeeName: s.main.payeeName }, accounts: s.accounts, routes: s.routes } }
+  } catch (e) {
+    console.error('[billingSettings] collection setup read failed:', (e as Error).message)
+    return { setup: null, error: 'The accounts cannot be loaded yet — a database update for this section (migration 0267) still needs to be applied.' }
+  }
+}
+
+/** Point a department at an account, or back at the main account (accountId null). */
+export async function setDepartmentAccount(department: string, accountId: string | null): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'settings:write')
+  if (!isDepartmentKey(department)) return { success: false, error: 'Unknown department' }
+  if (accountId !== null && (typeof accountId !== 'string' || !/^[0-9a-f-]{36}$/i.test(accountId))) {
+    return { success: false, error: 'Unknown account' }
+  }
+
+  const supabase = await createClient()
+  const { data: before } = await supabase.from('collection_account_routes')
+    .select('account_id').eq('tenant_id', actor.tenant_id).eq('department', department).maybeSingle()
+
+  if (accountId === null) {
+    const { error } = await supabase.from('collection_account_routes')
+      .delete().eq('tenant_id', actor.tenant_id).eq('department', department)
+    if (error) return { success: false, error: error.message }
+  } else {
+    const { data: acct } = await supabase.from('insurance_bank_accounts')
+      .select('id, is_active').eq('id', accountId).eq('tenant_id', actor.tenant_id).maybeSingle()
+    if (!acct) return { success: false, error: 'That account was not found' }
+    if (!acct.is_active) return { success: false, error: 'That account is inactive. Make it active first.' }
+    // .select() so a write RLS refused is not reported as saved.
+    const { data, error } = await supabase.from('collection_account_routes').upsert({
+      tenant_id: actor.tenant_id, department, account_id: accountId,
+      updated_at: new Date().toISOString(), updated_by: actor.id,
+    }, { onConflict: 'tenant_id,department' }).select('department')
+    if (error) return { success: false, error: error.message }
+    if (!data?.length) return { success: false, error: 'Not saved — only an active admin can change this.' }
+  }
+
+  await logAudit(actor.id, 'update', 'collection_account_route', department, {
+    department, account_before: before?.account_id ?? 'main', account_after: accountId ?? 'main',
+  })
+  return { success: true }
 }

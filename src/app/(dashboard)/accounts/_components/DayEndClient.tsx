@@ -265,6 +265,30 @@ export default function DayEndClient({ today, monthStart, initialSheet, hospital
                 It adds up to the Collected figure above.
               </p>
             </GlassCard>
+
+            {/* ── UPI and bank money, by the account it went into ── */}
+            {sheet.collected.byAccount.length > 0 && (
+              <GlassCard className="p-5 lg:col-span-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Wallet className="w-4 h-4" style={{ color: '#0D9488' }} />
+                  <h2 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', letterSpacing: '0.02em' }}>
+                    UPI &amp; BANK, BY ACCOUNT
+                  </h2>
+                </div>
+                <div className="max-w-xl">
+                  {sheet.collected.byAccount.map((a) => (
+                    <Row key={a.key} label={`${a.name} — ${a.payments} payment${a.payments === 1 ? '' : 's'}`} value={a.amount} />
+                  ))}
+                  <Row label="Total by UPI and bank transfer"
+                    value={Math.round(sheet.collected.byAccount.reduce((t, a) => t + a.amount, 0) * 100) / 100} strong border />
+                </div>
+                <p className="mt-2" style={{ fontSize: '11px', color: '#94A3B8', lineHeight: 1.5 }}>
+                  Bill payments by UPI or bank transfer, by the account the patient paid into — check each line
+                  against that account&rsquo;s bank statement. Cash and card go to no particular account and are
+                  not listed; advance deposits are not listed here yet.
+                </p>
+              </GlassCard>
+            )}
           </div>
         )}
       </div>

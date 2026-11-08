@@ -23,6 +23,8 @@ import { useMessagingEnabled } from '@/context/MessagingContext'
 import { hasPermission } from '@/lib/rbac'
 import { summarizeBillGst, rupeesInWords, billDocKind, isGstRegistered, isCompositionDealer, COMPOSITION_DECLARATION } from '@/lib/gst'
 import UpiCollectPanel from './UpiCollectPanel'
+import CollectionAccountPicker, { useCollectionPlan, pickAccount } from './CollectionAccountPicker'
+import { isDirected } from '@/lib/billing/collectionAccounts'
 import { showSuccess as showPaidOnDisplay } from '@/lib/counterDisplay'
 import type { Bill, BillItemSource, TenantProfile, DiscountRequestRow, CreditNote } from '@/lib/types'
 
@@ -115,6 +117,18 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   const [payRef, setPayRef]       = useState('')
   const [payError, setPayError]   = useState<string | null>(null)
   const [paying, setPaying]       = useState(false)
+  // UPI / bank money goes into one account; a bill split across accounts is
+  // collected one account at a time, each with its own QR (0267).
+  const [payAccount, setPayAccount] = useState<string | null>(null)
+  const [payNotice, setPayNotice]   = useState<string | null>(null)
+  // An amount typed for one account; otherwise that account's whole due is used.
+  const [acctAmount, setAcctAmount] = useState<{ key: string; value: string } | null>(null)
+  const directed = isDirected(payMethod)
+  const plan = useCollectionPlan([bill.id], showPay && directed)
+  const payAcct = directed ? pickAccount(plan.accounts, payAccount) : null
+  const amountValue = payAcct
+    ? (acctAmount?.key === payAcct.key ? acctAmount.value : String(payAcct.due))
+    : payAmount
 
   const [showDiscount, setShowDiscount] = useState(false)
   const [discMode, setDiscMode]         = useState<'percent' | 'amount'>('amount')
@@ -223,13 +237,18 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   }, [showPay, bill.patient_id])
 
   async function handlePayment() {
-    const amt = Math.round(parseFloat(payAmount) * 100) / 100
+    const amt = Math.round(parseFloat(amountValue) * 100) / 100
     if (!amt || amt <= 0) { setPayError('Enter a valid amount'); return }
     if (Math.round(amt * 100) > Math.round(balance * 100)) { setPayError(`Amount cannot exceed balance due (₹${balance.toFixed(2)})`); return }
+    if (directed && payAcct && Math.round(amt * 100) > Math.round(payAcct.due * 100)) {
+      setPayError(`Only ₹${payAcct.due.toFixed(2)} of this bill is for ${payAcct.name}.`); return
+    }
     setPaying(true)
     setPayError(null)
+    setPayNotice(null)
     const res = await recordPayment({
       bill_id: bill.id, amount: amt, method: payMethod, reference: payRef || null,
+      account_id: directed && payAcct && payAcct.key !== 'main' ? payAcct.key : null,
     })
     setPaying(false)
     if (!res.success) { setPayError(res.error); return }
@@ -238,9 +257,23 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
     if (payMethod === 'upi') {
       void showPaidOnDisplay({ reference: payRef, billNo: bill.bill_no }).catch(() => {})
     }
+    setPayRef('')
+    // Split across accounts: stay open for the next account's QR.
+    if (directed) {
+      const paidInto = payAcct?.name ?? 'the account'
+      const next = (await plan.reload())?.filter((a) => a.due > 0) ?? []
+      setAcctAmount(null)
+      if (next.length) {
+        setPayAccount(next[0].key)
+        setPayNotice(`₹${amt.toFixed(2)} recorded into ${paidInto}. Now collect ₹${next[0].due.toFixed(2)} for ${next[0].name}.`)
+        await refresh()
+        return
+      }
+    }
     setShowPay(false)
     setPayAmount('')
-    setPayRef('')
+    setPayAccount(null)
+    setAcctAmount(null)
     await refresh()
   }
 
@@ -881,7 +914,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
       {/* Record Payment Modal */}
       <Modal
         open={showPay}
-        onClose={() => { setShowPay(false); setPayError(null) }}
+        onClose={() => { setShowPay(false); setPayError(null); setPayNotice(null) }}
         title="Record Payment"
         maxWidth="28rem"
         footer={
@@ -911,6 +944,11 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               {payError}
             </div>
           )}
+          {payNotice && (
+            <div className="px-3 py-2 rounded-xl text-sm" style={{ background: '#F0FDF4', color: '#047857', border: '1px solid #BBF7D0' }}>
+              {payNotice}
+            </div>
+          )}
 
           {/* Said before the money is taken. Afterwards the penalty has already
               attached, and under 271DA it is the whole amount received. */}
@@ -934,17 +972,19 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
           })()}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
-              Amount (Balance: <Money amount={balance} />)
+              {directed && payAcct && payAcct.due < balance - 0.001
+                ? <>Amount (for {payAcct.name}: <Money amount={payAcct.due} /> of <Money amount={balance} />)</>
+                : <>Amount (Balance: <Money amount={balance} />)</>}
             </label>
             <input
               type="number"
               autoFocus
               min={0.01}
-              max={balance}
+              max={directed && payAcct ? payAcct.due : balance}
               step={0.01}
               placeholder="0.00"
-              value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value)}
+              value={amountValue}
+              onChange={(e) => payAcct ? setAcctAmount({ key: payAcct.key, value: e.target.value }) : setPayAmount(e.target.value)}
               className="w-full px-3 py-3 rounded-xl text-sm"
               style={{
                 background: 'rgba(255,255,255,0.8)',
@@ -967,14 +1007,32 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               <option value="insurance">Insurance</option>
             </Select>
           </div>
-          {payMethod === 'upi' && (
+          {directed && plan.error && (
+            <div className="px-3 py-2 rounded-xl text-sm" style={{ background: '#FEF2F2', color: '#EF4444' }}>{plan.error}</div>
+          )}
+          {directed && plan.accounts && (
+            <CollectionAccountPicker accounts={plan.accounts} selected={payAcct?.key ?? null}
+              onSelect={(a) => { setPayAccount(a.key); setAcctAmount(null); setPayError(null) }} />
+          )}
+          {payMethod === 'upi' && (payAcct ? (
+            <UpiCollectPanel
+              key={payAcct.key}
+              vpa={payAcct.vpa}
+              payeeName={payAcct.payeeName}
+              amount={parseFloat(amountValue) || payAcct.due}
+              billNo={bill.bill_no}
+              accountName={payAcct.key === 'main' ? undefined : payAcct.name}
+            />
+          ) : plan.loading ? (
+            <p className="text-xs" style={{ color: '#94A3B8' }}>Working out which account this bill is paid into…</p>
+          ) : !plan.error && (
             <UpiCollectPanel
               vpa={tenantProfile?.upi_vpa}
               payeeName={tenantProfile?.upi_payee_name || tenantProfile?.name || 'Hospital'}
               amount={parseFloat(payAmount) || balance}
               billNo={bill.bill_no}
             />
-          )}
+          ))}
 
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>Reference (optional)</label>

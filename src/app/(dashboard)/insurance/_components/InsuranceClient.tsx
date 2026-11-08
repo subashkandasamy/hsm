@@ -332,7 +332,7 @@ export default function InsuranceClient({ initialClaims, receivables, initialTpa
         <TpaManagerModal initialTpas={initialTpas} onClose={() => setShowTpa(false)} />
       )}
       {showBankAccounts && (
-        <BankAccountManagerModal initialAccounts={initialBankAccounts} onClose={() => setShowBankAccounts(false)} />
+        <BankAccountManagerModal initialAccounts={initialBankAccounts} canManage={!!role && hasPermission(role, 'settings:write')} onClose={() => setShowBankAccounts(false)} />
       )}
       {showTariffs && (
         <TariffPackageManagerModal initialPackages={initialTariffPackages} tpas={initialTpas.filter((t) => t.is_active)} onClose={() => setShowTariffs(false)} />

@@ -1,6 +1,9 @@
 'use server'
 
 import { istDate } from '@/lib/istDate'
+import { loadCollectionPlan } from '@/lib/billing/collectionPlan'
+import type { CollectionAccountDue } from '@/lib/types'
+import { allocateToAccount, isDirected, MAIN } from '@/lib/billing/collectionAccounts'
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
@@ -813,6 +816,27 @@ export async function generateMissingDailyCharges(
 // ---- Payments ----
 
 /**
+ * What the given bills still owe each collection account, with the UPI id to
+ * collect it into — so the payment screen shows one QR per account. A
+ * hospital with only the main account gets one entry, as before.
+ */
+export async function getCollectionPlan(
+  billIds: string[],
+): Promise<{ success: true; accounts: CollectionAccountDue[] } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:write')
+  if (!Array.isArray(billIds) || !billIds.length || billIds.length > 50 || billIds.some((id) => typeof id !== 'string')) {
+    return { success: false, error: 'Choose between 1 and 50 bills' }
+  }
+  const supabase = await createClient()
+  try {
+    return { success: true, accounts: await loadCollectionPlan(supabase, actor.tenant_id, billIds) }
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+}
+
+/**
  * One payment across several of a patient's bills — the consultation, lab and
  * pharmacy bills of one visit, paid once. The database spreads the amount over
  * the bills oldest first and writes one payment row per bill, sharing a
@@ -829,11 +853,35 @@ export async function recordGroupPayment(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const supabase = await createClient()
+  const d = parsed.data
+
+  // UPI / bank money went into one account, so it may only land on the lines
+  // that account is owed for — exactly that much per bill. Cash and card go to
+  // no particular account and are spread oldest bill first, as before.
+  let accountId: string | null = null
+  let billIds = d.bill_ids
+  let amounts: number[] | null = null
+  if (isDirected(d.method)) {
+    const key = d.account_id ?? MAIN
+    let plan: CollectionAccountDue[]
+    try { plan = await loadCollectionPlan(supabase, actor.tenant_id, d.bill_ids) }
+    catch (e) { return { success: false, error: (e as Error).message } }
+    const acct = plan.find((a) => a.key === key)
+    if (!acct) return { success: false, error: 'These bills owe nothing to that account.' }
+    const split = allocateToAccount({ account: acct.key, due: acct.due, bills: acct.bills }, d.amount)
+    if (!split) return { success: false, error: `Only ₹${acct.due.toFixed(2)} of these bills is for ${acct.name}.` }
+    accountId = key === MAIN ? null : key
+    billIds = split.map((x) => x.bill_id)
+    amounts = split.map((x) => x.amount)
+  }
+
   const { data: res, error: rpcErr } = await supabase.rpc('record_encounter_payment', {
-    p_bill_ids: parsed.data.bill_ids,
-    p_amount: parsed.data.amount,
-    p_method: parsed.data.method,
-    p_reference: parsed.data.reference?.trim() || null,
+    p_bill_ids: billIds,
+    p_amount: d.amount,
+    p_method: d.method,
+    p_reference: d.reference?.trim() || null,
+    p_account_id: accountId,
+    p_amounts: amounts,
   })
   if (rpcErr) {
     // PostgREST cannot find the function: migration 0266 is not applied yet.
@@ -847,7 +895,7 @@ export async function recordGroupPayment(
 
   await logAudit(actor.id, 'payment_group', 'bill', parsed.data.bill_ids[0], {
     group_id: result.group_id, amount: parsed.data.amount, method: parsed.data.method,
-    allocated: result.allocated,
+    account_id: accountId, allocated: result.allocated,
   })
   return { success: true, allocated: result.allocated ?? [] }
 }
@@ -863,6 +911,22 @@ export async function recordPayment(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
   const supabase = await createClient()
+
+  // UPI / bank: no more than this bill owes the account it was paid into.
+  let accountId: string | null = null
+  if (isDirected(parsed.data.method)) {
+    const key = parsed.data.account_id ?? MAIN
+    let plan: CollectionAccountDue[]
+    try { plan = await loadCollectionPlan(supabase, actor.tenant_id, [parsed.data.bill_id]) }
+    catch (e) { return { success: false, error: (e as Error).message } }
+    const acct = plan.find((a) => a.key === key)
+    if (!acct) return { success: false, error: 'This bill owes nothing to that account.' }
+    if (parsed.data.amount > acct.due + 0.001) {
+      return { success: false, error: `Only ₹${acct.due.toFixed(2)} of this bill is for ${acct.name}.` }
+    }
+    accountId = key === MAIN ? null : key
+  }
+
   // One locked transaction in the database: two cashiers paying the same bill at
   // once can no longer both pass the balance check or overwrite each other's paid.
   const { data: res, error: rpcErr } = await supabase.rpc('record_bill_payment', {
@@ -870,13 +934,14 @@ export async function recordPayment(
     p_amount: parsed.data.amount,
     p_method: parsed.data.method,
     p_reference: parsed.data.reference ?? null,
+    p_account_id: accountId,
   })
   if (rpcErr) return { success: false, error: rpcErr.message }
   const result = res as { ok: boolean; error?: string }
   if (!result?.ok) return { success: false, error: result?.error ?? 'Payment failed' }
 
   await logAudit(actor.id, 'payment', 'bill', parsed.data.bill_id, {
-    amount: parsed.data.amount, method: parsed.data.method,
+    amount: parsed.data.amount, method: parsed.data.method, account_id: accountId,
   })
   return { success: true }
 }

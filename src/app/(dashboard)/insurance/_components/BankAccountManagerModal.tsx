@@ -6,11 +6,16 @@ import Modal from '@/components/ui/Modal'
 import { listBankAccounts, upsertBankAccount, deleteBankAccount } from '@/app/actions/insurance'
 import type { InsuranceBankAccount } from '@/lib/types'
 
-interface Props { initialAccounts: InsuranceBankAccount[]; onClose: () => void }
+interface Props {
+  initialAccounts: InsuranceBankAccount[]
+  onClose: () => void
+  /** Only an admin may change accounts: one can carry the UPI id patients pay into (0267). Others see the list. */
+  canManage: boolean
+}
 
 const BLANK = { account_name: '', bank_name: '', account_number: '', ifsc_code: '' }
 
-export default function BankAccountManagerModal({ initialAccounts, onClose }: Props) {
+export default function BankAccountManagerModal({ initialAccounts, onClose, canManage }: Props) {
   const [accounts, setAccounts] = useState(initialAccounts)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(BLANK)
@@ -53,11 +58,12 @@ export default function BankAccountManagerModal({ initialAccounts, onClose }: Pr
 
   async function toggle(a: InsuranceBankAccount) {
     setBusy(true); setError(null)
-    await upsertBankAccount({
+    const res = await upsertBankAccount({
       id: a.id, account_name: a.account_name, bank_name: a.bank_name,
       account_number: a.account_number, ifsc_code: a.ifsc_code, is_active: !a.is_active,
     })
     setBusy(false)
+    if (!res.success) { setError(res.error); return }
     await refresh()
   }
 
@@ -80,6 +86,7 @@ export default function BankAccountManagerModal({ initialAccounts, onClose }: Pr
                 <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{a.account_name}</p>
                 <p className="text-xs truncate" style={{ color: '#94A3B8' }}>{sub(a) || 'No details yet'}</p>
               </div>
+              {canManage ? (<>
               <button onClick={() => toggle(a)} disabled={busy}
                 className="text-[11px] px-2 py-0.5 rounded-md shrink-0"
                 style={a.is_active ? { background: '#F0FDF4', color: '#0D9488' } : { background: '#F1F5F9', color: '#94A3B8' }}>
@@ -91,10 +98,22 @@ export default function BankAccountManagerModal({ initialAccounts, onClose }: Pr
               <button onClick={() => remove(a.id)} disabled={busy} className="p-1 rounded shrink-0" style={{ color: '#EF4444' }} title="Delete">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
+              </>) : (
+                <span className="text-[11px] px-2 py-0.5 rounded-md shrink-0"
+                  style={a.is_active ? { background: '#F0FDF4', color: '#0D9488' } : { background: '#F1F5F9', color: '#94A3B8' }}>
+                  {a.is_active ? 'Active' : 'Inactive'}
+                </span>
+              )}
             </div>
           ))}
         </div>
 
+        {!canManage ? (
+          <p className="pt-3 text-xs" style={{ borderTop: '1px solid #F1F5F9', color: '#64748B' }}>
+            Only an admin can add or change accounts — an account can hold the UPI id patients pay into.
+            Admins manage them under Settings → Billing &amp; Collections.
+          </p>
+        ) : (
         <div className="pt-3 space-y-2" style={{ borderTop: '1px solid #F1F5F9' }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#64748B' }}>
@@ -125,6 +144,7 @@ export default function BankAccountManagerModal({ initialAccounts, onClose }: Pr
             </button>
           </div>
         </div>
+        )}
       </div>
     </Modal>
   )

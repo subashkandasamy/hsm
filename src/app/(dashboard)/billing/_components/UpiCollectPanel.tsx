@@ -18,11 +18,13 @@ import * as display from '@/lib/counterDisplay'
  * Nothing here records a payment. The money moves bank-to-bank and tells us
  * nothing, so the cashier still marks it received — see the note at the foot.
  */
-export default function UpiCollectPanel({ vpa, payeeName, amount, billNo }: {
+export default function UpiCollectPanel({ vpa, payeeName, amount, billNo, accountName }: {
   vpa: string | null | undefined
   payeeName: string
   amount: number
   billNo: string
+  /** Set when collecting into one of the hospital's other accounts (0267), not the main one. */
+  accountName?: string
 }) {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy]           = useState(false)
@@ -55,10 +57,12 @@ export default function UpiCollectPanel({ vpa, payeeName, amount, billNo }: {
       <div className="px-3 py-2.5 rounded-xl text-sm" style={{
         background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', lineHeight: 1.5,
       }}>
-        <strong style={{ display: 'block', marginBottom: '2px' }}>No UPI id set yet</strong>
-        Add your hospital&rsquo;s UPI id under{' '}
-        <Link href="/settings/profile" style={{ color: '#0D9488', fontWeight: 600, textDecoration: 'underline' }}>
-          Hospital Profile
+        <strong style={{ display: 'block', marginBottom: '2px' }}>
+          {accountName ? `${accountName} has no UPI id` : 'No UPI id set yet'}
+        </strong>
+        {accountName ? 'An admin can add it under' : <>Add your hospital&rsquo;s UPI id under</>}{' '}
+        <Link href={accountName ? '/settings/billing' : '/settings/profile'} style={{ color: '#0D9488', fontWeight: 600, textDecoration: 'underline' }}>
+          {accountName ? 'Billing & Collections' : 'Hospital Profile'}
         </Link>{' '}
         and bills can show a payment QR with the amount already filled in.
       </div>
@@ -146,7 +150,7 @@ export default function UpiCollectPanel({ vpa, payeeName, amount, billNo }: {
             <QrRenderer value={intent} size={ON_SCREEN_QR_PX} />
           </div>
           <p className="text-xs text-center" style={{ color: '#64748B' }}>
-            ₹{amount.toFixed(2)} to <span style={{ fontFamily: 'monospace' }}>{vpa}</span>
+            ₹{amount.toFixed(2)} to <span style={{ fontFamily: 'monospace' }}>{vpa}</span>{accountName ? ` — ${accountName}` : ''}
           </p>
         </div>
       )}
