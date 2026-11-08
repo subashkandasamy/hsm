@@ -231,6 +231,40 @@ export default function DayEndClient({ today, monthStart, initialSheet, hospital
                 owed from today may still be at the counter.
               </p>
             </GlassCard>
+
+            {/* ── What came in, by department ── */}
+            <GlassCard className="p-5 lg:col-span-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Wallet className="w-4 h-4" style={{ color: '#0D9488' }} />
+                <h2 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', letterSpacing: '0.02em' }}>
+                  COLLECTED, BY DEPARTMENT
+                </h2>
+              </div>
+              {sheet.collected.total === 0 && sheet.collected.bySource.length === 0 ? (
+                <p style={{ fontSize: '13px', color: '#94A3B8' }}>Nothing was collected on this day.</p>
+              ) : (
+                <div className="max-w-xl">
+                  {sheet.collected.bySource.map((s) => (
+                    <Row key={s.source} label={SOURCE_LABEL[s.source] ?? s.source} value={s.amount} />
+                  ))}
+                  {sheet.collected.advances > 0 && (
+                    <Row label="Advance deposits — no department until applied" value={sheet.collected.advances} />
+                  )}
+                  {sheet.collected.unattributed > 0 && (
+                    <Row label="On a bill with no lines — cannot be placed" value={sheet.collected.unattributed} />
+                  )}
+                  {sheet.collected.refunds > 0 && (
+                    <Row label="Less refunds paid out" value={sheet.collected.refunds} negative />
+                  )}
+                  <Row label="Net cash in — the same as Collected" value={sheet.collected.total} strong border />
+                </div>
+              )}
+              <p className="mt-2" style={{ fontSize: '11px', color: '#94A3B8', lineHeight: 1.5 }}>
+                What each department brought in today. A payment belongs to a bill, so a bill with
+                several departments has its payment shared between them in proportion to the bill.
+                It adds up to the Collected figure above.
+              </p>
+            </GlassCard>
           </div>
         )}
       </div>

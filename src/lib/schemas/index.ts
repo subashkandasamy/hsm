@@ -594,12 +594,24 @@ export const ApplyDiscountSchema = z.object({
   discount: z.number().min(0),
 })
 
+/**
+ * A UPI or bank-transfer payment must carry its transaction id (UTR). There is
+ * no payment gateway, so "paid" is a person's word; the UTR is what lets a day's
+ * bills be matched to the bank statement. Six characters is the floor rather
+ * than an exact format: a UPI RRN is 12 digits, but apps show their own ids
+ * (PhonePe's run to 23 characters) and a format check would refuse real ones.
+ */
+export const REFERENCE_REQUIRED_METHODS = ['upi', 'bank_transfer'] as const
+const referenceGiven = (d: { method: string; reference?: string | null }) =>
+  !(REFERENCE_REQUIRED_METHODS as readonly string[]).includes(d.method) || (d.reference ?? '').trim().length >= 6
+const REFERENCE_MESSAGE = { message: 'Enter the UPI / bank transaction id (UTR) — it is how this payment is found in the bank statement.', path: ['reference'] }
+
 export const RecordPaymentSchema = z.object({
   bill_id:   z.string().uuid(),
   amount:    z.number().positive('Amount must be positive'),
   method:    z.enum(['cash','card','upi','bank_transfer','insurance']),
   reference: z.string().nullable().optional(),
-})
+}).refine(referenceGiven, REFERENCE_MESSAGE)
 
 /** One amount received, spread over several of a patient's bills (record_encounter_payment, 0266). Insurance has its own settlement path. */
 export const RecordGroupPaymentSchema = z.object({
@@ -607,7 +619,7 @@ export const RecordGroupPaymentSchema = z.object({
   amount:    z.number().positive('Amount must be positive'),
   method:    z.enum(['cash','card','upi','bank_transfer']),
   reference: z.string().nullable().optional(),
-})
+}).refine(referenceGiven, REFERENCE_MESSAGE)
 
 // ---- Cost estimates / quotations ----
 export const CostEstimateItemInputSchema = z.object({

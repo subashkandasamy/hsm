@@ -5,6 +5,7 @@ import { getReadClient } from '@/lib/supabase/read-replica'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collections'
+import { collectedBySource } from '@/lib/billing/collectedBySource'
 import { CASH_LIMIT } from '@/lib/billing/cashLimit'
 import { istDate, istToday, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import type { DayEndSheet, DayEndSourceLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
@@ -47,32 +48,36 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
   const supabase = await createClient()
   const { from, to } = istDayBoundsISO(date)
 
-  const [collection, billsRes, outstandingRes] = await Promise.all([
+  // Paged: an unbounded read is cut at 1,000 rows without an error, and "every
+  // unpaid bill" passes that at any hospital that has been running a while —
+  // the outstanding figure would quietly stop growing (see lib/supabase/pageAll).
+  const [collection, billRows, outstandingRows, byDepartment] = await Promise.all([
     // The shared definition, so this sheet can never disagree with the Cash
     // Book or the Dashboard about what "collected" means.
     getCollectionSummary(supabase, actor.tenant_id, from, to),
 
-    supabase.from('bills')
+    pageAll<Record<string, unknown>>((f, t) => supabase.from('bills')
       .select('id, subtotal, discount, tax, round_off, total, items:bill_items(source, amount)')
       .gte('created_at', from).lt('created_at', to)
       .neq('status', 'cancelled')
-      .or(SERVICE_BILLS_ONLY),
+      .or(SERVICE_BILLS_ONLY)
+      .order('id').range(f, t)),
 
-    supabase.from('bills')
+    pageAll<{ total: number; paid: number; created_at: string }>((f, t) => supabase.from('bills')
       .select('total, paid, created_at')
       .in('status', ['unpaid', 'partial'])
-      .or(SERVICE_BILLS_ONLY),
-  ])
+      .or(SERVICE_BILLS_ONLY)
+      .order('id').range(f, t)),
 
-  if (billsRes.error) throw new Error(`Could not read the day's bills: ${billsRes.error.message}`)
-  if (outstandingRes.error) throw new Error(`Could not read outstanding bills: ${outstandingRes.error.message}`)
+    collectedByDepartment(supabase, actor.tenant_id, from, to),
+  ])
 
   type BillRow = {
     id: string; subtotal: number; discount: number; tax: number
     round_off: number | null; total: number
     items: Array<{ source: string; amount: number }> | null
   }
-  const bills = (billsRes.data ?? []) as unknown as BillRow[]
+  const bills = billRows as unknown as BillRow[]
 
   const bySource = new Map<string, { amount: number; count: number }>()
   let subtotal = 0, discount = 0, tax = 0, roundOff = 0, billedTotal = 0
@@ -98,7 +103,7 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
   // today" and "owed from before" are different problems: one is a patient
   // still at the counter, the other is a debt somebody has to chase.
   let outstandingToday = 0, outstandingEarlier = 0, outstandingCount = 0
-  for (const b of (outstandingRes.data ?? []) as Array<{ total: number; paid: number; created_at: string }>) {
+  for (const b of outstandingRows) {
     const due = Math.max(0, Number(b.total) - Number(b.paid))
     if (due <= 0) continue
     outstandingCount++
@@ -114,6 +119,8 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
       advances:     collection.advances,
       refunds:      collection.refunds,
       byMethod:     await collectedByMethod(supabase, actor.tenant_id, from, to),
+      bySource:     byDepartment.bySource,
+      unattributed: byDepartment.unattributed,
     },
     billed: {
       bills:    bills.length,
@@ -131,6 +138,35 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
       bills:    outstandingCount,
     },
   }
+}
+
+/**
+ * Bill payments that arrived in the window, by the department each was for —
+ * shared across a bill's departments in proportion to the bill
+ * (lib/billing/collectedBySource). `advance` is left out, as everywhere: a
+ * deposit is counted when it arrives, and applying it later is not new money.
+ * Deposits themselves have no department until they are applied, so the sheet
+ * shows them on their own line.
+ */
+async function collectedByDepartment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string, from: string, to: string,
+): Promise<{ bySource: DayEndSourceLine[]; unattributed: number }> {
+  const pays = await pageAll<{ bill_id: string; amount: number }>((f, t) => supabase.from('payments')
+    .select('bill_id, amount').eq('tenant_id', tenantId)
+    .gte('received_at', from).lt('received_at', to).neq('method', 'advance')
+    .order('id').range(f, t))
+  if (!pays.length) return { bySource: [], unattributed: 0 }
+
+  const billIds = [...new Set(pays.map((p) => p.bill_id))]
+  const items: Array<{ bill_id: string; source: string; amount: number }> = []
+  for (let i = 0; i < billIds.length; i += 150) {
+    const chunk = billIds.slice(i, i + 150)
+    items.push(...await pageAll<{ bill_id: string; source: string; amount: number }>((f, t) => supabase.from('bill_items')
+      .select('bill_id, source, amount').in('bill_id', chunk).order('id').range(f, t)))
+  }
+  const { bySource, unattributed } = collectedBySource(pays, items)
+  return { bySource, unattributed }
 }
 
 /**

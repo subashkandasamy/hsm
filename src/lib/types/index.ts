@@ -1785,6 +1785,10 @@ export interface DayEndSheet {
     advances: number
     refunds: number
     byMethod: Record<string, number>
+    /** Bill payments by the department they were for, a mixed bill shared in proportion. Excludes deposits. */
+    bySource: DayEndSourceLine[]
+    /** Payments on a bill with no lines, which cannot be placed in a department. */
+    unattributed: number
   }
   /** Value raised. Splits by department exactly; is not the same as collected. */
   billed: {
