@@ -43,6 +43,8 @@ const staff = say('staff', 'create', { role: 'lab_tech', email: 'someone@gmail.c
 check(!/@/.test(staff) && staff.includes('Lab technician'), 'staff added — role shown, email not', staff)
 check(say('visit', 'start', {}, { patient: 'Ravi (UH-1)' }) === 'Started a consultation for Ravi (UH-1)', 'names fill in where known')
 check(say('visit', 'start') === 'Started a consultation', 'and read naturally where not')
+check(say('auth', 'switch_in', { device: 'Front desk PC' }) === 'Switched in with their PIN on Front desk PC', 'PIN switch-in reads clearly')
+check(say('staff', 'pin_reset', {}, { staff: 'Priya' }) === 'Reset Priya’s counter PIN', 'PIN reset names the person')
 check(say('bill', 'payment') === 'Took a payment' && say('drug', 'dispense') === 'Dispensed medicine' && say('cash_register', 'shift_close') === 'Closed the cash shift', 'an entry missing its amount still reads as a sentence')
 
 console.log('\nRegisters and links')
