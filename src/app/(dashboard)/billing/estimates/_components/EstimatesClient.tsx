@@ -22,7 +22,7 @@ interface Props {
 
 export default function EstimatesClient({ initial, roomTypes, procedures }: Props) {
   const { profile } = useAuth()
-  const canWrite = !!profile?.role && hasPermission(profile.role, 'billing:write')
+  const canWrite = !!profile?.role && hasPermission(profile.role, 'billing:write', profile.granted_permissions)
   const router = useRouter()
   const [showNew, setShowNew] = useState(false)
 

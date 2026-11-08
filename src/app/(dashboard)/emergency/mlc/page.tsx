@@ -1,16 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
-import { getActorProfile } from '@/lib/server-utils'
-import { hasPermission } from '@/lib/rbac'
+import { actorCan } from '@/lib/server-utils'
 import PageHeader from '@/components/ui/PageHeader'
 import { listMlc, listMlcOptions, listMlcPending } from '@/app/actions/mlc'
 import MlcRegister from '../_components/MlcRegister'
 import MlcPendingPanel from '../_components/MlcPendingPanel'
 
 export default async function MlcRegisterPage() {
-  const actor = await getActorProfile()
-  if (!hasPermission(actor.role, 'emergency:read')) redirect('/dashboard')
+  if (!(await actorCan('emergency:read'))) redirect('/dashboard')
 
   const [rows, options, pending] = await Promise.all([
     listMlc(), listMlcOptions(), listMlcPending(),

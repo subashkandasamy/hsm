@@ -9,6 +9,7 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import { hasPermission } from '@/lib/rbac'
+import { useAuth } from '@/context/AuthContext'
 import type { Role, Permission } from '@/lib/types'
 
 type IconComp = React.ComponentType<LucideProps>
@@ -54,6 +55,7 @@ const ROLE_PRIORITY: Record<Role, string[]> = {
 interface BottomTabBarProps { role: Role; enabledModules?: string[] }
 
 export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps) {
+  const granted = useAuth().profile?.granted_permissions
   const pathname = usePathname()
 
   // Flatten all nav items for lookup (moduleKey matches NAV_CONFIG)
@@ -81,7 +83,7 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
     .map((href) => allItems.find((i) => i.href === href))
     .filter((item): item is NonNullable<typeof item> =>
       !!item &&
-      hasPermission(role, item.requiredPermission) &&
+      hasPermission(role, item.requiredPermission, granted) &&
       (!item.moduleKey || !enabledModules || enabledModules.includes(item.moduleKey))
     )
     .slice(0, 5)

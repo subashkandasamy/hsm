@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
-import { getActorProfile } from '@/lib/server-utils'
+import { getActorProfile, actorCan } from '@/lib/server-utils'
 import { hasPermission } from '@/lib/rbac'
 import PageHeader from '@/components/ui/PageHeader'
 import DeviceManager from './_components/DeviceManager'
@@ -19,7 +19,7 @@ export default async function DevicesSettingsPage() {
   // and switching an analyzer live is the owner's. `lab:manage` also gates test
   // pricing, so granting it to a technician to clear a queue would hand them
   // the price list; hence the split rather than one permission for the page.
-  const canWorkQueues = hasPermission(actor.role, 'lab:process')
+  const canWorkQueues = await actorCan('lab:process')
   const canManage = hasPermission(actor.role, 'lab:manage')
   if (!canWorkQueues && !canManage) redirect('/dashboard')
 

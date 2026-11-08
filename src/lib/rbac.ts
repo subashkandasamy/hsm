@@ -132,16 +132,36 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   ],
 }
 
-export function hasPermission(role: Role, permission: Permission): boolean {
+/**
+ * Whether a role may do something. `granted` is what an admin has added to the
+ * role (Settings → Roles & access, src/lib/access.ts) — screens pass
+ * `profile?.granted_permissions`. Grants only add; they never remove.
+ */
+export function hasPermission(role: Role, permission: Permission, granted?: readonly Permission[] | null): boolean {
   const perms = PERMISSION_MATRIX[role] ?? []
-  return perms.includes('admin:all') || perms.includes(permission)
+  return perms.includes('admin:all') || perms.includes(permission) || !!granted?.includes(permission)
+}
+
+/**
+ * How the server learns what an admin has granted the caller's role. Registered
+ * by lib/server-utils (server-only), so this file stays importable by screens.
+ * Returns whether the current request's actor, who holds `role`, was granted
+ * the permission.
+ */
+type GrantResolver = (role: Role, permission: Permission) => Promise<boolean>
+let grantResolver: GrantResolver | null = null
+export function registerGrantResolver(fn: GrantResolver): void {
+  grantResolver = fn
 }
 
 export async function requirePermission(
   role: Role | null | undefined,
   permission: Permission
 ): Promise<void> {
-  if (!role || !hasPermission(role, permission)) throw new Error('FORBIDDEN')
+  if (!role) throw new Error('FORBIDDEN')
+  if (hasPermission(role, permission)) return
+  if (grantResolver && await grantResolver(role, permission)) return
+  throw new Error('FORBIDDEN')
 }
 
 export const NAV_CONFIG: NavGroup[] = [
@@ -210,6 +230,7 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Analyzers',        href: '/settings/devices',     icon: 'Microscope',      requiredPermission: 'lab:process', moduleKey: 'lab' },
       { label: 'IPD Billing',      href: '/settings/ipd-billing', icon: 'BedDouble',       requiredPermission: 'ipd:config', moduleKey: 'ipd' },
       { label: 'Billing & Collections', href: '/settings/billing', icon: 'CreditCard',  requiredPermission: 'settings:write' },
+      { label: 'Roles & access', href: '/settings/access', icon: 'ShieldCheck', requiredPermission: 'settings:write' },
       { label: 'Hospital Profile', href: '/settings/profile',     icon: 'Building2',       requiredPermission: 'settings:write' },
       { label: 'Module Settings',  href: '/settings/modules',     icon: 'ToggleLeft',      requiredPermission: 'settings:modules' },
     ],

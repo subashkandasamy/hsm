@@ -117,7 +117,7 @@ export default function ClaimStepperView({
   const router = useRouter()
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite = !!role && hasPermission(role, 'insurance:write')
+  const canWrite = !!role && hasPermission(role, 'insurance:write', profile?.granted_permissions)
 
   const [claim, setClaim] = useState(initialClaim)
   const [policies] = useState(initialPolicies)

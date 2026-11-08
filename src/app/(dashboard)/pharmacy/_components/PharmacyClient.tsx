@@ -63,9 +63,9 @@ export default function PharmacyClient({
 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canDispense = !!role && hasPermission(role, 'pharmacy:dispense')
-  const canSale     = !!role && hasPermission(role, 'pharmacy:sale')
-  const canManage   = !!role && hasPermission(role, 'pharmacy:manage')
+  const canDispense = !!role && hasPermission(role, 'pharmacy:dispense', profile?.granted_permissions)
+  const canSale     = !!role && hasPermission(role, 'pharmacy:sale', profile?.granted_permissions)
+  const canManage   = !!role && hasPermission(role, 'pharmacy:manage', profile?.granted_permissions)
 
   const [tab, setTab]         = useState<TabKey>('cart')
   const [pending, setPending] = useState(initialPending)

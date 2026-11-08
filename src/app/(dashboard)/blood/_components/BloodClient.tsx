@@ -85,11 +85,11 @@ interface Props {
 export default function BloodClient({ initialInventory, initialUnits, initialRequests, initialDonors }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canManage  = !!role && hasPermission(role, 'bloodbank:manage')
-  const canRequest = !!role && hasPermission(role, 'bloodbank:request')
-  const canIssue   = !!role && hasPermission(role, 'bloodbank:issue')
-  const canScreen  = !!role && hasPermission(role, 'bloodbank:screen')
-  const canTransfuse = !!role && hasPermission(role, 'bloodbank:transfuse')
+  const canManage  = !!role && hasPermission(role, 'bloodbank:manage', profile?.granted_permissions)
+  const canRequest = !!role && hasPermission(role, 'bloodbank:request', profile?.granted_permissions)
+  const canIssue   = !!role && hasPermission(role, 'bloodbank:issue', profile?.granted_permissions)
+  const canScreen  = !!role && hasPermission(role, 'bloodbank:screen', profile?.granted_permissions)
+  const canTransfuse = !!role && hasPermission(role, 'bloodbank:transfuse', profile?.granted_permissions)
 
   const [tab, setTab] = useState<TabKey>('inventory')
   const [inventory, setInventory] = useState(initialInventory)

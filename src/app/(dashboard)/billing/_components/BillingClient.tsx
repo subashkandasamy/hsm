@@ -203,9 +203,9 @@ function payableBills(bills: Bill[]): Bill[] {
 export default function BillingClient({ initialBills, initialStats, initialDeposits, initialAdvanceSummaries, upi }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite   = !!role && hasPermission(role, 'billing:write')
-  const canAdvance = !!role && hasPermission(role, 'billing:advance')
-  const canManage  = !!role && hasPermission(role, 'billing:manage')
+  const canWrite   = !!role && hasPermission(role, 'billing:write', profile?.granted_permissions)
+  const canAdvance = !!role && hasPermission(role, 'billing:advance', profile?.granted_permissions)
+  const canManage  = !!role && hasPermission(role, 'billing:manage', profile?.granted_permissions)
   const isReadOnly = useIsReadOnly()
   // A visit whose bills are being collected in one payment.
   const [collectFor, setCollectFor] = useState<{ key: string; bills: Bill[] } | null>(null)

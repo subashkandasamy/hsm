@@ -34,7 +34,7 @@ interface Props {
 export default function AttendancePanel({ staff, initialAttendance, currentMonth }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canMark = !!role && hasPermission(role, 'hr:attendance')
+  const canMark = !!role && hasPermission(role, 'hr:attendance', profile?.granted_permissions)
 
   const [month, setMonth] = useState(currentMonth)
   const [attendance, setAttendance] = useState(initialAttendance)

@@ -50,8 +50,8 @@ interface Props {
 export default function StaffClient({ initialStaff, initialAttendance, currentMonth, plan = 'starter', tenantStatus = 'trial' }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canManage    = !!role && hasPermission(role, 'hr:manage')
-  const canAttendance = !!role && hasPermission(role, 'hr:attendance')
+  const canManage    = !!role && hasPermission(role, 'hr:manage', profile?.granted_permissions)
+  const canAttendance = !!role && hasPermission(role, 'hr:attendance', profile?.granted_permissions)
   // Same rule as Add Staff: nobody but an administrator hands out that role.
   const assignableRoles = role === 'admin' ? ROLES : ROLES.filter((r) => r !== 'admin')
 

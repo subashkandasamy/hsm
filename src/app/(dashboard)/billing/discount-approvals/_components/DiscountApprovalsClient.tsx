@@ -14,7 +14,7 @@ import type { DiscountRequestRow } from '@/lib/types'
 
 export default function DiscountApprovalsClient({ initial }: { initial: DiscountRequestRow[] }) {
   const { profile } = useAuth()
-  const canDecide = !!profile?.role && hasPermission(profile.role, 'billing:manage')
+  const canDecide = !!profile?.role && hasPermission(profile.role, 'billing:manage', profile.granted_permissions)
   const [rows, setRows] = useState(initial)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)

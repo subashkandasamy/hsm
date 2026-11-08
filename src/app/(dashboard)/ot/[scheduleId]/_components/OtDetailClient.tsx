@@ -58,8 +58,8 @@ interface Props {
 export default function OtDetailClient({ schedule: initial, wardBoard }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
-  const canRecord   = !!profile && hasPermission(profile.role, 'ot:record')
-  const canSchedule = !!profile && hasPermission(profile.role, 'ot:schedule')
+  const canRecord   = !!profile && hasPermission(profile.role, 'ot:record', profile.granted_permissions)
+  const canSchedule = !!profile && hasPermission(profile.role, 'ot:schedule', profile.granted_permissions)
 
   const [schedule, setSchedule] = useState(initial)
   const [team, setTeam]         = useState<OtTeamMember[]>(initial.team_members ?? [])

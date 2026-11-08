@@ -135,7 +135,8 @@ export async function setDepartmentAccount(department: string, accountId: string
     if (!data?.length) return { success: false, error: 'Not saved — only an active admin can change this.' }
   }
 
-  await logAudit(actor.id, 'update', 'collection_account_route', department, {
+  // entity_id is a uuid column, so the hospital is the entity; the department goes in meta.
+  await logAudit(actor.id, 'update', 'collection_account_route', actor.tenant_id, {
     department, account_before: before?.account_id ?? 'main', account_after: accountId ?? 'main',
   })
   return { success: true }

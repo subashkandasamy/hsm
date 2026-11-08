@@ -31,6 +31,7 @@
     "verify:csv": "tsx scripts/verify-csv.ts",
     "verify:collected-by-source": "tsx scripts/verify-collected-by-source.ts",
     "verify:collection-accounts": "tsx scripts/verify-collection-accounts.ts",
+    "verify:role-access": "tsx scripts/verify-role-access.ts",
     "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",

@@ -31,8 +31,8 @@ interface Props {
 export default function ScheduleDetailModal({ open, scheduleId, onClose, onSuccess }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canSchedule = !!role && hasPermission(role, 'ot:schedule')
-  const canRecord   = !!role && hasPermission(role, 'ot:record')
+  const canSchedule = !!role && hasPermission(role, 'ot:schedule', profile?.granted_permissions)
+  const canRecord   = !!role && hasPermission(role, 'ot:record', profile?.granted_permissions)
 
   const [schedule, setSchedule] = useState<OtSchedule | null>(null)
   const [consumables, setConsumables] = useState<OtConsumable[]>([])

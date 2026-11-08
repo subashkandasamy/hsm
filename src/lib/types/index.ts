@@ -92,6 +92,8 @@ export interface Profile {
   must_change_password?: boolean
   temp_password_expires_at?: string | null
   created_at: string
+  /** What an admin has added to this person's role (Settings → Roles & access, 0271). Set by the dashboard layout. */
+  granted_permissions?: Permission[]
 }
 
 export interface Department {

@@ -44,7 +44,7 @@ function addDays(dateStr: string, n: number) {
 export default function OtClient({ initialSchedules, rooms: initRooms, doctors, initialDate }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
-  const canManage = !!profile && hasPermission(profile.role, 'ot:manage')
+  const canManage = !!profile && hasPermission(profile.role, 'ot:manage', profile.granted_permissions)
 
   const [tab, setTab]         = useState<'active' | 'history'>('active')
   const [date, setDate]       = useState(initialDate)

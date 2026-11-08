@@ -3,7 +3,9 @@ import { headers } from 'next/headers'
 import { planHasModule, type PlanKey, type TenantStatus } from '@/lib/plans'
 import { createClient } from './supabase/server'
 import { getCachedUser } from './supabase/cached-user'
-import type { Role } from './types'
+import type { Permission, Role } from './types'
+import { hasPermission, registerGrantResolver } from './rbac'
+import { permissionsFromGroups } from './access'
 
 /**
  * Is this request missing its tenant headers, and is that legitimate?
@@ -104,3 +106,43 @@ const actorProfile = cache(async (): Promise<{ id: string; role: Role; tenant_id
 export async function getActorProfile(): Promise<{ id: string; role: Role; tenant_id: string }> {
   return actorProfile()
 }
+
+/**
+ * What an admin has added to the caller's role (role_access_grants, 0271), as
+ * permissions. Cached for the request. Empty when nothing is granted — and when
+ * the table cannot be read (migration not applied), which is the behaviour
+ * before grants existed rather than an outage.
+ */
+const actorGrants = cache(async (): Promise<Permission[]> => {
+  const actor = await actorProfile()
+  if (actor.role === 'admin') return []
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('role_access_grants')
+    .select('access_group')
+    .eq('tenant_id', actor.tenant_id)
+    .eq('role', actor.role)
+  if (error) {
+    console.error('[actorGrants] could not read role grants:', error.message)
+    return []
+  }
+  return permissionsFromGroups((data ?? []).map((r) => r.access_group as string))
+})
+
+export async function getActorGrantedPermissions(): Promise<Permission[]> {
+  return actorGrants()
+}
+
+/** For a server page or route: may the current person do this, counting what their role was granted? */
+export async function actorCan(permission: Permission): Promise<boolean> {
+  const actor = await actorProfile()
+  return hasPermission(actor.role, permission, await actorGrants())
+}
+
+// requirePermission (rbac.ts) consults this when a role's built-in permissions
+// say no. It only ever answers for the current request's own actor.
+registerGrantResolver(async (role, permission) => {
+  const actor = await actorProfile()
+  if (actor.role !== role) return false
+  return (await actorGrants()).includes(permission)
+})

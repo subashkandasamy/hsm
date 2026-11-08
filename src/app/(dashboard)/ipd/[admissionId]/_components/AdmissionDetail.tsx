@@ -88,11 +88,11 @@ export default function AdmissionDetail({
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
-  const canWrite        = profile && hasPermission(profile.role, 'ipd:write')
-  const canNote         = profile && hasPermission(profile.role, 'ipd:notes')
-  const canNursing      = profile && hasPermission(profile.role, 'ipd:nursing')
-  const canPrintWristband = profile && hasPermission(profile.role, 'barcode:print:patient')
-  const canRequestBlood = profile && hasPermission(profile.role, 'bloodbank:request')
+  const canWrite        = profile && hasPermission(profile.role, 'ipd:write', profile.granted_permissions)
+  const canNote         = profile && hasPermission(profile.role, 'ipd:notes', profile.granted_permissions)
+  const canNursing      = profile && hasPermission(profile.role, 'ipd:nursing', profile.granted_permissions)
+  const canPrintWristband = profile && hasPermission(profile.role, 'barcode:print:patient', profile.granted_permissions)
+  const canRequestBlood = profile && hasPermission(profile.role, 'bloodbank:request', profile.granted_permissions)
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)

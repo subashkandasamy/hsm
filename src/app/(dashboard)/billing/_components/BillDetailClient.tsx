@@ -105,8 +105,8 @@ interface Props {
 export default function BillDetailClient({ bill: initialBill, tenantProfile, pendingDiscount, creditNotes = [], refundable = 0 }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite  = !!role && hasPermission(role, 'billing:write')
-  const canManage = !!role && hasPermission(role, 'billing:manage')
+  const canWrite  = !!role && hasPermission(role, 'billing:write', profile?.granted_permissions)
+  const canManage = !!role && hasPermission(role, 'billing:manage', profile?.granted_permissions)
   const router    = useRouter()
 
   const [bill, setBill]           = useState(initialBill)
@@ -188,7 +188,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
   const [notifStatus, setNotifStatus]   = useState<string | null>(null)
   const [notifSending, setNotifSending] = useState(false)
   const messagingEnabled = useMessagingEnabled()
-  const canNotify = !!role && hasPermission(role, 'notifications:send') && messagingEnabled
+  const canNotify = !!role && hasPermission(role, 'notifications:send', profile?.granted_permissions) && messagingEnabled
 
   async function handleSendNotif(channel: 'whatsapp' | 'sms') {
     setNotifSending(true); setNotifStatus(null)

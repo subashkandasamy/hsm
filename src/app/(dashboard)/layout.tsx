@@ -8,6 +8,7 @@ import { TenantProvider } from '@/context/TenantContext'
 import { ReadOnlyProvider } from '@/context/ReadOnlyContext'
 import { MessagingProvider } from '@/context/MessagingContext'
 import { isMessagingEnabled } from '@/lib/messaging'
+import { getActorGrantedPermissions } from '@/lib/server-utils'
 import AppShell from '@/components/shell/AppShell'
 import ReadOnlyBanner from '@/components/ui/ReadOnlyBanner'
 import PushRegistration from '@/components/native/PushRegistration'
@@ -150,9 +151,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     : DEFAULT_MODULES
 
   const messagingEnabled = await isMessagingEnabled()
+  // What an admin has added to this person's role — screens, menus and buttons read it from the profile.
+  const grantedPermissions = await getActorGrantedPermissions().catch(() => [])
 
   return (
-    <AuthProvider initialProfile={profile as Profile}>
+    <AuthProvider initialProfile={{ ...(profile as Profile), granted_permissions: grantedPermissions }}>
       <TenantProvider plan={tenantPlan} status={tenantStatus}>
         <ReadOnlyProvider isReadOnly={isReadOnly}>
         <MessagingProvider enabled={messagingEnabled}>

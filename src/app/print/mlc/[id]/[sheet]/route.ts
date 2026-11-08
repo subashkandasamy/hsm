@@ -5,8 +5,7 @@ import { AccidentRegisterPdf, PoliceIntimationPdf, type MlcRecordData, type Code
 import { loadLogo } from '@/lib/pdf/parts'
 import { fileSafe, renderPdfResponse } from '@/lib/pdf/render'
 import { createClient } from '@/lib/supabase/server'
-import { getActorProfile } from '@/lib/server-utils'
-import { hasPermission } from '@/lib/rbac'
+import { getActorProfile, actorCan } from '@/lib/server-utils'
 import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -31,7 +30,7 @@ export async function GET(
   }
 
   const actor = await getActorProfile()
-  if (!hasPermission(actor.role, 'emergency:read')) {
+  if (!(await actorCan('emergency:read'))) {
     return new Response('Not permitted', { status: 403 })
   }
 

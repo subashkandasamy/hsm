@@ -28,7 +28,7 @@ export default function InsurancePatientClient({ patient, initialEncounters }: P
   const router = useRouter()
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite = !!role && hasPermission(role, 'insurance:write')
+  const canWrite = !!role && hasPermission(role, 'insurance:write', profile?.granted_permissions)
 
   function openEncounter(enc: InsurancePatientEncounter) {
     // Most recent claim on this encounter that isn't rejected wins; if every

@@ -12,6 +12,7 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import { NAV_CONFIG, hasPermission } from '@/lib/rbac'
+import { useAuth } from '@/context/AuthContext'
 import { planHasModule, isGrowthOnly } from '@/lib/plans'
 import type { Role, Permission } from '@/lib/types'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
@@ -52,6 +53,8 @@ export default function Sidebar({
   collapsed = false, onToggleCollapse,
 }: SidebarProps) {
   const pathname = usePathname()
+  // What an admin has added to this role (Settings → Roles & access).
+  const granted = useAuth().profile?.granted_permissions
 
   /**
    * The one nav entry that should look selected.
@@ -90,7 +93,7 @@ export default function Sidebar({
       <nav className={`flex-1 overflow-y-auto py-4 space-y-5 ${iconsOnly ? 'px-2' : 'px-3'}`}>
         {NAV_CONFIG.map((group) => {
           const visibleItems = group.items.filter((item) => {
-            if (!hasPermission(role, item.requiredPermission as Permission)) return false
+            if (!hasPermission(role, item.requiredPermission as Permission, granted)) return false
             if (item.moduleKey && enabledModules && !enabledModules.includes(item.moduleKey)) return false
             return true
           })

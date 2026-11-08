@@ -1,15 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { redirect, notFound } from 'next/navigation'
-import { getActorProfile } from '@/lib/server-utils'
-import { hasPermission } from '@/lib/rbac'
+import { actorCan } from '@/lib/server-utils'
 import PageHeader from '@/components/ui/PageHeader'
 import { getMlc, listMlcOptions, listPoliceIntimations } from '@/app/actions/mlc'
 import MlcEditor from '../../_components/MlcEditor'
 
 export default async function MlcEntryPage({ params }: { params: Promise<{ id: string }> }) {
-  const actor = await getActorProfile()
-  if (!hasPermission(actor.role, 'emergency:read')) redirect('/dashboard')
+  if (!(await actorCan('emergency:read'))) redirect('/dashboard')
 
   const { id } = await params
   const record = await getMlc(id)

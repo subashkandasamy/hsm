@@ -27,7 +27,7 @@ const CAT_LABELS: Record<CostEstimateCategory, string> = {
 export default function EstimateView({ estimate, profile }: { estimate: CostEstimate; profile: TenantProfile | null }) {
   const router = useRouter()
   const { profile: me } = useAuth()
-  const canWrite = !!me?.role && hasPermission(me.role, 'billing:write')
+  const canWrite = !!me?.role && hasPermission(me.role, 'billing:write', me.granted_permissions)
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -43,10 +43,10 @@ type TabKey = 'pending' | 'performed' | 'reported'
 export default function RadiologyClient({ pending: initP, performed: initPf, reported: initR, catalog: initCatalog }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canOrder   = !!role && hasPermission(role, 'radiology:order')
-  const canProcess = !!role && hasPermission(role, 'radiology:process')
-  const canVerify  = !!role && hasPermission(role, 'radiology:verify')
-  const isAdmin    = !!role && hasPermission(role, 'radiology:manage')
+  const canOrder   = !!role && hasPermission(role, 'radiology:order', profile?.granted_permissions)
+  const canProcess = !!role && hasPermission(role, 'radiology:process', profile?.granted_permissions)
+  const canVerify  = !!role && hasPermission(role, 'radiology:verify', profile?.granted_permissions)
+  const isAdmin    = !!role && hasPermission(role, 'radiology:manage', profile?.granted_permissions)
   const [tab, setTab] = useState<TabKey>('pending')
   const [pending, setPending] = useState<RadiologyOrder[]>(initP)
   const [performed, setPerformed] = useState<RadiologyOrder[]>(initPf)
@@ -58,7 +58,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [reportOrder, setReportOrder] = useState<RadiologyOrder | null>(null)
-  const canFormF = !!role && hasPermission(role, 'pcpndt:record')
+  const canFormF = !!role && hasPermission(role, 'pcpndt:record', profile?.granted_permissions)
 
   async function refresh() {
     setLoading(true)

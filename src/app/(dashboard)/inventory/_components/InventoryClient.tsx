@@ -56,7 +56,7 @@ interface Props {
 export default function InventoryClient({ initialItems, initialSuppliers, initialPOs, initialAlerts, initialExpiry }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
-  const canManage = !!role && hasPermission(role, 'inventory:manage')
+  const canManage = !!role && hasPermission(role, 'inventory:manage', profile?.granted_permissions)
 
   const [tab, setTab]           = useState<Tab>('items')
   const [items, setItems]       = useState(initialItems)

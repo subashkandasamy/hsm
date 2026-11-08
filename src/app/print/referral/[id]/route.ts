@@ -5,8 +5,7 @@ import { ReferralLetterPdf, type ReferralLetterData } from '@/lib/pdf/ReferralLe
 import { loadLogo } from '@/lib/pdf/parts'
 import { fileSafe, renderPdfResponse } from '@/lib/pdf/render'
 import { createClient } from '@/lib/supabase/server'
-import { getActorProfile } from '@/lib/server-utils'
-import { hasPermission } from '@/lib/rbac'
+import { actorCan } from '@/lib/server-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,8 +14,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const actor = await getActorProfile()
-  if (!hasPermission(actor.role, 'patients:read')) {
+  if (!(await actorCan('patients:read'))) {
     return new Response('Not permitted', { status: 403 })
   }
 

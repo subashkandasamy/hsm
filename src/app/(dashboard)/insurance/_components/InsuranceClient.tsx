@@ -68,7 +68,7 @@ export default function InsuranceClient({ initialClaims, receivables, initialTpa
   const router = useRouter()
   const { profile } = useAuth()
   const role = profile?.role
-  const canWrite = !!role && hasPermission(role, 'insurance:write')
+  const canWrite = !!role && hasPermission(role, 'insurance:write', profile?.granted_permissions)
 
   const [claims, setClaims]   = useState(initialClaims)
   const [loading, setLoading] = useState(false)
@@ -332,7 +332,7 @@ export default function InsuranceClient({ initialClaims, receivables, initialTpa
         <TpaManagerModal initialTpas={initialTpas} onClose={() => setShowTpa(false)} />
       )}
       {showBankAccounts && (
-        <BankAccountManagerModal initialAccounts={initialBankAccounts} canManage={!!role && hasPermission(role, 'settings:write')} onClose={() => setShowBankAccounts(false)} />
+        <BankAccountManagerModal initialAccounts={initialBankAccounts} canManage={!!role && hasPermission(role, 'settings:write', profile?.granted_permissions)} onClose={() => setShowBankAccounts(false)} />
       )}
       {showTariffs && (
         <TariffPackageManagerModal initialPackages={initialTariffPackages} tpas={initialTpas.filter((t) => t.is_active)} onClose={() => setShowTariffs(false)} />

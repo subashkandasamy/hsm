@@ -50,7 +50,7 @@ interface Props {
 
 export default function CashBookClient({ today, initialDayBook, initialShift, initialCloses, hospitalName }: Props) {
   const { profile } = useAuth()
-  const canClose = !!profile?.role && hasPermission(profile.role, 'billing:write')
+  const canClose = !!profile?.role && hasPermission(profile.role, 'billing:write', profile.granted_permissions)
   const [tab, setTab] = useState<Tab>('daybook')
 
   // ── Day Book ──
