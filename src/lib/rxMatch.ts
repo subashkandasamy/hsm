@@ -7,6 +7,8 @@
  * ought to be testable on its own. `npm run verify:rx-match` does that.
  */
 
+import type { RxWarning } from '@/lib/types'
+
 /**
  * Does `needle` appear in `haystack` at a word boundary?
  *
@@ -59,4 +61,87 @@ export function namesRelated(a: string, b: string): boolean {
   for (const t of tokens(b)) if (t.length >= 4 && boundaryMatch(a, t)) return true
   for (const t of tokens(a)) if (t.length >= 4 && boundaryMatch(b, t)) return true
   return false
+}
+
+// ── The check itself ────────────────────────────────────────────────────────
+
+/**
+ * Common allergy classes → member generics, so an allergy to "penicillin" flags
+ * amoxicillin. Keyword matching — a safety aid, not exhaustive. Moved here from
+ * `actions/rxSafety.ts` unchanged, so the whole decision can be tested.
+ */
+export const ALLERGY_CLASSES: Record<string, string[]> = {
+  penicillin: ['penicillin', 'amoxicillin', 'amoxycillin', 'ampicillin', 'cloxacillin', 'augmentin', 'amoxiclav', 'piperacillin'],
+  sulfa: ['sulfa', 'sulfamethoxazole', 'cotrimoxazole', 'septran', 'bactrim'],
+  nsaid: ['ibuprofen', 'diclofenac', 'aspirin', 'naproxen', 'aceclofenac', 'ketorolac', 'nimesulide', 'indomethacin'],
+  cephalosporin: ['cephalexin', 'cefixime', 'ceftriaxone', 'cefuroxime', 'cefpodoxime', 'cefepime'],
+}
+
+export interface RxInteractionRow { drug_a: string; drug_b: string; severity: string; description: string }
+
+/** A drug in the check: the label as written, and every name it is known by (label + resolved generics, lower-case). */
+export interface RxDrugNames { label: string; names: string[] }
+
+/** Shown when the catalogue could not say what the drug is. Never 'major' — it must not block prescribing. */
+export const UNIDENTIFIED_DRUG_MESSAGE =
+  'Not found in the drug catalogue — allergy and interaction checks could not run for this name. Check it yourself.'
+
+/**
+ * The allergy / interaction decision, given everything already fetched.
+ *
+ * Every name a drug is known by is tested, not just its label — the label is
+ * always one of them, so any warning the label alone would raise is still
+ * raised. Resolution can only add warnings, never take one away. The matching
+ * rules themselves (boundaryMatch, namesRelated, the class table) are unchanged.
+ */
+export function evaluateRxSafety(input: {
+  drug: RxDrugNames & { identified: boolean }
+  allergies: string[]
+  others: Array<RxDrugNames & { provenance: string }>
+  interactions: RxInteractionRow[]
+}): RxWarning[] {
+  const { drug, allergies, others, interactions } = input
+  const names = drug.names.map((n) => n.toLowerCase().trim()).filter((n) => n.length >= 3)
+  const warnings: RxWarning[] = []
+
+  // ---- Allergy ----
+  for (const recorded of allergies) {
+    const allergen = (recorded || '').toLowerCase().trim()
+    if (allergen.length < 3) continue
+    let hit = names.some((n) => namesRelated(n, allergen))
+    if (!hit) {
+      for (const [cls, members] of Object.entries(ALLERGY_CLASSES)) {
+        const allergenInClass = allergen.includes(cls) || members.some((m) => allergen.includes(m))
+        if (allergenInClass && names.some((n) => members.some((m) => n.includes(m)))) { hit = true; break }
+      }
+    }
+    if (hit) warnings.push({ type: 'allergy', severity: 'major', message: `Patient is allergic to "${recorded}"` })
+  }
+
+  // ---- Interactions ----
+  for (const row of interactions) {
+    const a = row.drug_a.toLowerCase(), b = row.drug_b.toLowerCase()
+    const hasA = names.some((n) => boundaryMatch(n, a))
+    const hasB = names.some((n) => boundaryMatch(n, b))
+    if (!hasA && !hasB) continue
+    for (const other of others) {
+      const otherNames = other.names.map((n) => n.toLowerCase().trim()).filter((n) => n.length >= 3)
+      if ((hasA && otherNames.some((n) => boundaryMatch(n, b))) || (hasB && otherNames.some((n) => boundaryMatch(n, a)))) {
+        warnings.push({
+          type: 'interaction',
+          severity: row.severity as RxWarning['severity'],
+          message: `Interacts with ${other.label} (${other.provenance}): ${row.description}`,
+        })
+        break
+      }
+    }
+  }
+
+  // ---- Could not check ----
+  if (!drug.identified) {
+    warnings.push({ type: 'unrecognised', severity: 'minor', message: UNIDENTIFIED_DRUG_MESSAGE })
+  }
+
+  const seen = new Set<string>()
+  return warnings.filter((w) => (seen.has(w.message) ? false : (seen.add(w.message), true)))
 }

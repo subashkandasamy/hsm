@@ -9,7 +9,8 @@
  * and half "must not fire", and the second half is the new half.
  */
 
-import { boundaryMatch, namesRelated } from '../src/lib/rxMatch'
+import { boundaryMatch, namesRelated, evaluateRxSafety, UNIDENTIFIED_DRUG_MESSAGE, type RxInteractionRow } from '../src/lib/rxMatch'
+import { withSynonyms, pickUniqueGeneric } from '../src/lib/drugResolve'
 
 let failed = 0
 function check(ok: boolean, label: string, detail?: unknown) {
@@ -68,6 +69,89 @@ for (const [allergen, drug, shouldFire] of [
   const effective = got || viaClass
   check(effective === shouldFire, `"${allergen}" vs "${drug}" → ${shouldFire ? 'warn' : 'quiet'}`,
     { direct: got, viaClass })
+}
+
+// ── Brand names (build item #1) ─────────────────────────────────────────────
+// The check compared the label as written against generic names, and a brand
+// never matches its generic. Nine in ten real prescriptions are brands. These
+// cases resolve the label first (as checkPrescriptionSafety now does) and prove
+// the result in both directions — it must fire where it should, and resolution
+// must not open a new route to the F-60 false positives.
+
+console.log('\nSynonyms: one molecule, two names')
+check(withSynonyms(['Acetaminophen']).includes('paracetamol'), 'acetaminophen also reads as paracetamol')
+check(withSynonyms(['paracetamol']).includes('acetaminophen'), 'and the other way round')
+check(withSynonyms(['Acetaminophen + Caffeine']).includes('paracetamol + caffeine'), 'inside a combination too')
+check(withSynonyms(['norepinephrine']).includes('noradrenaline'), 'norepinephrine maps through its own pair')
+// "nor"+"adrenaline" happens to spell "noradrenaline", so norepinephrine cannot
+// prove the whole-word guard. A made-up word can: the synonym sits inside it.
+check(!withSynonyms(['xepinephrine']).includes('xadrenaline'), 'a synonym is replaced only as a whole word, never inside another word')
+check(withSynonyms(['Amlodipine']).length === 1, 'a name with no synonym is left alone')
+
+console.log('\nA prefix is trusted only when it reaches one molecule')
+check(pickUniqueGeneric(['Acetaminophen', 'Paracetamol']) === 'paracetamol', 'Acetaminophen + Paracetamol is ONE molecule')
+check(pickUniqueGeneric(['Metformin', 'Metformin + Glimepiride']) === null, 'Metformin vs Metformin + Glimepiride is TWO — not guessed')
+check(pickUniqueGeneric(['Amlodipine', 'amlodipine ', null]) === 'amlodipine', 'case, spacing and blanks do not split one molecule')
+check(pickUniqueGeneric([null, undefined, '']) === null, 'nothing found is not a match')
+
+const I: RxInteractionRow[] = [
+  { drug_a: 'warfarin', drug_b: 'azithromycin', severity: 'moderate', description: 'raises INR' },
+  { drug_a: 'enalapril', drug_b: 'spironolactone', severity: 'major', description: 'hyperkalaemia' },
+  { drug_a: 'warfarin', drug_b: 'aspirin', severity: 'major', description: 'bleeding' },
+]
+const drug = (label: string, generics: string[] = [], identified = true) =>
+  ({ label, names: [label, ...withSynonyms(generics)], identified })
+const other = (label: string, generics: string[] = [], provenance = 'on this prescription') =>
+  ({ label, names: [label, ...withSynonyms(generics)], provenance })
+const types = (w: { type: string }[]) => w.map((x) => x.type).sort().join(',')
+
+console.log('\nThe defect, then the fix')
+check(evaluateRxSafety({ drug: drug('azithral 500'), allergies: [], others: [other('warfarin')], interactions: I })
+  .filter((w) => w.type === 'interaction').length === 0,
+  'label alone: Azithral + warfarin is SILENT — the bug as it was')
+const az = evaluateRxSafety({ drug: drug('azithral 500', ['Azithromycin']), allergies: [], others: [other('warfarin')], interactions: I })
+check(az.some((w) => w.type === 'interaction' && w.severity === 'moderate'), 'resolved: Azithral + warfarin now warns', az)
+check(evaluateRxSafety({ drug: drug('azithral 500', ['Azithromycin']), allergies: ['Azithromycin'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'resolved: Azithral warns an azithromycin-allergic patient')
+check(evaluateRxSafety({ drug: drug('warfarin', ['Warfarin']), allergies: [], others: [other('azithral 500', ['Azithromycin'], 'prescribed on 2026-11-01')], interactions: I })
+  .some((w) => w.type === 'interaction'), 'the OTHER side resolves too — a past Azithral is seen by new warfarin')
+check(evaluateRxSafety({ drug: drug('metolactone 5 mg/50 mg tablet', ['Metolazone + Spironolactone']), allergies: [], others: [other('enalapril', ['Enalapril'])], interactions: I })
+  .some((w) => w.severity === 'major'), 'a combination reaches the interaction of one of its parts')
+
+console.log('\nSynonyms reach allergies')
+check(evaluateRxSafety({ drug: drug('dolo 650', ['Acetaminophen']), allergies: ['Paracetamol'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'Dolo (catalogue: acetaminophen) warns a "Paracetamol" allergy')
+check(evaluateRxSafety({ drug: drug('dolo 650', ['Paracetamol']), allergies: ['acetaminophen'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'and the reverse spelling')
+check(evaluateRxSafety({ drug: drug('mox 500', ['Amoxicillin']), allergies: ['Penicillin'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'a brand reaches its allergy CLASS through its generic (Mox → amoxicillin → penicillin)')
+
+console.log('\nResolution must not bring back F-60')
+check(!evaluateRxSafety({ drug: drug('dolo 650', ['Acetaminophen']), allergies: ['ACE'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'an allergy to "ACE" still does NOT flag Dolo, even as acetaminophen')
+check(!evaluateRxSafety({ drug: drug('amlopres 5', ['Amlodipine']), allergies: ['Penicillin', 'Sulfa drugs'], others: [], interactions: I })
+  .some((w) => w.type === 'allergy'), 'Amlopres (amlodipine) is quiet for penicillin and sulfa allergies')
+check(evaluateRxSafety({ drug: drug('glycomet 500', ['Metformin']), allergies: [], others: [other('amlopres 5', ['Amlodipine'])], interactions: I }).length === 0,
+  'two identified drugs with no known interaction: no banner at all')
+
+console.log('\nWhen the catalogue cannot say what it is')
+const ors = evaluateRxSafety({ drug: drug('ors sachet', [], false), allergies: ['Penicillin'], others: [other('warfarin')], interactions: I })
+check(types(ors) === 'unrecognised', 'one "not checked" line, nothing invented', ors)
+check(ors.every((w) => w.severity !== 'major'), 'and never major — it must not block prescribing or demand the tick')
+check(ors[0]?.message === UNIDENTIFIED_DRUG_MESSAGE, 'with the agreed wording')
+check(!evaluateRxSafety({ drug: drug('azithral 500', ['Azithromycin']), allergies: [], others: [], interactions: I })
+  .some((w) => w.type === 'unrecognised'), 'an identified drug gets no "not checked" line')
+
+console.log('\nResolution only ever adds warnings')
+for (const [label, gens, allergy, otherLabel] of [
+  ['warfarin', ['Warfarin'], '', 'aspirin'],
+  ['amoxicillin 500', ['Amoxicillin'], 'Penicillin', ''],
+  ['sulfamethoxazole + trimethoprim', ['Sulfamethoxazole + Trimethoprim'], 'Sulfa drugs', ''],
+] as [string, string[], string, string][]) {
+  const base = { allergies: allergy ? [allergy] : [], others: otherLabel ? [other(otherLabel)] : [], interactions: I }
+  const before = evaluateRxSafety({ ...base, drug: drug(label) }).map((w) => w.message)
+  const after = evaluateRxSafety({ ...base, drug: drug(label, gens) }).map((w) => w.message)
+  check(before.length > 0 && before.every((m) => after.includes(m)), `"${label}": every warning the label raised is still raised`, { before, after })
 }
 
 console.log(failed === 0 ? '\nMatching behaves in both directions.\n' : `\n${failed} check(s) FAILED.\n`)

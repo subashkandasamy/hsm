@@ -29,6 +29,7 @@ import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/Radiol
 import HistoryProblemsPanel from './HistoryProblemsPanel'
 import IcdPicker from '@/components/ui/IcdPicker'
 import { checkPrescriptionSafety } from '@/app/actions/rxSafety'
+import RxSafetyBanner from '@/components/ui/RxSafetyBanner'
 import DoseCheckPanel from '@/components/ui/DoseCheckPanel'
 import FollowUpCard from './FollowUpCard'
 import ReferPatientModal from '@/components/clinical/ReferPatientModal'
@@ -868,33 +869,12 @@ export default function ConsultationWorkspace({
                     />
                   </FormField>
                 </div>
-                {rxWarnings.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {rxWarnings.map((w, i) => {
-                      const major = w.severity === 'major' || w.type === 'allergy'
-                      return (
-                        <div key={i} className="flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-                          style={major ? { background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' } : { background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                          <span>{w.type === 'allergy' ? '⚠ Allergy' : w.severity === 'major' ? '⚠ Major' : 'Interaction'}</span>
-                          <span style={{ fontWeight: 400 }}>{w.message}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {rxWarnings.some((w) => w.severity === 'major') && (
-                  <label className="flex items-start gap-2 mt-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer"
-                    style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B' }}>
-                    <input type="checkbox" checked={rxAck} onChange={(e) => setRxAck(e.target.checked)}
-                      className="mt-0.5" style={{ accentColor: '#DC2626' }} />
-                    <span>
-                      I have reviewed this warning and am prescribing anyway.
-                      <span style={{ fontWeight: 400, display: 'block', color: '#B91C1C' }}>
-                        This is recorded against the prescription with your name.
-                      </span>
-                    </span>
-                  </label>
-                )}
+                <RxSafetyBanner
+                  warnings={rxWarnings}
+                  acknowledged={rxAck}
+                  onAcknowledge={setRxAck}
+                  hideUnchecked={showSuggestions && drugSuggestions.length > 0}
+                />
                 <DoseCheckPanel
                   input={{ patientId: patient.id, visitId: visit.id, drugName: newRx.drug_name, dosage: newRx.dosage, frequency: newRx.frequency }}
                   override={rxOverride}

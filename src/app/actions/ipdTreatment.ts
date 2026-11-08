@@ -8,10 +8,11 @@ import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, IpdPharmacyRequest,
-  LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog,
+  LabOrder, LabTestCatalog, RadiologyOrder, RadiologyCatalog, RxWarning,
 } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
+import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
 import { pageAll } from '@/lib/supabase/pageAll'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -105,6 +106,8 @@ export async function createOrder(
     duration_days: number
     notes?: string
     dose_override?: boolean
+    /** The doctor ticked "reviewed this warning" — the only thing taken from the caller; the warnings are recomputed here. */
+    safety_acknowledged?: boolean
   }
 ): Promise<{ success: true; order: IpdMedicationOrder } | { success: false; error: string }> {
   await requireWriteAccess()
@@ -116,6 +119,7 @@ export async function createOrder(
   if (!gate.success) return gate
 
   const supabase = await createClient()
+  let safetyMajor: RxWarning[] = []
   if (input.type === 'medication' && input.drug_name) {
     // Children: a dose above the maximum for their weight needs an explicit override.
     const { data: adm } = await supabase.from('admissions').select('patient_id').eq('id', admissionId).maybeSingle()
@@ -127,6 +131,19 @@ export async function createOrder(
       drugRef: input.drug_ref_id ? { id: input.drug_ref_id, isGlobal: !!input.drug_is_global } : null,
     }, input.dose_override === true)
     if (doseError) return { success: false, error: doseError }
+
+    // Allergy / interaction check, recomputed here rather than trusted from the
+    // form — the same rule as an OPD prescription (F-59): a major warning needs
+    // the doctor's acknowledgement, and an override is recorded with their name.
+    const warnings = await checkIpdOrderSafety(admissionId, input.drug_name,
+      input.drug_ref_id ? { id: input.drug_ref_id, isGlobal: !!input.drug_is_global } : null)
+    safetyMajor = warnings.filter((w) => w.severity === 'major')
+    if (safetyMajor.length && input.safety_acknowledged !== true) {
+      return {
+        success: false,
+        error: `${safetyMajor[0].message}. Tick the acknowledgement to order anyway — it will be recorded with your name.`,
+      }
+    }
   }
   const orderId = crypto.randomUUID()
   const startAt = new Date()
@@ -201,6 +218,12 @@ export async function createOrder(
   }
 
   await logAudit(actor.id, 'create', 'ipd_medication_order', orderId, { admissionId, type: input.type, ...(input.dose_override ? { dose_override: true, drug: input.drug_name, dose: input.dose, dose_unit: input.dose_unit } : {}) })
+  if (safetyMajor.length) {
+    await logAudit(actor.id, 'safety_override', 'ipd_medication_order', orderId, {
+      drug: input.drug_name,
+      warnings: safetyMajor.map((w) => w.message),
+    })
+  }
 
   const { data: row } = await supabase
     .from('ipd_medication_orders')
@@ -467,6 +490,24 @@ export async function copyPrescriptionsToIPD(
     .eq('visit_id', visitId)
 
   if (!prx?.length) return { success: false, error: 'No prescriptions found' }
+
+  // Each drug was checked when it was prescribed, but not against what is now
+  // running on this admission. A copy is a batch with no place to acknowledge a
+  // warning drug by drug, so a major warning stops the whole copy and names the
+  // drugs; those are then ordered one at a time, where the acknowledgement is.
+  const blocked: string[] = []
+  for (const p of prx) {
+    const warnings = await checkIpdOrderSafety(admissionId, (p.drug_name as string) ?? '')
+    const major = warnings.find((w) => w.severity === 'major')
+    if (major) blocked.push(`${p.drug_name as string} — ${major.message}`)
+  }
+  if (blocked.length) {
+    return {
+      success: false,
+      error: `Nothing was copied. ${blocked.slice(0, 3).join('; ')}${blocked.length > 3 ? `; and ${blocked.length - 3} more` : ''}. `
+        + 'Order these from New Order, where you can review and acknowledge the warning; copy the rest without them.',
+    }
+  }
 
   let count = 0
   for (const p of prx) {

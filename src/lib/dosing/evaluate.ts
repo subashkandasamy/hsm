@@ -4,10 +4,11 @@
 import type { createClient } from '@/lib/supabase/server'
 import { istDate, istToday } from '@/lib/istDate'
 import {
-  checkDose, findRule, inferRoute, parseDoseText, parseFrequencyText, parseConcentration,
+  checkDose, inferRoute, parseDoseText, parseFrequencyText, parseConcentration,
   type DoseCheck,
 } from '@/lib/dosing/paediatric'
 import type { FrequencyType } from '@/lib/types'
+import { resolveDrug } from '@/lib/drugResolve'
 
 export type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -55,28 +56,6 @@ async function loadWeight(supabase: SupabaseClient, patientId: string, visitId?:
   // This visit's own weight wins; otherwise the most recent (growth record on a tie).
   const best = candidates.find((c) => c.rank === 2) ?? [...candidates].sort((a, b) => b.on.localeCompare(a.on) || b.rank - a.rank)[0]
   return { isChild: dob ? isChild : false, ageDays, weightKg: best?.kg ?? null, weighedOn: best?.on ?? null }
-}
-
-/** Generic name and strength for a brand or free-text drug name, from the drug master. */
-async function resolveDrug(supabase: SupabaseClient, drugText: string, ref?: { id: string | null; isGlobal: boolean } | null) {
-  if (ref?.id) {
-    const { data } = ref.isGlobal
-      ? await supabase.from('drug_master').select('generic_name, name, strength').eq('id', ref.id).maybeSingle()
-      : await supabase.from('drugs').select('generic_name, name, strength').eq('id', ref.id).maybeSingle()
-    if (data) return { generic: (data.generic_name || data.name) as string, strength: (data.strength as string | null) ?? null }
-  }
-  if (findRule(drugText, 'oral', null).rule || findRule(drugText, 'iv', null).rule) return { generic: null, strength: null }
-  const words = drugText.trim().split(/\s+/).map((w) => w.replace(/[%_]/g, ''))
-  // "Crocin Syrup 120mg/5ml" → try "Crocin Syrup", then "Crocin" (generic only — another pack's strength may differ).
-  for (const [prefix, exact] of [[words.slice(0, 2).join(' '), true], [words[0], false]] as const) {
-    if (!prefix || prefix.length < 3) continue
-    const { data: brand } = await supabase.from('drug_brands')
-      .select('brand_name, master:drug_master(generic_name, strength)')
-      .ilike('brand_name', `${prefix}%`).limit(1)
-    const m = (brand?.[0]?.master as unknown as { generic_name: string; strength: string | null } | null) ?? null
-    if (m) return { generic: m.generic_name, strength: exact ? m.strength : null }
-  }
-  return { generic: null, strength: null }
 }
 
 const FREQ_PER_DAY: Record<FrequencyType, number | null> = {

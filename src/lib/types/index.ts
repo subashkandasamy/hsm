@@ -303,7 +303,7 @@ export interface PatientHistory {
 
 export interface IcdCode { code: string; title: string; category: string | null }
 
-export interface RxWarning { type: 'allergy' | 'interaction'; severity: 'major' | 'moderate' | 'minor'; message: string }
+export interface RxWarning { type: 'allergy' | 'interaction' | 'unrecognised'; severity: 'major' | 'moderate' | 'minor'; message: string }
 
 export type ProblemStatus = 'active' | 'chronic' | 'resolved'
 export interface PatientProblem {

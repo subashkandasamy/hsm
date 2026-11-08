@@ -62,12 +62,14 @@ import {
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
 } from '@/app/actions/ipdTreatment'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
+import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
+import RxSafetyBanner from '@/components/ui/RxSafetyBanner'
 import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, AdminStatus, Drug,
   LabOrder, LabTestCatalog, LabOrderStatus,
-  RadiologyOrder, RadiologyCatalog, RadiologyOrderStatus,
+  RadiologyOrder, RadiologyCatalog, RadiologyOrderStatus, RxWarning,
 } from '@/lib/types'
 
 function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
@@ -153,9 +155,12 @@ function orderLabel(o: IpdMedicationOrder): string {
 interface DrugComboboxProps {
   value: string
   onChange: (name: string, drug: Drug | null) => void
+  /** Told when the suggestion list opens or closes. */
+  onOpenChange?: (open: boolean) => void
 }
-function DrugCombobox({ value, onChange }: DrugComboboxProps) {
-  const [open, setOpen]   = useState(false)
+function DrugCombobox({ value, onChange, onOpenChange }: DrugComboboxProps) {
+  const [open, setOpenState] = useState(false)
+  const setOpen = (v: boolean) => { setOpenState(v); onOpenChange?.(v) }
   const [query, setQuery] = useState(value)
 
   const q = query.trim().toLowerCase()
@@ -1090,6 +1095,12 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [formError, setFormError]     = useState('')
   const [formSaving, setFormSaving]   = useState(false)
   const [doseOverride, setDoseOverride] = useState(false)
+  // Allergy / interaction warnings for the drug being ordered, and the tick that
+  // overrides a major one. drugListOpen hides "not in the catalogue" while the
+  // doctor is still choosing from the list.
+  const [rxWarnings, setRxWarnings]   = useState<RxWarning[]>([])
+  const [rxAck, setRxAck]             = useState(false)
+  const [drugListOpen, setDrugListOpen] = useState(false)
 
   const [showCopy, setShowCopy]       = useState(false)
   const [visitGroups, setVisitGroups] = useState<Awaited<ReturnType<typeof getVisitPrescriptions>>>([])
@@ -1107,6 +1118,24 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       setOrders(o); setSchedule(s); setLoading(false)
     })
   }, [admissionId])
+
+  // Check the drug as it is chosen, like the OPD prescription form. State is set
+  // only inside the debounce, so a cleared field clears the banner on the same tick.
+  useEffect(() => {
+    const name = form.drug_name.trim()
+    const ref = form.drug_ref_id ? { id: form.drug_ref_id, isGlobal: form.drug_is_global } : null
+    const wanted = canOrder && form.type === 'medication' && name.length >= 3
+    let active = true
+    const t = setTimeout(async () => {
+      const w = wanted ? await checkIpdOrderSafety(admissionId, name, ref) : []
+      if (active) {
+        setRxWarnings(w)
+        // A tick must not survive the drug it was made for.
+        setRxAck(false)
+      }
+    }, wanted ? 400 : 0)
+    return () => { active = false; clearTimeout(t) }
+  }, [admissionId, canOrder, form.type, form.drug_name, form.drug_ref_id, form.drug_is_global])
 
   function setF(k: keyof OrderForm, v: string) { setForm((f) => ({ ...f, [k]: v })) }
 
@@ -1131,12 +1160,13 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       duration_days:   dur,
       notes:           form.notes || undefined,
       dose_override:   doseOverride,
+      safety_acknowledged: rxAck,
     })
     setFormSaving(false)
     if (!res.success) { setFormError(res.error); return }
     setOrders((prev) => [res.order, ...prev])
     setSchedule(await listSchedule(admissionId))
-    setShowForm(false); setForm(BLANK); setDoseOverride(false)
+    setShowForm(false); setForm(BLANK); setDoseOverride(false); setRxAck(false)
   }
 
   async function handleStop(orderId: string) {
@@ -1246,6 +1276,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                 <div className="col-span-2">
                   <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Drug Name *</label>
                   <DrugCombobox value={form.drug_name}
+                    onOpenChange={setDrugListOpen}
                     onChange={(name, drug) => {
                       setF('drug_name', name)
                       if (drug?.unit) setF('dose_unit', drug.unit)
@@ -1274,6 +1305,15 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                   </SelectUI>
                 </div>
               </div>
+            )}
+            {form.type === 'medication' && (
+              <RxSafetyBanner
+                warnings={rxWarnings}
+                acknowledged={rxAck}
+                onAcknowledge={setRxAck}
+                hideUnchecked={drugListOpen}
+                verb="ordering"
+              />
             )}
             {form.type === 'medication' && (
               <DoseCheckPanel
