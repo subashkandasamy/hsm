@@ -1294,54 +1294,45 @@ export async function getAlerts(): Promise<PharmacyAlerts> {
 
 // ---- Pending prescriptions ----
 
+/**
+ * The dispense queue: prescriptions not yet dispensed, newest visit first, with
+ * the patient's name and UHID.
+ *
+ * Read through list_pending_prescriptions (0270), not from `visits`: a
+ * pharmacist cannot read visits (visits_tenant_read), so the old two-query
+ * merge gave them every patient as "—" and a dispense with no patient. The
+ * function returns only the visit date and the patient — never the visit's
+ * clinical content — and only for the caller's hospital.
+ */
 export async function listPendingPrescriptions(): Promise<PrescriptionWithVisit[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
   const supabase = await createClient()
 
-  // Phase 10 dropped the prescriptions→visits FK (visits became partitioned; CASCADE removed the
-  // constraint). We query the two tables separately and merge in code.
-  const [{ data: prescriptions }, { data: dispensed }] = await Promise.all([
-    supabase
-      .from('prescriptions')
-      .select('id, visit_id, drug_name, dosage, frequency, duration, instructions')
-      .order('id')
-      .limit(200),
-    supabase
-      .from('dispenses')
-      .select('prescription_id')
-      .not('prescription_id', 'is', null),
-  ])
+  const { data, error } = await supabase.rpc('list_pending_prescriptions', { p_limit: 200 })
+  if (error) {
+    console.error('[listPendingPrescriptions] read failed:', error.message)
+    return []
+  }
 
-  if (!prescriptions?.length) return []
-
-  const dispensedSet = new Set((dispensed ?? []).map((d) => d.prescription_id as string))
-  const undispensed = prescriptions.filter((p) => !dispensedSet.has(p.id))
-  if (!undispensed.length) return []
-
-  const visitIds = [...new Set(undispensed.map((p) => p.visit_id).filter(Boolean))]
-  const { data: visits } = await supabase
-    .from('visits')
-    .select('id, visit_date, patient_id, patient:patients(full_name, uhid)')
-    .in('id', visitIds)
-
-  type VisitRow = { id: string; visit_date: string; patient_id: string; patient: { full_name: string; uhid: string } | null }
-  const visitMap = new Map<string, VisitRow>((visits ?? []).map((v) => [v.id, v as unknown as VisitRow]))
-
-  return undispensed.map((p) => {
-    const v = visitMap.get(p.visit_id)
-    return {
-      id: p.id,
-      visit_id: p.visit_id,
-      drug_name: p.drug_name,
-      dosage: p.dosage ?? null,
-      frequency: p.frequency ?? null,
-      duration: p.duration ?? null,
-      instructions: p.instructions ?? null,
-      visit_date: v?.visit_date ?? '',
-      patient_id: v?.patient_id ?? '',
-      patient_name: v?.patient?.full_name ?? '—',
-      patient_uhid: v?.patient?.uhid ?? '—',
-    }
-  })
+  type Row = {
+    id: string; visit_id: string; drug_name: string; dosage: string | null; frequency: string | null
+    duration: string | null; instructions: string | null; visit_date: string; patient_id: string
+    patient_name: string | null; patient_uhid: string | null
+  }
+  return ((data ?? []) as Row[]).map((p) => ({
+    id: p.id,
+    visit_id: p.visit_id,
+    drug_name: p.drug_name,
+    dosage: p.dosage ?? null,
+    frequency: p.frequency ?? null,
+    duration: p.duration ?? null,
+    instructions: p.instructions ?? null,
+    visit_date: p.visit_date ?? '',
+    patient_id: p.patient_id,
+    patient_name: p.patient_name ?? '—',
+    patient_uhid: p.patient_uhid ?? '—',
+  }))
 }
 
 // ---- Dispense ----
