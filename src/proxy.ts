@@ -155,6 +155,9 @@ export async function proxy(request: NextRequest) {
     '/login', '/signup', '/tenant-not-found', '/tenant-suspended',
     '/auth/callback', '/forgot-password', '/reset-password',
     '/native-entry', '/find-hospital',
+    // Shared-counter PIN switch: works only from an approved browser (0272),
+    // checked by the page and its actions — signed out is its normal state.
+    '/counter',
     // Public marketing / legal pages
     '/terms', '/privacy', '/security', '/guides', '/solutions', '/tools',
     // Crawler files. The apex already serves these, but on bare localhost and on

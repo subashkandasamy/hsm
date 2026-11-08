@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendPasswordResetEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
+import { markPinSession } from '@/lib/counterServer'
 
 // ── 1. Forgot / Reset password ────────────────────────────────────────────────
 
@@ -102,6 +103,8 @@ export async function getPostLoginRedirect(): Promise<PostLoginResult> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { redirect: '/login' }
+    // A password sign-in is a full session again, not a PIN one (0272).
+    await markPinSession(false).catch(() => {})
 
     const { createServiceClient } = await import('@/lib/supabase/service')
     const service = createServiceClient()
@@ -164,6 +167,7 @@ export async function markMagicLinkLogin(): Promise<{ success: boolean }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { success: false }
+    await markPinSession(false).catch(() => {})
     await logAudit(user.id, 'login_success', 'auth', user.id, { method: 'magic_link' })
     return { success: true }
   } catch {

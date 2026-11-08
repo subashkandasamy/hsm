@@ -1,4 +1,4 @@
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import LoginForm from './_components/LoginForm'
 
 export const metadata = {
@@ -17,5 +17,7 @@ export default async function LoginPage() {
     //  — acceptable for a subdomain SaaS.)
   }
 
-  return <LoginForm hospitalName={hospitalName} />
+  // Only whether the cookie is there — the counter page itself checks it is valid.
+  const sharedCounter = !!(await cookies()).get('uyirly_counter')?.value
+  return <LoginForm hospitalName={hospitalName} sharedCounter={sharedCounter} />
 }

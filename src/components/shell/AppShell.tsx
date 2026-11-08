@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import BottomTabBar from './BottomTabBar'
+import IdleSignOut from './IdleSignOut'
 import type { Role } from '@/lib/types'
 import type { PlanKey, TenantStatus } from '@/lib/plans'
 
@@ -15,12 +16,14 @@ interface AppShellProps {
   enabledModules?: string[]
   plan?: PlanKey
   status?: TenantStatus
+  /** This browser is an approved shared counter (PIN switch). */
+  sharedCounter?: boolean
   children: React.ReactNode
 }
 
 export default function AppShell({
   role, fullName, tenantName, enabledModules,
-  plan = 'starter', status = 'trial', children,
+  plan = 'starter', status = 'trial', sharedCounter = false, children,
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
@@ -51,7 +54,7 @@ export default function AppShell({
         />
       </div>
       <div className="print:hidden">
-        <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} />
+        <TopBar fullName={fullName} role={role} tenantName={tenantName} onMenuClick={() => setDrawerOpen(true)} sharedCounter={sharedCounter} />
       </div>
 
       <main className={`${collapsed ? 'lg:ml-16' : 'lg:ml-60'} min-w-0 min-h-screen pb-safe-nav transition-[margin] duration-200 print:ml-0 print:pt-0 print:pb-0 print:min-h-0`}
@@ -82,6 +85,7 @@ export default function AppShell({
       <div className="print:hidden">
         <BottomTabBar role={role} enabledModules={enabledModules} />
       </div>
+      <IdleSignOut sharedCounter={sharedCounter} />
     </div>
   )
 }

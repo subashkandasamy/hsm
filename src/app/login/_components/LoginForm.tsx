@@ -9,14 +9,19 @@ import { getPostLoginRedirect } from '@/app/actions/auth'
 import { LoginSchema } from '@/lib/schemas'
 import { Eye, EyeOff, LogIn, CheckCircle, AlertCircle } from 'lucide-react'
 
-interface Props { hospitalName?: string | null }
+interface Props {
+  hospitalName?: string | null
+  /** This browser holds a shared-counter key: offer the PIN screen (0272). */
+  sharedCounter?: boolean
+}
 
-export default function LoginForm({ hospitalName }: Props) {
+export default function LoginForm({ hospitalName, sharedCounter = false }: Props) {
   const params = useSearchParams()
   const isExpired     = params.get('expired') === '1'
   const isReset       = params.get('reset') === '1'
   const isDeactivated = params.get('deactivated') === '1'
   const isTempExpired = params.get('tempexpired') === '1'
+  const wasIdle = params.get('idle') === '1'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -112,6 +117,17 @@ export default function LoginForm({ hospitalName }: Props) {
           </div>
         )}
 
+        {wasIdle && !isDeactivated && (
+          <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #CCFBF1' }}>
+            You were signed out after 10 minutes without use. Sign in again to carry on.
+          </div>
+        )}
+        {sharedCounter && (
+          <a href="/counter" className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: 'rgba(13,148,136,0.08)', color: '#0F766E', border: '1px solid rgba(13,148,136,0.25)' }}>
+            Shared counter — switch in with your PIN <span aria-hidden>→</span>
+          </a>
+        )}
         {isDeactivated && (
           <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 text-sm"
             style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>

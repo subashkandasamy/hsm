@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { isPractitioner } from '@/lib/doctors'
 import {
   Plus, RefreshCw, Users, CalendarCheck,
-  Edit2, UserX, UserCheck, KeyRound, Phone, Mail, Briefcase, Search, Lock, Copy, CheckCheck,
+  Edit2, UserX, UserCheck, KeyRound, Phone, Mail, Briefcase, Search, Lock, Copy, CheckCheck, RotateCcw,
 } from 'lucide-react'
+import { listPinStatus, resetStaffPin } from '@/app/actions/counter'
 import PageHeader from '@/components/ui/PageHeader'
 import DataTable from '@/components/ui/DataTable'
 import GlassCard from '@/components/ui/GlassCard'
@@ -62,6 +63,15 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
   const [editMember, setEditMember]     = useState<StaffMember | null>(null)
   const [deactivateId, setDeactivateId] = useState<string | null>(null)
   const [resendId, setResendId]         = useState<string | null>(null)
+  // Counter PINs (0272): who has one, who is locked; reset clears it — the PIN itself is never shown.
+  const [pinStatus, setPinStatus]       = useState<Record<string, 'set' | 'locked'>>({})
+  const [pinResetId, setPinResetId]     = useState<string | null>(null)
+  const [pinNotice, setPinNotice]       = useState('')
+  useEffect(() => {
+    let live = true
+    listPinStatus().then((m) => { if (live) setPinStatus(m) }).catch(() => {})
+    return () => { live = false }
+  }, [])
   const [resendResult, setResendResult] = useState<{ name: string; password: string; emailSent: boolean; email: string } | null>(null)
   const [copied, setCopied]             = useState(false)
   const [busyId, setBusyId]             = useState<string | null>(null)
@@ -252,6 +262,13 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                               style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}>
                               <KeyRound className="w-4 h-4" />
                             </button>
+                            {pinStatus[s.id] && (
+                              <button onClick={() => setPinResetId(s.id)} title={pinStatus[s.id] === 'locked' ? 'PIN locked — reset it' : 'Reset counter PIN'}
+                                className="w-9 h-9 flex items-center justify-center rounded-lg"
+                                style={{ background: pinStatus[s.id] === 'locked' ? '#FEF3C7' : 'rgba(100,116,139,0.08)', color: pinStatus[s.id] === 'locked' ? '#B45309' : '#64748B', border: 'none', cursor: 'pointer' }}>
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            )}
                             <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
                               className="w-9 h-9 flex items-center justify-center rounded-lg"
                               style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
@@ -419,6 +436,13 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
                               style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: 'none', cursor: 'pointer' }}>
                               <KeyRound className="w-3.5 h-3.5" />
                             </button>
+                            {pinStatus[s.id] && (
+                              <button onClick={() => setPinResetId(s.id)} title={pinStatus[s.id] === 'locked' ? 'PIN locked — reset it' : 'Reset counter PIN'}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg"
+                                style={{ background: pinStatus[s.id] === 'locked' ? '#FEF3C7' : 'rgba(100,116,139,0.08)', color: pinStatus[s.id] === 'locked' ? '#B45309' : '#64748B', border: 'none', cursor: 'pointer' }}>
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button onClick={() => setDeactivateId(s.id)} title="Deactivate"
                               className="w-8 h-8 flex items-center justify-center rounded-lg"
                               style={{ background: 'rgba(239,68,68,0.06)', color: '#DC2626', border: 'none', cursor: 'pointer' }}>
@@ -487,6 +511,32 @@ export default function StaffClient({ initialStaff, initialAttendance, currentMo
         confirmLabel="Deactivate"
         confirmVariant="danger"
       />
+
+      {/* Counter PIN reset confirm */}
+      <ConfirmDialog
+        open={!!pinResetId}
+        onClose={() => setPinResetId(null)}
+        onConfirm={async () => {
+          if (!pinResetId) return
+          const member = staff.find((m) => m.id === pinResetId)
+          const res = await resetStaffPin(pinResetId)
+          setPinResetId(null)
+          if (!res.success) { setPinNotice(res.error); return }
+          setPinStatus((m) => { const next = { ...m }; delete next[pinResetId]; return next })
+          setPinNotice(`${member?.full_name ?? 'Their'} PIN is cleared. They set a new one with their password at the counter.`)
+        }}
+        title="Reset this counter PIN?"
+        description="Their PIN is cleared — you never see it. Next time at a shared counter they confirm their password and choose a new PIN."
+        confirmLabel="Reset PIN"
+        confirmVariant="primary"
+      />
+      {pinNotice && (
+        <div className="fixed bottom-20 md:bottom-6 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg flex items-center gap-3"
+          style={{ background: '#0F172A', color: '#fff', maxWidth: 'calc(100vw - 32px)' }}>
+          <span>{pinNotice}</span>
+          <button type="button" onClick={() => setPinNotice('')} className="text-xs font-semibold" style={{ color: '#5EEAD4', background: 'none', border: 'none' }}>OK</button>
+        </div>
+      )}
 
       {/* Re-send credentials confirm */}
       <ConfirmDialog

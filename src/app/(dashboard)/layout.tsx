@@ -9,6 +9,7 @@ import { ReadOnlyProvider } from '@/context/ReadOnlyContext'
 import { MessagingProvider } from '@/context/MessagingContext'
 import { isMessagingEnabled } from '@/lib/messaging'
 import { getActorGrantedPermissions } from '@/lib/server-utils'
+import { isSharedCounter } from '@/app/actions/counter'
 import AppShell from '@/components/shell/AppShell'
 import ReadOnlyBanner from '@/components/ui/ReadOnlyBanner'
 import PushRegistration from '@/components/native/PushRegistration'
@@ -153,6 +154,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const messagingEnabled = await isMessagingEnabled()
   // What an admin has added to this person's role — screens, menus and buttons read it from the profile.
   const grantedPermissions = await getActorGrantedPermissions().catch(() => [])
+  // An approved shared counter shows "Switch user" and locks sooner when idle (0272).
+  const sharedCounter = await isSharedCounter().catch(() => false)
 
   return (
     <AuthProvider initialProfile={{ ...(profile as Profile), granted_permissions: grantedPermissions }}>
@@ -167,6 +170,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             enabledModules={enabledModules}
             plan={tenantPlan}
             status={tenantStatus}
+            sharedCounter={sharedCounter}
           >
             {children}
           </AppShell>

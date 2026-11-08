@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
+import { isPinSession } from '@/lib/counterServer'
 import { sendStaffCredentialsEmail } from '@/lib/email'
 import type { Role } from '@/lib/types'
 import {
@@ -119,6 +120,9 @@ export async function createStaff(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
 
   const parsed = CreateStaffSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
@@ -196,6 +200,9 @@ export async function updateStaff(profileId: string, input: Record<string, unkno
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
 
   const parsed = UpdateStaffSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
@@ -252,6 +259,9 @@ export async function updateStaffEmail(profileId: string, newEmail: string): Pro
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
   const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
   const trimmed = newEmail.trim().toLowerCase()
@@ -267,6 +277,9 @@ export async function deactivateStaff(profileId: string): Promise<SimpleResult> 
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
   if (profileId === actor.id) return { success: false, error: "You can't deactivate your own account." }
   const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
@@ -289,6 +302,9 @@ export async function reactivateStaff(profileId: string): Promise<SimpleResult> 
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
   const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }
 
@@ -314,6 +330,9 @@ export async function resendStaffCredentials(
   await requireWriteAccess()
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'hr:manage')
+  // Staff accounts stay behind a password: a session started by PIN on a
+  // shared counter cannot add, change or deactivate staff (0272).
+  if (await isPinSession()) return { success: false, error: 'Sign in with your password to change staff accounts.' }
 
   const may = await assertMayManage(actor, profileId)
   if (!may.ok) return { success: false, error: may.error }

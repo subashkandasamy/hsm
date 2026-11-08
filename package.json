@@ -33,6 +33,7 @@
     "verify:collection-accounts": "tsx scripts/verify-collection-accounts.ts",
     "verify:role-access": "tsx scripts/verify-role-access.ts",
     "verify:activity": "tsx scripts/verify-activity.ts",
+    "verify:pin": "tsx scripts/verify-pin.ts",
     "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",

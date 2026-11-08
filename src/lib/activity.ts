@@ -28,7 +28,7 @@ export type ActivityArea = typeof ACTIVITY_AREAS[number]['key']
 
 /** Which area each entity belongs to. Anything unlisted is 'settings'. */
 const ENTITY_AREA: Record<string, ActivityArea> = {
-  auth: 'access', staff: 'access', role_access: 'access', nurse: 'access', leave: 'access',
+  auth: 'access', staff: 'access', role_access: 'access', counter_device: 'access', nurse: 'access', leave: 'access',
   duty_roster: 'access', roster_pattern: 'access', shift_definition: 'access',
   patient: 'patients', appointment: 'patients', follow_up: 'patients', doctor_availability: 'patients',
   barcode_wristband: 'patients',
@@ -101,6 +101,14 @@ const billRef = (r: ActivityRefs) => (r.bill ? ` on bill ${r.bill}` : '')
 const PHRASES: Record<string, Phrase> = {
   'auth/login_success':       () => 'Signed in',
   'auth/password_changed':    () => 'Changed their password',
+  'auth/switch_in':           (m) => `Switched in with their PIN${s(m.device) ? ` on ${s(m.device)}` : ''}`,
+  'auth/pin_failed':          (m) => `Entered a wrong PIN${s(m.device) ? ` on ${s(m.device)}` : ''}`,
+  'auth/pin_locked':          (m) => `Locked their PIN with too many wrong tries${s(m.device) ? ` on ${s(m.device)}` : ''}`,
+  'auth/pin_set':             () => 'Set their counter PIN',
+  'auth/pin_set_failed':      () => 'Tried to set a PIN with the wrong password',
+  'staff/pin_reset':          (_m, r) => `Reset ${r.staff ? `${r.staff}’s` : 'a'} counter PIN`,
+  'counter_device/register':  (m) => `Made ${s(m.name) || 'a computer'} a shared counter`,
+  'counter_device/revoke':    (m) => `Removed ${s(m.name) || 'a computer'} as a shared counter`,
   'staff/create':             (m) => `Added a staff member${s(m.role) ? ` as ${ROLE[s(m.role)] ?? words(s(m.role))}` : ''}`,
   'staff/update':             (_m, r) => `Updated ${r.staff ?? 'a staff member'}’s details`,
   'staff/deactivate':         (_m, r) => `Deactivated ${r.staff ?? 'a staff member'}`,

@@ -231,6 +231,7 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'IPD Billing',      href: '/settings/ipd-billing', icon: 'BedDouble',       requiredPermission: 'ipd:config', moduleKey: 'ipd' },
       { label: 'Billing & Collections', href: '/settings/billing', icon: 'CreditCard',  requiredPermission: 'settings:write' },
       { label: 'Roles & access', href: '/settings/access', icon: 'ShieldCheck', requiredPermission: 'settings:write' },
+      { label: 'Shared counters', href: '/settings/counters', icon: 'Monitor', requiredPermission: 'settings:write' },
       { label: 'Hospital Profile', href: '/settings/profile',     icon: 'Building2',       requiredPermission: 'settings:write' },
       { label: 'Module Settings',  href: '/settings/modules',     icon: 'ToggleLeft',      requiredPermission: 'settings:modules' },
     ],
