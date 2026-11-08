@@ -10,7 +10,7 @@ import { computeLineGst } from '@/lib/gst'
 import { getTenantGstConfig, resolveLineGst, recomputeBillGstTotals } from '@/lib/billing/gst'
 import { DrugSchema, DrugBatchSchema, DispenseSchema } from '@/lib/schemas'
 import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } from '@/lib/types'
-import { istToday, istAddDays } from '@/lib/istDate'
+import { istToday, istAddDays, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
 import { pageAll } from '@/lib/supabase/pageAll'
 import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
@@ -464,18 +464,123 @@ export interface H1Entry {
  * medicines are dispensed, so there is no path that supplies an H1 medicine and
  * forgets the entry.
  */
-export async function listH1Register(from: string, to: string): Promise<H1Entry[]> {
+/** A Schedule H, H1 or X medicine handed over with no prescription linked to it. */
+export interface UnprescribedSupply {
+  dispensed_at: string
+  schedule: string
+  patient_name: string | null
+  patient_uhid: string | null
+  drug_name: string
+  brand_name: string | null
+  batch_no: string | null
+  qty: number
+  /** An admitted patient — their drugs are ordered on the ward, so check the order rather than a prescription. */
+  inpatient: boolean
+  dispensed_by: string | null
+}
+
+/**
+ * Schedule H, H1 and X medicines that left the pharmacy with no prescription
+ * attached. Prescription-only medicines must be sold against one; this is the
+ * list of where the record does not show it. Every handover through
+ * dispense_drug is a `dispenses` row — prescription dispenses and counter
+ * sales alike — so this one table covers both.
+ */
+export async function listDispensedWithoutPrescription(from: string, to: string): Promise<UnprescribedSupply[]> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'pharmacy:read')
   const supabase = await createClient()
 
-  const { data } = await supabase.from('h1_register')
-    .select('entry_no, supplied_on, schedule, patient_name, patient_uhid, patient_address, prescriber_name, drug_name, brand_name, batch_no, qty, supplier:profiles!h1_register_supplied_by_fkey(full_name)')
-    .gte('supplied_on', from).lte('supplied_on', to)
-    .order('entry_no', { ascending: false })
-    .limit(2000)
+  type Row = {
+    dispensed_at: string; qty: number; admission_id: string | null
+    patient: { full_name: string; uhid: string | null } | null
+    master: { name: string; schedule: string | null } | null
+    drug: { name: string; schedule: string | null } | null
+    batch: { brand_name: string | null; batch_no: string | null } | null
+    dispenser: { full_name: string } | null
+  }
+  const rows = await pageAll<Record<string, unknown>>((f, t) => supabase.from('dispenses')
+    .select('dispensed_at, qty, admission_id, patient:patients(full_name, uhid), master:drug_master(name, schedule), drug:drugs(name, schedule), batch:drug_batches(brand_name, batch_no), dispenser:profiles(full_name)')
+    .is('prescription_id', null)
+    .gte('dispensed_at', istDayStartISO(from)).lte('dispensed_at', istDayEndISO(to))
+    .order('dispensed_at', { ascending: false }).order('id').range(f, t)) as unknown as Row[]
 
-  return (data ?? []).map((r) => ({
+  return rows.flatMap((r) => {
+    const schedule = String(r.master?.schedule ?? r.drug?.schedule ?? '').toUpperCase()
+    if (!['H', 'H1', 'X'].includes(schedule)) return []
+    return [{
+      dispensed_at: r.dispensed_at, schedule,
+      patient_name: r.patient?.full_name ?? null, patient_uhid: r.patient?.uhid ?? null,
+      drug_name: r.master?.name ?? r.drug?.name ?? 'Unknown',
+      brand_name: r.batch?.brand_name ?? null, batch_no: r.batch?.batch_no ?? null,
+      qty: r.qty, inpatient: !!r.admission_id, dispensed_by: r.dispenser?.full_name ?? null,
+    }]
+  })
+}
+
+/** One batch as it arrived from the supplier. */
+export interface PurchaseLine {
+  purchase_date: string | null
+  supplier_name: string | null
+  supplier_invoice_no: string | null
+  drug_name: string
+  brand_name: string | null
+  batch_no: string
+  expiry: string
+  qty_received: number
+  free_qty: number
+  purchase_price: number | null
+  mrp: number
+  gst_rate: number | null
+  hsn_code: string | null
+  /** Stock entered when the hospital started on Uyirly — not a purchase in the period. */
+  opening_stock: boolean
+}
+
+/**
+ * Every batch bought in a period, as it arrived: supplier, invoice, quantity
+ * received (not what is left — qty_received exists for exactly this, 0205),
+ * purchase price, MRP and GST. Opening stock entered at migration is marked
+ * (stock_receipts.opening_stock) so the screen can leave it out: KMCH's whole
+ * migrated stock is dated the day it was entered, and would otherwise read as
+ * that month's purchases.
+ */
+export async function listPurchaseRegister(from: string, to: string): Promise<PurchaseLine[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+
+  type Row = Omit<PurchaseLine, 'drug_name' | 'opening_stock'> & { master: { name: string } | null; drug: { name: string } | null; receipt: { opening_stock: boolean } | null }
+  const rows = await pageAll<Record<string, unknown>>((f, t) => supabase.from('drug_batches')
+    .select('purchase_date, supplier_name, supplier_invoice_no, brand_name, batch_no, expiry, qty_received, free_qty, purchase_price, mrp, gst_rate, hsn_code, master:drug_master(name), drug:drugs(name), receipt:stock_receipts(opening_stock)')
+    .gte('purchase_date', from).lte('purchase_date', to)
+    .order('purchase_date', { ascending: false }).order('id').range(f, t)) as unknown as Row[]
+
+  return rows.map(({ master, drug, receipt, ...r }) => ({ ...r, drug_name: master?.name ?? drug?.name ?? 'Unknown', opening_stock: !!receipt?.opening_stock }))
+}
+
+/**
+ * The H1 register, or the X register — they are separate registers in law, so
+ * they are read separately (one table holds both; `schedule` says which).
+ *
+ * Paged: this asked for 2,000 rows, but every read is capped at 1,000 with no
+ * error, so a busy month's statutory register would have been cut short
+ * without anyone knowing (see lib/supabase/pageAll).
+ */
+export async function listH1Register(from: string, to: string, schedule?: 'H1' | 'X'): Promise<H1Entry[]> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+  const supabase = await createClient()
+
+  const data = await pageAll<Record<string, unknown>>((f, t) => {
+    let q = supabase.from('h1_register')
+      .select('entry_no, supplied_on, schedule, patient_name, patient_uhid, patient_address, prescriber_name, drug_name, brand_name, batch_no, qty, supplier:profiles!h1_register_supplied_by_fkey(full_name)')
+      .gte('supplied_on', from).lte('supplied_on', to)
+    if (schedule) q = q.eq('schedule', schedule)
+    return q.order('entry_no', { ascending: false }).range(f, t)
+  })
+
+  return data.map((r) => ({
     entry_no: r.entry_no as number,
     supplied_on: r.supplied_on as string,
     schedule: r.schedule as string,

@@ -7,6 +7,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import DateText from '@/components/ui/DateText'
 import { listH1Register, type H1Entry } from '@/app/actions/pharmacy'
 import { istToday } from '@/lib/istDate'
+import { downloadCsv } from '@/lib/csv'
 
 const inp: React.CSSProperties = {
   border: '1px solid #E2E8F0', borderRadius: '0.5rem', padding: '0.4rem 0.6rem',
@@ -18,25 +19,29 @@ function monthStart(): string {
   return `${istToday().slice(0, 8)}01`
 }
 
-function csv(rows: H1Entry[]): string {
-  const head = ['Sl. No', 'Date', 'Schedule', 'Patient', 'UHID', 'Address', 'Prescriber', 'Drug', 'Brand', 'Batch', 'Qty', 'Supplied by']
-  const cell = (v: string | number | null) => {
-    const s = v == null ? '' : String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const lines = rows.map((r) => [
-    r.entry_no, r.supplied_on, r.schedule, r.patient_name, r.patient_uhid, r.patient_address,
-    r.prescriber_name, r.drug_name, r.brand_name, r.batch_no, r.qty, r.supplied_by_name,
-  ].map(cell).join(','))
-  return [head.join(','), ...lines].join('\n')
-}
-
 /**
  * The register a drug inspector asks for. It is written by the database as
  * medicines are dispensed, so this screen only reads and exports it — there is
  * nothing to fill in by hand, and nothing here can edit it.
  */
-export default function H1RegisterView() {
+/** The two registers differ in what the law asks of them, so each says so. */
+const COPY: Record<'H1' | 'X', { title: string; about: string; empty: string; file: string }> = {
+  H1: {
+    title: 'Schedule H1 register',
+    about: 'Written as each medicine is handed over, and kept for three years. Rule 65(11A) requires the patient, the prescriber, the drug and the quantity for every H1 supply.',
+    empty: 'No Schedule H1 medicine was supplied between these dates.',
+    file: 'schedule-h1-register',
+  },
+  X: {
+    title: 'Schedule X register',
+    about: 'Kept separately from the H1 register. The prescription itself must also be retained by the pharmacy — this register does not replace it.',
+    empty: 'No Schedule X medicine was supplied between these dates.',
+    file: 'schedule-x-register',
+  },
+}
+
+export default function H1RegisterView({ schedule = 'H1' }: { schedule?: 'H1' | 'X' }) {
+  const copy = COPY[schedule]
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(istToday())
   // null until the first read returns — which is also what "loading" means here,
@@ -46,20 +51,19 @@ export default function H1RegisterView() {
 
   useEffect(() => {
     let live = true
-    listH1Register(from, to)
+    listH1Register(from, to, schedule)
       .then((r) => { if (live) setRows(r) })
       .catch(() => { if (live) setRows([]) })
     return () => { live = false }
-  }, [from, to])
+  }, [from, to, schedule])
 
   function download() {
-    const blob = new Blob([csv(rows ?? [])], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `schedule-h1-register_${from}_to_${to}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`${copy.file}_${from}_to_${to}.csv`,
+      ['Entry', 'Date', 'Schedule', 'Patient', 'UHID', 'Address', 'Prescriber', 'Drug', 'Brand', 'Batch', 'Qty', 'Supplied by'],
+      (rows ?? []).map((r) => [
+        r.entry_no, r.supplied_on, r.schedule, r.patient_name, r.patient_uhid, r.patient_address,
+        r.prescriber_name, r.drug_name, r.brand_name, r.batch_no, r.qty, r.supplied_by_name,
+      ]))
   }
 
   return (
@@ -68,11 +72,8 @@ export default function H1RegisterView() {
         <div className="flex items-start gap-3 flex-wrap">
           <ShieldCheck className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: '#0D9488' }} />
           <div className="flex-1 min-w-[220px]">
-            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Schedule H1 &amp; X register</p>
-            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-              Written as each medicine is handed over, and kept for three years. Rule 65(11A) requires
-              the patient, the prescriber, the drug and the quantity for every H1 supply.
-            </p>
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{copy.title}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>{copy.about}</p>
           </div>
           <div className="flex items-end gap-2 flex-wrap">
             <label className="block">
@@ -101,14 +102,14 @@ export default function H1RegisterView() {
       ) : rows.length === 0 ? (
         <GlassCard className="p-6">
           <EmptyState title="Nothing in this period"
-            description="No Schedule H1 or X medicine was supplied between these dates." />
+            description={copy.empty} />
         </GlassCard>
       ) : (
         <GlassCard className="p-0 overflow-x-auto">
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ background: '#F8FAFC', color: '#64748B' }}>
-                {['Sl.', 'Date', 'Patient', 'Prescriber', 'Medicine', 'Batch', 'Qty', 'Supplied by'].map((h) => (
+                {['Entry', 'Date', 'Patient', 'Prescriber', 'Medicine', 'Batch', 'Qty', 'Supplied by'].map((h) => (
                   <th key={h} className="text-left px-3 py-2 font-semibold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -126,10 +127,6 @@ export default function H1RegisterView() {
                   <td className="px-3 py-2">
                     <span className="font-medium">{r.brand_name ?? r.drug_name}</span>
                     {r.brand_name && <span className="block" style={{ color: '#94A3B8' }}>{r.drug_name}</span>}
-                    {r.schedule !== 'H1' && (
-                      <span className="ml-1 text-xs px-1.5 py-0.5 rounded-md font-semibold"
-                        style={{ background: '#FEE2E2', color: '#B91C1C' }}>{r.schedule}</span>
-                    )}
                   </td>
                   <td className="px-3 py-2 font-mono">{r.batch_no ?? '—'}</td>
                   <td className="px-3 py-2 font-semibold">{r.qty}</td>

@@ -22,7 +22,7 @@ import {
 import { DRUG_SCHEDULES, SCHEDULE_HINT, isDrugSchedule } from '@/lib/pharmacy/schedule'
 import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
 import VaccinesView from './VaccinesView'
-import H1RegisterView from './H1RegisterView'
+import PharmacyReportsView from './PharmacyReportsView'
 import type { VaccineOrder, VaccineSupply } from '@/app/actions/vaccination'
 import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
@@ -226,7 +226,7 @@ export default function PharmacyClient({
               : [{ key: 'vaccines' as TabKey, label: 'Vaccines', shortLabel: 'Vax', count: 0 }]),
             { key: 'stock' as TabKey,  label: 'Stock',       shortLabel: 'Stock',   count: stock.length },
             { key: 'alerts' as TabKey, label: 'Alerts',      shortLabel: 'Alerts',  count: alertCount, urgent: alertCount > 0 },
-            { key: 'h1' as TabKey,     label: 'H1 Register', shortLabel: 'H1',      count: null },
+            { key: 'h1' as TabKey,     label: 'Reports',     shortLabel: 'Reports', count: null },
           ]).map(({ key, label, shortLabel, count, urgent }) => (
             <button key={key} onClick={() => setTab(key)}
               className="flex items-center gap-1.5 rounded-lg text-sm font-medium flex-shrink-0"
@@ -292,7 +292,7 @@ export default function PharmacyClient({
       {tab === 'stock' && <StockView stock={stock} canManage={canManage} onRefresh={refresh} />}
       {tab === 'alerts' && <AlertsView alerts={alerts} />}
 
-      {tab === 'h1' && <H1RegisterView />}
+      {tab === 'h1' && <PharmacyReportsView stock={stock} />}
 
       {dispenseRx && (
         <DispenseModal
