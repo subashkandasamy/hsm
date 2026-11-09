@@ -124,8 +124,18 @@ async function main(): Promise<void> {
 
   const code = flag('--pair')
   if (code) {
-    config = await pair(flag('--server') ?? DEFAULT_SERVER, code)
+    const paired = await pair(flag('--server') ?? DEFAULT_SERVER, code, config)
+    config = paired.config
     log.info(`Paired with ${config.hospital ?? config.serverUrl} as "${config.connectorName}"`)
+    if (paired.setAside) {
+      // Said loudly, on screen and in the log: these were not sent anywhere.
+      const msg = `${paired.setAside.count} result(s) waiting for the previous hospital were set aside, `
+        + `not sent to ${config.hospital ?? 'the new hospital'}: ${paired.setAside.dir}`
+      log.warn(msg)
+      console.log(`\n  NOTE: ${msg}\n`)
+    }
+    // The queue folder may have just been replaced; make sure it exists.
+    await queue.init()
     // The installer pairs while somebody is standing there to type the code,
     // then hands running over to the scheduled task. Exiting non-zero on
     // failure is what lets it stop before scheduling anything.

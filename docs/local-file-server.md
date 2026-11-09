@@ -401,6 +401,11 @@ shows report images **only through the hospital computer** (no cloud copy).
 - **Never deletes:** nothing asks the computer to delete a kept file. A
   document deleted in Uyirly leaves its file on the computer.
 - **Not yet:** encryption of kept files at rest; mirror/backup of the drive.
+- **Re-pairing (1.0.9):** `install.ps1 -Repair` keeps the machine's own
+  settings (chosen drive, serial cables, watched folders, DICOM port/AE). When
+  the hospital address changes, results still waiting for the old hospital
+  are moved to `ProgramData\Uyirly\Connector\set-aside\<old host>-<time>`
+  with a README, never sent to the new one, and put back if pairing fails.
 
 ---
 
