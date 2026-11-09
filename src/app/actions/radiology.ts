@@ -2,7 +2,10 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { signViewerLink, VIEWER_LINK_TTL_SECONDS } from '@/lib/lab/viewerLink'
+import { headers } from 'next/headers'
+import { signViewerLink } from '@/lib/lab/viewerLink'
+import { chooseViewerRoute, type ConnectorReach } from '@/lib/radiology/viewerRoute'
+import { clientKey } from '@/lib/rateLimit'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
@@ -366,36 +369,40 @@ export async function activateRadiologyFromMaster(
 }
 
 export interface StudyLink {
-  /** Opened in a new tab, on the hospital's own network. */
+  /** Opened in a new tab: the hospital computer's viewer, local or via its tunnel. */
   url: string
+  /** hospital = only opens on the hospital network; internet = opens anywhere. */
+  where: 'hospital' | 'internet'
   images: number
   series: number
   modality: string | null
 }
 
 /**
- * Where the scan images for an order can be looked at.
+ * A link to a study's images on the hospital computer that received them.
  *
- * The images live on the computer the connector runs on, not here — a CT study
- * is hundreds of megabytes and a busy hospital makes gigabytes a day. So this
- * returns a link to that computer rather than the pictures.
- *
- * Which means it only works inside the hospital, and returns null from
- * anywhere else. That is a deliberate limit of storing images locally, not an
- * oversight: a doctor at home and the patient portal both see nothing until
- * there is a cloud copy of something.
+ * The images are not in Uyirly: a CT can be hundreds of megabytes and a busy
+ * hospital makes gigabytes a day. So this returns a link to that computer
+ * rather than the pictures — its local address when the person asking is
+ * inside the hospital, its Cloudflare Tunnel address when they are not and an
+ * admin has switched internet access on (lib/radiology/viewerRoute.ts).
  *
  * The page is opened as a normal link rather than loaded into ours. Since
  * Chrome 142 a public site may not even ask a private address for a
  * subresource without the viewer granting a permission first, whereas plain
  * navigation is untouched by those rules — so this way nobody is prompted.
+ *
+ * Reading the study as the signed-in user is the permission check: whoever
+ * cannot see the study gets nothing. The connector is then read with the
+ * service client, scoped to the caller's hospital, because its signing key is
+ * a secret no browser session may read (0274).
  */
 export async function getStudyViewerLink(orderId: string): Promise<StudyLink | null> {
   const supabase = await createClient()
 
   const { data: study } = await supabase
     .from('radiology_studies')
-    .select('study_instance_uid, instance_count, series_count, modality, status')
+    .select('study_instance_uid, instance_count, series_count, modality, status, radiology_modalities(connector_id)')
     .eq('radiology_order_id', orderId)
     .order('received_at', { ascending: false })
     .limit(1)
@@ -403,32 +410,47 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
 
   if (!study?.study_instance_uid) return null
 
-  // Whichever lab computer received it told us its address when it last
-  // checked in. Without one there is nothing to link to.
-  const { data: connector } = await supabase
-    .from('connectors')
-    .select('lan_ip, status, viewer_key')
-    .not('lan_ip', 'is', null)
-    .neq('status', 'revoked')
-    .order('last_seen_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const actor = await getActorProfile()
+  const svc = createServiceClient()
+  const cols = 'id, lan_ip, public_ip, status, viewer_key, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at'
 
-  if (!connector?.lan_ip) return null
+  // The computer the scanner sent this study to, when we know it — a hospital
+  // with two connectors must not be sent to the one without the images.
+  // Otherwise whichever checked in most recently, as before.
+  const mod = study.radiology_modalities as { connector_id?: string | null } | Array<{ connector_id?: string | null }> | null
+  const receivedBy = (Array.isArray(mod) ? mod[0]?.connector_id : mod?.connector_id) ?? null
+  let connector: Record<string, unknown> | null = null
+  if (receivedBy) {
+    const { data } = await svc.from('connectors').select(cols)
+      .eq('tenant_id', actor.tenant_id).eq('id', receivedBy).neq('status', 'revoked').maybeSingle()
+    connector = data
+  }
+  if (!connector) {
+    const { data } = await svc.from('connectors').select(cols)
+      .eq('tenant_id', actor.tenant_id)
+      .not('lan_ip', 'is', null)
+      .neq('status', 'revoked')
+      .order('last_seen_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    connector = data
+  }
+  if (!connector) return null
 
-  // Signed and time-limited. Without this anyone on the hospital network who
-  // had the study's identifier could read a patient's scans — and a study id
-  // is permanent, so once it reaches a browser history or a chat message it
-  // would be a key that never expires.
+  const route = chooseViewerRoute(connector as unknown as ConnectorReach, clientKey(await headers()))
+  if (!route) return null
+
+  // Signed and time-limited. Without this anyone who had the study's
+  // identifier could read a patient's scans — and a study id is permanent, so
+  // once it reaches a browser history or a chat message it would be a key
+  // that never expires. Shorter when the link works from the internet.
   const studyUid = study.study_instance_uid as string
-  const expiresAt = Math.floor(Date.now() / 1000) + VIEWER_LINK_TTL_SECONDS
+  const expiresAt = Math.floor(Date.now() / 1000) + route.ttlSeconds
   const signature = signViewerLink((connector.viewer_key as string) ?? '', studyUid, expiresAt)
 
   return {
-    // 5152, not the status page on 5151: the status page is bound to loopback
-    // and a doctor is at their own desk, not beside the connector.
-    url: `http://${connector.lan_ip}:5152/study/${encodeURIComponent(studyUid)}`
-       + `?e=${expiresAt}&s=${signature}`,
+    url: `${route.base}/study/${encodeURIComponent(studyUid)}?e=${expiresAt}&s=${signature}`,
+    where: route.where,
     images: Number(study.instance_count ?? 0),
     series: Number(study.series_count ?? 0),
     modality: (study.modality as string | null) ?? null,

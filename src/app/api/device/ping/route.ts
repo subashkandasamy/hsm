@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
 import { createServiceClient } from '@/lib/supabase/service'
+import { clientKey } from '@/lib/rateLimit'
+
+const TUNNEL_STATES = new Set(['off', 'starting', 'up', 'down', 'missing'])
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,6 +24,13 @@ export const dynamic = 'force-dynamic'
  *
  * Deliberately read-only apart from the heartbeat. A diagnostic that changes
  * state is a diagnostic nobody trusts to run twice.
+ *
+ * Since 1.0.8 the connector also calls this every minute as its heartbeat,
+ * with `x-connector-tunnel` saying what its Cloudflare Tunnel is doing. That
+ * records two things the scan links need: the address the hospital reaches
+ * the internet from (a browser from the same address is inside the hospital)
+ * and whether the tunnel is up. The reply's `internetAccess` is how an admin
+ * switching it on or off in Settings reaches the computer within a minute.
  */
 export async function GET(request: Request) {
   const auth = request.headers.get('authorization') ?? ''
@@ -32,7 +42,7 @@ export async function GET(request: Request) {
 
   const { data: connector } = await svc
     .from('connectors')
-    .select('id, tenant_id, name, listen_port, status')
+    .select('id, tenant_id, name, listen_port, status, internet_access, tunnel_id, tunnel_dns_record_id')
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -63,12 +73,22 @@ export async function GET(request: Request) {
   ])
 
   const reported = request.headers.get('x-connector-version')?.trim() || null
+  const tunnel = request.headers.get('x-connector-tunnel')?.trim().toLowerCase() || null
+  const ip = clientKey(request.headers)
+  const now = new Date().toISOString()
   await svc.from('connectors')
     .update({
-      last_seen_at: new Date().toISOString(),
+      last_seen_at: now,
       ...(reported ? { version: reported } : {}),
+      ...(ip && ip !== 'unknown' ? { public_ip: ip } : {}),
+      ...(tunnel && TUNNEL_STATES.has(tunnel) ? { tunnel_state: tunnel, tunnel_state_at: now } : {}),
     })
     .eq('id', connector.id)
+
+  // On only once the hostname exists at Cloudflare; a switch flipped while
+  // that failed must not send the computer looking for a tunnel to run.
+  const internetAccess = !!connector.internet_access && !!connector.tunnel_id
+    && !!connector.tunnel_dns_record_id
 
   return json(200, {
     ok: true,
@@ -77,7 +97,8 @@ export async function GET(request: Request) {
     listenPort: connector.listen_port ?? 5150,
     analyzersSeen: analyzers ?? 0,
     needingAttention: waiting ?? 0,
-    serverTime: new Date().toISOString(),
+    internetAccess,
+    serverTime: now,
   })
 }
 

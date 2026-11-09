@@ -35,6 +35,7 @@
     "verify:activity": "tsx scripts/verify-activity.ts",
     "verify:pin": "tsx scripts/verify-pin.ts",
     "verify:route-access": "tsx scripts/verify-route-access.ts",
+    "verify:tunnel": "tsx scripts/verify-tunnel.ts",
     "verify:name-match": "tsx scripts/verify-name-match.ts",
     "verify:uploads": "tsx scripts/verify-uploads.ts",
     "verify:read-permissions": "tsx scripts/verify-read-permissions.ts",

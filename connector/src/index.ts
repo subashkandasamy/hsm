@@ -12,6 +12,8 @@ import { startTcp } from './transports/tcp.js'
 import { startFolderWatch } from './transports/folder.js'
 import { startSerial } from './transports/serial.js'
 import { VERSION } from './version.js'
+import { TunnelSupervisor } from './tunnel.js'
+import { startHeartbeat } from './heartbeat.js'
 
 /**
  * The Uyirly Lab Connector.
@@ -149,6 +151,7 @@ async function main(): Promise<void> {
   // page stays a view and never becomes something the connector depends on.
   const live: LiveState = {
     tcpBound: false, lastMessageAt: null, receivedCount: 0, lastProblem: null,
+    tunnelState: 'off', tunnelHostname: null,
   }
 
   // The single path every transport funnels into. Persist, then try to send —
@@ -193,6 +196,16 @@ async function main(): Promise<void> {
     () => viewerKey,
   )
   stoppers.push(() => statusPage.close())
+
+  // The internet link, off until an admin switches it on in Uyirly. The
+  // heartbeat carries that choice here within a minute.
+  const tunnel = new TunnelSupervisor(config, {
+    onState: (s) => { live.tunnelState = s; live.tunnelHostname = tunnel.publicHostname },
+  })
+  const heartbeat = startHeartbeat(config, tunnel)
+  stoppers.push(() => { heartbeat.stop(); tunnel.stop() })
+  // A normal exit must not leave cloudflared serving on its own.
+  process.on('exit', () => tunnel.stop())
 
   // Scanners. Same program, another port — a hospital installs one thing
   // whether its machines are analyzers, scanners or both.

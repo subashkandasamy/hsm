@@ -1,16 +1,17 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff, Trash2 } from 'lucide-react'
+import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff, Trash2, Globe } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import {
-  createConnector, regeneratePairingCode, revokeConnector, deleteConnector,
+  createConnector, regeneratePairingCode, revokeConnector, deleteConnector, setInternetAccess,
   type ConnectorRow,
 } from '@/app/actions/devices'
+import { TUNNEL_FRESH_MS } from '@/lib/radiology/viewerRoute'
 
 /**
  * What the connector listens on for imaging, and the name it answers to.
@@ -52,12 +53,16 @@ function isOlder(running: string, latest: string): boolean {
  * an address. No tokens, no configuration files, no ports to reason about.
  */
 export default function ConnectorSection({
-  connectors, onChange, latestVersion,
+  connectors, onChange, latestVersion, internetAvailable = false, isAdmin = false,
 }: {
   connectors: ConnectorRow[]
   onChange: () => void
   /** The newest published build, so a card can say when it is behind. */
   latestVersion?: string | null
+  /** This Uyirly server can make Cloudflare Tunnels. */
+  internetAvailable?: boolean
+  /** Only an admin may put a computer on the internet. */
+  isAdmin?: boolean
 }) {
   const [isPending, startTransition] = useTransition()
   const [showCreate, setShowCreate] = useState(false)
@@ -66,6 +71,7 @@ export default function ConnectorSection({
   const [issued, setIssued] = useState<{ code: string; name: string } | null>(null)
   const [revoking, setRevoking] = useState<ConnectorRow | null>(null)
   const [deleting, setDeleting] = useState<ConnectorRow | null>(null)
+  const [internet, setInternet] = useState<{ c: ConnectorRow; on: boolean } | null>(null)
 
   function handleCreate() {
     setError('')
@@ -91,6 +97,17 @@ export default function ConnectorSection({
     startTransition(async () => {
       await revokeConnector(revoking.id)
       setRevoking(null)
+      onChange()
+    })
+  }
+
+  function handleInternet() {
+    if (!internet) return
+    startTransition(async () => {
+      const res = await setInternetAccess(internet.c.id, internet.on)
+      setInternet(null)
+      if (!res.success) { setError(res.error); return }
+      setError('')
       onChange()
     })
   }
@@ -143,6 +160,8 @@ export default function ConnectorSection({
               onRegenerate={() => handleRegenerate(c)}
               onRevoke={() => setRevoking(c)}
               onDelete={() => setDeleting(c)}
+              onInternet={(on) => setInternet({ c, on })}
+              internetAvailable={internetAvailable} isAdmin={isAdmin}
               busy={isPending} />
           ))}
         </div>
@@ -188,6 +207,18 @@ export default function ConnectorSection({
       />
 
       <ConfirmDialog
+        open={!!internet}
+        onClose={() => setInternet(null)}
+        onConfirm={handleInternet}
+        loading={isPending}
+        title={internet?.on ? 'Allow opening scans from outside the hospital?' : 'Switch internet access off?'}
+        description={internet?.on
+          ? `Doctors will be able to open scans stored on ${internet.c.name} from home or on their phone. Every link is made by Uyirly for one signed-in person, works for one hour and only for that scan. The computer must stay switched on and online for this to work.`
+          : `Scans on ${internet?.c.name ?? 'this computer'} will open only on the hospital network again. Links already sent out stop working at once.`}
+        confirmLabel={internet?.on ? 'Switch on' : 'Switch off'}
+      />
+
+      <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
         onConfirm={handleDelete}
@@ -208,13 +239,17 @@ export default function ConnectorSection({
 }
 
 function ConnectorCard({
-  connector: c, latestVersion, onRegenerate, onRevoke, onDelete, busy,
+  connector: c, latestVersion, onRegenerate, onRevoke, onDelete, onInternet,
+  internetAvailable, isAdmin, busy,
 }: {
   connector: ConnectorRow
   latestVersion?: string | null
   onRegenerate: () => void
   onRevoke: () => void
   onDelete: () => void
+  onInternet: (on: boolean) => void
+  internetAvailable: boolean
+  isAdmin: boolean
   busy: boolean
 }) {
   const revoked = c.status === 'revoked'
@@ -292,6 +327,11 @@ function ConnectorCard({
             </div>
           ) : null}
 
+          {!revoked && setUp && (
+            <InternetAccess c={c} available={internetAvailable} isAdmin={isAdmin}
+              busy={busy} onChange={onInternet} />
+          )}
+
           <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
             {c.last_seen_at
               ? `Last heard from ${timeAgo(c.last_seen_at)}`
@@ -335,6 +375,80 @@ function ConnectorCard({
         </div>
       </div>
     </GlassCard>
+  )
+}
+
+/**
+ * Whether doctors can open this computer's scans from outside the hospital.
+ *
+ * Says what is true now, in the words a hospital owner would use, not the
+ * switch's position: "on" with a computer that has not checked in, or one
+ * still running an old connector, is not working, and the card says which.
+ */
+function InternetAccess({
+  c, available, isAdmin, busy, onChange,
+}: {
+  c: ConnectorRow
+  available: boolean
+  isAdmin: boolean
+  busy: boolean
+  onChange: (on: boolean) => void
+}) {
+  // The moment this card was drawn; the page refreshes after every change.
+  const [now] = useState(() => Date.now())
+  const fresh = !!c.tunnel_state_at && now - Date.parse(c.tunnel_state_at) <= TUNNEL_FRESH_MS
+  let tone: 'off' | 'ok' | 'wait' | 'warn' = 'off'
+  let line = 'Off — scans open only on the hospital network.'
+  if (c.internet_access) {
+    if (!c.tunnel_state || (c.tunnel_state === 'off' && !fresh) || c.tunnel_state === 'starting') {
+      tone = 'wait'; line = 'Switching on — this computer picks it up within a minute.'
+    } else if (!fresh) {
+      tone = 'warn'; line = 'On, but this computer has not checked in for a few minutes. Is it switched on and online?'
+    } else if (c.tunnel_state === 'up') {
+      tone = 'ok'; line = 'On — doctors can open scans from home or on their phone.'
+    } else if (c.tunnel_state === 'missing') {
+      tone = 'warn'; line = 'On, but this computer needs the latest connector. Download it below and run install.cmd.'
+    } else if (c.tunnel_state === 'off') {
+      tone = 'wait'; line = 'Switching on — this computer picks it up within a minute.'
+    } else {
+      tone = 'warn'; line = 'On, but this computer cannot reach the internet link right now. Scans still open on the hospital network.'
+    }
+  }
+  const colours = {
+    off:  { bg: '#F8FAFC', fg: '#64748B', bd: '#E2E8F0' },
+    ok:   { bg: '#ECFDF5', fg: '#047857', bd: '#A7F3D0' },
+    wait: { bg: '#F1F5F9', fg: '#475569', bd: '#E2E8F0' },
+    warn: { bg: '#FFFBEB', fg: '#92400E', bd: '#FDE68A' },
+  }[tone]
+
+  const canSwitch = isAdmin && (c.internet_access || available)
+
+  return (
+    <div className="mt-2 rounded-lg px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center"
+      style={{ background: colours.bg, border: `1px solid ${colours.bd}` }}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5 flex items-center gap-1"
+          style={{ color: '#94A3B8' }}>
+          <Globe className="w-3 h-3" /> Opening scans from outside the hospital
+        </p>
+        <p className="text-xs" style={{ color: colours.fg }}>{line}</p>
+        {!c.internet_access && !available && (
+          <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Not available on Uyirly yet.</p>
+        )}
+        {!c.internet_access && available && !isAdmin && (
+          <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>An admin can switch this on.</p>
+        )}
+      </div>
+      {canSwitch && (
+        <button onClick={() => onChange(!c.internet_access)} disabled={busy}
+          className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex-shrink-0 self-start sm:self-auto"
+          style={c.internet_access
+            ? { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }
+            : { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+          {c.internet_access ? 'Switch off' : 'Switch on'}
+        </button>
+      )}
+    </div>
   )
 }
 

@@ -16,8 +16,10 @@ import { getStudyViewerLink, type StudyLink } from '@/app/actions/radiology'
  * blocked — a public site may not ask a private address for a subresource
  * without permission, but navigating to one is untouched by that rule.
  *
- * So it works inside the hospital and nowhere else. A doctor at home sees no
- * button, which is honest: there is nothing for them to open yet.
+ * From outside the hospital the same button opens the images through the
+ * computer's internet link, when an admin has switched that on (Settings →
+ * Devices). Otherwise the link only opens on the hospital network, and the
+ * tooltip says so.
  */
 export default function ViewScanButton({ orderId }: { orderId: string }) {
   const [link, setLink] = useState<StudyLink | null>(null)
@@ -32,7 +34,9 @@ export default function ViewScanButton({ orderId }: { orderId: string }) {
 
   return (
     <a href={link.url} target="_blank" rel="noreferrer"
-      title="Opens the images stored on your hospital's computer"
+      title={link.where === 'internet'
+        ? "Opens the images on your hospital's computer, over the internet"
+        : "Opens the images on your hospital's computer — works on the hospital network"}
       className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
       style={{ background: '#0F172A', color: '#fff', textDecoration: 'none' }}>
       <Images className="w-3.5 h-3.5" />

@@ -41,6 +41,9 @@ export interface LiveState {
   receivedCount: number
   /** Most recent trouble worth showing, in plain words. */
   lastProblem: string | null
+  /** The internet link (tunnel.ts): off unless an admin switched it on. */
+  tunnelState?: string
+  tunnelHostname?: string | null
 }
 
 export function startStatusPage(
@@ -186,6 +189,20 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
     ['Received since starting', String(state.receivedCount)],
     ['This computer', `${os.hostname()} · connector ${VERSION}`],
   ]
+
+  // Only once an admin has switched it on: a row saying "off" on every
+  // laboratory PC would raise a question nobody needs to ask.
+  const t = state.tunnelState ?? 'off'
+  if (t !== 'off') {
+    const words: Record<string, [string, boolean]> = {
+      up:       [`on — ${state.tunnelHostname ?? 'connected'}`, false],
+      starting: ['starting…', false],
+      down:     ['cannot reach Cloudflare right now — scans still open inside the hospital', true],
+      missing:  ['switched on in Uyirly, but cloudflared is missing — run the latest installer', true],
+    }
+    const [text, bad] = words[t] ?? [t, true]
+    rows.splice(rows.length - 1, 0, ['Opening scans from outside', text, bad])
+  }
 
   if (disk) {
     rows.splice(3, 0, ['Scan images stored here',

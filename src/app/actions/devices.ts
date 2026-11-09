@@ -9,7 +9,10 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { selectSilent, type AnalyzerPulse, type SilentAnalyzer } from '@/lib/lab/silent'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
-import { getActorProfile, requireModule, requireWriteAccess } from '@/lib/server-utils'
+import { actorCan, getActorProfile, requireModule, requireWriteAccess } from '@/lib/server-utils'
+import {
+  CloudflareError, deleteTunnel, provisionTunnel, removeTunnelHostname, tunnelsAvailable,
+} from '@/lib/cloudflare/tunnel'
 import { generatePairingCode, PAIRING_TTL_MINUTES } from '@/lib/lab/pairing'
 import { processMessage } from '@/lib/lab/ingest'
 import { revalidatePath } from 'next/cache'
@@ -30,6 +33,12 @@ export interface ConnectorRow {
   pairing_expires_at: string | null
   /** How much has come through it — decides whether removing it loses history. */
   message_count: number
+  /** Admin switch: may this computer serve files to the internet. */
+  internet_access: boolean
+  tunnel_hostname: string | null
+  /** What the computer last said about its tunnel: off | starting | up | down | missing. */
+  tunnel_state: string | null
+  tunnel_state_at: string | null
 }
 
 export interface AnalyzerRow {
@@ -137,12 +146,19 @@ export async function getConnectorDownload(): Promise<ConnectorRelease | null> {
 // ── Connectors ──────────────────────────────────────────────────────────────
 
 export async function listConnectors(): Promise<ConnectorRow[]> {
-  const supabase = await createClient()
+  // Server-only since 0274: the row holds the scan-link signing key and the
+  // token hash, so no browser session reads the table. The same people who
+  // can open Settings → Devices see the list.
+  const actor = await getActorProfile()
+  if (!(await actorCan('lab:manage')) && !(await actorCan('lab:process'))) return []
+
+  const svc = createServiceClient()
   const [{ data }, { data: msgs }] = await Promise.all([
-    supabase.from('connectors')
-      .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at')
+    svc.from('connectors')
+      .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at')
+      .eq('tenant_id', actor.tenant_id)
       .order('created_at'),
-    supabase.from('analyzer_messages').select('connector_id'),
+    svc.from('analyzer_messages').select('connector_id').eq('tenant_id', actor.tenant_id),
   ])
 
   const seen = new Map<string, number>()
@@ -153,8 +169,92 @@ export async function listConnectors(): Promise<ConnectorRow[]> {
 
   return (data ?? []).map((c) => ({
     ...c,
+    internet_access: !!c.internet_access,
     message_count: seen.get(c.id as string) ?? 0,
   })) as ConnectorRow[]
+}
+
+/** Whether this Uyirly server has a Cloudflare account to make tunnels with. */
+export async function getInternetAccessAvailable(): Promise<boolean> {
+  return tunnelsAvailable()
+}
+
+/**
+ * Switch a computer's internet access on or off.
+ *
+ * On: make (or reuse) its Cloudflare Tunnel and public hostname. The computer
+ * learns of it on its next heartbeat, within a minute, starts cloudflared,
+ * and scan links from outside the hospital begin to work once it reports the
+ * tunnel up.
+ *
+ * Off: delete the hostname at Cloudflare. That closes the door at Cloudflare's
+ * edge at once, whatever the hospital computer is doing; the computer stops
+ * cloudflared on its next heartbeat. The tunnel is kept so switching back on
+ * reuses it.
+ *
+ * Admins only. Putting a hospital's files on the internet is a decision about
+ * patient data, not a laboratory setting.
+ */
+export async function setInternetAccess(id: string, on: boolean): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  if (actor.role !== 'admin') {
+    return { success: false, error: 'Only an admin can change internet access' }
+  }
+  await requireWriteAccess()
+  await requireModule('lab')
+
+  const svc = createServiceClient()
+  const { data: c } = await svc.from('connectors')
+    .select('id, name, status, paired_at, internet_access, tunnel_id, tunnel_dns_record_id')
+    .eq('tenant_id', actor.tenant_id).eq('id', id).maybeSingle()
+  if (!c) return { success: false, error: 'That computer is no longer here' }
+
+  if (on) {
+    if (c.status === 'revoked' || !c.paired_at) {
+      return { success: false, error: 'Connect this computer first, then switch internet access on' }
+    }
+    if (!tunnelsAvailable()) {
+      return { success: false, error: 'Internet access is not set up on Uyirly yet. Please contact Uyirly support.' }
+    }
+    try {
+      const t = await provisionTunnel(
+        { connectorId: c.id as string, tunnelId: c.tunnel_id as string | null, dnsRecordId: c.tunnel_dns_record_id as string | null },
+        async (step) => {
+          await svc.from('connectors').update({
+            ...(step.tunnelId ? { tunnel_id: step.tunnelId } : {}),
+            ...(step.dnsRecordId ? { tunnel_dns_record_id: step.dnsRecordId } : {}),
+            ...(step.hostname ? { tunnel_hostname: step.hostname } : {}),
+          }).eq('id', c.id)
+        },
+      )
+      const { error } = await svc.from('connectors').update({
+        internet_access: true,
+        tunnel_id: t.tunnelId,
+        tunnel_hostname: t.hostname,
+        tunnel_dns_record_id: t.dnsRecordId,
+      }).eq('id', c.id)
+      if (error) return { success: false, error: error.message }
+    } catch (e) {
+      return { success: false, error: e instanceof CloudflareError ? e.message : 'Could not set up internet access' }
+    }
+  } else {
+    try {
+      if (c.tunnel_dns_record_id) await removeTunnelHostname(c.tunnel_dns_record_id as string)
+    } catch (e) {
+      // Say so rather than pretend: the hostname may still be live.
+      return { success: false, error: `Could not switch internet access off: ${(e as Error).message}` }
+    }
+    const { error } = await svc.from('connectors')
+      .update({ internet_access: false, tunnel_dns_record_id: null })
+      .eq('id', c.id)
+    if (error) return { success: false, error: error.message }
+  }
+
+  await logAudit(actor.id, 'update', 'connector', id, {
+    action: on ? 'internet access on' : 'internet access off', name: c.name,
+  })
+  revalidatePath('/settings/devices')
+  return { success: true }
 }
 
 /**
@@ -176,7 +276,7 @@ export async function createConnector(
   if (!trimmed) return { success: false, error: 'Give this computer a name you will recognise' }
   if (trimmed.length > 60) return { success: false, error: 'That name is too long' }
 
-  const supabase = await createClient()
+  const svc = createServiceClient()
   const id = crypto.randomUUID()
   const expiresAt = new Date(Date.now() + PAIRING_TTL_MINUTES * 60_000).toISOString()
 
@@ -184,7 +284,7 @@ export async function createConnector(
   // simply try again rather than handing out a code that belongs elsewhere.
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generatePairingCode()
-    const { error } = await supabase.from('connectors').insert({
+    const { error } = await svc.from('connectors').insert({
       id,
       tenant_id: actor.tenant_id,
       name: trimmed,
@@ -212,14 +312,16 @@ export async function regeneratePairingCode(
   await requireWriteAccess()
   await requireModule('lab')
 
-  const supabase = await createClient()
+  const svc = createServiceClient()
   const code = generatePairingCode()
   const expiresAt = new Date(Date.now() + PAIRING_TTL_MINUTES * 60_000).toISOString()
 
-  const { error } = await supabase.from('connectors')
+  const { data: updated, error } = await svc.from('connectors')
     .update({ pairing_code: code, pairing_expires_at: expiresAt })
-    .eq('id', id)
+    .eq('tenant_id', actor.tenant_id).eq('id', id)
+    .select('id')
   if (error) return { success: false, error: error.message }
+  if (!updated?.length) return { success: false, error: 'That computer is no longer here' }
 
   await logAudit(actor.id, 'update', 'connector', id, { action: 'new pairing code' })
   revalidatePath('/settings/devices')
@@ -239,10 +341,26 @@ export async function revokeConnector(id: string): Promise<SimpleResult> {
   await requireWriteAccess()
   await requireModule('lab')
 
-  const supabase = await createClient()
-  const { error } = await supabase.from('connectors')
-    .update({ status: 'revoked', token_hash: null, pairing_code: null, pairing_expires_at: null })
-    .eq('id', id)
+  const svc = createServiceClient()
+  const { data: c } = await svc.from('connectors')
+    .select('id, tunnel_dns_record_id').eq('tenant_id', actor.tenant_id).eq('id', id).maybeSingle()
+  if (!c) return { success: false, error: 'That computer is no longer here' }
+
+  // A disconnected computer must not stay reachable from the internet. The
+  // hostname goes first; if Cloudflare cannot be reached, say so and stop, so
+  // nobody believes the door is shut when it is not.
+  if (c.tunnel_dns_record_id) {
+    try { await removeTunnelHostname(c.tunnel_dns_record_id as string) } catch (e) {
+      return { success: false, error: `Could not take this computer off the internet: ${(e as Error).message}` }
+    }
+  }
+
+  const { error } = await svc.from('connectors')
+    .update({
+      status: 'revoked', token_hash: null, pairing_code: null, pairing_expires_at: null,
+      internet_access: false, tunnel_dns_record_id: null,
+    })
+    .eq('tenant_id', actor.tenant_id).eq('id', id)
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'update', 'connector', id, { action: 'revoked' })
@@ -269,9 +387,10 @@ export async function deleteConnector(id: string): Promise<SimpleResult> {
   await requireWriteAccess()
   await requireModule('lab')
 
-  const supabase = await createClient()
-  const { data: connector } = await supabase
-    .from('connectors').select('id, name, status, paired_at').eq('id', id).maybeSingle()
+  const svc = createServiceClient()
+  const { data: connector } = await svc
+    .from('connectors').select('id, name, status, paired_at, tunnel_id, tunnel_dns_record_id')
+    .eq('tenant_id', actor.tenant_id).eq('id', id).maybeSingle()
   if (!connector) return { success: false, error: 'That computer is no longer here' }
 
   const live = connector.status !== 'revoked' && !!connector.paired_at
@@ -279,7 +398,19 @@ export async function deleteConnector(id: string): Promise<SimpleResult> {
     return { success: false, error: 'Disconnect this computer before removing it' }
   }
 
-  const { error } = await supabase.from('connectors').delete().eq('id', id)
+  // Revoking already removed the hostname; this catches a row from before
+  // that existed. The tunnel itself is deleted best-effort — Cloudflare keeps
+  // it while the old PC is still connected, and with no hostname it serves
+  // nothing.
+  if (connector.tunnel_dns_record_id) {
+    try { await removeTunnelHostname(connector.tunnel_dns_record_id as string) } catch (e) {
+      return { success: false, error: `Could not take this computer off the internet: ${(e as Error).message}` }
+    }
+  }
+  if (connector.tunnel_id) await deleteTunnel(connector.tunnel_id as string)
+
+  const { error } = await svc.from('connectors').delete()
+    .eq('tenant_id', actor.tenant_id).eq('id', id)
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'delete', 'connector', id, { name: connector.name })

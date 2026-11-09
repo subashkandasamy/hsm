@@ -5,6 +5,7 @@ import path from 'node:path'
 import { dataDir, lanIp, type Config } from './config.js'
 import { Queue } from './queue.js'
 import { checkDisk, humanBytes, WARN_FREE_BYTES, REFUSE_FREE_BYTES } from './dicom/disk.js'
+import { findCloudflared, TUNNEL_METRICS_PORT } from './tunnel.js'
 
 const exec = promisify(execFile)
 
@@ -76,6 +77,10 @@ export async function runCheck(config: Config | null): Promise<number> {
   // ── Anything stuck on this machine ───────────────────────────────────────
   lines.push(await checkQueue())
 
+  // ── Opening scans from outside the hospital ──────────────────────────────
+  const internet = await checkInternetLink(ping.body?.internetAccess === true)
+  if (internet) lines.push(internet)
+
   // ── What the hospital still has to do at their end ───────────────────────
   if (ping.body) {
     const { analyzersSeen = 0, needingAttention = 0 } = ping.body
@@ -106,7 +111,7 @@ export async function runCheck(config: Config | null): Promise<number> {
   return lines.some((l) => l.state === 'bad') ? 1 : 0
 }
 
-async function pingServer(config: Config): Promise<{ line: Line; body?: Record<string, number> }> {
+async function pingServer(config: Config): Promise<{ line: Line; body?: Record<string, number> & { internetAccess?: boolean } }> {
   const url = `${config.serverUrl.replace(/\/$/, '')}/api/device/ping`
   const started = Date.now()
   try {
@@ -135,7 +140,7 @@ async function pingServer(config: Config): Promise<{ line: Line; body?: Record<s
     }
     return {
       line: { state: 'ok', label: 'Server', detail: `reachable · ${Date.now() - started} ms` },
-      body: body as Record<string, number>,
+      body: body as Record<string, number> & { internetAccess?: boolean },
     }
   } catch (e) {
     const why = (e as Error).name === 'AbortError'
@@ -451,4 +456,38 @@ function wrap(text: string, width: number): string[] {
   }
   if (line.trim()) out.push(line.trimEnd())
   return out
+}
+
+/**
+ * The internet link, only when an admin has switched it on — otherwise a line
+ * about it on every laboratory PC would only raise questions.
+ *
+ * Asks the running connector's cloudflared directly (its /ready answers 200
+ * once it holds a connection to Cloudflare), so this reports what is true
+ * rather than what the settings say.
+ */
+async function checkInternetLink(switchedOn: boolean): Promise<Line | null> {
+  if (!switchedOn) return null
+  if (!findCloudflared()) {
+    return {
+      state: 'bad', label: 'Internet link',
+      detail: 'switched on in Uyirly, but cloudflared is not installed here',
+      fix: 'Run the latest installer (install.cmd). It adds cloudflared and keeps everything else.',
+    }
+  }
+  try {
+    const res = await fetch(`http://127.0.0.1:${TUNNEL_METRICS_PORT}/ready`, { signal: AbortSignal.timeout(5_000) })
+    if (res.status === 200) return { state: 'ok', label: 'Internet link', detail: 'up — doctors can open scans from outside' }
+    return {
+      state: 'warn', label: 'Internet link', detail: 'running, but not connected to Cloudflare yet',
+      fix: 'Wait a minute. If it stays like this, check that this computer can reach the internet; '
+        + 'scans still open inside the hospital meanwhile.',
+    }
+  } catch {
+    return {
+      state: 'warn', label: 'Internet link', detail: 'not running yet',
+      fix: 'The connector starts it within a minute of being switched on. If the connector itself '
+        + 'is not running, start it (or restart the computer).',
+    }
+  }
 }

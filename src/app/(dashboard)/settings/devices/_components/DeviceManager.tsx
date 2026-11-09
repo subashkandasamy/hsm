@@ -31,6 +31,7 @@ import type {
  */
 export default function DeviceManager({
   connectors, analyzers, modalities, unknownCodes, unmatched, analytes, canManage, release,
+  internetAvailable, isAdmin,
 }: {
   connectors: ConnectorRow[]
   analyzers: AnalyzerRow[]
@@ -42,6 +43,9 @@ export default function DeviceManager({
   canManage: boolean
   /** The installer to download, or null when none has been published. */
   release: ConnectorRelease | null
+  /** This Uyirly server can make Cloudflare Tunnels. */
+  internetAvailable: boolean
+  isAdmin: boolean
 }) {
   const router = useRouter()
   const refresh = () => router.refresh()
@@ -69,7 +73,8 @@ export default function DeviceManager({
         <>
           <InstallerCard release={release} />
           <ConnectorSection connectors={connectors} onChange={refresh}
-            latestVersion={release?.version ?? null} />
+            latestVersion={release?.version ?? null}
+            internetAvailable={internetAvailable} isAdmin={isAdmin} />
           <AnalyzerSection analyzers={analyzers} onChange={refresh} />
           <ModalitySection modalities={modalities} onChange={refresh} />
         </>
