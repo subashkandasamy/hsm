@@ -98,3 +98,22 @@ export function chooseFileRoute(
   if (opts.embeddableOnly || !c.lan_ip) return null
   return { base: `http://${c.lan_ip}:${VIEWER_PORT}`, where: 'hospital', ttlSeconds: HOSPITAL_LINK_TTL }
 }
+
+/**
+ * How long without a check-in before the computer is called asleep or off.
+ *
+ * The connector checks in every minute; three missed beats is not a blip.
+ * Found at Karur, 9 Nov 2026: the X-ray PC went to sleep and "View scan"
+ * simply failed to load, with nothing saying why.
+ *
+ * Only a warning — the link is still given. A hospital whose internet is down
+ * stops the check-ins too, while the computer is awake and its images open
+ * fine from inside the building.
+ */
+export const COMPUTER_QUIET_MS = 3 * 60_000
+
+export function computerQuietSince(lastSeenAt: string | null | undefined, now: number = Date.now()): string | null {
+  const at = lastSeenAt ? Date.parse(lastSeenAt) : Number.NaN
+  if (!Number.isFinite(at)) return null
+  return now - at > COMPUTER_QUIET_MS ? new Date(at).toISOString() : null
+}

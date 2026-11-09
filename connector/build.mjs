@@ -562,6 +562,17 @@ Write-Host "Opened port 5152 so doctors can view scans"
 # The status page is deliberately NOT opened in the firewall: it is bound to
 # 127.0.0.1 and has no business being reachable from the rest of the hospital.
 
+# Never sleep while plugged in. Asleep, this computer receives no results or
+# scans, answers no worklist, and every "View scan" link fails (Karur, 9 Nov
+# 2026: the X-ray PC dozed off mid-afternoon). The screen may still turn off;
+# a laptop on battery keeps its own settings. USB selective suspend off too,
+# or a USB-to-serial cable to an analyzer goes quiet.
+powercfg /change standby-timeout-ac 0 2>$null | Out-Null
+powercfg /change hibernate-timeout-ac 0 2>$null | Out-Null
+powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 2>$null | Out-Null
+powercfg /setactive SCHEME_CURRENT 2>$null | Out-Null
+Write-Host "Set this computer to stay awake while plugged in (the screen can still turn off)"
+
 # Start with Windows, as SYSTEM, and restart if it ever stops.
 $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -690,6 +701,18 @@ TO CONNECT A SCANNER (X-ray, ultrasound, CT, MRI)
   They will usually press "Verify" or "Echo" first. If that succeeds, the
   wiring is right. Then switch on the worklist so today's patients appear on
   the machine instead of being typed in by hand.
+
+  If the connector is installed on the scanner's own console computer, use
+  127.0.0.1 as the IP. It always means "this computer", so it keeps working
+  when the network gives the computer a new address.
+
+  Set up two places on the machine: the WORKLIST (where it fetches patients)
+  and the ARCHIVE / PACS / STORAGE destination (where it sends images).
+
+KEEP THIS COMPUTER AWAKE
+  Asleep, it receives nothing and doctors cannot open scans. The installer
+  sets Windows to never sleep while plugged in (the screen can still turn
+  off). Do not change that back, and leave this computer switched on.
 
 TO CHECK ON IT
   Double-click "Uyirly Lab Connector" on the desktop. A page opens showing

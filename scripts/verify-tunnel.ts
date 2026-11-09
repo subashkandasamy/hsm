@@ -15,7 +15,7 @@
  */
 import {
   chooseViewerRoute, chooseFileRoute, tunnelIsUp, TUNNEL_FRESH_MS, HOSPITAL_LINK_TTL, INTERNET_LINK_TTL,
-  type ConnectorReach,
+  computerQuietSince, COMPUTER_QUIET_MS, type ConnectorReach,
 } from '../src/lib/radiology/viewerRoute'
 
 let failed = 0
@@ -173,6 +173,13 @@ async function main() {
   check('…and provisioning refuses rather than half-works', refused)
 
   globalThis.fetch = realFetch
+
+  console.log('\nA computer that has stopped checking in (asleep / off)')
+  check('checked in a minute ago → not quiet', computerQuietSince(new Date(NOW - 60_000).toISOString(), NOW) === null)
+  const slept = new Date(NOW - COMPUTER_QUIET_MS - 1_000).toISOString()
+  check('silent past 3 minutes → quiet, since its last check-in', computerQuietSince(slept, NOW) === slept)
+  check('never checked in → no claim either way', computerQuietSince(null, NOW) === null)
+
   console.log(failed ? `\n${failed} check(s) FAILED\n` : '\nAll checks passed\n')
   process.exit(failed ? 1 : 0)
 }

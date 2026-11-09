@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Images } from 'lucide-react'
+import { Images, MoonStar } from 'lucide-react'
 import { getStudyViewerLink, type StudyLink } from '@/app/actions/radiology'
 
 /**
@@ -32,6 +32,24 @@ export default function ViewScanButton({ orderId }: { orderId: string }) {
 
   if (!link) return null
 
+  const label = `${link.images} image${link.images === 1 ? '' : 's'}`
+  if (link.quietSince) {
+    const at = new Date(link.quietSince).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+    })
+    // Still a link: if only the hospital's internet is down, the computer is
+    // awake and the images open from inside the building.
+    return (
+      <a href={link.url} target="_blank" rel="noreferrer"
+        title={`The computer holding these images has not been in touch since ${at}. It is probably asleep or switched off — wake it, then open the images.`}
+        className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
+        style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', textDecoration: 'none' }}>
+        <MoonStar className="w-3.5 h-3.5" aria-hidden />
+        {label} · computer asleep since {at}
+      </a>
+    )
+  }
+
   return (
     <a href={link.url} target="_blank" rel="noreferrer"
       title={link.where === 'internet'
@@ -40,7 +58,7 @@ export default function ViewScanButton({ orderId }: { orderId: string }) {
       className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
       style={{ background: '#0F172A', color: '#fff', textDecoration: 'none' }}>
       <Images className="w-3.5 h-3.5" />
-      {link.images} image{link.images === 1 ? '' : 's'}
+      {label}
     </a>
   )
 }

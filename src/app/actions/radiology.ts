@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { headers } from 'next/headers'
 import { signViewerLink } from '@/lib/lab/viewerLink'
-import { chooseViewerRoute, type ConnectorReach } from '@/lib/radiology/viewerRoute'
+import { chooseViewerRoute, computerQuietSince, type ConnectorReach } from '@/lib/radiology/viewerRoute'
 import { clientKey } from '@/lib/rateLimit'
 import { hospitalFileLink, queueForHospitalComputer } from '@/lib/localFiles'
 import { logAudit } from '@/lib/audit'
@@ -391,6 +391,9 @@ export interface StudyLink {
   images: number
   series: number
   modality: string | null
+  /** Set when the computer holding the images has not checked in for a while:
+   *  it is probably asleep or switched off. When it last did. */
+  quietSince: string | null
 }
 
 /**
@@ -427,7 +430,7 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
 
   const actor = await getActorProfile()
   const svc = createServiceClient()
-  const cols = 'id, lan_ip, public_ip, status, viewer_key, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at'
+  const cols = 'id, lan_ip, public_ip, status, viewer_key, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at, last_seen_at'
 
   // The computer the scanner sent this study to, when we know it — a hospital
   // with two connectors must not be sent to the one without the images.
@@ -469,5 +472,6 @@ export async function getStudyViewerLink(orderId: string): Promise<StudyLink | n
     images: Number(study.instance_count ?? 0),
     series: Number(study.series_count ?? 0),
     modality: (study.modality as string | null) ?? null,
+    quietSince: computerQuietSince(connector.last_seen_at as string | null),
   }
 }
