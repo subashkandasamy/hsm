@@ -5,7 +5,7 @@ import path from 'node:path'
 import { TunnelSupervisor, ensureCloudflared, type TunnelState } from '../src/tunnel.js'
 import { createHash } from 'node:crypto'
 import { startHeartbeat } from '../src/heartbeat.js'
-import type { Config } from '../src/config.js'
+import { lanIp, type Config } from '../src/config.js'
 
 /**
  * The internet link, tested without the internet.
@@ -195,6 +195,10 @@ await test('carries version + tunnel state, and passes on the admin\'s choice', 
   await hb.beat()
   assert.equal(seen[0]['x-connector-tunnel'], 'up')
   assert.ok(seen[0]['x-connector-version'])
+  // The LAN address goes with every beat, so a PC moved by DHCP corrects itself.
+  const lan = lanIp()
+  if (lan) assert.equal(seen[0]['x-connector-lan'], lan)
+  else assert.equal(seen[0]['x-connector-lan'], undefined)
   assert.deepEqual(wanted, [true])
 
   reply = { status: 200, body: { ok: true, internetAccess: false } }

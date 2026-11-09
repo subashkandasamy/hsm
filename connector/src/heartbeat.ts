@@ -1,4 +1,4 @@
-import type { Config } from './config.js'
+import { lanIp, type Config } from './config.js'
 import { log } from './log.js'
 import type { TunnelSupervisor } from './tunnel.js'
 import type { FileMover } from './files.js'
@@ -38,6 +38,8 @@ export function startHeartbeat(
           authorization: `Bearer ${config.token}`,
           'x-connector-version': VERSION,
           'x-connector-tunnel': tunnel.state,
+          // Its address can change (DHCP); "View scan" links are built from it.
+          ...(lanIp() ? { 'x-connector-lan': lanIp() as string } : {}),
         },
         signal: AbortSignal.timeout(20_000),
       })

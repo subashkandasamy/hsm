@@ -75,12 +75,18 @@ export async function GET(request: Request) {
   const reported = request.headers.get('x-connector-version')?.trim() || null
   const tunnel = request.headers.get('x-connector-tunnel')?.trim().toLowerCase() || null
   const ip = clientKey(request.headers)
+  // The computer's own address inside the hospital. Until 1.0.12 it was only
+  // sent at pairing and with lab results, so an X-ray PC whose router handed
+  // it a new address (Karur, 9 Nov 2026: .106 → .102) kept the old one, and
+  // every "View scan" link pointed at a computer that was not there.
+  const lan = request.headers.get('x-connector-lan')?.trim() || null
   const now = new Date().toISOString()
   await svc.from('connectors')
     .update({
       last_seen_at: now,
       ...(reported ? { version: reported } : {}),
       ...(ip && ip !== 'unknown' ? { public_ip: ip } : {}),
+      ...(lan && isPrivateIpv4(lan) ? { lan_ip: lan } : {}),
       ...(tunnel && TUNNEL_STATES.has(tunnel) ? { tunnel_state: tunnel, tunnel_state_at: now } : {}),
     })
     .eq('id', connector.id)
@@ -108,4 +114,13 @@ function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status, headers: { 'content-type': 'application/json' },
   })
+}
+
+/** Only an address a browser inside the hospital could reach — never a public one. */
+function isPrivateIpv4(v: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v)
+  if (!m) return false
+  const [a, b] = [Number(m[1]), Number(m[2])]
+  if ([m[1], m[2], m[3], m[4]].some((x) => Number(x) > 255)) return false
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
 }
