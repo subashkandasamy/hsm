@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { queueForHospitalComputer } from '@/lib/localFiles'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
@@ -206,5 +207,7 @@ export async function attachSignedUpload(input: {
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'attach_declaration_upload', 'admission', input.admissionId, { docId })
+  // Moves to the hospital computer if this hospital keeps uploads there (0275).
+  await queueForHospitalComputer(actor.tenant_id, 'documents', input.filePath, 'ipd_declaration')
   return { success: true }
 }

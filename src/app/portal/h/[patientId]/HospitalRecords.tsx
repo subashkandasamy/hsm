@@ -191,6 +191,9 @@ export default function HospitalRecords({ patientId, records, appointments, requ
 function ScanCard({ scan: r }: { scan: PatientRecords['radiology'][number] }) {
   const [img, setImg] = useState<{ url: string; isPdf: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
+  // The hospital keeps this image on its own computer and it cannot be
+  // reached right now — said plainly rather than a button that does nothing.
+  const [unavailable, setUnavailable] = useState(false)
   const hasContent = !!r.report || r.hasImage
 
   async function loadImage() {
@@ -198,6 +201,7 @@ function ScanCard({ scan: r }: { scan: PatientRecords['radiology'][number] }) {
     try {
       const res = await getPortalScanImageUrl(r.id)
       if (res.url) setImg({ url: res.url, isPdf: res.isPdf })
+      else if (res.unavailable) setUnavailable(true)
     } finally { setLoading(false) }
   }
 
@@ -217,9 +221,15 @@ function ScanCard({ scan: r }: { scan: PatientRecords['radiology'][number] }) {
         <a href={img.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 13, color: TEAL, fontWeight: 600 }}>Open PDF scan ↗</a>
       )}
 
+      {unavailable && (
+        <p style={{ marginTop: 10, fontSize: 13, color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '8px 10px' }}>
+          This image is kept at the hospital and cannot be opened right now. Please try again later, or ask the hospital for a copy.
+        </p>
+      )}
+
       {hasContent && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-          {r.hasImage && !img && (
+          {r.hasImage && !img && !unavailable && (
             <button onClick={loadImage} disabled={loading}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: loading ? 'default' : 'pointer' }}>
               {loading ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <ImageIcon style={{ width: 13, height: 13 }} />}

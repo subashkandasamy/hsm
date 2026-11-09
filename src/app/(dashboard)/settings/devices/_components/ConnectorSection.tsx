@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff, Trash2, Globe } from 'lucide-react'
+import { Plus, Server, Copy, Check, RefreshCw, Ban, Wifi, WifiOff, Trash2, Globe, HardDrive } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import {
-  createConnector, regeneratePairingCode, revokeConnector, deleteConnector, setInternetAccess,
+  createConnector, regeneratePairingCode, revokeConnector, deleteConnector, setInternetAccess, setKeepUploads,
   type ConnectorRow,
 } from '@/app/actions/devices'
 import { TUNNEL_FRESH_MS } from '@/lib/radiology/viewerRoute'
@@ -72,6 +72,7 @@ export default function ConnectorSection({
   const [revoking, setRevoking] = useState<ConnectorRow | null>(null)
   const [deleting, setDeleting] = useState<ConnectorRow | null>(null)
   const [internet, setInternet] = useState<{ c: ConnectorRow; on: boolean } | null>(null)
+  const [keep, setKeep] = useState<{ c: ConnectorRow; on: boolean } | null>(null)
 
   function handleCreate() {
     setError('')
@@ -106,6 +107,17 @@ export default function ConnectorSection({
     startTransition(async () => {
       const res = await setInternetAccess(internet.c.id, internet.on)
       setInternet(null)
+      if (!res.success) { setError(res.error); return }
+      setError('')
+      onChange()
+    })
+  }
+
+  function handleKeep() {
+    if (!keep) return
+    startTransition(async () => {
+      const res = await setKeepUploads(keep.c.id, keep.on)
+      setKeep(null)
       if (!res.success) { setError(res.error); return }
       setError('')
       onChange()
@@ -161,6 +173,7 @@ export default function ConnectorSection({
               onRevoke={() => setRevoking(c)}
               onDelete={() => setDeleting(c)}
               onInternet={(on) => setInternet({ c, on })}
+              onKeep={(on) => setKeep({ c, on })}
               internetAvailable={internetAvailable} isAdmin={isAdmin}
               busy={isPending} />
           ))}
@@ -219,6 +232,18 @@ export default function ConnectorSection({
       />
 
       <ConfirmDialog
+        open={!!keep}
+        onClose={() => setKeep(null)}
+        onConfirm={handleKeep}
+        loading={isPending}
+        title={keep?.on ? 'Keep uploaded files on this computer?' : 'Stop moving uploaded files here?'}
+        description={keep?.on
+          ? `Patient documents, IPD declaration uploads and radiology report images will move to ${keep.c.name} a minute after they are uploaded, and the cloud copy is then deleted. They open from this computer — on the hospital network, or from anywhere if internet access is on. Patients see report images in the portal only while this computer is on and internet access is on.${connectors.some((x) => x.keep_uploads && x.id !== keep.c.id) ? ' The computer that keeps them now will stop receiving new ones.' : ''}`
+          : `New uploads will stay in the cloud. The ${keep?.c.files_kept ?? 0} file(s) already on ${keep?.c.name ?? 'this computer'} stay there and still open from it.`}
+        confirmLabel={keep?.on ? 'Keep files here' : 'Stop'}
+      />
+
+      <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
         onConfirm={handleDelete}
@@ -239,7 +264,7 @@ export default function ConnectorSection({
 }
 
 function ConnectorCard({
-  connector: c, latestVersion, onRegenerate, onRevoke, onDelete, onInternet,
+  connector: c, latestVersion, onRegenerate, onRevoke, onDelete, onInternet, onKeep,
   internetAvailable, isAdmin, busy,
 }: {
   connector: ConnectorRow
@@ -248,6 +273,7 @@ function ConnectorCard({
   onRevoke: () => void
   onDelete: () => void
   onInternet: (on: boolean) => void
+  onKeep: (on: boolean) => void
   internetAvailable: boolean
   isAdmin: boolean
   busy: boolean
@@ -331,6 +357,9 @@ function ConnectorCard({
             <InternetAccess c={c} available={internetAvailable} isAdmin={isAdmin}
               busy={busy} onChange={onInternet} />
           )}
+          {!revoked && setUp && (
+            <KeepUploads c={c} isAdmin={isAdmin} busy={busy} onChange={onKeep} />
+          )}
 
           <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
             {c.last_seen_at
@@ -407,7 +436,7 @@ function InternetAccess({
     } else if (c.tunnel_state === 'up') {
       tone = 'ok'; line = 'On — doctors can open scans from home or on their phone.'
     } else if (c.tunnel_state === 'missing') {
-      tone = 'warn'; line = 'On, but this computer needs the latest connector. Download it below and run install.cmd.'
+      tone = 'warn'; line = 'On, but this computer could not download the internet-link program yet. Check that it can reach github.com; it keeps trying every ten minutes.'
     } else if (c.tunnel_state === 'off') {
       tone = 'wait'; line = 'Switching on — this computer picks it up within a minute.'
     } else {
@@ -446,6 +475,52 @@ function InternetAccess({
             ? { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }
             : { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
           {c.internet_access ? 'Switch off' : 'Switch on'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Whether this computer holds the hospital's uploaded files (0275), and how
+ * many have moved or are on their way.
+ */
+function KeepUploads({
+  c, isAdmin, busy, onChange,
+}: {
+  c: ConnectorRow
+  isAdmin: boolean
+  busy: boolean
+  onChange: (on: boolean) => void
+}) {
+  const parts: string[] = []
+  if (c.files_kept) parts.push(`${c.files_kept} file${c.files_kept === 1 ? '' : 's'} here`)
+  if (c.files_waiting) parts.push(`${c.files_waiting} on the way`)
+  const line = c.keep_uploads
+    ? `On — patient documents, IPD declarations and radiology report images move here.${parts.length ? ` ${parts.join(' · ')}.` : ''}`
+    : `Off — uploaded files stay in the cloud.${c.files_kept ? ` ${c.files_kept} earlier file${c.files_kept === 1 ? '' : 's'} still here.` : ''}`
+  return (
+    <div className="mt-2 rounded-lg px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center"
+      style={c.keep_uploads
+        ? { background: '#ECFDF5', border: '1px solid #A7F3D0' }
+        : { background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5 flex items-center gap-1"
+          style={{ color: '#94A3B8' }}>
+          <HardDrive className="w-3 h-3" /> Keep uploaded files on this computer
+        </p>
+        <p className="text-xs" style={{ color: c.keep_uploads ? '#047857' : '#64748B' }}>{line}</p>
+        {!isAdmin && !c.keep_uploads && (
+          <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>An admin can switch this on.</p>
+        )}
+      </div>
+      {isAdmin && (
+        <button onClick={() => onChange(!c.keep_uploads)} disabled={busy}
+          className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex-shrink-0 self-start sm:self-auto"
+          style={c.keep_uploads
+            ? { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }
+            : { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+          {c.keep_uploads ? 'Switch off' : 'Switch on'}
         </button>
       )}
     </div>

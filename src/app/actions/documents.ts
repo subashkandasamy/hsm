@@ -8,6 +8,7 @@ import { getActorProfile } from '@/lib/server-utils'
 import { requireTenantId } from '@/lib/tenant'
 import { DOCUMENT_UPLOAD, checkUploadName, checkUploadSize } from '@/lib/upload/allowedFiles'
 import type { PatientDocument, DocumentCategory } from '@/lib/types'
+import { hospitalFileLink, queueForHospitalComputer } from '@/lib/localFiles'
 
 const BUCKET = 'documents'
 const SIGNED_URL_EXPIRY = 60 * 60 // 1 hour
@@ -97,6 +98,8 @@ export async function saveDocumentRecord(input: {
   await logAudit(actor.id, 'create', 'patient_document', id, {
     patient_id: input.patientId, title: input.title, category: input.category,
   })
+  // Moves to the hospital computer if this hospital keeps uploads there (0275).
+  await queueForHospitalComputer(actor.tenant_id, 'documents', input.filePath, 'patient_document')
 
   const { data } = await supabase
     .from('patient_documents')
@@ -106,10 +109,13 @@ export async function saveDocumentRecord(input: {
   return { success: true, document: data as unknown as PatientDocument }
 }
 
-// Returns a short-lived signed read URL for a document.
+// Returns a short-lived read URL for a document — from the cloud, or from the
+// hospital computer once it has moved there (0275). `where` is set only for the
+// latter: 'hospital' means the link opens on the hospital network only, so the
+// page opens it in a new tab instead of embedding it.
 export async function getDocumentUrl(
   id: string
-): Promise<{ success: true; url: string } | { success: false; error: string }> {
+): Promise<{ success: true; url: string; where?: 'hospital' | 'internet' } | { success: false; error: string }> {
   // Tenancy was already safe here — the row is read through the user's client,
   // so RLS applies — but no PERMISSION was checked, so any authenticated user
   // in the hospital could open any patient's uploaded document given its id.
@@ -132,6 +138,14 @@ export async function getDocumentUrl(
     .single()
 
   if (!doc) return { success: false, error: 'Document not found' }
+
+  const kept = await hospitalFileLink(actor.tenant_id, 'documents', doc.file_path as string)
+  if (kept.state === 'computer') {
+    if (!kept.url || !kept.where) {
+      return { success: false, error: 'This document is kept on the hospital computer, which cannot be reached right now.' }
+    }
+    return { success: true, url: kept.url, where: kept.where }
+  }
 
   const service = createServiceClient()
   const { data, error } = await service.storage

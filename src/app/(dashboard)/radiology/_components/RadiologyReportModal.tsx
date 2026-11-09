@@ -15,7 +15,7 @@ interface Props {
 }
 
 export default function RadiologyReportModal({ order, onClose }: Props) {
-  const [image, setImage] = useState<{ url: string | null; isPdf: boolean; denied?: boolean } | null>(null)
+  const [image, setImage] = useState<{ url: string | null; isPdf: boolean; denied?: boolean; where?: 'hospital' | 'internet'; unreachable?: boolean } | null>(null)
   const [loadingImage, setLoadingImage] = useState(!!order.image_url)
 
   useEffect(() => {
@@ -72,8 +72,20 @@ export default function RadiologyReportModal({ order, onClose }: Props) {
               <p className="text-sm" style={{ color: '#B45309' }}>
                 Your role does not include viewing scan images.
               </p>
+            ) : image?.unreachable ? (
+              <p className="text-sm" style={{ color: '#B45309' }}>
+                This image is kept on your hospital&apos;s computer, which cannot be reached right now.
+              </p>
             ) : !image?.url ? (
               <p className="text-sm" style={{ color: '#DC2626' }}>Image could not be loaded.</p>
+            ) : image.where === 'hospital' ? (
+              // A secure page cannot show a picture from a local address, so
+              // it opens in a new tab on the hospital network instead.
+              <a href={image.url} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-medium"
+                style={{ color: '#0D9488' }}>
+                <ExternalLink className="w-3.5 h-3.5" /> Open image (on the hospital network)
+              </a>
             ) : image.isPdf ? (
               <a href={image.url} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm font-medium"

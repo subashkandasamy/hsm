@@ -6,6 +6,7 @@ import { headers } from 'next/headers'
 import { signViewerLink } from '@/lib/lab/viewerLink'
 import { chooseViewerRoute, type ConnectorReach } from '@/lib/radiology/viewerRoute'
 import { clientKey } from '@/lib/rateLimit'
+import { hospitalFileLink, queueForHospitalComputer } from '@/lib/localFiles'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
@@ -179,6 +180,9 @@ export async function uploadReport(
   }).eq('id', orderId)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'report_draft', 'radiology_order', orderId)
+  // The attached image moves to the hospital computer if this hospital keeps
+  // uploads there (0275). A full URL is a legacy public link, never moved.
+  if (imageUrl) await queueForHospitalComputer(actor.tenant_id, 'radiology', imageUrl, 'radiology_image')
   return { success: true }
 }
 
@@ -245,7 +249,10 @@ export async function getRadiologyImageUploadUrl(
 // http(s) URL (older public-URL scheme) — those are returned as-is.
 export async function getRadiologyImageUrl(
   orderId: string,
-): Promise<{ url: string | null; isPdf: boolean; denied?: boolean }> {
+  /** 'print': the server fetches it to put in a PDF, so only an address the
+   *  internet can reach will do (the internet link of the hospital computer). */
+  purpose: 'view' | 'print' = 'view',
+): Promise<{ url: string | null; isPdf: boolean; denied?: boolean; where?: 'hospital' | 'internet'; unreachable?: boolean }> {
   // See getDocumentUrl — same gap, same permission. `denied` is separate from
   // `url: null` on purpose: "you may not see this" and "there is no image" are
   // different facts, and collapsing them would quietly show an empty report
@@ -263,6 +270,14 @@ export async function getRadiologyImageUrl(
 
   const isPdf = stored.toLowerCase().split('?')[0].endsWith('.pdf')
   if (/^https?:\/\//i.test(stored)) return { url: stored, isPdf }
+
+  // Kept on the hospital computer (0275): link there instead.
+  const kept = await hospitalFileLink(actor.tenant_id, 'radiology', stored, { embeddableOnly: purpose === 'print' })
+  if (kept.state === 'computer') {
+    return kept.url && kept.where
+      ? { url: kept.url, isPdf, where: kept.where }
+      : { url: null, isPdf, unreachable: true }
+  }
 
   const service = createServiceClient()
   const { data } = await service.storage

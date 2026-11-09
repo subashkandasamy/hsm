@@ -370,6 +370,40 @@ and opening even a throwaway public tunnel from this machine was blocked.
 
 ---
 
+## 15. Built: uploads kept on the hospital computer (9 Nov 2026)
+
+User's scope: **patient-profile documents, IPD declaration uploads, radiology
+report images.** Insurance papers and the logo stay in the cloud. Decisions:
+upload **via the cloud, then moved** (a secure page cannot upload to a local
+http address, and an upload must never fail because a PC is off); the portal
+shows report images **only through the hospital computer** (no cloud copy).
+
+- **Switch:** "Keep uploaded files on this computer", per connector, admin
+  only, one per hospital (`connectors.keep_uploads`, unique per tenant).
+  Off only stops new moves; files already there stay.
+- **Ledger:** `local_files` (0275, server-only), keyed by the same storage path
+  the records already hold, so no other table changed. waiting → on_computer
+  (or failed, retried up to 10 times).
+- **Move:** `queueForHospitalComputer` on save (documents.saveDocumentRecord,
+  ipdDeclaration.attachSignedUpload, radiology.uploadReport). The heartbeat
+  reply carries `keepUploads`; the connector GETs `/api/device/files` (signed
+  download links), writes `.part` → fsync → rename → re-reads and hashes, then
+  POSTs size + SHA-256. The server checks the size against the cloud object,
+  marks on_computer **first**, then deletes the cloud copy.
+- **Opening:** `hospitalFileLink` → `chooseFileRoute`: the internet link when
+  it is up (pages can embed https), else the local link (staff: new tab, "on
+  the hospital network"), else "cannot be reached right now". Portal and
+  server-side PDF printing use only the internet link.
+- **Drive:** connector 1.0.8 picks the local **fixed** drive with the most free
+  space once (`<drive>:\Uyirly`), remembers it in config.json, locks the folder
+  to SYSTEM + Administrators. Scans go there too; studies already in
+  ProgramData still open. Removable/network drives are never chosen.
+- **Never deletes:** nothing asks the computer to delete a kept file. A
+  document deleted in Uyirly leaves its file on the computer.
+- **Not yet:** encryption of kept files at rest; mirror/backup of the drive.
+
+---
+
 ## Sources (checked 9 Nov 2026)
 
 - WSL startup without login: [Prismatic on-prem agent guide](https://prismatic.io/docs/on-prem-agent-windows), [WSL discussion #14261](https://github.com/microsoft/WSL/discussions/14261), [ElevenForum thread](https://www.elevenforum.com/t/how-to-properly-start-wsl2-services-on-windows-startup.4275/)

@@ -14,7 +14,7 @@
  *   3. hostnameFor — opaque, so DNS does not publish a customer list.
  */
 import {
-  chooseViewerRoute, tunnelIsUp, TUNNEL_FRESH_MS, HOSPITAL_LINK_TTL, INTERNET_LINK_TTL,
+  chooseViewerRoute, chooseFileRoute, tunnelIsUp, TUNNEL_FRESH_MS, HOSPITAL_LINK_TTL, INTERNET_LINK_TTL,
   type ConnectorReach,
 } from '../src/lib/radiology/viewerRoute'
 
@@ -69,6 +69,18 @@ check('nothing at all → null',
   chooseViewerRoute({ ...base, lan_ip: null, internet_access: false }, null, NOW) === null)
 check('unknown request IP never matches a null public IP',
   chooseViewerRoute({ ...base, public_ip: null, internet_access: false }, null, NOW)?.where === 'hospital')
+
+console.log('\n1b. Which link for a kept upload (document, declaration, report image)')
+{
+  const r = chooseFileRoute(base, {}, NOW)
+  check('tunnel up → internet link even inside (pages must embed it)', r?.where === 'internet' && r.base === 'https://c-abc.files.test', JSON.stringify(r))
+  const off = chooseFileRoute({ ...base, internet_access: false }, {}, NOW)
+  check('tunnel off → local link for staff (opens in a new tab)', off?.where === 'hospital' && off.base === 'http://192.168.1.106:5152', JSON.stringify(off))
+  check('tunnel off → nothing for the portal / printing', chooseFileRoute({ ...base, internet_access: false }, { embeddableOnly: true }, NOW) === null)
+  check('tunnel stale → nothing for the portal', chooseFileRoute({ ...base, tunnel_state_at: stale }, { embeddableOnly: true }, NOW) === null)
+  check('portal with tunnel up → internet link', chooseFileRoute(base, { embeddableOnly: true }, NOW)?.where === 'internet')
+  check('no LAN address and no tunnel → nothing', chooseFileRoute({ ...base, lan_ip: null, internet_access: false }, {}, NOW) === null)
+}
 
 // ── Cloudflare, recorded ───────────────────────────────────────────────────
 type Call = { method: string; path: string; body: unknown }

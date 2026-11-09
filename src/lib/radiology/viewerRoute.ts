@@ -71,3 +71,30 @@ export function chooseViewerRoute(
   if (inside) return hospital ?? internet
   return internet ?? hospital
 }
+
+/**
+ * Which address to hand out for an uploaded file kept on the hospital computer
+ * (a patient document, an IPD declaration, a radiology report image).
+ *
+ * Different from scans in one way: these are shown INSIDE Uyirly's pages — an
+ * image in the report, a PDF in the documents viewer, an image in a printed
+ * report — and a secure page can only embed something from a secure address.
+ * So the internet link is preferred whenever it is up, even inside the
+ * hospital; these files are small, so the trip out and back costs nothing.
+ *
+ * Without it, staff get the local link, which opens in a new tab on the
+ * hospital network. The patient portal and server-side printing are never
+ * inside the hospital, so for them it is the internet link or nothing
+ * (`embeddableOnly`).
+ */
+export function chooseFileRoute(
+  c: ConnectorReach,
+  opts: { embeddableOnly?: boolean } = {},
+  now: number = Date.now(),
+): ViewerRoute | null {
+  if (tunnelIsUp(c, now)) {
+    return { base: `https://${c.tunnel_hostname}`, where: 'internet', ttlSeconds: INTERNET_LINK_TTL }
+  }
+  if (opts.embeddableOnly || !c.lan_ip) return null
+  return { base: `http://${c.lan_ip}:${VIEWER_PORT}`, where: 'hospital', ttlSeconds: HOSPITAL_LINK_TTL }
+}

@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
   const { data: connector } = await svc
     .from('connectors')
-    .select('id, tenant_id, name, listen_port, status, internet_access, tunnel_id, tunnel_dns_record_id')
+    .select('id, tenant_id, name, listen_port, status, internet_access, tunnel_id, tunnel_dns_record_id, keep_uploads')
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -98,6 +98,8 @@ export async function GET(request: Request) {
     analyzersSeen: analyzers ?? 0,
     needingAttention: waiting ?? 0,
     internetAccess,
+    // Whether this computer collects the hospital's uploaded files (0275).
+    keepUploads: !!connector.keep_uploads,
     serverTime: now,
   })
 }

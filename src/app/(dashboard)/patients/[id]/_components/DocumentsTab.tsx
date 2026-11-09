@@ -48,6 +48,10 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [viewerTitle, setViewerTitle] = useState<string>('')
+  // Set when the file is on the hospital computer with no internet link: a
+  // secure page cannot embed a local address, so it opens in a new tab.
+  const [viewerLocal, setViewerLocal] = useState(false)
+  const [viewError, setViewError] = useState<string | null>(null)
   const [loadingViewId, setLoadingViewId] = useState<string | null>(null)
   const [isNative, setIsNative] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -141,11 +145,15 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
 
   async function handleView(doc: PatientDocument) {
     setLoadingViewId(doc.id)
+    setViewError(null)
     const result = await getDocumentUrl(doc.id)
     setLoadingViewId(null)
     if (result.success) {
       setViewerUrl(result.url)
       setViewerTitle(doc.title)
+      setViewerLocal(result.where === 'hospital')
+    } else {
+      setViewError(result.error)
     }
   }
 
@@ -299,6 +307,13 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
         </div>
       )}
 
+      {viewError && (
+        <p className="text-xs mt-2 rounded-lg px-3 py-2"
+          style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+          {viewError}
+        </p>
+      )}
+
       {/* Viewer modal */}
       {viewerUrl && (
         <div
@@ -327,7 +342,19 @@ export default function DocumentsTab({ patientId, initialDocuments, canUpload, c
             </div>
             {/* Content */}
             <div className="flex-1 overflow-hidden">
-              {isImage(viewerUrl) ? (
+              {viewerLocal ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
+                  <p className="text-sm" style={{ color: '#475569' }}>
+                    This document is kept on your hospital&apos;s computer. It opens in a new tab,
+                    on the hospital network.
+                  </p>
+                  <a href={viewerUrl} target="_blank" rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-lg text-sm font-semibold"
+                    style={{ background: '#0D9488', color: '#fff' }}>
+                    Open document
+                  </a>
+                </div>
+              ) : isImage(viewerUrl) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={viewerUrl} alt={viewerTitle} className="w-full h-full object-contain" />
               ) : (

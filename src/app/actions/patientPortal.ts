@@ -2,6 +2,7 @@
 
 import { createServiceBill } from '@/lib/billing/serviceBill'
 import { createServiceClient } from '@/lib/supabase/service'
+import { hospitalFileLink } from '@/lib/localFiles'
 import { sendPatientPasswordEmail } from '@/lib/email'
 import {
   normalizePhone, setPatientSession, clearPatientSession, getPatientSession,
@@ -495,6 +496,8 @@ export async function getPortalLabReport(orderId: string): Promise<{
 
 export async function getPortalRadiologyReport(orderId: string): Promise<{
   order: unknown; patient: unknown; tenantProfile: unknown; imageUrl: string | null; imageIsPdf: boolean
+  /** The image is kept at the hospital and its computer cannot be reached now. */
+  imageUnavailable?: boolean
 } | null> {
   const svc = createServiceClient()
   const owned = await ownedOrderPatient(svc, 'radiology_orders', orderId)
@@ -517,6 +520,8 @@ export async function getPortalRadiologyReport(orderId: string): Promise<{
     if (/^https?:\/\//i.test(stored)) {
       imageUrl = stored
     } else {
+      const kept = await portalKeptImage(owned.owner.tenantId, stored)
+      if (kept) return { order, patient, tenantProfile, imageUrl: kept.url, imageIsPdf, imageUnavailable: !kept.url }
       const { data } = await svc.storage.from(PORTAL_RADIOLOGY_BUCKET).createSignedUrl(stored, PORTAL_SIGNED_URL_EXPIRY)
       imageUrl = data?.signedUrl ?? null
     }
@@ -541,7 +546,7 @@ export async function getPortalLabAnalytes(orderId: string): Promise<unknown[]> 
 }
 
 // Lightweight signed-URL fetch for inline scan viewing in the Scans tab.
-export async function getPortalScanImageUrl(orderId: string): Promise<{ url: string | null; isPdf: boolean }> {
+export async function getPortalScanImageUrl(orderId: string): Promise<{ url: string | null; isPdf: boolean; unavailable?: boolean }> {
   const svc = createServiceClient()
   const owned = await ownedOrderPatient(svc, 'radiology_orders', orderId)
   if (!owned) return { url: null, isPdf: false }
@@ -550,8 +555,22 @@ export async function getPortalScanImageUrl(orderId: string): Promise<{ url: str
   if (!stored) return { url: null, isPdf: false }
   const isPdf = stored.toLowerCase().split('?')[0].endsWith('.pdf')
   if (/^https?:\/\//i.test(stored)) return { url: stored, isPdf }
+  const kept = await portalKeptImage(owned.owner.tenantId, stored)
+  if (kept) return { url: kept.url, isPdf, unavailable: !kept.url }
   const { data } = await svc.storage.from(PORTAL_RADIOLOGY_BUCKET).createSignedUrl(stored, PORTAL_SIGNED_URL_EXPIRY)
   return { url: data?.signedUrl ?? null, isPdf }
+}
+
+/**
+ * A radiology image the hospital keeps on its own computer (0275), as the
+ * portal may show it: only through that computer's internet link — a patient
+ * is never on the hospital network. Null when the image is still in the cloud;
+ * `url: null` when it is kept at the hospital and cannot be reached right now
+ * (the hospital chose no cloud copy, 9 Nov 2026).
+ */
+async function portalKeptImage(tenantId: string, stored: string): Promise<{ url: string | null } | null> {
+  const kept = await hospitalFileLink(tenantId, 'radiology', stored, { embeddableOnly: true })
+  return kept.state === 'computer' ? { url: kept.url } : null
 }
 
 // ── Appointments & requests at one hospital (Phase 4) ─────────────────────────

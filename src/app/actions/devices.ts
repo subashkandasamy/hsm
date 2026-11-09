@@ -39,6 +39,11 @@ export interface ConnectorRow {
   /** What the computer last said about its tunnel: off | starting | up | down | missing. */
   tunnel_state: string | null
   tunnel_state_at: string | null
+  /** Admin switch: this computer collects the hospital's uploaded files (0275). */
+  keep_uploads: boolean
+  /** Uploaded files waiting to move here, and already here. */
+  files_waiting: number
+  files_kept: number
 }
 
 export interface AnalyzerRow {
@@ -155,11 +160,20 @@ export async function listConnectors(): Promise<ConnectorRow[]> {
   const svc = createServiceClient()
   const [{ data }, { data: msgs }] = await Promise.all([
     svc.from('connectors')
-      .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at')
+      .select('id, name, machine_name, lan_ip, listen_port, version, status, last_seen_at, paired_at, pairing_code, pairing_expires_at, internet_access, tunnel_hostname, tunnel_state, tunnel_state_at, keep_uploads')
       .eq('tenant_id', actor.tenant_id)
       .order('created_at'),
     svc.from('analyzer_messages').select('connector_id').eq('tenant_id', actor.tenant_id),
   ])
+  const { data: files } = await svc.from('local_files').select('connector_id, status').eq('tenant_id', actor.tenant_id)
+  const waiting = new Map<string, number>()
+  const kept = new Map<string, number>()
+  for (const f of files ?? []) {
+    const key = f.connector_id as string | null
+    if (!key) continue
+    const m = f.status === 'on_computer' ? kept : waiting
+    m.set(key, (m.get(key) ?? 0) + 1)
+  }
 
   const seen = new Map<string, number>()
   for (const m of msgs ?? []) {
@@ -170,8 +184,52 @@ export async function listConnectors(): Promise<ConnectorRow[]> {
   return (data ?? []).map((c) => ({
     ...c,
     internet_access: !!c.internet_access,
+    keep_uploads: !!c.keep_uploads,
+    files_waiting: waiting.get(c.id as string) ?? 0,
+    files_kept: kept.get(c.id as string) ?? 0,
     message_count: seen.get(c.id as string) ?? 0,
   })) as ConnectorRow[]
+}
+
+/**
+ * Switch on or off keeping the hospital's uploaded files on this computer:
+ * patient documents, IPD declaration uploads and radiology report images
+ * (0275). One computer per hospital — switching one on switches any other off,
+ * so a file is never looked for on the wrong machine.
+ *
+ * Off only stops NEW uploads moving. Files already on the computer stay there:
+ * nothing in Uyirly ever asks the computer to delete or send back a file.
+ *
+ * Admins only, like internet access: where patient files live is the owner's
+ * decision.
+ */
+export async function setKeepUploads(id: string, on: boolean): Promise<SimpleResult> {
+  const actor = await getActorProfile()
+  if (actor.role !== 'admin') return { success: false, error: 'Only an admin can change where uploaded files are kept' }
+  await requireWriteAccess()
+  await requireModule('lab')
+
+  const svc = createServiceClient()
+  const { data: c } = await svc.from('connectors').select('id, name, status, paired_at, version')
+    .eq('tenant_id', actor.tenant_id).eq('id', id).maybeSingle()
+  if (!c) return { success: false, error: 'That computer is no longer here' }
+  if (on && (c.status === 'revoked' || !c.paired_at)) {
+    return { success: false, error: 'Connect this computer first, then switch this on' }
+  }
+
+  if (on) {
+    await svc.from('connectors').update({ keep_uploads: false })
+      .eq('tenant_id', actor.tenant_id).eq('keep_uploads', true).neq('id', id)
+  }
+  const { error } = await svc.from('connectors').update({ keep_uploads: on })
+    .eq('tenant_id', actor.tenant_id).eq('id', id)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'connector', id, {
+    action: on ? 'keep uploads on' : 'keep uploads off', name: c.name,
+  })
+  revalidatePath('/settings/devices')
+  return { success: true }
 }
 
 /** Whether this Uyirly server has a Cloudflare account to make tunnels with. */
@@ -359,6 +417,8 @@ export async function revokeConnector(id: string): Promise<SimpleResult> {
     .update({
       status: 'revoked', token_hash: null, pairing_code: null, pairing_expires_at: null,
       internet_access: false, tunnel_dns_record_id: null,
+      // New uploads stay in the cloud; files already on it stay there.
+      keep_uploads: false,
     })
     .eq('tenant_id', actor.tenant_id).eq('id', id)
   if (error) return { success: false, error: error.message }

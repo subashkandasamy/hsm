@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 // GET /print/radiology/:orderId/pdf — radiology report (with the scan image) as a PDF.
 export async function GET(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params
-  const [order, profile, stored] = await Promise.all([getRadiologyOrder(orderId), getTenantProfile(), getRadiologyImageUrl(orderId)])
+  const [order, profile, stored] = await Promise.all([getRadiologyOrder(orderId), getTenantProfile(), getRadiologyImageUrl(orderId, 'print')])
   if (stored.denied) {
     return new Response('You do not have permission to open this scan image', { status: 403 })
   }
