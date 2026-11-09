@@ -70,7 +70,7 @@ export function SampleLabelsPdf({ data }: { data: SampleLabelData }) {
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: mm(0.3), height: mm(2.9) }}>
-              <Text style={{ fontSize: 7, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.3 }}>{data.accessionNo}-{String(i + 1).padStart(2, '0')}</Text>
+              <Text style={{ fontSize: 7, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.3 }}>{code}</Text>
               <Text style={{ flex: 1, fontSize: 6.5, fontWeight: 700, lineHeight: 1.1, textAlign: 'right', maxLines: 1, textOverflow: 'ellipsis', marginLeft: 3 }}>
                 {tube.sampleType.toUpperCase()}{tube.closure ? ` · ${tube.closure.toUpperCase()}` : ''}{total > 1 ? `  ${i + 1}/${total}` : ''}
               </Text>

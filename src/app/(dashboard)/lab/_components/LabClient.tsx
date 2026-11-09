@@ -20,6 +20,7 @@ import ResultEntryModal from './ResultEntryModal'
 import LabReportModal from './LabReportModal'
 import AddLabTestModal from './AddLabTestModal'
 import SampleLabelModal from '@/components/barcode/SampleLabelModal'
+import TubeBarcodes from '@/components/barcode/TubeBarcodes'
 import { useIsReadOnly } from '@/context/ReadOnlyContext'
 
 const STATUS_MAP: Record<string, string> = {
@@ -272,6 +273,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                       </span>
                     ))}
                   </div>
+                  <TubeBarcodes samples={order.samples} />
                   <p className="text-xs mt-1.5" style={{ color: '#94A3B8' }}>
                     {order.accession_no && <span className="font-mono" style={{ color: '#64748B' }}>#{order.accession_no} · </span>}
                     {order.orderer?.full_name} · <DateText date={order.ordered_at} />

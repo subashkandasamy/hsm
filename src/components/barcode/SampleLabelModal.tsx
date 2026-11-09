@@ -23,7 +23,18 @@ function tubes(order: LabOrder): Array<{ sampleType: string; tests: string[] }> 
 }
 
 export default function SampleLabelModal({ order, onClose }: Props) {
-  const list = tubes(order)
+  // The stored tubes when we have them: their order is NABL's draw order and
+  // their barcodes are what prints. The grouping below is only a fallback.
+  const list = order.samples?.length
+    ? order.samples.map((s) => ({
+        code: s.barcode,
+        sampleType: s.tube?.label ?? 'Sample',
+        // Same rule as ensure_lab_samples: a test goes in its catalogue tube.
+        tests: (order.items ?? [])
+          .filter((it) => ((it.test as { tube_type?: string | null } | undefined)?.tube_type ?? 'other') === s.tube_type)
+          .map((it) => it.test?.name ?? 'Test'),
+      }))
+    : tubes(order).map((t, i) => ({ ...t, code: `${order.accession_no ?? ''}${String(i + 1).padStart(2, '0')}` }))
   const pdfUrl = `/print/sample-labels/${order.id}/pdf`
 
   function handlePrint() {
@@ -53,9 +64,9 @@ export default function SampleLabelModal({ order, onClose }: Props) {
           <iframe title="Label preview" src={`${pdfUrl}#toolbar=0&navpanes=0&view=Fit`}
             className="w-full rounded-lg" style={{ height: '190px', border: '1px solid #E2E8F0', background: '#F8FAFC' }} />
           <ul className="space-y-1">
-            {list.map((t, i) => (
-              <li key={t.sampleType} className="text-xs flex gap-2" style={{ color: '#334155' }}>
-                <span className="font-semibold tabular-nums">{order.accession_no ?? ''}-{String(i + 1).padStart(2, '0')}</span>
+            {list.map((t) => (
+              <li key={t.code} className="text-xs flex gap-2" style={{ color: '#334155' }}>
+                <span className="font-mono font-semibold tabular-nums">{t.code}</span>
                 <span className="font-semibold uppercase">{t.sampleType}</span>
                 <span className="truncate" style={{ color: '#64748B' }}>{t.tests.join(', ')}</span>
               </li>

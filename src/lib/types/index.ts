@@ -427,6 +427,9 @@ export interface LabOrder {
   sample_label_printed_at?: string | null
   accession_no?: string
   items?: LabOrderItem[]
+  /** The tubes, in draw order. barcode is exactly what the label's bars encode
+   *  and what a technician types into an analyzer. */
+  samples?: Array<{ tube_no: number; barcode: string; tube_type: string; tube: { label: string } | null }>
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
 }

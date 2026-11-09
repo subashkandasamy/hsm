@@ -661,8 +661,10 @@ export async function listLabOrders(filters?: {
   let q = supabase
     .from('lab_orders')
     .select(`*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
-             items:lab_order_items(*, test:lab_tests_catalog(*))`)
+             items:lab_order_items(*, test:lab_tests_catalog(*)),
+             samples:lab_samples(tube_no, barcode, tube_type, tube:lab_tube_types(label))`)
     .order('ordered_at', { ascending: false })
+    .order('tube_no', { referencedTable: 'lab_samples' })
 
   if (filters?.status) q = q.eq('status', filters.status)
   if (filters?.visitId) q = q.eq('visit_id', filters.visitId)
