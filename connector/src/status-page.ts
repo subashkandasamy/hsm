@@ -4,6 +4,7 @@ import { lanIp, dataDir, type Config } from './config.js'
 import type { HalfOpen } from './half-open.js'
 import { Queue } from './queue.js'
 import { log } from './log.js'
+import { liveAnalyzers, verdict } from './analyzers-live.js'
 import { VERSION } from './version.js'
 import { diskWatch } from './dicom/server.js'
 import { humanBytes, WARN_FREE_BYTES, type DiskState } from './dicom/disk.js'
@@ -239,6 +240,15 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
   .note { max-width:620px; margin:14px auto 0; font-size:13px; color:#94A3B8; }
   .prob { margin:0; padding:13px 24px; background:#FFFBEB; color:#92400E;
           font-size:14px; border-top:1px solid #FDE68A; }
+  h2    { max-width:620px; margin:22px auto 8px; font-size:15px; color:#334155; }
+  .an   { padding:14px 24px; border-top:1px solid #F1F5F9; }
+  .an:first-child { border-top:none; }
+  .an .nm { font-weight:600; }
+  .an .ad { font-family:ui-monospace,Consolas,monospace; font-size:13px; color:#64748B; margin-left:6px; }
+  .an .vd { margin-top:4px; font-size:14px; }
+  .an .ok   { color:#047857; } .an .bad { color:#B91C1C; } .an .wait { color:#475569; }
+  .an .mt { margin-top:2px; font-size:12px; color:#94A3B8; }
+  .empty { padding:14px 24px; color:#94A3B8; font-size:14px; }
 </style></head><body>
 <div class="card">
   <div class="head">
@@ -251,7 +261,34 @@ ${rows.map(([k, v, warn]) => `    <tr><td class="k">${esc(k)}</td><td class="v${
   </table>
   ${state.lastProblem ? `<p class="prob">${esc(state.lastProblem)}</p>` : ''}
 </div>
+${analyzerSection()}
 <p class="note">This page is only visible on this computer. It refreshes by itself.
 Results and patient names are never shown here.</p>
 </body></html>`
+}
+
+/**
+ * One row per analyzer that has connected (or, for a cable, been opened)
+ * since the connector started: what it calls itself, where it is, and a
+ * plain verdict. Machine names only — never patients or results.
+ */
+function analyzerSection(): string {
+  const list = liveAnalyzers()
+  const body = list.length
+    ? list.map((a) => {
+      const v = verdict(a)
+      const cls = v.ok === true ? 'ok' : v.ok === false ? 'bad' : 'wait'
+      const mark = v.ok === true ? '●' : v.ok === false ? '●' : '○'
+      const name = a.name ?? (a.kind === 'cable' ? 'Analyzer on a cable' : 'Analyzer (name not known yet)')
+      const meta = [
+        `${a.results} result${a.results === 1 ? '' : 's'} since starting`,
+        a.kind === 'network' ? `${a.connections} connection${a.connections === 1 ? '' : 's'}` : null,
+        a.connected ? 'connected now' : null,
+      ].filter(Boolean).join(' · ')
+      return `  <div class="an"><span class="nm">${esc(name)}</span><span class="ad">${esc(a.address)}</span>
+    <div class="vd ${cls}">${mark} ${esc(v.text)}</div><div class="mt">${esc(meta)}</div></div>`
+    }).join('\n')
+    : '  <div class="empty">No analyzer has connected since the connector started. '
+      + 'Point each one at the address above, port shown, and send a result.</div>'
+  return `<h2>Analyzers</h2>\n<div class="card">\n${body}\n</div>`
 }

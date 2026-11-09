@@ -1,5 +1,6 @@
 import { AstmLink } from '../astm-link.js'
 import { log } from '../log.js'
+import { analyzerConnected, analyzerDisconnected, analyzerProblem, analyzerResult } from '../analyzers-live.js'
 
 /**
  * Analyzers on a cable.
@@ -95,27 +96,43 @@ export async function startSerial(
   let retry: NodeJS.Timeout | null = null
   let stopped = false
 
+  const key = `serial ${devicePath}`
   const open = () => {
     if (stopped) return
     try {
       port = new SerialPort({ path: devicePath, baudRate })
     } catch (e) {
+      analyzerProblem(key, `Cannot open ${devicePath} — is the cable plugged in and no other program using it?`)
       log.warn(`Could not open ${devicePath}: ${(e as Error).message}. Trying again in 30 seconds.`)
       retry = setTimeout(open, 30_000)
       return
     }
 
+    let incomplete = false
+    let bytes = 0
     const link = new AstmLink({
-      onMessage: (raw) => onMessage(raw, `serial ${devicePath}`),
+      onMessage: (raw) => {
+        analyzerResult(key, raw, incomplete)
+        incomplete = false
+        onMessage(raw, `serial ${devicePath}`)
+      },
       send: (data) => { if (port?.isOpen) port.write(data) },
-      onWarn: (m) => log.warn(`${devicePath}: ${m}`),
+      onWarn: (m) => {
+        if (/unrecognised byte/.test(m)) incomplete = true
+        log.warn(`${devicePath}: ${m}`)
+      },
     })
 
+    analyzerConnected(key)
     log.info(`Listening on ${devicePath} at ${baudRate} baud`)
-    port.on('data', (chunk) => link.push(chunk))
-    port.on('error', (e) => log.warn(`${devicePath}: ${e.message}`))
+    port.on('data', (chunk) => { bytes += chunk.length; link.push(chunk) })
+    port.on('error', (e) => {
+      analyzerProblem(key, `${devicePath}: ${e.message}`)
+      log.warn(`${devicePath}: ${e.message}`)
+    })
     port.on('close', () => {
       link.close()
+      analyzerDisconnected(key, bytes)
       if (stopped) return
       // A knocked cable or a pulled USB adapter. Keep trying — the analyzer
       // will still be there when it is plugged back in.

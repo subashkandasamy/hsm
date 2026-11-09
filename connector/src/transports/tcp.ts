@@ -1,6 +1,7 @@
 import net from 'node:net'
 import { AstmLink } from '../astm-link.js'
 import { log } from '../log.js'
+import { analyzerConnected, analyzerDisconnected, analyzerResult } from '../analyzers-live.js'
 
 /**
  * Analyzers that speak over the network.
@@ -39,11 +40,23 @@ export function startTcp(
     const srv = net.createServer((socket) => {
       const who = `${socket.remoteAddress}:${socket.remotePort}`
       log.info(`Analyzer connected from ${who}`)
+      // One row per machine on the status page (analyzers-live.ts). IPv4
+      // addresses arrive as "::ffff:192.168.1.60" on a dual-stack socket.
+      const key = `tcp ${(socket.remoteAddress ?? '?').replace(/^::ffff:/, '')}`
+      analyzerConnected(key)
+      let incomplete = false
 
       const link = new AstmLink({
-        onMessage: (raw) => onMessage(raw, `tcp ${socket.remoteAddress}`),
+        onMessage: (raw) => {
+          analyzerResult(key, raw, incomplete)
+          incomplete = false
+          onMessage(raw, `tcp ${socket.remoteAddress}`)
+        },
         send: (data) => { if (!socket.destroyed) socket.write(data) },
-        onWarn: (m) => log.warn(`${who}: ${m}`),
+        onWarn: (m) => {
+          if (/unrecognised byte/.test(m)) incomplete = true
+          log.warn(`${who}: ${m}`)
+        },
       })
 
       socket.on('data', (chunk) => link.push(chunk))
@@ -51,6 +64,7 @@ export function startTcp(
       socket.on('close', () => {
         const { bytes, began } = link.summary()
         link.close()
+        analyzerDisconnected(key, bytes)
         // What it sent, readably — the one line that tells us how a new
         // analyzer talks, without a capture tool or a packet sniffer.
         log.info(bytes
