@@ -209,7 +209,8 @@ export function parseRange(raw: string | null | undefined): { refLow: number | n
   let m = new RegExp(`^${num}[-^~]${num}$`).exec(t)
   if (m) {
     const lo = Number(m[1]); const hi = Number(m[2])
-    return Number.isFinite(lo) && Number.isFinite(hi) && lo <= hi ? { refLow: lo, refHigh: hi } : none
+    // "0^0" is a range nobody set (EDAN i15 for pO2), not a range of zero.
+    return Number.isFinite(lo) && Number.isFinite(hi) && lo < hi ? { refLow: lo, refHigh: hi } : none
   }
   m = new RegExp(`^<=?${num}$`).exec(t)
   if (m) return { refLow: null, refHigh: Number(m[1]) }

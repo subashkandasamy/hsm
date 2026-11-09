@@ -275,6 +275,36 @@ console.log('\nErba ECL 105 (ASTM, name in H-10, three results all coded APTT) �
   check(m.results[0].value === '36.9' && m.results[0].unit === 'Sec', 'APTT is the 36.9 seconds, never overwritten', m.results[0])
 }
 
+console.log('\nEDAN i15 blood gas (group in OBX-3, name in OBX-4, UTF-8 arrows) — shape captured at Karur 9 Nov 2026')
+{
+  // The connector hands over bytes read one per character, so UTF-8 arrives split.
+  const latin = (t: string) => String.fromCharCode(...new TextEncoder().encode(t))
+  const m = parseHl7(latin([
+    'MSH|^~\\&|EDAN|i15^M25500920010|LIS||20261109164316||ORU^R01||P|2.4||||0||UNICODE UTF-8||||',
+    'PID|||TESTPATIENT',
+    'OBR|||20261017001|EDAN^i15|||20261017064529',
+    'OBX|0|ST|0|pH|7.420||7.320^7.430||||||Pass',
+    'OBX|1|ST|0|pO2|45|mmHg|0^0|↓|||||Pass',
+    'OBX|3|ST|0|Na+|130|mmol/L|136^145|↓|||||Pass',
+    'OBX|5|ST|0|Ca++|0.95|mmol/L|1.15^1.33|↓|||||Pass',
+    'OBX|11|ST|1|cH+|38.0|nmol/L|10.0^316.2|||||||',
+    'OBX|19|ST|1|pO2(A-a)|......|mmHg|0^733|||||||',
+    'OBX|34|ST|2|Temperature|37.0|℃||||||||',
+    'OBX|35|ST|2|FIO2|21|%||||||||',
+  ].join('\r')))
+  const codes = m.results.map((r) => r.code)
+  check(JSON.stringify(codes) === JSON.stringify(['pH', 'pO2', 'Na+', 'Ca++', 'cH+', 'Temperature', 'FIO2']),
+    'names from OBX-4, never "0"/"1"/"2"', codes)
+  const by = Object.fromEntries(m.results.map((r) => [r.code, r]))
+  check(m.sampleId === '20261017001', 'sample id from OBR-3', m.sampleId)
+  check(by.pH?.refLow === 7.32 && by.pH?.refHigh === 7.43, 'pH range 7.32–7.43 kept (measured group)', by.pH)
+  check(by.pO2?.refLow == null && by.pO2?.refHigh == null, '"0^0" is no range', by.pO2)
+  check(by['cH+']?.refLow == null, 'calculated group: display limits are not a normal range', by['cH+'])
+  check(by['Na+']?.abnormalFlag === 'L', '↓ read as L', by['Na+']?.abnormalFlag)
+  check(by.Temperature?.unit === '°C', '℃ read as °C', by.Temperature?.unit)
+  check(!by['pO2(A-a)'] && m.warnings.some((w) => /pO2\(A-a\) had no value/.test(w)), '"......" is not a value', m.warnings)
+}
+
 console.log('\nNo repeats → codes untouched (H360 unchanged)')
 {
   const m = parseHl7('MSH|^~\\&|H360|ERBA|||2026||ORU^R01|9|P|2.3.1\rOBR|1||S1|CBC\rOBX|1|NM|6690-2^WBC^LN||7|x\rOBX|2|NM|718-7^HGB^LN||12|g/dL')

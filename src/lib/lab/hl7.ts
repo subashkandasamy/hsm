@@ -103,8 +103,36 @@ const NOT_A_RESULT = new Set(['NA', 'ED', 'RP'])
  */
 const SAMPLE_ID_IN_PID2 = /(^|\s)ichroma/i
 
+/**
+ * Text the connector read byte by byte that was really UTF-8.
+ *
+ * The connector reads every byte as one character (it has to: ASTM checksums
+ * are over bytes). An EDAN i15 declares UTF-8 and sends its high/low flags as
+ * arrows (↑ ↓) and its temperature unit as ℃ — which arrived as "â\x86\x91".
+ * Re-read as UTF-8 when, and only when, that decodes cleanly; anything else is
+ * left exactly as it came.
+ */
+function asUtf8(raw: string): string {
+  if (!/[\u00c2-\u00f4][\u0080-\u00bf]/.test(raw) || /[^\u0000-\u00ff]/.test(raw)) return raw
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(raw, (c) => c.charCodeAt(0)))
+  } catch {
+    return raw
+  }
+}
+
+/** "......", "---", "***": the instrument saying "not calculated". */
+const NO_VALUE = /^[.\-*]+$/
+
+/** Arrow flags → the letters every other machine sends. */
+const FLAG_WORDS: Record<string, string> = { '↑': 'H', '↓': 'L', '⇑': 'HH', '⇓': 'LL' }
+
 /** "0", "00"… is an instrument saying "no id", not an id. */
 const realId = (v: string | null): string | null => (v && !/^0+$/.test(v) ? v : null)
+
+function flagOf(v: string | null): string | null {
+  return v ? FLAG_WORDS[v] ?? v : null
+}
 
 export function parseHl7(raw: string): AstmMessage {
   const out: AstmMessage = {
@@ -114,7 +142,7 @@ export function parseHl7(raw: string): AstmMessage {
 
   // MLLP wraps a message in <VT> … <FS><CR>; unframe() already drops the ASTM
   // control characters, and these two are all that is left.
-  const text = unframe(raw).replace(/[\x0b\x1c]/g, '')
+  const text = unframe(asUtf8(raw)).replace(/[\x0b\x1c]/g, '')
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   if (!lines.length) {
     out.warnings.push('Message was empty once framing was removed')
@@ -234,10 +262,20 @@ export function parseHl7(raw: string): AstmMessage {
         // because the text beside it is usually a long description nobody
         // wants as a code.
         const numeric = !!first && /^[\d-]+$/.test(first)
-        const code = (numeric ? text ?? first : first) ?? clean(f[3])
+
+        // An EDAN i15 (blood gas) puts a GROUP in OBX-3 — 0 measured,
+        // 1 calculated, 2 entered by the operator — and the name in OBX-4,
+        // which is normally just a sub-id: `OBX|1|ST|0|pO2|45|mmHg|…`. Read the
+        // usual way every result was called "0", "1" or "2". Seen at Karur,
+        // 9 Nov 2026.
+        const sub = clean(f[4])
+        const group = id.length === 1 && first && /^\d$/.test(first) && sub && /[a-z]/i.test(sub) ? first : null
+
+        const code = group ? sub : (numeric ? text ?? first : first) ?? clean(f[3])
         // Kept only when it is a real standard, not a vendor channel number.
         const standardCode = (system === 'LN' || system === 'LOINC') ? first : null
-        const value = clean(f[5])
+        const given = clean(f[5])
+        const value = given && NO_VALUE.test(given) ? null : given
 
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }
         if (value === null) {
@@ -253,12 +291,14 @@ export function parseHl7(raw: string): AstmMessage {
           // A repeat separator in a value means several answers to one
           // question; the first is the reportable one.
           value: value.split(d.repeat)[0],
-          unit: clean(comps(f[6])[0]),
+          unit: clean(comps(f[6])[0])?.replace('℃', '°C') ?? null,
           // Flags repeat too: the H360 sends `L~A` for a low result on an
           // abnormal sample. The first is the one about this measurement.
-          abnormalFlag: clean((clean(f[8]) ?? '').split(d.repeat)[0]),
-          // OBX-7: the instrument's own normal range ("3.50-9.50").
-          ...parseRange(clean(f[7])),
+          abnormalFlag: flagOf(clean((clean(f[8]) ?? '').split(d.repeat)[0])),
+          // OBX-7: the instrument's own normal range ("3.50-9.50"). For the
+          // EDAN's calculated and entered groups it is the range the machine
+          // can display (cH+ 10–316), not a normal range, so it is not kept.
+          ...(group && group !== '0' ? { refLow: null, refHigh: null } : parseRange(clean(f[7]))),
         }
         out.results.push(result)
         break
