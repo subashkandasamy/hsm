@@ -88,13 +88,24 @@ export async function processMessage(
     ?? `Unidentified${source ? ` (${source})` : ''}`
 
   let analyzerId: string | null = null
+  let libraryId: string | null = null
   {
     const { data: known } = await svc.from('lab_analyzers')
-      .select('id, status').eq('tenant_id', tenantId)
+      .select('id, status, device_library_id').eq('tenant_id', tenantId)
       .eq('fingerprint', fingerprint).maybeSingle()
 
     if (known) {
       analyzerId = known.id as string
+      libraryId = (known.device_library_id as string | null) ?? null
+      // Met before the library knew it (the library grows): recognise it now.
+      if (!libraryId && parsed.fingerprint) {
+        const { data: lib } = await svc.from('device_library')
+          .select('id').eq('fingerprint', parsed.fingerprint).maybeSingle()
+        if (lib?.id) {
+          libraryId = lib.id as string
+          await svc.from('lab_analyzers').update({ device_library_id: libraryId }).eq('id', analyzerId)
+        }
+      }
     } else {
       // First time we have seen it. Recognise it from the shared library if we
       // can; either way it is recorded as 'discovered' and nothing it sends
@@ -121,16 +132,17 @@ export async function processMessage(
       })
 
       // Seed this hospital's code map from the library, where we have one.
+      libraryId = (lib?.id as string | undefined) ?? null
       if (lib?.id) {
         const { data: codes } = await svc.from('device_library_codes')
-          .select('analyzer_code, analyte_id, unit_ucum, decimals, factor')
+          .select('analyzer_code, analyte_id, unit_ucum, decimals, factor, enabled')
           .eq('device_library_id', lib.id)
         if (codes?.length) {
           await svc.from('analyzer_mappings').insert(codes.map((c) => ({
             id: crypto.randomUUID(), tenant_id: tenantId, analyzer_id: analyzerId,
             analyzer_code: c.analyzer_code, analyte_id: c.analyte_id,
             unit_ucum: c.unit_ucum, decimals: c.decimals, factor: c.factor,
-            source: 'library',
+            enabled: c.enabled, source: 'library',
           })))
         }
       }
@@ -150,6 +162,7 @@ export async function processMessage(
       })),
       { onConflict: 'analyzer_id,analyzer_code', ignoreDuplicates: true },
     )
+    if (libraryId) await fillFromLibrary(svc, analyzerId, libraryId)
   }
 
   // ── Which sample? ────────────────────────────────────────────────────────
@@ -185,7 +198,7 @@ export async function processMessage(
 
   // ── Map the codes ────────────────────────────────────────────────────────
   const { data: maps } = await svc.from('analyzer_mappings')
-    .select('analyzer_code, analyte_id, factor')
+    .select('analyzer_code, analyte_id, factor, unit_ucum')
     .eq('analyzer_id', analyzerId ?? '')
     .not('analyte_id', 'is', null).eq('enabled', true)
 
@@ -203,6 +216,13 @@ export async function processMessage(
   for (const r of parsed.results) {
     const m = byCode.get(r.code)
     if (!m?.analyte_id) { unmapped.push(r.code); continue }
+    // The unit the code was mapped in is part of what it means: an iChroma
+    // set to report T4 in µg/dL instead of nmol/L must not have the nmol/L
+    // conversion applied to it. Held back, named, for a person.
+    if (!sameUnit(m.unit_ucum as string | null, r.unit)) {
+      unmapped.push(`${r.code} (now in ${r.unit ?? 'no unit'}, mapped in ${m.unit_ucum})`)
+      continue
+    }
     const testId = testOf.get(m.analyte_id as string)
     if (!testId) { unmapped.push(r.code); continue }   // not on this order
     const n = Number(r.value)
@@ -261,6 +281,42 @@ export async function processMessage(
     order: sample.lab_order_id,
     written: items.length,
     unmapped: [...new Set(unmapped)],
+  }
+}
+
+/** Unit spellings that mean the same: "µg/dL" and "ug/dl", "10^3/uL" and "10*3/uL". */
+export function sameUnit(mapped: string | null, sent: string | null): boolean {
+  if (!mapped || !sent) return true
+  const n = (u: string) => u.toLowerCase().replace(/\s+/g, '').replace(/µ|μ/g, 'u').replace(/\^/g, '*').replace(/\[|\]/g, '')
+  return n(mapped) === n(sent)
+}
+
+/**
+ * Codes a hospital has not touched take their meaning from the shared library.
+ *
+ * Only rows still as ingest recorded them — source 'library', no measurement,
+ * not set aside. A code a person mapped, or marked "not needed", is theirs
+ * (mapAnalyzerCode / ignoreAnalyzerCode write 'confirmed') and never changes.
+ * This is how a machine met before the library knew it — or a code it had
+ * not sent yet — catches up without anyone re-pairing anything.
+ */
+async function fillFromLibrary(svc: Svc, analyzerId: string, libraryId: string): Promise<void> {
+  const { data: open } = await svc.from('analyzer_mappings')
+    .select('id, analyzer_code')
+    .eq('analyzer_id', analyzerId).eq('source', 'library').eq('enabled', true).is('analyte_id', null)
+  if (!open?.length) return
+  const { data: lib } = await svc.from('device_library_codes')
+    .select('analyzer_code, analyte_id, unit_ucum, decimals, factor, enabled')
+    .eq('device_library_id', libraryId)
+    .in('analyzer_code', open.map((o) => o.analyzer_code as string))
+  const byCode = new Map((lib ?? []).map((c) => [c.analyzer_code as string, c]))
+  for (const o of open) {
+    const c = byCode.get(o.analyzer_code as string)
+    if (!c) continue
+    await svc.from('analyzer_mappings').update({
+      analyte_id: c.analyte_id, unit_ucum: c.unit_ucum, decimals: c.decimals,
+      factor: c.factor, enabled: c.enabled,
+    }).eq('id', o.id).eq('source', 'library').is('analyte_id', null)
   }
 }
 

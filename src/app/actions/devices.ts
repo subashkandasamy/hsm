@@ -486,7 +486,7 @@ export async function listAnalyzers(): Promise<AnalyzerRow[]> {
     supabase.from('lab_analyzers')
       .select('id, manufacturer, model, fingerprint, protocol, transport, status, last_message_at, first_seen_at')
       .order('first_seen_at'),
-    supabase.from('analyzer_mappings').select('analyzer_id').is('analyte_id', null),
+    supabase.from('analyzer_mappings').select('analyzer_id').is('analyte_id', null).eq('enabled', true),
   ])
 
   const pending = new Map<string, number>()
