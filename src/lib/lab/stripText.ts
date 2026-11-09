@@ -63,7 +63,9 @@ export function parseStripText(raw: string): AstmMessage {
     const m = RESULT.exec(t)
     if (!m) continue
     const [, star, code, given] = m
-    const value = WORDS[given.toUpperCase()] ?? given
+    // The printout pads columns with spaces: "30  mg/dl" is "30 mg/dl".
+    const tidy = given.replace(/\s+/g, ' ')
+    const value = WORDS[tidy.toUpperCase()] ?? tidy
     results.push({ code, value, unit: null, abnormalFlag: star ? 'A' : null, refLow: null, refHigh: null })
   }
 

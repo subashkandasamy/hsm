@@ -325,6 +325,8 @@ console.log('\nLAURA Smart urine strip reader (plain text in STX/ETX) — as cap
   check(by.LEU?.value === 'Negative' && by.LEU?.abnormalFlag === null, 'NEG → Negative', by.LEU)
   check(by.UBG?.value === 'Normal' && by.PRO?.value === 'Trace' && by.NIT?.value === 'Positive', 'NORM, TRACE, POS spelled out', [by.UBG, by.PRO, by.NIT])
   check(by.pH?.value === '6.5' && by.SG?.value === '1.015', 'pH and SG stay numbers', [by.pH, by.SG])
+  const padded = parseStripText('\x02DekaPHAN LAURA\r\nID: 11091\r\n*PRO  30  mg/dl\r\n\x03')
+  check(padded.results[0]?.value === '30 mg/dl', 'column padding inside a value collapses to one space', padded.results[0])
   const blank = parseStripText('\x02DekaPHAN LAURA\r\nSeq.No:  0003\r\nID:\r\n BLD   NEG\r\n\x03')
   check(blank.sampleId === null && blank.warnings.some((w) => /No sample ID/.test(w)), 'no ID typed → no sample, said plainly', blank)
 }
