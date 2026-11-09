@@ -1,5 +1,5 @@
 import type { AstmMessage, AstmResult } from './astm'
-import { parseRange, unframe } from './astm'
+import { distinctCodes, parseRange, unframe } from './astm'
 
 /**
  * Reading HL7 v2 from an analyzer.
@@ -276,6 +276,7 @@ export function parseHl7(raw: string): AstmMessage {
     if (!pid2) out.warnings.push('No sample id was entered on the instrument')
   }
 
+  out.results = distinctCodes(out.results)
   if (!out.results.length) out.warnings.push('No result records found')
   return out
 }

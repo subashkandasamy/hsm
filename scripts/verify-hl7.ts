@@ -254,5 +254,32 @@ console.log('\nThe instrument\'s own normal range (OBX-7) is kept')
   check(by['*Mentzr']?.refLow == null && by['*Mentzr']?.refHigh == null, 'no range sent → none invented', by['*Mentzr'])
 }
 
+console.log('\nErba ECL 105 (ASTM, name in H-10, three results all coded APTT) — shape captured at Karur 9 Nov 2026, name made up')
+{
+  const ECL = [
+    'H|\\^&|||||||ECL 105',
+    'P|1||TESTNAM',
+    'O|1|TEST.01||^^^|||||',
+    'R|1|^^^APTT|36.9|Sec||||||||20261016100710||',
+    'R|2|^^^APTT|0.0|Ratio||||||||20261016100710||',
+    'R|3|^^^APTT|0.0|No Unit||||||||20261016100710||',
+    'L|1',
+  ].join('\r')
+  const m = parseAstm(ECL)
+  check(m.fingerprint === 'ECL 105', 'machine named ECL 105, not "?"', m.fingerprint)
+  check(!m.warnings.some((w) => /did not identify/.test(w)), 'no "did not identify" warning', m.warnings)
+  check(m.sampleId === 'TEST.01', 'sample id from the order record', m.sampleId)
+  const codes = m.results.map((r) => r.code)
+  check(JSON.stringify(codes) === JSON.stringify(['APTT', 'APTT (Ratio)', 'APTT (No Unit)']),
+    'three distinct codes, the seconds keeping the plain one', codes)
+  check(m.results[0].value === '36.9' && m.results[0].unit === 'Sec', 'APTT is the 36.9 seconds, never overwritten', m.results[0])
+}
+
+console.log('\nNo repeats → codes untouched (H360 unchanged)')
+{
+  const m = parseHl7('MSH|^~\\&|H360|ERBA|||2026||ORU^R01|9|P|2.3.1\rOBR|1||S1|CBC\rOBX|1|NM|6690-2^WBC^LN||7|x\rOBX|2|NM|718-7^HGB^LN||12|g/dL')
+  check(JSON.stringify(m.results.map((r) => r.code)) === JSON.stringify(['WBC', 'HGB']), 'WBC, HGB as before', m.results.map((r) => r.code))
+}
+
 console.log(failed === 0 ? '\nAll checks passed.\n' : `\n${failed} FAILED\n`)
 process.exit(failed ? 1 : 0)

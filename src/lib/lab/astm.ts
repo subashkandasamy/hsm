@@ -143,7 +143,13 @@ export function parseAstm(raw: string): AstmMessage {
         // Field 5 is NAME^VENDOR^VERSION on most instruments; some put the
         // model in 12 instead, so take whichever is present.
         const sender = comps(f[4])
-        const model = clean(sender[0]) ?? clean(f[11])
+        // The Erba ECL 105 sends `H|\\^&|||||||ECL 105`: H-5 empty, its name
+        // in H-10. Fall back to the first field after the delimiters that reads
+        // like a name (has a letter, is not a date or a version stamp), so the
+        // machine is "ECL 105" rather than "?" (Karur, 9 Nov 2026).
+        const named = f.slice(5, 14).map((x) => clean(comps(x)[0]))
+          .find((x) => !!x && /[a-z]/i.test(x) && !/^\d{8,14}$/.test(x))
+        const model = clean(sender[0]) ?? clean(f[11]) ?? named ?? null
         const vendor = clean(sender[1])
         out.model = model
         out.manufacturer = vendor
@@ -185,6 +191,7 @@ export function parseAstm(raw: string): AstmMessage {
     }
   }
 
+  out.results = distinctCodes(out.results)
   if (!out.results.length) out.warnings.push('No result records found')
   return out
 }
@@ -209,4 +216,31 @@ export function parseRange(raw: string | null | undefined): { refLow: number | n
   m = new RegExp(`^>=?${num}$`).exec(t)
   if (m) return { refLow: Number(m[1]), refHigh: null }
   return none
+}
+
+/**
+ * One code per measurement within a message.
+ *
+ * The Erba ECL 105 reports a clotting test as three results that all carry
+ * the same code — `APTT` 36.9 Sec, `APTT` 0.0 Ratio, `APTT` 0.0 No Unit (for
+ * PT: seconds, ratio, INR). Mapped by code, all three landed on one analyte
+ * and the LAST one won: a real 36.9 seconds overwritten by 0.0. Seen at Karur,
+ * 9 Nov 2026, before any were mapped.
+ *
+ * The first keeps the plain code, so existing mappings are unchanged; each
+ * repeat is told apart by its unit — `APTT (Ratio)`, `APTT (No Unit)` — and
+ * can be mapped to its own analyte or left unmapped.
+ */
+export function distinctCodes<T extends { code: string; unit: string | null }>(results: T[]): T[] {
+  const seen = new Map<string, number>()
+  return results.map((r) => {
+    const n = seen.get(r.code) ?? 0
+    seen.set(r.code, n + 1)
+    if (n === 0) return r
+    let code = `${r.code} (${r.unit?.trim() || 'no unit'})`
+    // Same code AND same unit twice: number them so neither is lost.
+    if (seen.has(code)) code = `${code} #${n + 1}`
+    seen.set(code, 1)
+    return { ...r, code }
+  })
 }
