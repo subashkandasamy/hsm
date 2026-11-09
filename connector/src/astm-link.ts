@@ -80,10 +80,30 @@ export function checksum(bytes: Buffer): string {
   return sum.toString(16).toUpperCase().padStart(2, '0')
 }
 
+/**
+ * Bytes as a person can read them: printable text as is, control characters
+ * named (<ENQ>, <STX>, <VT>…), anything else as <xx>. For the log, so a new
+ * analyzer's way of talking can be read off a photograph of the screen.
+ */
+const NAMES: Record<number, string> = {
+  0x02: 'STX', 0x03: 'ETX', 0x04: 'EOT', 0x05: 'ENQ', 0x06: 'ACK', 0x0a: 'LF',
+  0x0b: 'VT', 0x0d: 'CR', 0x15: 'NAK', 0x17: 'ETB', 0x1c: 'FS',
+}
+export function readable(bytes: Buffer, max = 240): string {
+  let out = ''
+  for (const b of bytes.subarray(0, max)) {
+    out += b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : `<${NAMES[b] ?? b.toString(16).padStart(2, '0')}>`
+  }
+  return bytes.length > max ? `${out}… (${bytes.length} bytes)` : out
+}
+
 export class AstmLink {
   private buf: Buffer = Buffer.alloc(0)
   private assembled: string[] = []
   private idleTimer: NodeJS.Timeout | null = null
+  /** The first bytes this connection sent, kept for the log at close. */
+  private opening: Buffer = Buffer.alloc(0)
+  private total = 0
 
   /**
    * How long to wait, holding text but with no <EOT>, before giving up and
@@ -98,14 +118,36 @@ export class AstmLink {
 
   /** Feed bytes as they arrive off the socket or serial port. */
   push(chunk: Buffer): void {
+    this.total += chunk.length
+    if (this.opening.length < 512) this.opening = Buffer.concat([this.opening, chunk]).subarray(0, 512)
     this.buf = Buffer.concat([this.buf, chunk])
     this.drain()
     this.resetIdle()
   }
 
-  /** The line dropped. Anything held is still a real measurement. */
+  /** How many bytes arrived, and how they began — for the log at close. */
+  summary(): { bytes: number; began: string } {
+    return { bytes: this.total, began: readable(this.opening) }
+  }
+
+  /**
+   * The line dropped. Anything held is still a real measurement.
+   *
+   * Including bytes that never made a complete frame — an MLLP message with
+   * no <FS>, a frame with no <ETX>, text with no line ending. Those used to be
+   * thrown away here without a word, which is how a new analyzer (the Erba
+   * ECL 105 at Karur, 9 Nov 2026) could connect, send, disconnect and leave
+   * nothing behind to say what it had sent. Now they are queued as a message
+   * like any other, so the raw text reaches Uyirly and can be read.
+   */
   close(): void {
     this.clearIdle()
+    if (this.buf.length) {
+      const leftover = this.buf
+      this.buf = Buffer.alloc(0)
+      this.events.onWarn?.(`Connection closed with ${leftover.length} unrecognised byte(s), kept: ${readable(leftover)}`)
+      this.assembled.push(leftover.toString('latin1'))
+    }
     this.flush('connection closed')
   }
 

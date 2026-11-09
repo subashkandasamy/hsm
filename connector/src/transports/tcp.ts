@@ -49,8 +49,13 @@ export function startTcp(
       socket.on('data', (chunk) => link.push(chunk))
       socket.on('error', (e) => log.warn(`${who}: ${e.message}`))
       socket.on('close', () => {
+        const { bytes, began } = link.summary()
         link.close()
-        log.info(`Analyzer at ${who} disconnected`)
+        // What it sent, readably — the one line that tells us how a new
+        // analyzer talks, without a capture tool or a packet sniffer.
+        log.info(bytes
+          ? `Analyzer at ${who} disconnected after sending ${bytes} byte(s), beginning: ${began}`
+          : `Analyzer at ${who} disconnected without sending anything`)
       })
 
       // An instrument that opens a socket and then says nothing holds a handle

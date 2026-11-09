@@ -58,6 +58,22 @@ async function main(): Promise<void> {
     return i >= 0 ? args[i + 1] : undefined
   }
 
+  // Options with nothing to do. "--port" (meant: --ports) used to fall through
+  // to starting a second copy of the connector beside the running service,
+  // which then fought it for every port. Say what was probably meant instead.
+  const MODES = ['--capture', '--check', '--status', '--devices', '--ports', '--add-serial',
+    '--remove-serial', '--add-folder', '--remove-folder', '--pair', '--version', '--help']
+  if (args.some((a) => a.startsWith('--')) && !args.some((a) => MODES.includes(a))) {
+    console.log(`\n  Nothing to do with: ${args.join(' ')}`)
+    console.log('  Did you mean one of these?')
+    console.log('    uyirly-connector --ports        serial ports this computer can see')
+    console.log('    uyirly-connector --status       what is waiting, and where')
+    console.log('    uyirly-connector --check        diagnose everything')
+    console.log('    uyirly-connector --capture …    record what an unknown analyzer sends\n')
+    process.exitCode = 1
+    return
+  }
+
   const queue = new Queue(path.join(dataDir(), 'queue'))
   await queue.init()
 

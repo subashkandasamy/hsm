@@ -23,6 +23,15 @@ export async function initLog(): Promise<void> {
   await fs.mkdir(dir, { recursive: true })
   await rotate(dir)
   stream = createWriteStream(path.join(dir, 'connector.log'), { flags: 'a' })
+  // Not being able to write the log must never stop the program. Run from a
+  // Command Prompt that is not "Run as administrator", the file (owned by the
+  // system account the service runs as) is refused with EPERM — and the
+  // unhandled error used to crash the connector before it did anything.
+  stream.on('error', (e) => {
+    stream = null
+    console.warn(`  (Could not write the log file: ${(e as NodeJS.ErrnoException).code ?? e.message}. `
+      + 'Carrying on without it — run as administrator to keep a log.)')
+  })
 }
 
 /** Keep a fortnight. A laboratory PC is not where logs should accumulate. */
