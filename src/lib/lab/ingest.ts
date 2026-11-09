@@ -198,11 +198,14 @@ export async function processMessage(
 
   // ── Map the codes ────────────────────────────────────────────────────────
   const { data: maps } = await svc.from('analyzer_mappings')
-    .select('analyzer_code, analyte_id, factor, unit_ucum')
+    .select('analyzer_code, analyte_id, factor, unit_ucum, enabled')
     .eq('analyzer_id', analyzerId ?? '')
-    .not('analyte_id', 'is', null).eq('enabled', true)
 
-  const byCode = new Map((maps ?? []).map((m) => [m.analyzer_code as string, m]))
+  const byCode = new Map((maps ?? []).filter((m) => m.enabled && m.analyte_id)
+    .map((m) => [m.analyzer_code as string, m]))
+  // Codes the hospital (or the library) set aside are not "unmapped" — they
+  // were decided. Listing them made every EDAN message read like a fault.
+  const setAside = new Set((maps ?? []).filter((m) => !m.enabled).map((m) => m.analyzer_code as string))
 
   // Which test on the order each analyte belongs to.
   const { data: onOrder } = await svc.rpc('get_order_analyte_form', { p_order_id: sample.lab_order_id })
@@ -214,6 +217,7 @@ export async function processMessage(
   const items: Array<{ test_id: string; analyte_id: string; value_num: number | null; value_text: string | null }> = []
   const unmapped: string[] = []
   for (const r of parsed.results) {
+    if (setAside.has(r.code)) continue
     const m = byCode.get(r.code)
     if (!m?.analyte_id) { unmapped.push(r.code); continue }
     // The unit the code was mapped in is part of what it means: an iChroma

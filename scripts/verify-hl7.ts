@@ -273,6 +273,9 @@ console.log('\nErba ECL 105 (ASTM, name in H-10, three results all coded APTT) â
   check(JSON.stringify(codes) === JSON.stringify(['APTT', 'APTT (Ratio)', 'APTT (No Unit)']),
     'three distinct codes, the seconds keeping the plain one', codes)
   check(m.results[0].value === '36.9' && m.results[0].unit === 'Sec', 'APTT is the 36.9 seconds, never overwritten', m.results[0])
+  const pt = parseAstm(['H|\\^&|||||||ECL 105', 'O|1|S2||^^^|||||', 'R|1|^^^PT|-|%', 'R|2|^^^PT|-|INR', 'R|3|^^^PT|19.0|Sec', 'L|1'].join('\r'))
+  check(pt.results.length === 1 && pt.results[0].value === '19.0', 'INR sent as "-" (no ISI set) is no value, not a result', pt.results)
+  check(pt.results[0]?.code === 'PT (Sec)', 'the seconds keep their name "PT (Sec)" when the % and INR are blank', pt.results[0]?.code)
 }
 
 console.log('\nEDAN i15 blood gas (group in OBX-3, name in OBX-4, UTF-8 arrows) â€” shape captured at Karur 9 Nov 2026')

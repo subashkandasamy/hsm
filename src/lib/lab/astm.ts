@@ -173,9 +173,15 @@ export function parseAstm(raw: string): AstmMessage {
         // Universal test id is ^^^CODE; some send the code bare.
         const idComps = comps(f[2])
         const code = clean(idComps[3]) ?? clean(idComps[0]) ?? clean(f[2])
-        const value = clean(f[3])
+        const given = clean(f[3])
+        const value = given && NO_VALUE.test(given) ? null : given
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }
-        if (value === null) { out.warnings.push(`${code} had no value, skipped`); break }
+        if (value === null) {
+          out.warnings.push(`${code} had no value, skipped`)
+          // Kept until codes are named, then dropped (see namedResults).
+          out.results.push({ code, value: '', unit: clean(f[4]), abnormalFlag: null, refLow: null, refHigh: null })
+          break
+        }
         const range = parseRange(clean(f[5]))
         out.results.push({
           code,
@@ -191,7 +197,7 @@ export function parseAstm(raw: string): AstmMessage {
     }
   }
 
-  out.results = distinctCodes(out.results)
+  out.results = namedResults(out.results)
   if (!out.results.length) out.warnings.push('No result records found')
   return out
 }
@@ -201,6 +207,13 @@ export function parseAstm(raw: string): AstmMessage {
  * "<5", ">10", "3.5^9.5". Anything else — text, "-", a single number — is no
  * range at all, never a guess.
  */
+/**
+ * "-", "......", "***": the instrument saying "not calculated". An Erba
+ * ECL 105 sends INR as "-" until the reagent's ISI is set on it (Karur, 9 Nov
+ * 2026); an EDAN i15 sends "......" for indices that need FiO2.
+ */
+export const NO_VALUE = /^[.\-*]+$/
+
 export function parseRange(raw: string | null | undefined): { refLow: number | null; refHigh: number | null } {
   const none = { refLow: null, refHigh: null }
   if (!raw) return none
@@ -232,6 +245,19 @@ export function parseRange(raw: string | null | undefined): { refLow: number | n
  * repeat is told apart by its unit — `APTT (Ratio)`, `APTT (No Unit)` — and
  * can be mapped to its own analyte or left unmapped.
  */
+/**
+ * Name repeated codes, THEN drop the results that had no value.
+ *
+ * In that order because a name depends on position: the ECL 105 sends PT as
+ * %, INR, seconds. When it sends "-" for the first two (no ISI set), dropping
+ * them first would make the seconds the plain "PT" — a code the library sets
+ * aside as the percentage — and the result would vanish. Blank results are
+ * pushed with value '' (a real value is never empty: clean() returns null).
+ */
+export function namedResults<T extends { code: string; unit: string | null; value: string }>(results: T[]): T[] {
+  return distinctCodes(results).filter((r) => r.value !== '')
+}
+
 export function distinctCodes<T extends { code: string; unit: string | null }>(results: T[]): T[] {
   const seen = new Map<string, number>()
   return results.map((r) => {

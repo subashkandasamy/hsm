@@ -1,5 +1,5 @@
 import type { AstmMessage, AstmResult } from './astm'
-import { distinctCodes, parseRange, unframe } from './astm'
+import { namedResults, NO_VALUE, parseRange, unframe } from './astm'
 
 /**
  * Reading HL7 v2 from an analyzer.
@@ -120,9 +120,6 @@ function asUtf8(raw: string): string {
     return raw
   }
 }
-
-/** "......", "---", "***": the instrument saying "not calculated". */
-const NO_VALUE = /^[.\-*]+$/
 
 /** Arrow flags → the letters every other machine sends. */
 const FLAG_WORDS: Record<string, string> = { '↑': 'H', '↓': 'L', '⇑': 'HH', '⇓': 'LL' }
@@ -282,6 +279,7 @@ export function parseHl7(raw: string): AstmMessage {
           // A result the machine could not produce — a flagged sample, a short
           // draw. Worth a warning, because a technician will be looking for it.
           out.warnings.push(`${code} had no value, skipped`)
+          out.results.push({ code, standardCode, value: '', unit: clean(comps(f[6])[0]), abnormalFlag: null, refLow: null, refHigh: null })
           break
         }
 
@@ -316,7 +314,7 @@ export function parseHl7(raw: string): AstmMessage {
     if (!pid2) out.warnings.push('No sample id was entered on the instrument')
   }
 
-  out.results = distinctCodes(out.results)
+  out.results = namedResults(out.results)
   if (!out.results.length) out.warnings.push('No result records found')
   return out
 }
