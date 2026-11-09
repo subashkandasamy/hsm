@@ -43,6 +43,14 @@ export interface AstmResult {
    * what a technician recognises, so both are kept.
    */
   standardCode?: string | null
+  /**
+   * The instrument's own normal range for this result, when it sends one —
+   * HL7 OBX-7 or ASTM R-5, e.g. "3.50-9.50". An Erba H360 sends one with
+   * every value. Used as the hospital's range when the hospital has not set
+   * its own (lib/lab/ingest.ts), so results are flagged high/low.
+   */
+  refLow?: number | null
+  refHigh?: number | null
 }
 
 export interface AstmMessage {
@@ -162,11 +170,13 @@ export function parseAstm(raw: string): AstmMessage {
         const value = clean(f[3])
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }
         if (value === null) { out.warnings.push(`${code} had no value, skipped`); break }
+        const range = parseRange(clean(f[5]))
         out.results.push({
           code,
           value,
           unit: clean(f[4]),
           abnormalFlag: clean(f[6]),
+          ...range,
         })
         break
       }
@@ -177,4 +187,26 @@ export function parseAstm(raw: string): AstmMessage {
 
   if (!out.results.length) out.warnings.push('No result records found')
   return out
+}
+
+/**
+ * A reference range as instruments write it: "3.50-9.50", "0.108 - 0.282",
+ * "<5", ">10", "3.5^9.5". Anything else — text, "-", a single number — is no
+ * range at all, never a guess.
+ */
+export function parseRange(raw: string | null | undefined): { refLow: number | null; refHigh: number | null } {
+  const none = { refLow: null, refHigh: null }
+  if (!raw) return none
+  const t = raw.trim().replace(/\s+/g, '')
+  const num = '(-?\\d*\\.?\\d+)'
+  let m = new RegExp(`^${num}[-^~]${num}$`).exec(t)
+  if (m) {
+    const lo = Number(m[1]); const hi = Number(m[2])
+    return Number.isFinite(lo) && Number.isFinite(hi) && lo <= hi ? { refLow: lo, refHigh: hi } : none
+  }
+  m = new RegExp(`^<=?${num}$`).exec(t)
+  if (m) return { refLow: null, refHigh: Number(m[1]) }
+  m = new RegExp(`^>=?${num}$`).exec(t)
+  if (m) return { refLow: Number(m[1]), refHigh: null }
+  return none
 }

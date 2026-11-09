@@ -239,5 +239,20 @@ console.log('\nA placeholder "0" is not a sample id (any instrument)')
   check(m.sampleId === 'S123', 'OBR-3 "0" skipped, SPM id used', m.sampleId)
 }
 
+console.log('\nThe instrument\'s own normal range (OBX-7) is kept')
+{
+  const m = parseHl7([
+    'MSH|^~\\&|H360|ERBA|UYIRLY|KMC|20261024120000||ORU^R01|9|P|2.3.1',
+    'OBR|1||2610240017|CBC',
+    'OBX|1|NM|6690-2^WBC^LN||18.77|10*3/uL|3.50-9.50|H~A|||F',
+    'OBX|2|NM|11003^PCT^99MRC||0.435|%|0.108-0.282|H~A|||F',
+    'OBX|3|NM|11092^*Mentzr^LN||26.37||||||F',
+  ].join('\r'))
+  const by = Object.fromEntries(m.results.map((r) => [r.code, r]))
+  check(by.WBC?.refLow === 3.5 && by.WBC?.refHigh === 9.5, 'WBC range 3.50-9.50 read', by.WBC)
+  check(by.PCT?.refLow === 0.108 && by.PCT?.refHigh === 0.282, 'PCT range 0.108-0.282 read', by.PCT)
+  check(by['*Mentzr']?.refLow == null && by['*Mentzr']?.refHigh == null, 'no range sent → none invented', by['*Mentzr'])
+}
+
 console.log(failed === 0 ? '\nAll checks passed.\n' : `\n${failed} FAILED\n`)
 process.exit(failed ? 1 : 0)

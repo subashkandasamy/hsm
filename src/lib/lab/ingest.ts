@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { parseAstm, detectProtocol } from './astm'
+import { parseAstm, detectProtocol, type AstmMessage } from './astm'
 import { parseHl7 } from './hl7'
 
 type Svc = ReturnType<typeof createServiceClient>
@@ -221,6 +221,20 @@ export async function processMessage(
     return { status: 'unmapped', unmapped: [...new Set(unmapped)], error }
   }
 
+  // ── The instrument's own normal ranges ────────────────────────────────────
+  //
+  // An Erba H360 sends a range with every value (HL7 OBX-7, "3.50-9.50"), and
+  // they were being thrown away — so a WBC of 18.77 showed no flag at all,
+  // because the hospital had set a range only for haemoglobin and platelets.
+  //
+  // Where the hospital has NOT set its own range for an analyte, the
+  // instrument's becomes the hospital's (source 'analyzer'): the laboratory
+  // set those ranges on its own machine, and from then on every result for
+  // that analyte is flagged — typed by hand or not. A range the hospital set
+  // itself is never touched, and it can edit or replace this one in its lab
+  // settings at any time.
+  await learnInstrumentRanges(svc, tenantId, parsed.results, byCode, parsed.model ?? parsed.manufacturer)
+
   // ── Write ────────────────────────────────────────────────────────────────
   const { error: saveErr } = await svc.rpc('save_lab_analyte_results', {
     p_order_id: sample.lab_order_id,
@@ -247,5 +261,57 @@ export async function processMessage(
     order: sample.lab_order_id,
     written: items.length,
     unmapped: [...new Set(unmapped)],
+  }
+}
+
+/**
+ * Save an instrument's normal ranges as the hospital's own, for analytes the
+ * hospital has no range for yet. Never overwrites; never fails the result —
+ * a range that cannot be saved only means no flag, as before.
+ */
+async function learnInstrumentRanges(
+  svc: ReturnType<typeof createServiceClient>,
+  tenantId: string,
+  results: AstmMessage['results'],
+  byCode: Map<string, { analyte_id: unknown; factor: unknown }>,
+  instrument: string | null,
+): Promise<void> {
+  try {
+    const wanted = new Map<string, { lo: number | null; hi: number | null }>()
+    for (const r of results) {
+      if (r.refLow == null && r.refHigh == null) continue
+      const m = byCode.get(r.code)
+      if (!m?.analyte_id) continue
+      // A mapping with a unit factor converts the value; the range must be
+      // converted the same way or every result would flag.
+      const f = Number(m.factor ?? 1) || 1
+      wanted.set(m.analyte_id as string, {
+        lo: r.refLow == null ? null : r.refLow * f,
+        hi: r.refHigh == null ? null : r.refHigh * f,
+      })
+    }
+    if (!wanted.size) return
+
+    const { data: existing } = await svc.from('lab_reference_ranges')
+      .select('analyte_id').eq('tenant_id', tenantId).in('analyte_id', [...wanted.keys()])
+    const have = new Set((existing ?? []).map((r) => r.analyte_id as string))
+
+    const rows = [...wanted.entries()]
+      .filter(([analyteId]) => !have.has(analyteId))
+      .map(([analyteId, r]) => ({
+        id: crypto.randomUUID(),
+        tenant_id: tenantId,
+        analyte_id: analyteId,
+        sex: 'any',
+        age_min_days: 0,
+        age_max_days: 54750,
+        ref_low: r.lo,
+        ref_high: r.hi,
+        source: 'analyzer',
+        source_note: `From the ${instrument ?? 'analyzer'}'s own reference range, ${new Date().toISOString().slice(0, 10)}`,
+      }))
+    if (rows.length) await svc.from('lab_reference_ranges').insert(rows)
+  } catch (e) {
+    console.error('[learnInstrumentRanges]', (e as Error).message)
   }
 }

@@ -1,5 +1,5 @@
 import type { AstmMessage, AstmResult } from './astm'
-import { unframe } from './astm'
+import { parseRange, unframe } from './astm'
 
 /**
  * Reading HL7 v2 from an analyzer.
@@ -257,6 +257,8 @@ export function parseHl7(raw: string): AstmMessage {
           // Flags repeat too: the H360 sends `L~A` for a low result on an
           // abnormal sample. The first is the one about this measurement.
           abnormalFlag: clean((clean(f[8]) ?? '').split(d.repeat)[0]),
+          // OBX-7: the instrument's own normal range ("3.50-9.50").
+          ...parseRange(clean(f[7])),
         }
         out.results.push(result)
         break
