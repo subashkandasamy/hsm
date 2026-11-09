@@ -210,5 +210,34 @@ if (file) {
   if (m.warnings.length) console.log(`  warnings:\n${m.warnings.map((w) => '     ' + w).join('\n')}`)
 }
 
+console.log('\nBoditech iChroma II (OUL^R24, sample id in PID-2) — shape captured at Karur 9 Nov 2026, values made up')
+{
+  const ICHROMA = [
+    'MSH|^~\\&|1|ichroma2|RL630||2026-11-09 12:36:46||OUL^R24^OUL_R24|1|T|2.6',
+    'PID||26110900|||||45|Female',
+    'OBR||Tn-I|0|1|||2026-11-09 12:36:46|||F',
+    'ORC|OK|||||||||||||||||RL630|1',
+    'SPM|1|KTVXC10EX|||||||||||||||||20270510',
+    'OBX|1|TX|Tn-I||3.33|ng/mL||0|||R',
+    'OBX|2|TX|||3.33|ug/L||0|||R',
+  ].join('\r')
+  const m = parseHl7(ICHROMA)
+  check(m.fingerprint === '1^ichroma2', 'identified as the iChroma', m.fingerprint)
+  check(m.sampleId === '26110900', 'sample id is the operator\'s id from PID-2 (not "0", not the test name, not the lot)', m.sampleId)
+  check(m.results.length === 1 && m.results[0].code === 'Tn-I' && m.results[0].value === '3.33' && m.results[0].unit === 'ng/mL',
+    'one result: Tn-I 3.33 ng/mL (the unit-converted copy with no code is skipped)', m.results)
+  check(!m.warnings.some((w) => /not a result message/.test(w)), 'OUL is accepted as a result message', m.warnings)
+
+  const noId = parseHl7(ICHROMA.replace('PID||26110900|', 'PID|||'))
+  check(noId.sampleId === null, 'no id typed → no sample id (never the lot or test name)', noId.sampleId)
+  check(noId.warnings.some((w) => /No sample id was entered/.test(w)), '…and it says so', noId.warnings)
+}
+
+console.log('\nA placeholder "0" is not a sample id (any instrument)')
+{
+  const m = parseHl7('MSH|^~\\&|X1|ACME|||20261109||ORU^R01|1|P|2.5\rOBR|1||0|CBC\rSPM|1|S123\rOBX|1|NM|WBC||7.1|10*3/uL')
+  check(m.sampleId === 'S123', 'OBR-3 "0" skipped, SPM id used', m.sampleId)
+}
+
 console.log(failed === 0 ? '\nAll checks passed.\n' : `\n${failed} FAILED\n`)
 process.exit(failed ? 1 : 0)

@@ -91,6 +91,21 @@ function unescape(v: string, d: Delims): string {
  */
 const NOT_A_RESULT = new Set(['NA', 'ED', 'RP'])
 
+/**
+ * Instruments that put the operator's sample id in PID-2.
+ *
+ * A Boditech iChroma II (MSH-3 `1`, MSH-4 `ichroma2`) sends HL7 2.6 OUL^R24 with the id
+ * the technician typed in PID-2, a placeholder `0` in OBR-3, the TEST NAME in
+ * OBR-2 (`Tn-I`) and the CARTRIDGE LOT in SPM-2 (`KTVXC10EX`). Read the usual
+ * way, every result arrived for sample "0" — and the fallbacks would have
+ * taken a test name or a reagent lot for a patient's sample. Seen on the real
+ * instrument at Karur, 9 Nov 2026.
+ */
+const SAMPLE_ID_IN_PID2 = /(^|\s)ichroma/i
+
+/** "0", "00"… is an instrument saying "no id", not an id. */
+const realId = (v: string | null): string | null => (v && !/^0+$/.test(v) ? v : null)
+
 export function parseHl7(raw: string): AstmMessage {
   const out: AstmMessage = {
     fingerprint: null, manufacturer: null, model: null,
@@ -105,6 +120,9 @@ export function parseHl7(raw: string): AstmMessage {
     out.warnings.push('Message was empty once framing was removed')
     return out
   }
+
+  let pid2: string | null = null
+  let sendingApp: string | null = null
 
   const msh = lines.find((l) => l.startsWith('MSH'))
   const d = msh ? readDelims(msh) : DEFAULTS
@@ -126,6 +144,8 @@ export function parseHl7(raw: string): AstmMessage {
         const app = comps(f[2])
         const model = clean(app[0])
         const vendor = clean(comps(f[3])[0])
+        // Either field may name the instrument; the iChroma uses MSH-4.
+        sendingApp = [model, vendor].filter(Boolean).join(' ')
         out.model = model
         out.manufacturer = vendor
         // Same shape as the ASTM fingerprint so one library serves both.
@@ -134,15 +154,18 @@ export function parseHl7(raw: string): AstmMessage {
 
         const type = comps(f[8])
         const kind = [clean(type[0]), clean(type[1])].filter(Boolean).join('^')
-        // ORU is a result. An ACK or a query is not, and saying so is more use
-        // than parsing it into an empty message.
-        if (kind && !kind.startsWith('ORU')) {
+        // ORU and OUL are results (OUL^R24 is the 2.5+ "unsolicited lab
+        // observation" an iChroma sends). An ACK or a query is not, and saying
+        // so is more use than parsing it into an empty message.
+        if (kind && !kind.startsWith('ORU') && !kind.startsWith('OUL')) {
           out.warnings.push(`Message type ${kind} is not a result message`)
         }
         break
       }
 
       case 'PID': {
+        // PID-2: where some instruments put the operator's sample id.
+        pid2 = pid2 ?? realId(clean(comps(f[2])[0]))
         // PID-5 is the name, as XPN: family^given^middle.
         const n = comps(f[5]).map((c) => clean(c)).filter(Boolean)
         // Printed given-name-first, which is how a technician reads it.
@@ -155,8 +178,8 @@ export function parseHl7(raw: string): AstmMessage {
         // our tube barcode. OBR-2 is the placer's. Prefer 3, fall back to 2,
         // matching how the ASTM side prefers the laboratory's number.
         out.sampleId = out.sampleId
-          ?? clean(comps(f[3])[0])
-          ?? clean(comps(f[2])[0])
+          ?? realId(clean(comps(f[3])[0]))
+          ?? realId(clean(comps(f[2])[0]))
         break
       }
 
@@ -164,7 +187,7 @@ export function parseHl7(raw: string): AstmMessage {
         // HL7 2.5 moved the specimen id here. Only used if OBR had none, so an
         // instrument that sends both does not get its sample id overwritten by
         // the later segment.
-        if (!out.sampleId) out.sampleId = clean(comps(comps(f[2])[0])[0])
+        if (!out.sampleId) out.sampleId = realId(clean(comps(comps(f[2])[0])[0]))
         break
       }
 
@@ -242,6 +265,13 @@ export function parseHl7(raw: string): AstmMessage {
       default:
         break
     }
+  }
+
+  // Instrument-specific: the operator's id is in PID-2, and OBR/SPM hold a
+  // test name and a reagent lot that must never be taken for a sample.
+  if (sendingApp && SAMPLE_ID_IN_PID2.test(sendingApp)) {
+    out.sampleId = pid2
+    if (!pid2) out.warnings.push('No sample id was entered on the instrument')
   }
 
   if (!out.results.length) out.warnings.push('No result records found')
