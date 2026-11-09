@@ -157,7 +157,7 @@ export async function handleViewer(
   return true
 }
 
-async function renderPage(studyUid: string, files: Found[], auth: string): Promise<string> {
+export async function renderPage(studyUid: string, files: Found[], auth: string): Promise<string> {
   const shown = files.slice(0, MAX_PREVIEW)
   const bySeries = new Map<string, number[]>()
   shown.forEach((f, i) => {
@@ -308,6 +308,10 @@ function shell(title: string, body: string): string {
   .small { font-size:13px; }
   #big { position:fixed; inset:0; background:rgba(2,6,23,.96); display:flex;
          align-items:center; justify-content:center; flex-direction:column; z-index:50; }
+  /* display:flex above outranks the hidden attribute, so without this the
+     viewer opened over the page, empty, and × could not close it (Karur,
+     9 Nov 2026, first X-ray). */
+  #big[hidden] { display:none; }
   /* Grow to fill the window, not just shrink to fit it. max-width alone caps
      a large image but leaves a small one at its native size, and ultrasound
      frames are often only 256 pixels across — which is most of what a small
