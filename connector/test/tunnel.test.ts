@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { TunnelSupervisor, type TunnelState } from '../src/tunnel.js'
+import { TunnelSupervisor, ensureCloudflared, type TunnelState } from '../src/tunnel.js'
+import { createHash } from 'node:crypto'
 import { startHeartbeat } from '../src/heartbeat.js'
 import type { Config } from '../src/config.js'
 
@@ -133,6 +134,50 @@ await test('cloudflared exits on its own → down, then started again', async ()
   delete process.env.FAKE_MODE
   await waitFor(() => t.state === 'up', 15_000, 'up after restart')
   t.stop()
+})
+
+console.log('\nDownloading cloudflared on first use\n')
+
+await test('downloads, checks the fingerprint, then puts it in place', async () => {
+  const body = Buffer.from('pretend cloudflared binary')
+  const sha = createHash('sha256').update(body).digest('hex')
+  const binDir = path.join(dir, 'bin-ok')
+  const got = await ensureCloudflared({
+    dir: binDir, platform: 'win32', sha256: sha, url: 'https://example/cf.exe',
+    fetchImpl: (async () => new Response(body)) as unknown as typeof fetch,
+  })
+  assert.ok('path' in got, JSON.stringify(got))
+  assert.deepEqual(await fs.readFile(path.join(binDir, 'cloudflared.exe')), body)
+  assert.ok(!(await fs.readdir(binDir)).some((f) => f.endsWith('.part')))
+})
+
+await test('a download that does not match is thrown away and never run', async () => {
+  const binDir = path.join(dir, 'bin-bad')
+  const got = await ensureCloudflared({
+    dir: binDir, platform: 'win32', sha256: 'a'.repeat(64), url: 'https://example/cf.exe',
+    fetchImpl: (async () => new Response('tampered')) as unknown as typeof fetch,
+  })
+  assert.ok('error' in got && /fingerprint/.test(got.error), JSON.stringify(got))
+  const left = await fs.readdir(binDir).catch(() => [] as string[])
+  assert.equal(left.length, 0, 'nothing left behind')
+})
+
+await test('a failed download is reported, not thrown', async () => {
+  const got = await ensureCloudflared({
+    dir: path.join(dir, 'bin-404'), platform: 'win32', url: 'https://example/cf.exe',
+    fetchImpl: (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch,
+  })
+  assert.ok('error' in got && /404/.test(got.error))
+})
+
+await test('not Windows → no download attempted', async () => {
+  let called = false
+  const got = await ensureCloudflared({
+    dir: path.join(dir, 'bin-mac'), platform: 'darwin',
+    fetchImpl: (async () => { called = true; return new Response('') }) as unknown as typeof fetch,
+  })
+  assert.ok('error' in got)
+  assert.equal(called, false)
 })
 
 console.log('\nHeartbeat\n')

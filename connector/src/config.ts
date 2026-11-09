@@ -44,6 +44,9 @@ export interface Config {
   serial: Array<{ path: string; baudRate: number }>
   /** Folders to watch for analyzers that can only write a file. */
   watchFolders: string[]
+  /** Where scans and uploaded files are kept — chosen once, the drive with
+   *  the most free space (storage.ts). Absent until first start of 1.0.8. */
+  storageRoot?: string
   pairedAt: string
 }
 

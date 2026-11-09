@@ -41,14 +41,9 @@ const BUILD = path.join(HERE, '.build')
 // part of what we ship and should change deliberately.
 const NODE_VERSION = process.env.NODE_TARGET ?? 'v22.20.0'
 
-// Cloudflare's tunnel program, shipped beside the connector so a hospital can
-// switch on "open scans from outside" without installing anything else
-// (src/tunnel.ts). Pinned and checked against the SHA-256 Cloudflare publishes
-// in the release notes: this is an executable we hand to a hospital, and a
-// download that does not match must stop the build, not ship.
-// Release 2026.10.7, cloudflared-windows-amd64.exe, checked 9 Nov 2026.
-const CLOUDFLARED_VERSION = '2026.10.7'
-const CLOUDFLARED_WIN_SHA256 = '2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343'
+// Cloudflare's tunnel program is NOT shipped in the zip: it pushed the
+// download past the 50 MB storage limit. The connector fetches and verifies it
+// itself when internet access is first switched on (src/tunnel.ts).
 
 // What we are shipping. The installer writes it beside the program so the
 // next upgrade can say what it is replacing without running the old build.
@@ -98,7 +93,6 @@ async function main() {
     const nodeExe = await fetchNode('win32', 'x64')
     await inject(nodeExe, path.join(OUT, 'uyirly-connector.exe'), blob, 'win32')
     await copySerialRuntime('win32')
-    await copyCloudflared()
     await writeInstaller()
     await makeZip()
   }
@@ -271,7 +265,7 @@ async function makeZip() {
   // that -j flattened away; with -r the full build path went into every entry
   // name instead, so a hospital unzipping it got
   // Users/<developer>/Desktop/... before reaching the program.
-  const members = ['uyirly-connector.exe', 'cloudflared.exe', 'install.cmd', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt', 'node_modules']
+  const members = ['uyirly-connector.exe', 'install.cmd', 'install.ps1', 'uninstall.ps1', 'INSTALL.txt', 'node_modules']
 
   if (process.platform === 'win32') {
     // Windows has no `zip`. Compress-Archive is built in, and the build runs
@@ -299,32 +293,6 @@ async function makeZip() {
  * Windows publishes node.exe on its own; the others come inside a tarball, so
  * one file is extracted out of it.
  */
-/**
- * cloudflared.exe for the Windows download, verified before it is used.
- *
- * Cached between builds like Node. The hash is checked on the cached copy too,
- * so a file altered on this machine is caught as surely as a bad download.
- */
-async function copyCloudflared() {
-  const { createHash } = await import('node:crypto')
-  const cached = path.join(BUILD, `cloudflared-${CLOUDFLARED_VERSION}-windows-amd64.exe`)
-  try { await fs.access(cached) } catch {
-    const url = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-windows-amd64.exe`
-    console.log(`Downloading ${url}`)
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Could not download cloudflared: HTTP ${res.status}`)
-    await pipeline(res.body, createWriteStream(cached))
-  }
-  const hash = createHash('sha256').update(await fs.readFile(cached)).digest('hex')
-  if (hash !== CLOUDFLARED_WIN_SHA256) {
-    await fs.rm(cached, { force: true })
-    throw new Error(`cloudflared ${CLOUDFLARED_VERSION} does not match its published SHA-256 `
-      + `(got ${hash}). Refusing to ship it.`)
-  }
-  await fs.copyFile(cached, path.join(OUT, 'cloudflared.exe'))
-  console.log(`cloudflared ${CLOUDFLARED_VERSION} verified`)
-}
-
 async function fetchNode(platform, arch) {
   const plat = platform === 'win32' ? 'win' : platform === 'darwin' ? 'darwin' : 'linux'
   // 'node-bin-' rather than 'node-', so the cached binary cannot collide with
@@ -519,7 +487,7 @@ Stop-Process -Name 'uyirly-connector' -Force -ErrorAction SilentlyContinue
 # The internet link runs as a child of the connector and can outlive it.
 # Only our own copy is stopped - a hospital may run cloudflared for itself.
 Get-Process cloudflared -ErrorAction SilentlyContinue |
-  Where-Object { $_.Path -eq "$destDir\\cloudflared.exe" } |
+  Where-Object { $_.Path -eq "$env:ProgramData\\Uyirly\\Connector\\bin\\cloudflared.exe" } |
   Stop-Process -Force -ErrorAction SilentlyContinue
 
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
@@ -532,12 +500,6 @@ try {
   Write-Host ""
   Start-Sleep -Seconds 20
   exit 1
-}
-
-# Cloudflare's tunnel program. Used only if an admin switches on opening
-# scans from outside the hospital; otherwise it is never started.
-if (Test-Path "$PSScriptRoot\\cloudflared.exe") {
-  Copy-Item "$PSScriptRoot\\cloudflared.exe" "$destDir\\cloudflared.exe" -Force
 }
 
 # The serial driver travels beside the program, not inside it: it is a native
@@ -665,7 +627,7 @@ if (-not $upgrade) { Write-Host "Give the address above to your analyzer enginee
 $ErrorActionPreference = 'SilentlyContinue'
 schtasks /End    /TN 'UyirlyLabConnector' | Out-Null
 schtasks /Delete /TN 'UyirlyLabConnector' /F | Out-Null
-Get-Process cloudflared | Where-Object { $_.Path -eq "$env:ProgramFiles\\Uyirly\\Connector\\cloudflared.exe" } | Stop-Process -Force
+Get-Process cloudflared | Where-Object { $_.Path -eq "$env:ProgramData\\Uyirly\\Connector\\bin\\cloudflared.exe" } | Stop-Process -Force
 Remove-Item ([System.IO.Path]::Combine([Environment]::GetFolderPath('CommonDesktopDirectory'), 'Uyirly Lab Connector.lnk'))
 netsh advfirewall firewall delete rule name="Uyirly Lab Connector" | Out-Null
 netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" | Out-Null

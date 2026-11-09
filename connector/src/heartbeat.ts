@@ -1,6 +1,7 @@
 import type { Config } from './config.js'
 import { log } from './log.js'
 import type { TunnelSupervisor } from './tunnel.js'
+import type { FileMover } from './files.js'
 import { VERSION } from './version.js'
 
 /**
@@ -24,6 +25,8 @@ export function startHeartbeat(
   config: Config,
   tunnel: TunnelSupervisor,
   fetchImpl: typeof fetch = fetch,
+  /** Collects uploaded files when the reply says this computer keeps them. */
+  files?: Pick<FileMover, 'sync'>,
 ): { stop: () => void; beat: () => Promise<void> } {
   const url = `${config.serverUrl.replace(/\/$/, '')}/api/device/ping`
   let failing = false
@@ -44,8 +47,10 @@ export function startHeartbeat(
         return
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const body = await res.json().catch(() => ({})) as { internetAccess?: boolean }
+      const body = await res.json().catch(() => ({})) as { internetAccess?: boolean; keepUploads?: boolean }
       tunnel.setWanted(body.internetAccess === true)
+      // Not awaited: a slow download must not hold up the next beat.
+      if (body.keepUploads === true && files) void files.sync()
       if (failing) log.info('Back in touch with Uyirly.')
       failing = false
     } catch (e) {

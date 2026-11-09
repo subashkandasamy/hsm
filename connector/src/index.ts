@@ -14,6 +14,8 @@ import { startSerial } from './transports/serial.js'
 import { VERSION } from './version.js'
 import { TunnelSupervisor } from './tunnel.js'
 import { startHeartbeat } from './heartbeat.js'
+import { FileMover } from './files.js'
+import { resolveStorage } from './storage.js'
 
 /**
  * The Uyirly Lab Connector.
@@ -177,6 +179,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // Where scans and uploaded files go: chosen once, the drive with the most
+  // free space (storage.ts). A failure here falls back to ProgramData rather
+  // than stopping results from being collected.
+  const storage = await resolveStorage(config).catch((e: Error) => {
+    log.warn(`Could not prepare the storage folder: ${e.message}. Using ${dataDir()}.`)
+    return dataDir()
+  })
+  log.info(`Scans and uploaded files are kept in ${storage}`)
+
   const stoppers: Array<() => void> = []
 
   const tcp = startTcp(
@@ -202,7 +213,8 @@ async function main(): Promise<void> {
   const tunnel = new TunnelSupervisor(config, {
     onState: (s) => { live.tunnelState = s; live.tunnelHostname = tunnel.publicHostname },
   })
-  const heartbeat = startHeartbeat(config, tunnel)
+  const files = new FileMover(config)
+  const heartbeat = startHeartbeat(config, tunnel, fetch, files)
   stoppers.push(() => { heartbeat.stop(); tunnel.stop() })
   // A normal exit must not leave cloudflared serving on its own.
   process.on('exit', () => tunnel.stop())

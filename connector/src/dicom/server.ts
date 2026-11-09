@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { requests, responses, association } from 'dcmjs-dimse'
 import { log } from '../log.js'
 import type { Config } from '../config.js'
-import { dataDir } from '../config.js'
+import { scanDir } from '../storage.js'
 import { DiskWatch } from './disk.js'
 
 /**
@@ -158,7 +158,8 @@ export async function startDicom(
 
   const aeTitle = config.dicomAeTitle ?? 'UYIRLY'
   const port = config.dicomPort ?? 11112
-  const root = path.join(dataDir(), 'dicom')
+  // The chosen drive (storage.ts), not ProgramData, from 1.0.8.
+  const root = scanDir()
   const open = new Map<string, OpenStudy>()
 
   const disk = new DiskWatch(root)

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { dataDir } from '../config.js'
+import { scanDirs, filesDir } from '../storage.js'
 import { renderDicomToPng, presetsFor, UnsupportedImage } from './render.js'
 import { log } from '../log.js'
 import { verifyViewerLink } from './link.js'
@@ -35,7 +35,16 @@ interface Found {
 }
 
 async function listStudyFiles(studyUid: string): Promise<Found[]> {
-  const root = path.join(dataDir(), 'dicom', studyUid)
+  // The chosen drive first, then the old ProgramData folder, so studies
+  // received before 1.0.8 still open (storage.ts scanDirs).
+  for (const base of scanDirs()) {
+    const found = await listStudyFilesIn(path.join(base, studyUid), studyUid)
+    if (found.length) return found
+  }
+  return []
+}
+
+async function listStudyFilesIn(root: string, studyUid: string): Promise<Found[]> {
   const out: Found[] = []
   let series: string[]
   try {
@@ -65,6 +74,7 @@ export async function handleViewer(
 ): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const parts = url.pathname.split('/').filter(Boolean)
+  if (parts[0] === 'file' && parts[1]) return serveKeptFile(parts[1], url, res, viewerKey)
   if (parts[0] !== 'study' || !parts[1]) return false
 
   const studyUid = decodeURIComponent(parts[1])
@@ -331,4 +341,49 @@ ${body}
 page is not a diagnostic display. For reporting, open the study on the scanner or download
 the original file.</p>
 </body></html>`
+}
+
+/**
+ * An uploaded file kept on this computer (a patient document, an IPD
+ * declaration, a radiology report image) — /file/<id>?e=…&s=…
+ *
+ * Same rule as scans: only a link Uyirly signed, still in date, for exactly
+ * this file. The signature covers "file:<id>", so a scan link can never be
+ * turned into a file link or the other way round.
+ */
+const FILE_TYPES: Record<string, string> = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  webp: 'image/webp', gif: 'image/gif', tif: 'image/tiff', tiff: 'image/tiff',
+  heic: 'image/heic', dcm: 'application/dicom',
+}
+
+async function serveKeptFile(
+  id: string, url: URL, res: ServerResponse, viewerKey: string | null,
+): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('Bad file id'); return true }
+  const expiresAt = Number.parseInt(url.searchParams.get('e') ?? '', 10)
+  const signature = url.searchParams.get('s') ?? ''
+  if (!viewerKey || !verifyViewerLink(viewerKey, `file:${id}`, expiresAt, signature)) {
+    const stale = Number.isFinite(expiresAt) && expiresAt * 1000 < Date.now()
+    res.writeHead(stale ? 410 : 403, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(shell(stale ? 'Link expired' : 'Not allowed', `
+      <p class="empty">${stale ? 'This link has expired.' : 'This link is not valid.'}</p>
+      <p class="empty small">Open the document from the patient's record in Uyirly to get a fresh one.</p>`))
+    return true
+  }
+  let name: string | undefined
+  try {
+    name = (await fs.readdir(filesDir())).find((f) => f.startsWith(`${id}.`) && !f.endsWith('.part'))
+  } catch { /* folder missing: not found below */ }
+  if (!name) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('That file is not on this computer.'); return true }
+  const ext = name.split('.').pop()!.toLowerCase()
+  const bytes = await fs.readFile(path.join(filesDir(), name))
+  res.writeHead(200, {
+    'content-type': FILE_TYPES[ext] ?? 'application/octet-stream',
+    'content-disposition': `inline; filename="document-${id.slice(0, 8)}.${ext}"`,
+    'cache-control': 'private, max-age=3600',
+    'x-content-type-options': 'nosniff',
+  })
+  res.end(bytes)
+  return true
 }

@@ -1,15 +1,20 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { Config } from './config.js'
+import { dataDir, type Config } from './config.js'
 import { log } from './log.js'
 import { VERSION } from './version.js'
 
 /**
  * Putting this computer's scan viewer on the internet, when an admin says so.
  *
- * Uses Cloudflare's own program, cloudflared, which ships beside this one
- * (cloudflared.exe in the install folder). It dials OUT to Cloudflare, so the
+ * Uses Cloudflare's own program, cloudflared. It is NOT in the download — that
+ * made the installer too big to publish — so the first time an admin switches
+ * internet access on, it is fetched from Cloudflare's GitHub release and
+ * checked against the SHA-256 Cloudflare publishes before it is ever run
+ * (ensureCloudflared). A computer that never has internet access switched on
+ * never downloads it. It dials OUT to Cloudflare, so the
  * hospital opens no port on its router and needs no public address; requests
  * for this computer's hostname come back down that connection to the viewer
  * on port 5152 — and only the viewer, which refuses anything Uyirly did not
@@ -37,19 +42,78 @@ const STARTUP_GRACE_MS = 60_000
 const MIN_BACKOFF_MS = 5_000
 const MAX_BACKOFF_MS = 5 * 60_000
 
-/** cloudflared beside this program, or where UYIRLY_CLOUDFLARED points. */
+/**
+ * The cloudflared we run: pinned, and checked before use. Release 2026.10.7,
+ * cloudflared-windows-amd64.exe, SHA-256 from Cloudflare's release notes,
+ * checked 9 Nov 2026.
+ */
+export const CLOUDFLARED_VERSION = '2026.10.7'
+export const CLOUDFLARED_WIN_SHA256 = '2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343'
+const CLOUDFLARED_WIN_URL =
+  `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-windows-amd64.exe`
+
+/** Where a downloaded cloudflared is kept: beside the settings, not in Program Files. */
+export function cloudflaredHome(): string {
+  return path.join(dataDir(), 'bin')
+}
+
+/** cloudflared where UYIRLY_CLOUDFLARED points, downloaded earlier, or beside this program. */
 export function findCloudflared(): string | null {
   const name = process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared'
   const candidates = [
     process.env.UYIRLY_CLOUDFLARED,
+    path.join(cloudflaredHome(), name),
     path.join(path.dirname(process.execPath), name),
   ].filter((p): p is string => !!p)
   return candidates.find((p) => existsSync(p)) ?? null
 }
 
+/**
+ * Make sure cloudflared is on this computer, downloading it if not.
+ *
+ * Written to a .part file, hashed, and only renamed into place when the
+ * SHA-256 matches the pinned one — a download that does not match is deleted
+ * and never run. Windows only: that is the only build hospitals are given.
+ */
+export async function ensureCloudflared(opts: {
+  fetchImpl?: typeof fetch
+  dir?: string
+  url?: string
+  sha256?: string
+  platform?: NodeJS.Platform
+} = {}): Promise<{ path: string } | { error: string }> {
+  const existing = opts.dir ? null : findCloudflared()
+  if (existing) return { path: existing }
+  if ((opts.platform ?? process.platform) !== 'win32') {
+    return { error: 'cloudflared can only be downloaded automatically on Windows' }
+  }
+  const dir = opts.dir ?? cloudflaredHome()
+  const final = path.join(dir, 'cloudflared.exe')
+  if (existsSync(final)) return { path: final }
+  const part = `${final}.part`
+  try {
+    await fs.mkdir(dir, { recursive: true })
+    log.info(`Downloading Cloudflare's internet-link program (cloudflared ${CLOUDFLARED_VERSION}, about 55 MB)…`)
+    const res = await (opts.fetchImpl ?? fetch)(opts.url ?? CLOUDFLARED_WIN_URL, { signal: AbortSignal.timeout(10 * 60_000) })
+    if (!res.ok) throw new Error(`the download answered ${res.status}`)
+    const bytes = Buffer.from(await res.arrayBuffer())
+    const got = createHash('sha256').update(bytes).digest('hex')
+    if (got !== (opts.sha256 ?? CLOUDFLARED_WIN_SHA256)) {
+      throw new Error('the download does not match the fingerprint Cloudflare published, so it was thrown away')
+    }
+    await fs.writeFile(part, bytes)
+    await fs.rename(part, final)
+    log.info('cloudflared downloaded and checked.')
+    return { path: final }
+  } catch (e) {
+    await fs.rm(part, { force: true }).catch(() => {})
+    return { error: (e as Error).message }
+  }
+}
+
 export interface TunnelOptions {
-  /** Overridable for tests. */
-  findBinary?: () => string | null
+  /** Overridable for tests: where cloudflared is, downloading it if needed. */
+  findBinary?: () => string | null | Promise<string | null>
   fetchImpl?: typeof fetch
   metricsPort?: number
   /** Told whenever the state changes, for the status page. */
@@ -66,6 +130,7 @@ export class TunnelSupervisor {
   private _state: TunnelState = 'off'
   private hostname: string | null = null
   private starting = false
+  private lastDownloadTry = 0
 
   constructor(private config: Config, private opts: TunnelOptions = {}) {}
 
@@ -97,15 +162,13 @@ export class TunnelSupervisor {
     if (!this.wanted || this.child || this.starting) return
     this.starting = true
     try {
-      const bin = (this.opts.findBinary ?? findCloudflared)()
+      const bin = this.opts.findBinary
+        ? await this.opts.findBinary()
+        : await this.binary()
       if (!bin) {
-        // Not an error the hospital can fix by waiting: an old install
-        // without cloudflared. Reported so Settings can say "run the new
-        // installer"; looked for again on the next heartbeat.
-        if (this._state !== 'missing') {
-          log.warn('Internet access is switched on in Uyirly, but cloudflared is not installed '
-            + 'beside this program. Run the latest installer to add it.')
-        }
+        // Not downloaded (no internet, GitHub blocked, or a fingerprint
+        // mismatch). Reported so Settings can say so; tried again on a later
+        // heartbeat, at most every ten minutes.
         this.set('missing')
         return
       }
@@ -168,6 +231,19 @@ export class TunnelSupervisor {
     }
     this.backoff = MIN_BACKOFF_MS
     this.set('off')
+  }
+
+  /** cloudflared, downloading it on first use; null when that is not possible yet. */
+  private async binary(): Promise<string | null> {
+    const found = findCloudflared()
+    if (found) return found
+    if (Date.now() - this.lastDownloadTry < 10 * 60_000) return null
+    this.lastDownloadTry = Date.now()
+    const got = await ensureCloudflared({ fetchImpl: this.opts.fetchImpl })
+    if ('path' in got) return got.path
+    log.warn(`Internet access is switched on, but Cloudflare's program could not be downloaded: ${got.error}. `
+      + 'Check that this computer can reach github.com. Will try again in ten minutes.')
+    return null
   }
 
   private scheduleRestart(): void {

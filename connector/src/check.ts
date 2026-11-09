@@ -64,7 +64,7 @@ export async function runCheck(config: Config | null): Promise<number> {
   if (task) lines.push(task)
 
   // ── Room for more images ─────────────────────────────────────────────────
-  const diskLine = await checkImageDisk()
+  const diskLine = await checkImageDisk(config)
   if (diskLine) lines.push(diskLine)
 
   // ── Anyone knocking who cannot get in ────────────────────────────────────
@@ -76,6 +76,14 @@ export async function runCheck(config: Config | null): Promise<number> {
 
   // ── Anything stuck on this machine ───────────────────────────────────────
   lines.push(await checkQueue())
+
+  // ── Where scans and uploaded files are kept ──────────────────────────────
+  lines.push({
+    state: 'ok', label: 'Files kept in',
+    detail: config.storageRoot
+      ? `${config.storageRoot} (the drive with the most free space when the connector first started)`
+      : `${dataDir()} (chosen on the next start of the connector)`,
+  })
 
   // ── Opening scans from outside the hospital ──────────────────────────────
   const internet = await checkInternetLink(ping.body?.internetAccess === true)
@@ -303,8 +311,9 @@ async function checkStartup(): Promise<Line | null> {
  * reason to be told about a folder it does not use. A full disk is the one
  * failure here that silently loses a patient's study, so it is worth a line.
  */
-async function checkImageDisk(): Promise<Line | null> {
-  const dir = path.join(dataDir(), 'dicom')
+async function checkImageDisk(config: Config): Promise<Line | null> {
+  // The drive chosen at first start of 1.0.8 (storage.ts), else ProgramData.
+  const dir = path.join(config.storageRoot ?? dataDir(), 'dicom')
   const s = await checkDisk(dir)
   if (!s) return null
   if (s.usedByImagesBytes === 0 && s.freeBytes > WARN_FREE_BYTES) return null
@@ -471,8 +480,9 @@ async function checkInternetLink(switchedOn: boolean): Promise<Line | null> {
   if (!findCloudflared()) {
     return {
       state: 'bad', label: 'Internet link',
-      detail: 'switched on in Uyirly, but cloudflared is not installed here',
-      fix: 'Run the latest installer (install.cmd). It adds cloudflared and keeps everything else.',
+      detail: 'switched on in Uyirly, but Cloudflare\'s program has not been downloaded yet',
+      fix: 'The connector downloads it by itself within a few minutes. If this stays, check that this '
+        + 'computer can reach github.com (a firewall or proxy may block it).',
     }
   }
   try {

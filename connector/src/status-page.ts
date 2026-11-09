@@ -188,6 +188,8 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
     ['Last result received', ago(state.lastMessageAt)],
     ['Received since starting', String(state.receivedCount)],
     ['This computer', `${os.hostname()} · connector ${VERSION}`],
+    // The drive chosen for scans and kept uploads (storage.ts).
+    ['Scans and files kept in', config.storageRoot ?? 'not chosen yet'],
   ]
 
   // Only once an admin has switched it on: a row saying "off" on every
@@ -198,7 +200,7 @@ function render(config: Config, state: LiveState, waiting: number, oldest: strin
       up:       [`on — ${state.tunnelHostname ?? 'connected'}`, false],
       starting: ['starting…', false],
       down:     ['cannot reach Cloudflare right now — scans still open inside the hospital', true],
-      missing:  ['switched on in Uyirly, but cloudflared is missing — run the latest installer', true],
+      missing:  ['switched on, but Cloudflare\'s program could not be downloaded yet — check this computer can reach github.com', true],
     }
     const [text, bad] = words[t] ?? [t, true]
     rows.splice(rows.length - 1, 0, ['Opening scans from outside', text, bad])
