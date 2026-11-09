@@ -81,6 +81,9 @@ export async function startSerial(
   devicePath: string,
   baudRate: number,
   onMessage: (raw: string, source: string) => void,
+  /** Every chunk as it arrives — capture mode shows them, so a technician
+   *  can see the cable is alive before anything parses. */
+  onChunk?: (chunk: Buffer) => void,
 ): Promise<() => void> {
   const mod = await loadSerialPort()
   if (!mod) {
@@ -125,7 +128,7 @@ export async function startSerial(
 
     analyzerConnected(key)
     log.info(`Listening on ${devicePath} at ${baudRate} baud`)
-    port.on('data', (chunk) => { bytes += chunk.length; link.push(chunk) })
+    port.on('data', (chunk) => { bytes += chunk.length; onChunk?.(chunk); link.push(chunk) })
     port.on('error', (e) => {
       analyzerProblem(key, `${devicePath}: ${e.message}`)
       log.warn(`${devicePath}: ${e.message}`)

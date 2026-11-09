@@ -78,5 +78,16 @@ test('summary names control characters so a photo of the log can be read', () =>
   assert.equal(readable(Buffer.from([0xff, 0x41])), '<ff>A')
 })
 
+// Async: needs real silence. Run after the synchronous checks.
+await (async () => {
+  const messages: string[] = []
+  const link = new AstmLink({ onMessage: (m) => messages.push(m), send: () => {} }, 40)
+  link.push(Buffer.from('Na 140 K 4.1 Cl 102'))   // no CR, no LF — the port stays open
+  await new Promise((r) => setTimeout(r, 120))
+  test('text with no line ending is released after silence, port still open', () => {
+    assert.deepEqual(messages, ['Na 140 K 4.1 Cl 102'])
+  })
+})()
+
 console.log(failures ? `\n${failures} FAILED\n` : '\nAll passed\n')
 process.exit(failures ? 1 : 0)

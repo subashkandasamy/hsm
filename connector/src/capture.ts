@@ -173,19 +173,40 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
   }
 
   // ── Serial ───────────────────────────────────────────────────────────────
+  let stopSerial: (() => void) | null = null
+  let serialBytes = 0
   if (opts.serialPath) {
     const { startSerial } = await import('./transports/serial.js')
-    await startSerial(opts.serialPath, opts.baudRate ?? 9600,
-      (raw, source) => { void save(raw, source) })
+    const { readable } = await import('./astm-link.js')
+    const where = opts.serialPath
+    stopSerial = await startSerial(where, opts.baudRate ?? 9600,
+      (raw, source) => { void save(raw, source) },
+      // Shown live: "0 messages" alone could not tell a silent cable from one
+      // sending text the parser had not finished with. Bytes that look like
+      // noise mean the baud rate is wrong.
+      (chunk) => {
+        serialBytes += chunk.length
+        console.log(`  ← ${where}: ${chunk.length} byte${chunk.length === 1 ? '' : 's'}  ${readable(chunk).slice(0, 70)}`)
+      })
   }
 
   // Summarise on the way out, because the number captured is the thing the
   // person will be asked when they get back.
   const finish = () => {
-    const mins = Math.round((Date.now() - started.getTime()) / 60000)
-    console.log(`\n  ${n} message${n === 1 ? '' : 's'} captured in ${mins} minute${mins === 1 ? '' : 's'}.`)
-    console.log(`  They are in ${dir}\n`)
-    process.exit(0)
+    // Close the port first, so text still being held (no line ending yet) is
+    // saved rather than thrown away with the process.
+    stopSerial?.()
+    setTimeout(() => {
+      const mins = Math.round((Date.now() - started.getTime()) / 60000)
+      console.log(`\n  ${n} message${n === 1 ? '' : 's'} captured in ${mins} minute${mins === 1 ? '' : 's'}.`)
+      if (opts.serialPath) {
+        console.log(serialBytes
+          ? `  ${serialBytes} bytes arrived on ${opts.serialPath}.`
+          : `  Nothing at all arrived on ${opts.serialPath} — check the analyzer's output is switched on, then try another baud rate.`)
+      }
+      console.log(`  They are in ${dir}\n`)
+      process.exit(0)
+    }, 800)
   }
   process.on('SIGINT', finish)
   process.on('SIGTERM', finish)

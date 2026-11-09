@@ -326,8 +326,27 @@ export class AstmLink {
 
   private resetIdle(): void {
     this.clearIdle()
-    if (!this.assembled.length) return
-    this.idleTimer = setTimeout(() => this.flush('silence'), this.idleMs)
+    if (!this.assembled.length && !this.buf.length) return
+    this.idleTimer = setTimeout(() => this.release(), this.idleMs)
+  }
+
+  /**
+   * Silence: give up waiting and queue what we hold — including text that
+   * never got a line ending.
+   *
+   * Until 1.0.15 only complete lines were released here, so bytes with no
+   * CR/LF (a printer-port stream, a wrong baud rate) sat in the buffer for as
+   * long as the serial port stayed open — for ever, on a cable that is never
+   * unplugged. Seen while capturing a Chem-leon at Karur, 9 Nov 2026.
+   */
+  private release(): void {
+    if (this.buf.length) {
+      const leftover = this.buf
+      this.buf = Buffer.alloc(0)
+      this.events.onWarn?.(`${leftover.length} byte(s) with no line ending after silence, kept: ${readable(leftover)}`)
+      this.assembled.push(leftover.toString('latin1'))
+    }
+    this.flush('silence')
   }
 
   private clearIdle(): void {
