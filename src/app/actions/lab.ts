@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { logAudit } from '@/lib/audit'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
@@ -788,18 +789,68 @@ export async function getLabVerifier(orderId: string): Promise<string | null> {
  * different price. This only answers the question a clinician actually asks:
  * what does this panel give me?
  */
-export async function getPanelMeasurements(labMasterId: string): Promise<Array<{
-  code: string; name: string; short_name: string | null; unit_ucum: string | null
+export async function getPanelMeasurements(labMasterId: string, testId?: string): Promise<Array<{
+  analyte_id: string; code: string; name: string; short_name: string | null; unit_ucum: string | null
+  /** This hospital marked it optional for this test (0277). */
+  optional: boolean
 }>> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('lab_test_analytes')
-    .select('display_order, analyte:lab_analytes(code, name, short_name, unit_ucum)')
+    .select('display_order, analyte:lab_analytes(id, code, name, short_name, unit_ucum)')
     .eq('lab_master_id', labMasterId)
     .order('display_order')
-  return ((data ?? []) as unknown as Array<{ analyte: { code: string; name: string; short_name: string | null; unit_ucum: string | null } | null }>)
+  let optional = new Set<string>()
+  if (testId) {
+    const { data: opt } = await supabase.from('lab_optional_analytes').select('analyte_id').eq('test_id', testId)
+    optional = new Set((opt ?? []).map((o) => o.analyte_id as string))
+  }
+  return ((data ?? []) as unknown as Array<{ analyte: { id: string; code: string; name: string; short_name: string | null; unit_ucum: string | null } | null }>)
     .map((r) => r.analyte)
     .filter((a): a is NonNullable<typeof a> => !!a)
+    .map((a) => ({
+      analyte_id: a.id, code: a.code, name: a.name, short_name: a.short_name, unit_ucum: a.unit_ucum,
+      optional: optional.has(a.id),
+    }))
+}
+
+/**
+ * Mark a measurement in a panel optional (or required again) for this
+ * hospital (0277).
+ *
+ * Optional means: when it has no value it is left off the report and does not
+ * count as missing, so the panel can be verified as complete. Made for 3-part
+ * haematology analyzers, which cannot measure eosinophils and basophils — but
+ * a value entered for an optional measurement (from a smear, say) still prints.
+ */
+export async function setMeasurementOptional(
+  testId: string, analyteId: string, optional: boolean,
+): Promise<{ success: true } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+
+  const svc = createServiceClient()
+  // The test must be this hospital's, and the measurement part of it.
+  const { data: test } = await svc.from('lab_tests_catalog')
+    .select('id, name, lab_master_id').eq('id', testId).eq('tenant_id', actor.tenant_id).maybeSingle()
+  if (!test?.lab_master_id) return { success: false, error: 'That test is not in your catalogue' }
+  const { data: part } = await svc.from('lab_test_analytes')
+    .select('analyte_id').eq('lab_master_id', test.lab_master_id).eq('analyte_id', analyteId).maybeSingle()
+  if (!part) return { success: false, error: 'That measurement is not part of this test' }
+
+  const { error } = optional
+    ? await svc.from('lab_optional_analytes').upsert(
+        { tenant_id: actor.tenant_id, test_id: testId, analyte_id: analyteId, created_by: actor.id },
+        { onConflict: 'tenant_id,test_id,analyte_id', ignoreDuplicates: true })
+    : await svc.from('lab_optional_analytes').delete()
+        .eq('tenant_id', actor.tenant_id).eq('test_id', testId).eq('analyte_id', analyteId)
+  if (error) return { success: false, error: error.message }
+
+  await logAudit(actor.id, 'update', 'lab_test', testId, {
+    action: optional ? 'measurement optional' : 'measurement required', analyte_id: analyteId, test: test.name,
+  })
+  return { success: true }
 }
 
 // ── Critical results (NABL 112 §5.8) ─────────────────────────────────────────

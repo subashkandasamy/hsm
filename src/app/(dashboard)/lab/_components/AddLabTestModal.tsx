@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
-import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster, getPanelMeasurements } from '@/app/actions/lab'
+import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster, getPanelMeasurements, setMeasurementOptional } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 
 interface Props { open: boolean; onClose: () => void }
@@ -62,14 +62,29 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   const [editId, setEditId]         = useState<string | null>(null)
   // Which panel is expanded to show what it measures, and the cached list.
   const [openPanel, setOpenPanel] = useState<string | null>(null)
-  const [panelRows, setPanelRows] = useState<Record<string, Array<{ code: string; name: string; short_name: string | null; unit_ucum: string | null }>>>({})
+  const [panelRows, setPanelRows] = useState<Record<string, Array<{ analyte_id: string; code: string; name: string; short_name: string | null; unit_ucum: string | null; optional: boolean }>>>({})
+  const [optionalBusy, setOptionalBusy] = useState<string | null>(null)
+  const [optionalErr, setOptionalErr] = useState<string | null>(null)
+
+  // Optional (0277): left off the report when blank, and not counted as
+  // missing — for measurements this hospital's analyzer cannot produce.
+  async function toggleOptional(t: LabTestCatalog, analyteId: string, optional: boolean) {
+    setOptionalBusy(analyteId); setOptionalErr(null)
+    const res = await setMeasurementOptional(t.id, analyteId, optional)
+    setOptionalBusy(null)
+    if (!res.success) { setOptionalErr(res.error); return }
+    setPanelRows((p) => ({
+      ...p,
+      [t.id]: (p[t.id] ?? []).map((a) => a.analyte_id === analyteId ? { ...a, optional } : a),
+    }))
+  }
 
   async function togglePanel(t: LabTestCatalog) {
     if (!t.lab_master_id) return
     if (openPanel === t.id) { setOpenPanel(null); return }
     setOpenPanel(t.id)
     if (!panelRows[t.id]) {
-      const rows = await getPanelMeasurements(t.lab_master_id)
+      const rows = await getPanelMeasurements(t.lab_master_id, t.id)
       setPanelRows((p) => ({ ...p, [t.id]: rows }))
     }
   }
@@ -382,17 +397,29 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                               <div className="px-3 pb-3 pt-1" style={{ background: '#F8FAFC' }}>
                                 <p className="text-xs mb-1.5" style={{ color: '#94A3B8' }}>
                                   What this panel reports — these are measurements, not tests you can
-                                  order on their own.
+                                  order on their own. Tap one to make it <strong>optional</strong>: when
+                                  it has no value it is left off the report and the test can still be
+                                  verified as complete (for example, eosinophils on a 3-part analyzer).
                                 </p>
+                                {optionalErr && (
+                                  <p className="text-xs mb-1.5" style={{ color: '#B91C1C' }}>{optionalErr}</p>
+                                )}
                                 {panelRows[t.id]
                                   ? (
                                     <div className="flex flex-wrap gap-1">
                                       {panelRows[t.id].map((a) => (
-                                        <span key={a.code} className="text-xs px-1.5 py-0.5 rounded"
-                                          style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0' }}>
+                                        <button key={a.code} type="button"
+                                          onClick={() => toggleOptional(t, a.analyte_id, !a.optional)}
+                                          disabled={optionalBusy === a.analyte_id}
+                                          title={a.optional ? 'Optional — tap to make it required' : 'Required — tap to make it optional'}
+                                          className="text-xs px-1.5 py-0.5 rounded"
+                                          style={a.optional
+                                            ? { background: '#F8FAFC', color: '#94A3B8', border: '1px dashed #CBD5E1', cursor: 'pointer' }
+                                            : { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
                                           {a.short_name ?? a.name}
                                           {a.unit_ucum && <span style={{ color: '#94A3B8' }}> {a.unit_ucum}</span>}
-                                        </span>
+                                          {a.optional && <span style={{ color: '#94A3B8' }}> · optional</span>}
+                                        </button>
                                       ))}
                                     </div>
                                   )
