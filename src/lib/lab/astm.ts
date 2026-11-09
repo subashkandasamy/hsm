@@ -81,7 +81,9 @@ export function unframe(raw: string): string {
 }
 
 /** ASTM or HL7? The first meaningful record says so. */
-export function detectProtocol(raw: string): 'astm' | 'hl7' | null {
+export function detectProtocol(raw: string): 'astm' | 'hl7' | 'text' | null {
+  // A urine strip reader's printout (LAURA Smart): plain text, see stripText.ts.
+  if (/^\s*(?:\x02\d?)?\s*(DekaPHAN\s+LAURA|LAURA)\b/i.test(raw)) return 'text'
   const text = unframe(raw)
   for (const line of text.split('\n')) {
     const l = line.trim()

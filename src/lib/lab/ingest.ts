@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { parseAstm, detectProtocol, type AstmMessage } from './astm'
 import { parseHl7 } from './hl7'
+import { parseStripText } from './stripText'
 
 type Svc = ReturnType<typeof createServiceClient>
 
@@ -66,7 +67,9 @@ export async function processMessage(
     return { status: 'stored', protocol, error }
   }
 
-  const parsed = protocol === 'hl7' ? parseHl7(raw) : parseAstm(raw)
+  const parsed = protocol === 'hl7' ? parseHl7(raw)
+    : protocol === 'text' ? parseStripText(raw)
+    : parseAstm(raw)
 
   // ── Which instrument? ────────────────────────────────────────────────────
   //

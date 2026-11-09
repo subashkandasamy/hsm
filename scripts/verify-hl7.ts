@@ -17,6 +17,7 @@
 import { readFileSync } from 'node:fs'
 import { parseHl7 } from '../src/lib/lab/hl7'
 import { parseAstm, detectProtocol } from '../src/lib/lab/astm'
+import { parseStripText } from '../src/lib/lab/stripText'
 
 let failed = 0
 function check(ok: boolean, label: string, detail?: unknown) {
@@ -306,6 +307,26 @@ console.log('\nEDAN i15 blood gas (group in OBX-3, name in OBX-4, UTF-8 arrows) 
   check(by['Na+']?.abnormalFlag === 'L', '↓ read as L', by['Na+']?.abnormalFlag)
   check(by.Temperature?.unit === '°C', '℃ read as °C', by.Temperature?.unit)
   check(!by['pO2(A-a)'] && m.warnings.some((w) => /pO2\(A-a\) had no value/.test(w)), '"......" is not a value', m.warnings)
+}
+
+console.log('\nLAURA Smart urine strip reader (plain text in STX/ETX) — as captured at Karur 9 Nov 2026')
+{
+  const raw = '\x02DekaPHAN LAURA\r\nSeq.No:  0002\r\nID:  A\r\n09.11.2026 16:13\r\n................\r\n'
+    + '*BLD     10 Ery/\xb5l\r\n LEU     NEG \r\n BIL     NEG \r\n UBG     NORM \r\n KET     NEG \r\n GLU     NEG \r\n'
+    + '*PRO     TRACE\r\n pH      6.5 \r\n*NIT     POS \r\n SG      1.015\r\n\x03'
+  check(detectProtocol(raw) === 'text', 'recognised as strip text, not ASTM or HL7', detectProtocol(raw))
+  const m = parseStripText(raw)
+  check(m.fingerprint === 'DekaPHAN LAURA', 'machine named from the first line', m.fingerprint)
+  check(m.sampleId === 'A', 'sample id from ID:', m.sampleId)
+  const by = Object.fromEntries(m.results.map((r) => [r.code, r]))
+  check(JSON.stringify(m.results.map((r) => r.code)) === JSON.stringify(['BLD', 'LEU', 'BIL', 'UBG', 'KET', 'GLU', 'PRO', 'pH', 'NIT', 'SG']),
+    'all ten pads, in order, nothing from the header', m.results.map((r) => r.code))
+  check(by.BLD?.value === '10 Ery/\xb5l' && by.BLD?.abnormalFlag === 'A', 'BLD kept as "10 Ery/µl" (no invented grade), * = abnormal', by.BLD)
+  check(by.LEU?.value === 'Negative' && by.LEU?.abnormalFlag === null, 'NEG → Negative', by.LEU)
+  check(by.UBG?.value === 'Normal' && by.PRO?.value === 'Trace' && by.NIT?.value === 'Positive', 'NORM, TRACE, POS spelled out', [by.UBG, by.PRO, by.NIT])
+  check(by.pH?.value === '6.5' && by.SG?.value === '1.015', 'pH and SG stay numbers', [by.pH, by.SG])
+  const blank = parseStripText('\x02DekaPHAN LAURA\r\nSeq.No:  0003\r\nID:\r\n BLD   NEG\r\n\x03')
+  check(blank.sampleId === null && blank.warnings.some((w) => /No sample ID/.test(w)), 'no ID typed → no sample, said plainly', blank)
 }
 
 console.log('\nNo repeats → codes untouched (H360 unchanged)')

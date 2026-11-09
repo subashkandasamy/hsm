@@ -133,6 +133,18 @@ export const ALIASES: Record<string, string[]> = {
   FT4:    ['ft4', 'freet4'],
   TSH:    ['tsh', 'hstsh'],
 
+  // Urine strip readers — LAURA Smart. "pH" and "GLU" are left out on
+  // purpose: both are also blood tests, and only the person at the machine
+  // knows which one it measured.
+  UR_BLOOD: ['bld', 'ery', 'blood'],
+  UR_LEU:   ['leu', 'leuko', 'leucocytes'],
+  UR_BIL:   ['bil'],
+  UR_URO:   ['ubg', 'uro', 'urobilinogen'],
+  UR_KET:   ['ket', 'ketones'],
+  UR_PROT:  ['pro', 'prot'],
+  UR_NIT:   ['nit', 'nitrite'],
+  UR_SG:    ['sg', 'specificgravity'],
+
   // Blood gas — EDAN i15. Offered, never bulk-confirmed: "pH" is also urine.
   BG_PH:   ['ph'],
   PCO2:    ['pco2'],
