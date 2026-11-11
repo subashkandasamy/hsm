@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { recordIcuObservation, listIcuObservations } from '@/app/actions/icu'
 import { saveInsulinScale } from '@/app/actions/round'
+import IntakeOutputSheet from './IntakeOutputSheet'
 import { computeNews, NEWS_BAND_STYLE, type NewsResult } from '@/lib/earlyWarning'
 import { AVPU, O2_DEVICES, labelOf, onOxygen, scaleDose, scaleProblem, type ScaleRow } from '@/lib/round'
 import type { Admission, IcuObservation } from '@/lib/types'
@@ -57,6 +58,7 @@ export default function RoundChart({ admission: adm, canNurse, canDoctor, onRoun
       <VitalsCharts obs={obs} now={now} />
       <RoundsTable obs={obs} ventilated={ventilated} />
       <SugarChart admission={adm} obs={obs} canDoctor={canDoctor && open} onScaleSaved={onScaleSaved} />
+      <IntakeOutputSheet admissionId={adm.id} canWrite={canNurse} />
     </div>
   )
 }

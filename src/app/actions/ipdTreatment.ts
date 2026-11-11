@@ -103,6 +103,10 @@ export async function createOrder(
     rate_ml_per_hr?: number
     flow_rate_lpm?: number
     delivery_method?: string
+    /** What was added to the bag, e.g. "KCl 20 mEq" (KMCH IV chart). */
+    additives?: string
+    /** How a drug is diluted, e.g. "50 mg in 50 ml NS". */
+    dilution?: string
     frequency_type: FrequencyType
     frequency_hours?: number
     duration_days: number
@@ -170,6 +174,8 @@ export async function createOrder(
     rate_ml_per_hr:  input.rate_ml_per_hr ?? null,
     flow_rate_lpm:   input.flow_rate_lpm ?? null,
     delivery_method: input.delivery_method ?? null,
+    additives:       input.additives?.trim().slice(0, 300) || null,
+    dilution:        input.dilution?.trim().slice(0, 200) || null,
     frequency_type:  input.frequency_type,
     frequency_hours: input.frequency_hours ?? null,
     duration_days:   input.duration_days,
@@ -284,8 +290,9 @@ export async function listSchedule(admissionId: string): Promise<IpdAdminSchedul
     .from('ipd_admin_schedule')
     .select(`
       *,
-      order:ipd_medication_orders(type,drug_name,fluid_name,dose,dose_unit,route,flow_rate_lpm,delivery_method),
-      nurse:profiles!given_by(full_name)
+      order:ipd_medication_orders(type,drug_name,fluid_name,dose,dose_unit,route,flow_rate_lpm,delivery_method,volume_ml,additives),
+      nurse:profiles!given_by(full_name),
+      checker:profiles!checked_by(full_name)
     `)
     .eq('admission_id', admissionId)
     .order('due_at', { ascending: true })
@@ -295,7 +302,9 @@ export async function listSchedule(admissionId: string): Promise<IpdAdminSchedul
 export async function updateSlotStatus(
   scheduleId: string,
   status: 'given' | 'missed' | 'held',
-  notes?: string
+  notes?: string,
+  /** KMCH drug chart: the second person who checked the dose, and the IV bag number. */
+  extra?: { checked_by?: string | null; bag_no?: string | null },
 ): Promise<SimpleResult> {
   await requireWriteAccess()
   await requireModule('ipd')
@@ -347,6 +356,19 @@ export async function updateSlotStatus(
     }
   }
 
+  // The checker is a different, active member of this hospital's clinical staff.
+  let checkedBy: string | null = null
+  if (status === 'given' && extra?.checked_by) {
+    if (extra.checked_by === actor.id) return { success: false, error: 'The person who checks the dose cannot be the one giving it.' }
+    const { data: checker } = await supabase.from('profiles').select('id, role, is_active')
+      .eq('id', extra.checked_by).eq('tenant_id', actor.tenant_id).maybeSingle()
+    if (!checker?.is_active || !['nurse', 'doctor', 'admin'].includes(checker.role as string)) {
+      return { success: false, error: 'Choose a nurse or doctor of this hospital to check the dose.' }
+    }
+    checkedBy = checker.id as string
+  }
+  const bagNo = status === 'given' ? (extra?.bag_no?.trim().slice(0, 20) || null) : null
+
   const { error } = await supabase
     .from('ipd_admin_schedule')
     .update({
@@ -354,12 +376,64 @@ export async function updateSlotStatus(
       given_at:    new Date().toISOString(),
       given_by:    actor.id,
       given_notes: notes ?? null,
+      checked_by:  checkedBy,
+      bag_no:      bagNo,
     })
     .eq('id', scheduleId)
 
   if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, `slot_${status}`, 'ipd_admin_schedule', scheduleId, { notes })
+  await logAudit(actor.id, `slot_${status}`, 'ipd_admin_schedule', scheduleId, { notes, checked_by: checkedBy, bag_no: bagNo })
   return { success: true }
+}
+
+/**
+ * An IV bag ran out. Records when, and writes the bag's volume to the
+ * intake/output sheet once (icu_fluid_balance.source_schedule_id is unique),
+ * so the nurse does not add IV intake by hand.
+ */
+export async function finishInfusionBag(
+  scheduleId: string, finishedAt?: string | null,
+): Promise<{ success: true; intakeMl: number | null } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:nursing')
+  const supabase = await createClient()
+
+  const { data: slot } = await supabase.from('ipd_admin_schedule')
+    .select('id, admission_id, status, given_at, finished_at, bag_no, order:ipd_medication_orders(type, fluid_name, volume_ml)')
+    .eq('id', scheduleId).maybeSingle()
+  if (!slot) return { success: false, error: 'Dose not found' }
+  const order = slot.order as unknown as { type: string; fluid_name: string | null; volume_ml: number | null } | null
+  if (order?.type !== 'iv_infusion') return { success: false, error: 'Only an IV infusion bag can be finished.' }
+  if (slot.status !== 'given' || !slot.given_at) return { success: false, error: 'Start the bag (mark it given) first.' }
+  if (slot.finished_at) return { success: false, error: 'This bag is already marked finished.' }
+  const gate = await assertTreatmentStarted(slot.admission_id as string, { allowDischarged: true })
+  if (!gate.success) return gate
+
+  const at = finishedAt ? new Date(finishedAt) : new Date()
+  if (Number.isNaN(at.getTime())) return { success: false, error: 'Not a valid time' }
+  if (at.getTime() > Date.now() + 2 * 60_000) return { success: false, error: 'The finish time is in the future' }
+  if (at.getTime() < new Date(slot.given_at as string).getTime()) return { success: false, error: 'The bag cannot finish before it started' }
+
+  const { data: done, error } = await supabase.from('ipd_admin_schedule')
+    .update({ finished_at: at.toISOString() }).eq('id', scheduleId).is('finished_at', null).select('id')
+  if (error) return { success: false, error: error.message }
+  if (!done?.length) return { success: false, error: 'This bag is already marked finished.' }
+
+  let intakeMl: number | null = null
+  if (order.volume_ml && order.volume_ml > 0) {
+    const { error: fbErr } = await supabase.from('icu_fluid_balance').insert({
+      tenant_id: actor.tenant_id, admission_id: slot.admission_id, recorded_by: actor.id,
+      recorded_at: at.toISOString(), direction: 'intake', category: 'iv', volume_ml: Math.round(order.volume_ml),
+      notes: [order.fluid_name, slot.bag_no ? `bag ${slot.bag_no}` : null].filter(Boolean).join(' — ') || 'IV bag',
+      source_schedule_id: scheduleId,
+    })
+    if (fbErr && fbErr.code !== '23505') console.error('[finishInfusionBag] intake row:', fbErr.message)
+    else intakeMl = Math.round(order.volume_ml)
+  }
+  await logAudit(actor.id, 'iv_bag_finished', 'ipd_admin_schedule', scheduleId, { finished_at: at.toISOString(), intake_ml: intakeMl })
+  return { success: true, intakeMl }
 }
 
 export async function restoreSlotToPending(scheduleId: string): Promise<SimpleResult> {

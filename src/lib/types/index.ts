@@ -275,6 +275,8 @@ export type FluidDirection = 'intake' | 'output'
 export interface IcuFluidEntry {
   id: string; admission_id: string; recorded_at: string; recorded_by: string | null
   direction: FluidDirection; category: string; volume_ml: number; notes: string | null
+  site?: string | null; source_schedule_id?: string | null
+  recorder?: { full_name: string } | null
 }
 
 export interface GrowthRecord {
@@ -1734,6 +1736,8 @@ export interface IpdMedicationOrder {
   fluid_name: string | null
   volume_ml: number | null
   rate_ml_per_hr: number | null
+  additives?: string | null
+  dilution?: string | null
   flow_rate_lpm: number | null
   delivery_method: string | null
   frequency_type: FrequencyType
@@ -1760,8 +1764,11 @@ export interface IpdAdminSchedule {
   given_by: string | null
   given_notes: string | null
   created_at: string
-  order?: Pick<IpdMedicationOrder, 'type' | 'drug_name' | 'fluid_name' | 'dose' | 'dose_unit' | 'route' | 'flow_rate_lpm' | 'delivery_method'>
+  // KMCH drug chart (0285): second checker, IV bag number and when it ran out
+  checked_by?: string | null; bag_no?: string | null; finished_at?: string | null
+  order?: Pick<IpdMedicationOrder, 'type' | 'drug_name' | 'fluid_name' | 'dose' | 'dose_unit' | 'route' | 'flow_rate_lpm' | 'delivery_method'> & { volume_ml?: number | null; additives?: string | null }
   nurse?: { full_name: string }
+  checker?: { full_name: string } | null
 }
 
 export interface IpdPharmacyRequest {

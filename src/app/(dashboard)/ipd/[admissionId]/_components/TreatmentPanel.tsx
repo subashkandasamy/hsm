@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useTransition } from 'react'
 import DoseCheckPanel from '@/components/ui/DoseCheckPanel'
+import { listChartStaff } from '@/app/actions/round'
+import { useAuth } from '@/context/AuthContext'
 import {
   Pill, Droplets, Wind, Plus, StopCircle, Check,
   ChevronDown, ChevronRight, Copy, AlertCircle, X, Ban, Pause,
@@ -56,7 +58,7 @@ function CollapsibleSection({ icon, title, badge, iconColor, action, children }:
 import SelectUI from '@/components/ui/Select'
 import {
   listOrders, createOrder, stopOrder,
-  listSchedule, updateSlotStatus, restoreSlotToPending,
+  listSchedule, updateSlotStatus, restoreSlotToPending, finishInfusionBag,
   getVisitPrescriptions, copyPrescriptionsToIPD,
   listIpdLabOrders, createIpdLabOrder, cancelIpdLabOrder, listLabCatalogForIpd,
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
@@ -228,10 +230,18 @@ function DrugCombobox({ value, onChange, onOpenChange }: DrugComboboxProps) {
 interface SlotRowProps {
   slot: IpdAdminSchedule; todayStr: string; canGive: boolean; pharmacyReady: boolean
   actingId: string | null
-  onAction: (id: string, status: 'given' | 'missed' | 'held') => void
+  onAction: (id: string, status: 'given' | 'missed' | 'held', extra?: { checked_by?: string | null; bag_no?: string | null }) => void
   onRestore: (id: string) => void
+  /** IV infusion: ask for the bag number, and offer "Bag finished" once started. */
+  isInfusion?: boolean
+  staff?: Array<{ id: string; full_name: string; role: string }>
+  meId?: string | null
+  onFinish?: (id: string) => void
 }
-function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, onRestore }: SlotRowProps) {
+function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, onRestore, isInfusion = false, staff = [], meId = null, onFinish }: SlotRowProps) {
+  const [giving, setGiving] = useState(false)
+  const [checker, setChecker] = useState('')
+  const [bagNo, setBagNo] = useState('')
   const slotDay  = slot.due_at.split('T')[0]
   const isToday  = slotDay === todayStr
   const isPast   = slotDay < todayStr
@@ -263,16 +273,48 @@ function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, o
         {isActed && slot.given_at && (
           <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
             by {slot.nurse?.full_name ?? '—'} at {fmtDue(slot.given_at)}
+            {slot.checker?.full_name && ` · checked by ${slot.checker.full_name}`}
+            {slot.bag_no && ` · bag ${slot.bag_no}`}
+            {slot.finished_at && ` · finished ${fmtDue(slot.finished_at)}`}
             {slot.given_notes && ` · ${slot.given_notes}`}
           </p>
         )}
+        {giving && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <select value={checker} onChange={(e) => setChecker(e.target.value)} aria-label="Checked by"
+              className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }}>
+              <option value="">Checked by — (optional)</option>
+              {staff.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+            {isInfusion && (
+              <input value={bagNo} onChange={(e) => setBagNo(e.target.value)} placeholder="Bag no." aria-label="Bag number"
+                className="px-2 py-1 rounded-lg text-xs border w-20" style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+            )}
+            <button onClick={() => { onAction(slot.id, 'given', { checked_by: checker || null, bag_no: bagNo || null }); setGiving(false) }}
+              disabled={isActing} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Check className="w-3 h-3" />Confirm given
+            </button>
+            <button onClick={() => setGiving(false)} className="px-2 py-1 rounded-lg text-xs"
+              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        )}
       </div>
 
+      {/* A running drip: mark the bag finished (writes its volume to intake/output) */}
+      {isInfusion && slot.status === 'given' && slot.given_at && !slot.finished_at && canGive && onFinish && (
+        <button onClick={() => onFinish(slot.id)} disabled={isActing}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold flex-shrink-0"
+          style={{ background: 'rgba(59,130,246,0.08)', color: '#1D4ED8', border: '1px solid rgba(59,130,246,0.25)', cursor: 'pointer' }}>
+          {isActing ? '…' : 'Bag finished'}
+        </button>
+      )}
+
       {/* Today / overdue: Given + Missed + Hold */}
-      {!isActed && canGive && (isToday || isPast) && (
+      {!isActed && !giving && canGive && (isToday || isPast) && (
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
           {pharmacyReady ? (
-            <button onClick={() => onAction(slot.id, 'given')} disabled={isActing}
+            !giving && <button onClick={() => setGiving(true)} disabled={isActing}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
               style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
               <Check className="w-3 h-3" />{isActing ? '…' : 'Given'}
@@ -324,11 +366,14 @@ function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, o
 interface OrderCardProps {
   order: IpdMedicationOrder; slots: IpdAdminSchedule[]; todayStr: string
   canOrder: boolean; canGive: boolean; actingId: string | null; stoppingId: string | null
-  onAction: (id: string, status: 'given' | 'missed' | 'held') => void
+  onAction: (id: string, status: 'given' | 'missed' | 'held', extra?: { checked_by?: string | null; bag_no?: string | null }) => void
   onRestore: (id: string) => void
   onStop: (orderId: string) => void
+  staff: Array<{ id: string; full_name: string; role: string }>
+  meId: string | null
+  onFinish: (id: string) => void
 }
-function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onRestore, onStop }: OrderCardProps) {
+function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onRestore, onStop, staff, meId, onFinish }: OrderCardProps) {
   const [expanded, setExpanded] = useState(false)
   const col = TYPE_COLOR[order.type]
 
@@ -353,6 +398,8 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
           <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{orderLabel(order)}</p>
           <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
             {FREQ_LABELS[order.frequency_type]} · {order.duration_days}d
+            {order.additives ? ` · + ${order.additives}` : ''}
+            {order.dilution ? ` · ${order.dilution}` : ''}
             {order.notes ? ` · ${order.notes}` : ''}
           </p>
         </div>
@@ -395,7 +442,8 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
                 {byDay[day].map((slot) => (
                   <SlotRow key={slot.id} slot={slot} todayStr={todayStr}
                     canGive={canGive} pharmacyReady={pharmacyReady}
-                    actingId={actingId} onAction={onAction} onRestore={onRestore} />
+                    actingId={actingId} onAction={onAction} onRestore={onRestore}
+                    isInfusion={order.type === 'iv_infusion'} staff={staff} meId={meId} onFinish={onFinish} />
                 ))}
               </div>
             </div>
@@ -1069,6 +1117,7 @@ interface OrderForm {
   drug_name: string; drug_ref_id: string | null; drug_is_global: boolean
   dose: string; dose_unit: string; route: string
   fluid_name: string; volume_ml: string; rate_ml_per_hr: string
+  additives: string; dilution: string
   flow_rate_lpm: string; delivery_method: string
   frequency_type: FrequencyType; frequency_hours: string
   duration_days: string; notes: string
@@ -1077,6 +1126,7 @@ const BLANK: OrderForm = {
   type: 'medication', drug_name: '', drug_ref_id: null, drug_is_global: false,
   dose: '', dose_unit: 'mg', route: 'IV',
   fluid_name: '', volume_ml: '', rate_ml_per_hr: '',
+  additives: '', dilution: '',
   flow_rate_lpm: '', delivery_method: 'Nasal Cannula',
   frequency_type: 'daily', frequency_hours: '6', duration_days: '5', notes: '',
 }
@@ -1109,13 +1159,15 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   const [copyPending, setCopyPending] = useState(false)
 
   const [actingId, setActingId]       = useState<string | null>(null)
+  const [staff, setStaff]             = useState<Array<{ id: string; full_name: string; role: string }>>([])
+  const { profile } = useAuth()
   const [stoppingId, setStoppingId]   = useState<string | null>(null)
 
   const todayStr = istToday()
 
   useEffect(() => {
-    Promise.all([listOrders(admissionId), listSchedule(admissionId)]).then(([o, s]) => {
-      setOrders(o); setSchedule(s); setLoading(false)
+    Promise.all([listOrders(admissionId), listSchedule(admissionId), listChartStaff()]).then(([o, s, st]) => {
+      setOrders(o); setSchedule(s); setStaff(st); setLoading(false)
     })
   }, [admissionId])
 
@@ -1153,6 +1205,8 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       fluid_name:      form.fluid_name || undefined,
       volume_ml:       form.volume_ml ? parseFloat(form.volume_ml) : undefined,
       rate_ml_per_hr:  form.rate_ml_per_hr ? parseFloat(form.rate_ml_per_hr) : undefined,
+      additives:       form.type === 'iv_infusion' ? (form.additives.trim() || undefined) : undefined,
+      dilution:        form.type === 'medication' ? (form.dilution.trim() || undefined) : undefined,
       flow_rate_lpm:   form.flow_rate_lpm ? parseFloat(form.flow_rate_lpm) : undefined,
       delivery_method: form.delivery_method || undefined,
       frequency_type:  form.frequency_type,
@@ -1180,13 +1234,23 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     })
   }
 
-  async function handleSlotAction(scheduleId: string, status: 'given' | 'missed' | 'held') {
+  async function handleSlotAction(scheduleId: string, status: 'given' | 'missed' | 'held', extra?: { checked_by?: string | null; bag_no?: string | null }) {
     setActingId(scheduleId)
-    const res = await updateSlotStatus(scheduleId, status)
+    const res = await updateSlotStatus(scheduleId, status, undefined, extra)
     setActingId(null)
     if (!res.success) { setError(res.error); return }
+    const checker = extra?.checked_by ? staff.find((p) => p.id === extra.checked_by) : null
     setSchedule((prev) => prev.map((s) => s.id === scheduleId
-      ? { ...s, status, given_at: new Date().toISOString() } : s))
+      ? { ...s, status, given_at: new Date().toISOString(), checked_by: extra?.checked_by ?? null, bag_no: extra?.bag_no ?? null,
+          checker: checker ? { full_name: checker.full_name } : null } : s))
+  }
+
+  async function handleFinishBag(scheduleId: string) {
+    setActingId(scheduleId)
+    const res = await finishInfusionBag(scheduleId)
+    setActingId(null)
+    if (!res.success) { setError(res.error); return }
+    setSchedule((prev) => prev.map((s) => s.id === scheduleId ? { ...s, finished_at: new Date().toISOString() } : s))
   }
 
   async function handleRestoreSlot(scheduleId: string) {
@@ -1351,6 +1415,12 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                     placeholder="60" className="w-full px-3 py-2 rounded-lg text-sm border"
                     style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
                 </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium mb-1 block" style={{ color: '#64748B' }}>Added to the bag</label>
+                  <input value={form.additives} onChange={(e) => setF('additives', e.target.value)} maxLength={300}
+                    placeholder="e.g. KCl 20 mEq" className="w-full px-3 py-2 rounded-lg text-sm border"
+                    style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+                </div>
               </div>
             )}
 
@@ -1455,7 +1525,8 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
               <OrderCard key={o.id} order={o} slots={slotsForOrder(o.id)}
                 todayStr={todayStr} canOrder={canOrder} canGive={canGive}
                 actingId={actingId} stoppingId={stoppingId}
-                onAction={handleSlotAction} onRestore={handleRestoreSlot} onStop={handleStop} />
+                onAction={handleSlotAction} onRestore={handleRestoreSlot} onStop={handleStop}
+                staff={staff} meId={profile?.id ?? null} onFinish={handleFinishBag} />
             ))}
           </div>
         )}

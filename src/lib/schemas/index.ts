@@ -333,9 +333,13 @@ export const InsulinScaleSchema = z.object({
 })
 export const FluidBalanceSchema = z.object({
   direction: z.enum(['intake', 'output']),
-  category:  z.string().min(1, 'Category is required'),
-  volume_ml: z.number().int().min(0, 'Volume must be ≥ 0'),
-  notes:     z.string().nullable().optional(),
+  category:  z.string().min(1, 'Category is required').max(30),
+  volume_ml: z.number().int().min(0, 'Volume must be ≥ 0').max(20000, 'Volume looks wrong'),
+  notes:     z.string().max(300).nullable().optional(),
+  /** Which drain / line / tube (0285). */
+  site:      z.string().trim().max(60).nullable().optional(),
+  /** When, if not now (charted late). */
+  recorded_at: z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional(),
 })
 export const CriticalCareSchema = z.object({
   is_critical_care: z.boolean().optional(),

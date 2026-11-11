@@ -56,6 +56,15 @@ export async function savePatientStrip(admissionId: string, input: Record<string
   return { success: true }
 }
 
+/** Who can check a dose: active nurses, doctors and admins of this hospital. */
+export async function listChartStaff(): Promise<Array<{ id: string; full_name: string; role: string }>> {
+  const actor = await getActorProfile()
+  const supabase = await createClient()
+  const { data } = await supabase.from('profiles').select('id, full_name, role')
+    .eq('tenant_id', actor.tenant_id).eq('is_active', true).in('role', ['nurse', 'doctor', 'admin']).order('full_name')
+  return (data ?? []) as Array<{ id: string; full_name: string; role: string }>
+}
+
 /** The doctor's insulin sliding scale for this patient. An empty list removes it. */
 export async function saveInsulinScale(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()

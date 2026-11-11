@@ -10,6 +10,7 @@ import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
 import { istToday, istDate } from '@/lib/istDate'
+import { sheetDayWindow } from '@/lib/fluids'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -161,6 +162,28 @@ export async function listIcuObservations(admissionId: string, limit = 48): Prom
 
 // ---- Fluid balance (intake / output) ----
 
+/**
+ * One sheet day (08:00 → 07:59 IST) of intake and output, plus what came in
+ * and went out before it — for the cumulative balance since admission.
+ */
+export async function getIoSheet(admissionId: string, day: string): Promise<{
+  entries: IcuFluidEntry[]; before: { intake: number; output: number }
+} | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
+  const supabase = await createClient()
+  const { start, end } = sheetDayWindow(day)
+  const [{ data: rows }, { data: prior }] = await Promise.all([
+    supabase.from('icu_fluid_balance').select('*, recorder:profiles!recorded_by(full_name)')
+      .eq('admission_id', admissionId).gte('recorded_at', start.toISOString()).lt('recorded_at', end.toISOString())
+      .order('recorded_at', { ascending: true }),
+    supabase.from('icu_fluid_balance').select('direction, volume_ml')
+      .eq('admission_id', admissionId).lt('recorded_at', start.toISOString()),
+  ])
+  const before = { intake: 0, output: 0 }
+  for (const r of prior ?? []) before[r.direction as 'intake' | 'output'] += Number(r.volume_ml) || 0
+  return { entries: (rows ?? []) as unknown as IcuFluidEntry[], before }
+}
+
 export async function recordFluidBalance(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
   await requireWriteAccess()
   await requireModule('ipd')
@@ -169,8 +192,18 @@ export async function recordFluidBalance(admissionId: string, input: Record<stri
   const parsed = FluidBalanceSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
+  const { recorded_at, site, ...d } = parsed.data
+  // Same time rules as a round: not in the future; on a closed stay only before discharge.
+  const { data: adm } = await supabase.from('admissions').select('status, discharged_at').eq('id', admissionId).maybeSingle()
+  if (!adm) return { success: false, error: 'Admission not found' }
+  const at = recorded_at ? new Date(recorded_at) : new Date()
+  if (at.getTime() > Date.now() + 2 * 60_000) return { success: false, error: 'The time is in the future' }
+  if (adm.status !== 'admitted' && (!adm.discharged_at || at.getTime() > new Date(adm.discharged_at as string).getTime())) {
+    return { success: false, error: 'This patient has been discharged — only what happened before discharge can be charted.' }
+  }
   const { error } = await supabase.from('icu_fluid_balance').insert({
-    tenant_id: actor.tenant_id, admission_id: admissionId, recorded_by: actor.id, ...parsed.data,
+    tenant_id: actor.tenant_id, admission_id: admissionId, recorded_by: actor.id, ...d,
+    site: site?.trim() || null, recorded_at: at.toISOString(),
   })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'fluid_balance', 'admission', admissionId, { direction: parsed.data.direction, volume_ml: parsed.data.volume_ml })
