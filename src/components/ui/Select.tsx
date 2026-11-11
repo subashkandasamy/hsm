@@ -44,7 +44,7 @@ interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onC
   onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void
 }
 
-export default function Select({ id, value, onChange, children, hasError, required, disabled, style, className }: SelectProps) {
+export default function Select({ id, value, onChange, children, hasError, required, disabled, style, className, 'aria-label': ariaLabel }: SelectProps) {
   const [open, setOpen] = useState(false)
   const [dropRect, setDropRect] = useState<DropdownRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -125,6 +125,8 @@ export default function Select({ id, value, onChange, children, hasError, requir
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        // A select with no visible label (e.g. inline in a row) still needs a name for screen readers.
+        aria-label={ariaLabel}
         onClick={openDropdown}
         style={{
           width: '100%',

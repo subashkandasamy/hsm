@@ -82,7 +82,8 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
     const h = Math.floor((new Date(d.given_at ?? d.due_at).getTime() - start) / 3600_000)
     if (h < 0 || h > 23) continue
     const arr = doses.get(d.label) ?? Array(24).fill('')
-    arr[h] += d.status === 'given' ? '✓' : d.status === 'missed' ? '✗' : d.status === 'held' ? 'H' : '•'
+    // Letters, not ✓/✗ — the PDF font has no check marks and they printed blank.
+    arr[h] += d.status === 'given' ? 'G' : d.status === 'missed' ? 'X' : d.status === 'held' ? 'H' : '•'
     doses.set(d.label, arr)
   }
   const icuDay = icuSince ? lineDay(icuSince, new Date(start + 12 * 3600_000)) : null
@@ -100,7 +101,7 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
             <Text style={{ fontSize: 8, color: C.muted }}>{profile?.name ?? 'Hospital'}</Text>
             <Text style={{ fontSize: 14, fontWeight: 700, color: C.accent, letterSpacing: 1 }}>ICU CRITICAL CARE CHART</Text>
           </View>
-          <Text style={{ fontSize: 10, fontWeight: 700, color: C.ink }}>{dayHead(data.day)}, 08:00 → 07:59{icuDay ? `   ·   ICU day ${icuDay}` : ''}</Text>
+          <Text style={{ fontSize: 10, fontWeight: 700, color: C.ink }}>{dayHead(data.day)}, 08:00 – 07:59{icuDay ? `   ·   ICU day ${icuDay}` : ''}</Text>
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
           {([
@@ -140,10 +141,12 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
           <Row label="Insulin u" cells={val((o) => o.insulin_units)} />
           <Row label="Intake ml" bold cells={g.intake.hourly.map((v: number) => v || null)} total={g.intake.h24} fill="#F2FAF9" />
           <Row label="Output ml" bold cells={g.output.hourly.map((v: number) => v || null)} total={g.output.h24} fill="#FBF6F1" />
-          <Row label="Net (6/12/24 h)" bold cells={[...Array(23).fill(null), `${g.intake.h6 - g.output.h6}/${g.intake.h12 - g.output.h12}`]} total={g.intake.h24 - g.output.h24} />
+          <Row label="Net ml" bold cells={Array(24).fill(null)} total={g.intake.h24 - g.output.h24} />
           {[...doses.entries()].slice(0, 14).map(([label, marks]) => <Row key={label} label={label.length > 24 ? `${label.slice(0, 23)}…` : label} cells={marks} />)}
         </View>
-        <Text style={{ fontSize: 6.5, color: C.muted, marginTop: 2 }}>Doses ✓ given · ✗ missed · H held · • due. Pupils size + b/s/f reaction. Readings: latest in each hour.</Text>
+        <Text style={{ fontSize: 6.5, color: C.muted, marginTop: 2 }}>
+          Net 6 h {g.intake.h6 - g.output.h6} ml · 12 h {g.intake.h12 - g.output.h12} ml · 24 h {g.intake.h24 - g.output.h24} ml.   Doses: G given · X missed · H held · • due. Pupils: size + b/s/f reaction. Readings: latest in each hour.
+        </Text>
 
         {/* Boxes under the grid */}
         <View style={{ flexDirection: 'row', marginTop: 8, gap: 6 }}>

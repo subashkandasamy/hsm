@@ -105,7 +105,13 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
         </div>
 
         <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
-          <table className="text-[11px]" style={{ minWidth: '74rem', width: '100%' }}>
+          {/* Fixed layout: every hour column the same width, so the trend points sit over their hour. */}
+          <table className="text-[11px]" style={{ minWidth: '82rem', width: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '8rem' }} />
+              {Array.from({ length: 24 }, (_, i) => <col key={i} />)}
+              <col style={{ width: '3.5rem' }} />
+            </colgroup>
             <thead>
               <tr style={{ background: '#F8FAFC', color: '#475569' }}>
                 <th className="px-2 py-1.5 text-left font-semibold sticky left-0" style={{ background: '#F8FAFC', minWidth: '7rem' }}>Hour</th>
