@@ -10,6 +10,8 @@ export interface NewsVitals {
   hr?: number | null           // heart rate
   temp?: number | null         // °C
   gcs_total?: number | null    // Glasgow Coma Scale (proxy for consciousness)
+  /** ACVPU from a ward round; preferred over GCS when both are given. */
+  avpu?: string | null
   on_oxygen?: boolean          // supplemental O2 / ventilated
 }
 
@@ -39,7 +41,9 @@ export function computeNews(v: NewsVitals): NewsResult {
   if (v.temp != null) add(v.temp <= 35 ? 3 : v.temp <= 36 ? 1 : v.temp <= 38 ? 0 : v.temp <= 39 ? 1 : 2)
   if (v.sbp != null)  add(v.sbp <= 90 ? 3 : v.sbp <= 100 ? 2 : v.sbp <= 110 ? 1 : v.sbp <= 219 ? 0 : 3)
   if (v.hr != null)   add(v.hr <= 40 ? 3 : v.hr <= 50 ? 1 : v.hr <= 90 ? 0 : v.hr <= 110 ? 1 : v.hr <= 130 ? 2 : 3)
-  if (v.gcs_total != null) add(v.gcs_total < 15 ? 3 : 0)
+  // Consciousness: anything but Alert (new confusion, voice, pain, unresponsive) scores 3.
+  if (v.avpu) add(v.avpu === 'A' ? 0 : 3)
+  else if (v.gcs_total != null) add(v.gcs_total < 15 ? 3 : 0)
 
   return { score, band: band(score, anyThree, params), params, anyThree }
 }

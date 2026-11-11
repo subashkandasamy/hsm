@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, User, BedDouble, Calendar, Clock, FileText,
+  ArrowLeft, User, BedDouble, Calendar, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer, Send,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby, LineChart,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -24,6 +24,8 @@ import { hasPermission } from '@/lib/rbac'
 import { addProgressNote, transferBed, updateDischargeSummary } from '@/app/actions/ipd'
 import { dischargeTypeLabel } from '@/lib/dischargeType'
 import DischargeModal, { type DischargeDone } from './DischargeModal'
+import PatientStrip from './PatientStrip'
+import RoundChart from './RoundChart'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
@@ -45,9 +47,6 @@ import type {
   OtSchedule, Profile, ProcedureTariff,
 } from '@/lib/types'
 
-function daysAdmitted(admittedAt: string): number {
-  return Math.max(0, Math.floor((Date.now() - new Date(admittedAt).getTime()) / 86400000))
-}
 
 interface WardOption {
   id: string
@@ -102,7 +101,9 @@ export default function AdmissionDetail({
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
+  const [activeTab, setActiveTab] = useState<'clinical' | 'chart' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
+  // Bumped when a round is saved, so the strip's NEWS2 refreshes.
+  const [stripKey, setStripKey] = useState(0)
 
   // Progress note form
   const [note, setNote] = useState('')
@@ -204,7 +205,6 @@ export default function AdmissionDetail({
   }
 
   const isClosed = adm.status !== 'admitted'
-  const days = daysAdmitted(adm.admitted_at)
 
   // Advance deposit chip props
   const depositPending = depositStatus?.status === 'pending'
@@ -293,12 +293,6 @@ export default function AdmissionDetail({
                     From Emergency
                   </span>
                 ) : null}
-                {adm.status === 'admitted' && (
-                  <span className="flex items-center gap-1 font-semibold whitespace-nowrap" style={{ color: '#0D9488' }}>
-                    <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-                    Day {days}
-                  </span>
-                )}
                 {adm.status === 'discharged' && adm.discharged_at && (
                   <span className="flex items-center gap-1 whitespace-nowrap"
                     style={adm.discharge_type && adm.discharge_type !== 'normal' ? { color: '#334155', fontWeight: 600 } : undefined}>
@@ -476,12 +470,17 @@ export default function AdmissionDetail({
         </div>
       )}
 
+      {/* What everyone must see before touching the patient — above every tab */}
+      <PatientStrip admission={adm} canEdit={!!canNote} refreshKey={stripKey}
+        onSaved={(p) => setAdm((a) => ({ ...a, ...p }))} />
+
       {/* Tabs */}
       <div className="overflow-x-auto -mx-4 px-4 mb-4">
         <div className="flex gap-1 p-1 rounded-xl w-max"
           style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
         {([
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
+          { key: 'chart',      label: 'Chart',      Icon: LineChart   },
           { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
           { key: 'critical',   label: 'Critical Care', Icon: Activity },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
@@ -738,6 +737,13 @@ export default function AdmissionDetail({
       )}
 
       {/* ── Critical Care tab ── */}
+      {/* ── Chart tab: rounds, NEWS2, sugar & insulin ── */}
+      {activeTab === 'chart' && (
+        <RoundChart admission={adm} canNurse={!!canNursing} canDoctor={!!canWrite}
+          onRoundSaved={() => setStripKey((k) => k + 1)}
+          onScaleSaved={(scale, type) => setAdm((a) => ({ ...a, insulin_scale: scale, insulin_scale_type: type }))} />
+      )}
+
       {activeTab === 'critical' && (
         <CriticalCarePanel admission={adm} canWrite={!!canWrite} canNurse={!!canNursing} />
       )}

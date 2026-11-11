@@ -301,10 +301,35 @@ export const CompleteVisitSchema = z.object({
 const optInt = z.number().int().nullable().optional()
 export const IcuObservationSchema = z.object({
   hr: optInt, sbp: optInt, dbp: optInt, map: optInt, cvp: optInt, spo2: optInt, rr: optInt,
-  temp: z.number().nullable().optional(),
+  // °C — the early-warning score is calibrated in Celsius; 98.6 is refused rather than scored as fever.
+  temp: z.number().min(25, 'Temperature is in °C').max(45, 'Temperature is in °C').nullable().optional(),
   gcs_e: optInt, gcs_v: optInt, gcs_m: optInt, gcs_total: optInt, rass: optInt, pain_score: optInt,
   vent_mode: z.string().nullable().optional(), fio2: optInt, peep: optInt, tidal_volume: optInt, vent_rate: optInt,
   notes: z.string().nullable().optional(),
+  // The ward round (0284)
+  avpu:           z.enum(['A', 'C', 'V', 'P', 'U']).nullable().optional(),
+  o2_device:      z.enum(['air', 'nasal_prongs', 'face_mask', 'nrbm', 'hfnc', 'niv', 'ventilator']).nullable().optional(),
+  o2_lpm:         z.number().min(0).max(60).nullable().optional(),
+  glucose_mg_dl:  z.number().int().min(10, 'Blood sugar looks wrong').max(2000, 'Blood sugar looks wrong').nullable().optional(),
+  glucose_source: z.enum(['capillary', 'venous', 'lab']).nullable().optional(),
+  insulin_units:  z.number().min(0).max(200).nullable().optional(),
+  insulin_type:   z.string().max(60).nullable().optional(),
+  /** When the reading was taken, if not now (charted late). */
+  recorded_at:    z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional(),
+})
+
+export const PatientStripSchema = z.object({
+  weight_kg:       z.number().min(0.3).max(400).nullable().optional(),
+  height_cm:       z.number().min(20).max(250).nullable().optional(),
+  diet:            z.enum(['npo', 'oral', 'soft', 'liquid', 'diabetic', 'renal', 'rt_feed', 'peg_feed', 'tpn']).nullable().optional(),
+  diet_kcal:       z.number().int().min(0).max(6000).nullable().optional(),
+  diet_protein_g:  z.number().int().min(0).max(400).nullable().optional(),
+  dvt_prophylaxis: z.enum(['none', 'pharmacological', 'mechanical', 'both', 'contraindicated']).nullable().optional(),
+})
+
+export const InsulinScaleSchema = z.object({
+  type: z.string().trim().max(60).nullable().optional(),
+  rows: z.array(z.object({ from: z.number().min(0).max(2000), to: z.number().min(0).max(2000), units: z.number().min(0).max(100) })).max(20),
 })
 export const FluidBalanceSchema = z.object({
   direction: z.enum(['intake', 'output']),

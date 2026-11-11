@@ -9,6 +9,7 @@ import {
   setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance, admissionBedIsIcu,
 } from '@/app/actions/icu'
 import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
+import { onOxygen } from '@/lib/round'
 import type { Admission, IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 const OBS_FIELDS: { key: string; label: string; step?: string }[] = [
@@ -79,9 +80,10 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   }
 
   const t = fluids?.totals
+  // Same score as the Chart tab and the strip: AVPU from ward rounds, oxygen by device / flow / FiO₂.
   const newsFor = (o: IcuObservation) => computeNews({
-    rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total,
-    on_oxygen: (o.fio2 != null && o.fio2 > 21) || flags.on_ventilator,
+    rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu,
+    on_oxygen: onOxygen(o, flags.on_ventilator),
   })
   const latestNews = obs.length ? newsFor(obs[0]) : null
 

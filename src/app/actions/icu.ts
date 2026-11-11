@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
+import { onOxygen } from '@/lib/round'
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
@@ -25,15 +26,18 @@ export async function getDeterioratingPatients(): Promise<DeterioratingPatient[]
     .from('admissions')
     .select('id, on_ventilator, patient:patients(full_name, uhid)')
     .eq('status', 'admitted')
-    .eq('is_critical_care', true)
+    // Every admitted patient, not only ICU: ward rounds are scored too (0284).
+
   const admList = adms ?? []
   if (!admList.length) return []
   const ids = admList.map((a) => a.id as string)
 
   const { data: obs } = await supabase
     .from('icu_observations')
-    .select('admission_id, recorded_at, hr, sbp, spo2, rr, temp, gcs_total, fio2')
+    .select('admission_id, recorded_at, hr, sbp, spo2, rr, temp, gcs_total, fio2, avpu, o2_device, o2_lpm')
     .in('admission_id', ids)
+    // Only recent readings — the latest per patient is all this needs.
+    .gte('recorded_at', new Date(Date.now() - 48 * 3600_000).toISOString())
     .order('recorded_at', { ascending: false })
 
   const latest = new Map<string, NonNullable<typeof obs>[number]>()
@@ -47,8 +51,8 @@ export async function getDeterioratingPatients(): Promise<DeterioratingPatient[]
     const o = latest.get(a.id as string)
     if (!o) continue
     const news = computeNews({
-      rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total,
-      on_oxygen: (o.fio2 != null && o.fio2 > 21) || !!a.on_ventilator,
+      rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu,
+      on_oxygen: onOxygen(o, !!a.on_ventilator),
     })
     if (news.band === 'medium' || news.band === 'high') {
       const p = a.patient as unknown as { full_name?: string; uhid?: string } | null
@@ -114,15 +118,30 @@ export async function recordIcuObservation(admissionId: string, input: Record<st
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = IcuObservationSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const d = parsed.data
-  // Auto GCS total when components given
+  const { recorded_at, ...d } = parsed.data
+  // Auto GCS total when components given; MAP from the BP when not measured.
   const gcsTotal = d.gcs_total ?? (
     d.gcs_e != null && d.gcs_v != null && d.gcs_m != null ? d.gcs_e + d.gcs_v + d.gcs_m : null
   )
+  const map = d.map ?? (d.sbp != null && d.dbp != null ? Math.round((d.sbp + 2 * d.dbp) / 3) : null)
   const supabase = await createClient()
+
+  // When: now, or earlier when charted late — never in the future, never
+  // before admission, and on a closed stay only a reading taken before discharge.
+  const { data: adm } = await supabase.from('admissions').select('status, admitted_at, discharged_at').eq('id', admissionId).maybeSingle()
+  if (!adm) return { success: false, error: 'Admission not found' }
+  const at = recorded_at ? new Date(recorded_at) : new Date()
+  if (at.getTime() > Date.now() + 2 * 60_000) return { success: false, error: 'The reading time is in the future' }
+  if (adm.admitted_at && at.getTime() < new Date(adm.admitted_at as string).getTime() - 24 * 3600_000) {
+    return { success: false, error: 'The reading time is before the admission' }
+  }
+  if (adm.status !== 'admitted' && (!adm.discharged_at || at.getTime() > new Date(adm.discharged_at as string).getTime())) {
+    return { success: false, error: 'This patient has been discharged — only a reading taken before discharge can be charted.' }
+  }
+
   const { error } = await supabase.from('icu_observations').insert({
     tenant_id: actor.tenant_id, admission_id: admissionId, recorded_by: actor.id,
-    ...d, gcs_total: gcsTotal,
+    ...d, map, gcs_total: gcsTotal, recorded_at: at.toISOString(),
   })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'icu_observation', 'admission', admissionId)

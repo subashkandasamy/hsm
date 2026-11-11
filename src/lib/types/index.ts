@@ -217,6 +217,11 @@ export interface Admission {
   /** How the patient left; null on discharges before 0280. */
   discharge_type?: import('@/lib/dischargeType').DischargeType | null
   death_at?: string | null; death_cause?: string | null
+  // Patient strip + insulin sliding scale (0284)
+  weight_kg?: number | null; height_cm?: number | null
+  diet?: string | null; diet_kcal?: number | null; diet_protein_g?: number | null
+  dvt_prophylaxis?: string | null
+  insulin_scale?: import('@/lib/round').ScaleRow[] | null; insulin_scale_type?: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
   treatment_started_at?: string | null
@@ -259,6 +264,10 @@ export interface IcuObservation {
   rass: number | null; pain_score: number | null
   vent_mode: string | null; fio2: number | null; peep: number | null; tidal_volume: number | null; vent_rate: number | null
   notes: string | null
+  // The ward round (0284)
+  avpu?: string | null; o2_device?: string | null; o2_lpm?: number | null
+  glucose_mg_dl?: number | null; glucose_source?: string | null
+  insulin_units?: number | null; insulin_type?: string | null
   recorder?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
