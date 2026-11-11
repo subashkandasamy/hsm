@@ -214,6 +214,9 @@ export interface Admission {
   reason: string | null; admitted_at: string; discharged_at: string | null
   ip_no?: string
   status: AdmissionStatus; discharge_summary: string | null
+  /** How the patient left; null on discharges before 0280. */
+  discharge_type?: import('@/lib/dischargeType').DischargeType | null
+  death_at?: string | null; death_cause?: string | null
   procedure_tariff_id?: string | null; treatment_value?: number | null
   combined_bill_no?: string | null
   treatment_started_at?: string | null

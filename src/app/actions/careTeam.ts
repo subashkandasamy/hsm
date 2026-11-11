@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
+import { admissionClosedError } from '@/lib/admissionOpen'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { AddCareTeamSchema, RequestConsultSchema, LogVisitSchema, CompleteVisitSchema } from '@/lib/schemas'
@@ -44,6 +45,8 @@ export async function addCareTeamDoctor(admissionId: string, input: Record<strin
   const parsed = AddCareTeamSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
+  const closed = await admissionClosedError(supabase, admissionId)
+  if (closed) return { success: false, error: closed }
   await ensureOnTeam(supabase, actor.tenant_id, admissionId, parsed.data.doctor_id, parsed.data.role, actor.id)
   await logAudit(actor.id, 'add', 'care_team', admissionId, { doctor_id: parsed.data.doctor_id, role: parsed.data.role })
   return { success: true }
@@ -99,6 +102,8 @@ export async function requestConsult(admissionId: string, input: Record<string, 
   const parsed = RequestConsultSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
+  const closed = await admissionClosedError(supabase, admissionId)
+  if (closed) return { success: false, error: closed }
   await ensureOnTeam(supabase, actor.tenant_id, admissionId, parsed.data.doctor_id, parsed.data.role, actor.id)
   const { error } = await supabase.from('doctor_visits').insert({
     tenant_id: actor.tenant_id, admission_id: admissionId, doctor_id: parsed.data.doctor_id,
@@ -149,6 +154,8 @@ export async function logVisit(admissionId: string, input: Record<string, unknow
   const parsed = LogVisitSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const supabase = await createClient()
+  const closed = await admissionClosedError(supabase, admissionId)
+  if (closed) return { success: false, error: closed }
 
   const visitId = crypto.randomUUID()
   const { error } = await supabase.from('doctor_visits').insert({
@@ -178,6 +185,8 @@ export async function completeVisit(visitId: string, input: Record<string, unkno
     .from('doctor_visits').select('admission_id, doctor_id, visit_type, status').eq('id', visitId).single()
   if (!visit) return { success: false, error: 'Visit not found' }
   if (visit.status !== 'requested') return { success: false, error: 'Visit is not pending' }
+  const closed = await admissionClosedError(supabase, visit.admission_id as string)
+  if (closed) return { success: false, error: closed }
 
   await supabase.from('doctor_visits').update({
     status: 'completed', note: parsed.data.note ?? null, completed_by: actor.id, completed_at: new Date().toISOString(),

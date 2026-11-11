@@ -21,7 +21,9 @@ import ReferralsOutCard from '@/components/clinical/ReferralsOutCard'
 import Money from '@/components/ui/Money'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
-import { addProgressNote, transferBed, dischargePatient, updateDischargeSummary } from '@/app/actions/ipd'
+import { addProgressNote, transferBed, updateDischargeSummary } from '@/app/actions/ipd'
+import { dischargeTypeLabel } from '@/lib/dischargeType'
+import DischargeModal, { type DischargeDone } from './DischargeModal'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
@@ -123,9 +125,7 @@ export default function AdmissionDetail({
 
   // Discharge
   const [showDischarge, setShowDischarge] = useState(false)
-  const [summary, setSummary] = useState('')
-  const [discharging, setDischarging] = useState(false)
-  const [dischargeError, setDischargeError] = useState<string | null>(null)
+  const [dueRecorded, setDueRecorded] = useState(0)
   const [showBillingPrompt, setShowBillingPrompt] = useState(false)
   const [showBillBuilder, setShowBillBuilder] = useState(false)
 
@@ -189,14 +189,12 @@ export default function AdmissionDetail({
     router.refresh()
   }
 
-  async function handleDischarge() {
-    if (!summary.trim()) { setDischargeError('Discharge summary is required'); return }
-    setDischarging(true)
-    setDischargeError(null)
-    const result = await dischargePatient(adm.id, { discharge_summary: summary })
-    setDischarging(false)
-    if (!result.success) { setDischargeError(result.error); return }
-    setAdm((a) => ({ ...a, status: 'discharged', discharged_at: new Date().toISOString(), discharge_summary: summary }))
+  function handleDischarged(d: DischargeDone) {
+    setAdm((a) => ({
+      ...a, status: 'discharged', discharged_at: d.dischargedAt, discharge_summary: d.summary,
+      discharge_type: d.type, death_at: d.deathAt, death_cause: d.deathCause,
+    }))
+    setDueRecorded(d.dueRecorded)
     setShowDischarge(false)
     setShowBillingPrompt(true)
   }
@@ -298,9 +296,10 @@ export default function AdmissionDetail({
                   </span>
                 )}
                 {adm.status === 'discharged' && adm.discharged_at && (
-                  <span className="flex items-center gap-1 whitespace-nowrap">
+                  <span className="flex items-center gap-1 whitespace-nowrap"
+                    style={adm.discharge_type && adm.discharge_type !== 'normal' ? { color: '#334155', fontWeight: 600 } : undefined}>
                     <LogOut className="w-3.5 h-3.5 flex-shrink-0" />
-                    Discharged <DateText date={adm.discharged_at} />
+                    {dischargeTypeLabel(adm.discharge_type)} <DateText date={adm.discharge_type === 'death' && adm.death_at ? adm.death_at : adm.discharged_at} />
                   </span>
                 )}
               </div>
@@ -324,7 +323,7 @@ export default function AdmissionDetail({
                 onClick={() => window.open(`/print/ipd/${adm.id}/discharge/pdf`, '_blank')}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
                 style={{ background: 'rgba(21,128,61,0.08)', color: '#15803D', border: '1px solid rgba(21,128,61,0.25)', cursor: 'pointer' }}>
-                <Printer className="w-4 h-4" /> Discharge Summary
+                <Printer className="w-4 h-4" /> {adm.discharge_type === 'death' ? 'Death Summary' : 'Discharge Summary'}
               </button>
             )}
             {!isClosed && canWrite && (
@@ -449,8 +448,11 @@ export default function AdmissionDetail({
           <div className="flex items-center gap-3">
             <Receipt className="w-5 h-5 flex-shrink-0" style={{ color: '#15803D' }} />
             <div>
-              <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Patient discharged</p>
+              <p className="text-sm font-semibold" style={{ color: '#15803D' }}>
+                {adm.discharge_type === 'death' ? 'Death recorded and patient discharged' : 'Patient discharged'}
+              </p>
               <p className="text-xs mt-0.5" style={{ color: '#16A34A' }}>
+                {dueRecorded > 0 && <>₹{dueRecorded.toLocaleString('en-IN', { maximumFractionDigits: 2 })} stays due on the bills. </>}
                 This admission may have unbilled charges. Generate a bill now?
               </p>
             </div>
@@ -803,37 +805,10 @@ export default function AdmissionDetail({
       </Modal>
 
       {/* Discharge modal */}
-      <Modal open={showDischarge} onClose={() => setShowDischarge(false)} title="Discharge Patient" maxWidth="30rem">
-        <div className="space-y-4">
-          <FormField label="Discharge Summary" required>
-            <SpeechTextarea
-              variant="field"
-              fieldKey="ipd.discharge_summary"
-              value={summary}
-              onChange={setSummary}
-              placeholder="Condition at discharge, treatment given, follow-up instructions…"
-              style={{ minHeight: '7rem' }}
-            />
-          </FormField>
-          {dischargeError && <p className="text-sm" style={{ color: '#DC2626' }}>{dischargeError}</p>}
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => setShowDischarge(false)}
-              className="px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
-              Cancel
-            </button>
-            <button onClick={handleDischarge} disabled={discharging || !summary.trim()}
-              className="px-5 py-2 rounded-xl text-sm font-semibold"
-              style={{
-                background: (discharging || !summary.trim()) ? '#94A3B8' : '#DC2626',
-                color: '#fff', border: 'none',
-                cursor: (discharging || !summary.trim()) ? 'not-allowed' : 'pointer',
-              }}>
-              {discharging ? 'Discharging…' : 'Discharge Patient'}
-            </button>
-          </div>
-        </div>
-      </Modal>
+      {showDischarge && (
+        <DischargeModal open={showDischarge} admissionId={adm.id}
+          onClose={() => setShowDischarge(false)} onDischarged={handleDischarged} />
+      )}
 
       {showBillBuilder && adm.patient && (
         <BillBuilderModal

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Role } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { VPA_PATTERN } from '@/lib/upi'
+import { DISCHARGE_TYPES } from '@/lib/dischargeType'
 
 // ---- Dates and times that are actually dates and times ----
 //
@@ -336,7 +337,18 @@ export const ProgressNoteSchema = z.object({
   vitals: VitalsSchema.optional(),
 })
 export const DischargeSchema = z.object({
-  discharge_summary: z.string().min(1, 'Discharge summary is required'),
+  discharge_summary: z.string().trim().min(1, 'Discharge summary is required'),
+  discharge_type: z.enum(DISCHARGE_TYPES, { message: 'Choose how the patient is leaving' }),
+  death_at: z.string().nullable().optional(),
+  death_cause: z.string().trim().max(500).nullable().optional(),
+}).superRefine((d, ctx) => {
+  if (d.discharge_type !== 'death') return
+  if (!d.death_at || Number.isNaN(new Date(d.death_at).getTime())) {
+    ctx.addIssue({ code: 'custom', path: ['death_at'], message: 'Enter the date and time of death' })
+  }
+  if (!d.death_cause?.trim()) {
+    ctx.addIssue({ code: 'custom', path: ['death_cause'], message: 'Enter the cause of death' })
+  }
 })
 
 // ---- Phase 2: Emergency ----

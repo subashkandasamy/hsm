@@ -11,6 +11,9 @@ import { catchUpDailyCharges } from '@/lib/ipdDailyBilling'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
 import type { Admission, IpdProgressNote } from '@/lib/types'
 import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import { findOpenWork, cancelTestsNotDone, closeOpenWork, type OpenWork } from '@/lib/closeAdmission'
+import { dischargeSkipsBalanceGate } from '@/lib/dischargeType'
+import { admissionClosedError } from '@/lib/admissionOpen'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -297,7 +300,8 @@ export async function addProgressNote(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:notes')
 
-  const gate = await assertTreatmentStarted(admissionId)
+  // A late entry about the stay is still part of the record.
+  const gate = await assertTreatmentStarted(admissionId, { allowDischarged: true })
   if (!gate.success) return gate
 
   const parsed = ProgressNoteSchema.safeParse(input)
@@ -459,10 +463,80 @@ export async function transferBed(
   return { success: true }
 }
 
+/**
+ * What the discharge window shows before anyone presses Discharge: what is
+ * still open on the stay, the patient's balance, and whether it is a
+ * medico-legal case.
+ */
+export interface DischargeReadiness extends OpenWork {
+  patientBalanceDue: number
+  insuranceApproved: number
+  isMlc: boolean
+  /** Future appointments — after a death the family should not be called about them. */
+  upcomingAppointments: number
+}
+
+export async function getDischargeReadiness(admissionId: string): Promise<DischargeReadiness | null> {
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:write')
+  const supabase = await createClient()
+
+  const { data: adm } = await supabase
+    .from('admissions').select('id, patient_id, status, source_emergency_case_id').eq('id', admissionId).maybeSingle()
+  if (!adm || adm.status !== 'admitted') return null
+
+  const [open, financials, erCase, appts] = await Promise.all([
+    findOpenWork(supabase, admissionId),
+    getAdmissionFinancials(admissionId),
+    adm.source_emergency_case_id
+      ? supabase.from('emergency_cases').select('is_mlc').eq('id', adm.source_emergency_case_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from('appointments').select('id', { count: 'exact', head: true })
+      .eq('patient_id', adm.patient_id).in('status', ['booked', 'checked_in'])
+      .gt('scheduled_at', new Date().toISOString()),
+  ])
+
+  return {
+    ...open,
+    patientBalanceDue: financials.patientBalanceDue,
+    insuranceApproved: financials.insuranceApproved,
+    isMlc: !!(erCase.data as { is_mlc?: boolean } | null)?.is_mlc,
+    upcomingAppointments: appts.count ?? 0,
+  }
+}
+
+/**
+ * The discharge window's "Cancel these tests": tests ordered on the stay and
+ * never collected or performed come off the bill before the final balance is
+ * collected, so the patient never pays for a test that was not done.
+ */
+export async function cancelTestsBeforeDischarge(
+  admissionId: string,
+): Promise<{ success: true; cancelled: number; refundNeeded: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:write')
+  const supabase = await createClient()
+
+  const closed = await admissionClosedError(supabase, admissionId)
+  if (closed) return { success: false, error: closed }
+
+  try {
+    const { cancelled, billing } = await cancelTestsNotDone(supabase, admissionId)
+    const refundNeeded = billing.reduce((n, b) => n + b.refundNeeded.length, 0)
+    await logAudit(actor.id, 'cancel_tests_before_discharge', 'admission', admissionId, { cancelled, billing })
+    return { success: true, cancelled, refundNeeded }
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+}
+
 export async function dischargePatient(
   admissionId: string,
   input: Record<string, unknown>
-): Promise<SimpleResult> {
+): Promise<{ success: true; dueRecorded: number } | { success: false; error: string }> {
   await requireWriteAccess()
   await requireModule('ipd')
   const actor = await getActorProfile()
@@ -470,6 +544,7 @@ export async function dischargePatient(
 
   const parsed = DischargeSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { discharge_type: type } = parsed.data
 
   const supabase = await createClient()
 
@@ -481,6 +556,34 @@ export async function dischargePatient(
 
   if (!admission || admission.status !== 'admitted') {
     return { success: false, error: 'Admission not found or already discharged' }
+  }
+
+  const now = new Date()
+  const nowIso = now.toISOString()
+
+  // Time of death: after admission, and not in the future (two minutes' grace
+  // for a clock that runs ahead).
+  let deathAt: string | null = null
+  if (type === 'death') {
+    const d = new Date(parsed.data.death_at as string)
+    if (d.getTime() > now.getTime() + 2 * 60_000) return { success: false, error: 'The time of death cannot be in the future' }
+    if (admission.admitted_at && d.getTime() < new Date(admission.admitted_at as string).getTime()) {
+      return { success: false, error: 'The time of death is before the admission' }
+    }
+    deathAt = d.toISOString()
+  }
+
+  const open = await findOpenWork(supabase, admissionId, now)
+  if (open.surgeriesInProgress > 0) {
+    return { success: false, error: 'A surgery is still in progress — mark it completed in OT before discharge.' }
+  }
+  const skipsGate = dischargeSkipsBalanceGate(type)
+  if (!skipsGate && open.testsNotDone.length > 0) {
+    const names = open.testsNotDone.map((t) => t.name).join('; ')
+    return {
+      success: false,
+      error: `${open.testsNotDone.length} test${open.testsNotDone.length > 1 ? 's were' : ' was'} ordered but not done (${names}). Cancel them in this window first, so they come off the bill.`,
+    }
   }
 
   // Bill every day of the stay before the balance gate — any day the cron / ward
@@ -499,11 +602,23 @@ export async function dischargePatient(
     })
   }
 
+  // Death, against advice, absconded: the patient (or the body) is not held for
+  // the bill. Tests that will never be done come off it first, so what stays
+  // due is only what was actually provided.
+  let testsCancelled = 0
+  if (skipsGate && open.testsNotDone.length > 0) {
+    try {
+      testsCancelled = (await cancelTestsNotDone(supabase, admissionId)).cancelled
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  }
+
   // Gate on the patient's own outstanding balance before discharge. An
   // approved-but-unsettled insurance claim covers its portion — the TPA settles
   // later — so only the patient's residual share must be collected now.
   const financials = await getAdmissionFinancials(admissionId)
-  if (financials.patientBalanceDue > 0) {
+  if (!skipsGate && financials.patientBalanceDue > 0) {
     const insuranceNote = financials.insuranceApproved > 0
       ? ` (₹${financials.insuranceApproved.toFixed(2)} is covered by an approved insurance claim)`
       : ''
@@ -512,6 +627,26 @@ export async function dischargePatient(
       error: `Cannot discharge — ₹${financials.patientBalanceDue.toFixed(2)} patient balance due${insuranceNote}. Collect the patient's share before discharge.`,
     }
   }
+  const dueRecorded = skipsGate ? financials.patientBalanceDue : 0
+
+  // Only one discharge wins: a second click or a second screen finds the stay
+  // already closed and changes nothing.
+  const { data: updated, error } = await supabase
+    .from('admissions')
+    .update({
+      status:            'discharged',
+      discharged_at:     nowIso,
+      discharge_summary: parsed.data.discharge_summary,
+      discharge_type:    type,
+      death_at:          deathAt,
+      death_cause:       type === 'death' ? (parsed.data.death_cause?.trim() || null) : null,
+      on_ventilator:     false,
+    })
+    .eq('id', admissionId)
+    .eq('status', 'admitted')
+    .select('id')
+  if (error) return { success: false, error: error.message }
+  if (!updated?.length) return { success: false, error: 'This patient has already been discharged.' }
 
   // Free the bed — delete temp slots, mark regular beds available
   if (admission.bed_id) {
@@ -524,19 +659,21 @@ export async function dischargePatient(
     }
   }
 
-  const { error } = await supabase
-    .from('admissions')
-    .update({
-      status:            'discharged',
-      discharged_at:     new Date().toISOString(),
-      discharge_summary: parsed.data.discharge_summary,
-    })
-    .eq('id', admissionId)
+  // Close the ICU episode (if any) and everything else still open on the stay.
+  await exitIcu(supabase, admissionId, actor.id)
+  const closedWork = await closeOpenWork(supabase, {
+    admissionId, patientId: admission.patient_id as string, closedAt: nowIso, died: type === 'death',
+  })
 
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'discharge', 'admission', admissionId)
-  return { success: true }
+  await logAudit(actor.id, 'discharge', 'admission', admissionId, {
+    discharge_type: type,
+    ...(type === 'death' ? { death_at: deathAt } : {}),
+    ...(dueRecorded > 0 ? { due_recorded: dueRecorded } : {}),
+    tests_cancelled: testsCancelled,
+    closed: closedWork,
+    uncharted_doses: open.unchartedDoses,
+  })
+  return { success: true, dueRecorded }
 }
 
 export async function updateDischargeSummary(

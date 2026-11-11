@@ -68,6 +68,18 @@ export async function autoIpdBill(
   // No IPD charges at all for a plan without IPD (e.g. Starter after the trial).
   if (!(await tenantHasIpd(tenantId))) return null
 
+  // Nothing is charged to a stay after it has closed. Discharge runs the
+  // day catch-up BEFORE it marks the admission discharged, and closes every
+  // open order after; a charge arriving later (a request dispatched, a surgery
+  // completed, a visit logged on a stale screen) would land after the balance
+  // check and turn up as a bill the patient never saw.
+  const { data: admRow } = await supabase
+    .from('admissions').select('status').eq('id', admissionId).maybeSingle()
+  if (admRow?.status === 'discharged') {
+    console.warn('[autoIpdBill] refused — admission is discharged', { admissionId, billSource, billingDate })
+    return null
+  }
+
   const cfg = await getTenantGstConfig(supabase, tenantId)
 
   // ── 1. Find existing non-cancelled bill ──────────────────────────────────────

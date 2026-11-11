@@ -680,7 +680,7 @@ export default function ClaimStepperView({
                 {enhancements.map((e) => (
                   <div key={e.id} className="flex items-center justify-between gap-2 text-xs px-3 py-2 rounded-lg" style={{ background: '#F8FAFC' }}>
                     <span style={{ color: '#0F172A' }}>
-                      Requested <Money amount={e.requested_amount} className="font-medium" />
+                      New total <Money amount={e.requested_amount} className="font-medium" />
                       {e.al_number ? ` · AL ${e.al_number}` : ''}
                       {e.status === 'approved' && e.approved_amount != null ? <> · approved <Money amount={e.approved_amount} /></> : ''}
                     </span>
@@ -699,14 +699,23 @@ export default function ClaimStepperView({
               </div>
             )}
             {canWrite && !terminal && (
+              <>
+              {/* decideEnhancement REPLACES the approved amount with this figure,
+                  so it must be the new total — typing only the extra would cut the
+                  cover and the discharge check would ask the patient to pay. */}
+              <p className="text-xs mb-1.5" style={{ color: '#64748B' }}>
+                Enter the <span className="font-semibold">new total</span> the insurer authorises, not the extra amount
+                {claim.eligibility_approved_amount != null ? <> — it replaces the current approved <Money amount={claim.eligibility_approved_amount} /></> : null}.
+              </p>
               <div className="flex gap-2 flex-wrap items-center">
-                <input type="number" min={0} value={enhAmount} onChange={(e) => setEnhAmount(e.target.value)} placeholder="Enhanced amount ₹" className="w-40 px-3 py-2 rounded-lg text-sm" style={inputStyle} />
+                <input type="number" min={0} value={enhAmount} onChange={(e) => setEnhAmount(e.target.value)} placeholder="New total approved ₹" className="w-44 px-3 py-2 rounded-lg text-sm" style={inputStyle} />
                 <input type="text" value={enhAl} onChange={(e) => setEnhAl(e.target.value)} placeholder="Revised AL no. (optional)" className="flex-1 min-w-40 px-3 py-2 rounded-lg text-sm" style={inputStyle} />
                 <button onClick={handleAddEnhancement} disabled={addingEnh || !(parseFloat(enhAmount) > 0)}
                   className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium" style={{ border: '1px solid #0D9488', color: '#0D9488' }}>
                   {addingEnh ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Request
                 </button>
               </div>
+              </>
             )}
           </div>
         </GlassCard>

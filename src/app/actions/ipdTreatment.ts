@@ -305,10 +305,18 @@ export async function updateSlotStatus(
   const supabase = await createClient()
 
   const { data: scheduleRow } = await supabase
-    .from('ipd_admin_schedule').select('admission_id').eq('id', scheduleId).maybeSingle()
+    .from('ipd_admin_schedule').select('admission_id, due_at').eq('id', scheduleId).maybeSingle()
   if (scheduleRow?.admission_id) {
-    const gate = await assertTreatmentStarted(scheduleRow.admission_id as string)
+    // A dose given before discharge can still be charted after it — but only
+    // one that was due before the patient left.
+    const gate = await assertTreatmentStarted(scheduleRow.admission_id as string, { allowDischarged: true })
     if (!gate.success) return gate
+    const { data: adm } = await supabase
+      .from('admissions').select('status, discharged_at').eq('id', scheduleRow.admission_id).maybeSingle()
+    if (adm?.status === 'discharged' && adm.discharged_at
+        && new Date(scheduleRow.due_at as string).getTime() > new Date(adm.discharged_at as string).getTime()) {
+      return { success: false, error: 'This dose was due after the patient was discharged.' }
+    }
   }
 
   // Block 'given' unless pharmacy has dispensed the medication for this order

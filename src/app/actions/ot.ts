@@ -7,6 +7,7 @@ import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schemas'
 import type { OtRoom, OtSchedule, OtConsumable, OtTeamMember, Profile } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
+import { admissionClosedError, ADMISSION_CLOSED_ERROR } from '@/lib/admissionOpen'
 import { removeOrderFromBills } from '@/lib/billing/orderBilling'
 import { istDayEndISO, istDayStartISO, istToday } from '@/lib/istDate'
 import { revalidatePath } from 'next/cache'
@@ -113,10 +114,23 @@ export async function scheduleSurgery(
 
   const id = crypto.randomUUID()
   const supabase = await createClient()
+
+  // The admission arrives from the browser — it must be this patient's, and
+  // still open, or the surgery bills onto someone else's (or a closed) stay.
+  const admissionId = (input.admission_id as string | null | undefined) ?? null
+  if (admissionId) {
+    const { data: adm } = await supabase
+      .from('admissions').select('patient_id, status').eq('id', admissionId).maybeSingle()
+    if (!adm || adm.patient_id !== parsed.data.patient_id) {
+      return { success: false, error: 'That admission does not belong to this patient.' }
+    }
+    if (adm.status !== 'admitted') return { success: false, error: ADMISSION_CLOSED_ERROR }
+  }
+
   const { error } = await supabase.from('ot_schedules').insert({
     id, tenant_id: actor.tenant_id, ...parsed.data,
     anaesthetist_id: parsed.data.anaesthetist_id ?? null,
-    admission_id: (input.admission_id as string | null) ?? null,
+    admission_id: admissionId,
     status: 'scheduled', billing_status: 'unbilled',
   })
 
@@ -367,6 +381,10 @@ export async function addConsumable(
 
   const admissionId = (schedule?.admission_id as string | null) ?? null
   const patientId   = (schedule?.patient_id  as string | null) ?? null
+  if (admissionId) {
+    const closed = await admissionClosedError(supabase, admissionId)
+    if (closed) return { success: false, error: closed }
+  }
 
   // Resolve drug IDs
   const drugMasterId = (parsed.data.drug_master_id as string | null | undefined) ?? null

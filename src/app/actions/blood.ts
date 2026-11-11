@@ -6,6 +6,8 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { createServiceBill } from '@/lib/billing/serviceBill'
+import { cancelBloodRequestAndRelease } from '@/lib/bloodRelease'
+import { admissionClosedError } from '@/lib/admissionOpen'
 import { resolveServiceBill } from '@/lib/cashlessCover'
 import { requiresPaymentFirst, unpaidAllowed } from '@/lib/payGate'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
@@ -216,6 +218,10 @@ export async function raiseRequest(
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const id = crypto.randomUUID()
   const supabase = await createClient()
+  if (parsed.data.admission_id) {
+    const closed = await admissionClosedError(supabase, parsed.data.admission_id)
+    if (closed) return { success: false, error: closed }
+  }
   const { error } = await supabase.from('blood_requests').insert({
     id, tenant_id: actor.tenant_id, ...parsed.data,
     notes:        parsed.data.notes ?? null,
@@ -356,10 +362,14 @@ export async function cancelRequest(id: string): Promise<SimpleResult> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'bloodbank:request')
   const supabase = await createClient()
-  const { error } = await supabase.from('blood_requests')
-    .update({ status: 'cancelled' }).eq('id', id).in('status', ['requested','cross_matched'])
-  if (error) return { success: false, error: error.message }
-  await logAudit(actor.id, 'cancel_request', 'blood_request', id)
+  let outcome: { cancelled: boolean; unitsReleased: number }
+  try {
+    outcome = await cancelBloodRequestAndRelease(supabase, id)
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+  if (!outcome.cancelled) return { success: false, error: 'Only a request that has not been issued can be cancelled.' }
+  await logAudit(actor.id, 'cancel_request', 'blood_request', id, { units_released: outcome.unitsReleased })
   return { success: true }
 }
 
@@ -702,7 +712,7 @@ export async function issueUnit(input: {
   // missed at the manual counter.
   if (req.admission_id && price > 0) {
     const today = istToday()
-    await autoIpdBill(supabase, actor.id, {
+    const billId = await autoIpdBill(supabase, actor.id, {
       tenantId:    actor.tenant_id,
       admissionId: req.admission_id as string,
       patientId:   req.patient_id as string,
@@ -716,7 +726,9 @@ export async function issueUnit(input: {
         unit_price:  price,
       }],
     })
-    await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
+    // No bill (plan without IPD, or the admission was closed) → the issue stays
+    // unbilled so the Bill Builder can still pick it up.
+    if (billId) await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
   } else if (isOpd) {
     // OPD charge lives on the request bill raised at request time — mark the
     // issue billed so the manual counter doesn't bill it a second time.

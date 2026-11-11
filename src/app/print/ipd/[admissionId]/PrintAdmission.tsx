@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { ArrowLeft, Printer } from 'lucide-react'
+import { dischargeTypeLabel } from '@/lib/dischargeType'
 import type {
   Admission, IpdProgressNote, IpdMedicationOrder, IpdAdminSchedule,
   LabOrder, RadiologyOrder, TenantProfile,
@@ -124,7 +125,7 @@ function HospitalHeader({
             <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', margin: '2px 0 0' }}>{fmtDate(adm.admitted_at)}</p>
             {adm.discharged_at && (
               <>
-                <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: '4px 0 0' }}>Discharged</p>
+                <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: '4px 0 0' }}>{dischargeTypeLabel(adm.discharge_type)}</p>
                 <p style={{ fontSize: '11px', fontWeight: 700, color: '#15803D', margin: '2px 0 0' }}>{fmtDate(adm.discharged_at)}</p>
               </>
             )}

@@ -27,6 +27,7 @@ import type {
 } from '@/lib/types'
 import { hasPermission } from '@/lib/rbac'
 import { istToday } from '@/lib/istDate'
+import { dischargeTypeLabel } from '@/lib/dischargeType'
 
 function computeAge(dob: string | null): string {
   if (!dob) return '—'
@@ -396,7 +397,7 @@ function EncountersTab({ admissions, visits, appointments }: {
                         style={isDischarged
                           ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }
                           : { background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                        {isDischarged ? 'Discharged' : 'Admitted'}
+                        {isDischarged ? dischargeTypeLabel(a.discharge_type as string | null) : 'Admitted'}
                       </span>
                     </div>
                     <p className="text-sm font-semibold mt-1" style={{ color: '#0F172A' }}>

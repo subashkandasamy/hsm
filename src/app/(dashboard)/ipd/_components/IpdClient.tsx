@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { dischargeTypeLabel } from '@/lib/dischargeType'
 import { UserPlus, RefreshCw, BedDouble, Stethoscope, ShieldAlert, FileWarning } from 'lucide-react'
 import { listMyConsults } from '@/app/actions/careTeam'
 import { getDeterioratingPatients, type DeterioratingPatient } from '@/app/actions/icu'
@@ -219,8 +220,10 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
                           </span>
                         ) : (
                           <span className="flex-shrink-0 px-2.5 py-1 rounded-xl text-xs font-semibold"
-                            style={{ background: '#F1F5F9', color: '#64748B' }}>
-                            discharged
+                            style={a.discharge_type && a.discharge_type !== 'normal'
+                              ? { background: '#E2E8F0', color: '#334155' }
+                              : { background: '#F1F5F9', color: '#64748B' }}>
+                            {dischargeTypeLabel(a.discharge_type)}
                           </span>
                         )}
                       </div>
@@ -305,8 +308,10 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
                         <span className="px-2.5 py-1 rounded-lg text-xs font-semibold"
                           style={isAdmitted
                             ? { background: '#DCFCE7', color: '#15803D' }
-                            : { background: '#F1F5F9', color: '#64748B' }}>
-                          {a.status}
+                            : a.discharge_type && a.discharge_type !== 'normal'
+                              ? { background: '#E2E8F0', color: '#334155' }
+                              : { background: '#F1F5F9', color: '#64748B' }}>
+                          {isAdmitted ? 'admitted' : dischargeTypeLabel(a.discharge_type)}
                         </span>
                       </td>
                       <td className="px-4 py-3.5">

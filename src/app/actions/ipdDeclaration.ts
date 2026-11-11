@@ -39,13 +39,23 @@ export async function listDeclarationsForAdmissions(
 // Blocking gate — call first in every clinical IPD action. Not the same
 // permission/insurance check as billing gates: this is purely "has the
 // legal consent+liability declaration been signed (or manually overridden)".
-export async function assertTreatmentStarted(admissionId: string): Promise<SimpleResult> {
+export async function assertTreatmentStarted(
+  admissionId: string,
+  opts: { allowDischarged?: boolean } = {},
+): Promise<SimpleResult> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('admissions')
-    .select('treatment_started_at')
+    .select('treatment_started_at, status')
     .eq('id', admissionId)
     .maybeSingle()
+
+  // A closed stay takes no new orders, requests or charges. Charting what
+  // already happened (a dose given before discharge, a late note) still may —
+  // those callers pass allowDischarged.
+  if (data && data.status !== 'admitted' && !opts.allowDischarged) {
+    return { success: false, error: 'This patient has been discharged — nothing new can be ordered on this admission.' }
+  }
 
   if (!data?.treatment_started_at) {
     return {
