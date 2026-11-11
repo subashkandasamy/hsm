@@ -14,7 +14,7 @@ import { istDate, istToday } from '@/lib/istDate'
  * Only released results (verified / reported) are shown.
  */
 
-export interface StayLabCell { value: string; flag: string | null; count: number }
+export interface StayLabCell { value: string; flag: string | null; count: number; at: string }
 export interface StayLabRow { key: string; label: string; unit: string | null; group: string; cells: Record<string, StayLabCell> }
 export interface AbgRow {
   orderId: string; at: string
@@ -34,7 +34,7 @@ const RELEASED = ['verified', 'reported']
 
 type OrderRow = {
   id: string; status: string; ordered_at: string; verified_at: string | null; reported_at: string | null; scheduled_for: string | null
-  items: Array<{ id: string; test_id: string; result_value: string | null; result_text: string | null; unit: string | null; flag: string | null
+  items: Array<{ id: string; test_id: string; result_value: string | number | null; result_text: string | null; unit: string | null; flag: string | null
     test: { name: string; category: string | null; sample_type: string | null } | null }>
 }
 type AnalyteRow = {
@@ -59,15 +59,17 @@ export async function getStayLabs(admissionId: string): Promise<StayLabs> {
   const analytes = (an ?? []) as unknown as AnalyteRow[]
 
   const whenOf = (o: OrderRow) => o.verified_at ?? o.reported_at ?? o.ordered_at
-  const dayOf = (o: OrderRow) => istDate(whenOf(o))
   const byOrder = new Map(released.map((o) => [o.id, o]))
   const days = new Set<string>()
   const rows = new Map<string, StayLabRow>()
-  const put = (key: string, label: string, unit: string | null, group: string, day: string, value: string, flag: string | null) => {
+  const put = (key: string, label: string, unit: string | null, group: string, at: string, value: string, flag: string | null) => {
     const r = rows.get(key) ?? { key, label, unit, group, cells: {} }
+    const day = istDate(at)
     const prev = r.cells[day]
-    // Latest result of the day wins; the count says when there were more.
-    r.cells[day] = { value, flag, count: (prev?.count ?? 0) + 1 }
+    // The latest result of the day is shown — by result time, not by the order
+    // rows happen to arrive in; the count says when there were more.
+    const count = (prev?.count ?? 0) + 1
+    r.cells[day] = !prev || at >= prev.at ? { value, flag, count, at } : { ...prev, count }
     rows.set(key, r); days.add(day)
   }
   const fmt = (n: number | null, t: string | null) => (n != null ? String(n) : t ?? '')
@@ -79,15 +81,17 @@ export async function getStayLabs(admissionId: string): Promise<StayLabs> {
     const v = fmt(a.value_num, a.value_text); if (!v) continue
     panelItems.add(`${a.lab_order_id}:${a.test_id}`)
     const item = o.items.find((i) => i.test_id === a.test_id)
-    put(`a:${a.analyte.code}`, a.analyte.short_name || a.analyte.name, a.unit_ucum, item?.test?.category ?? 'Panels', dayOf(o), v, a.flag)
+    put(`a:${a.analyte.code}`, a.analyte.short_name || a.analyte.name, a.unit_ucum, item?.test?.category ?? 'Panels', whenOf(o), v, a.flag)
   }
   // Single tests: one row per test (skipping items whose values came as analytes)
   for (const o of released) {
     for (const i of o.items) {
       if (panelItems.has(`${o.id}:${i.test_id}`)) continue
-      const v = i.result_value ?? i.result_text; if (!v?.trim()) continue
+      // result_value is numeric in the database — never assume a string.
+      const raw = i.result_value ?? i.result_text
+      const v = raw == null ? '' : String(raw).trim(); if (!v) continue
       if (/culture/i.test(i.test?.name ?? '')) continue   // cultures have their own list
-      put(`t:${i.test_id}`, i.test?.name ?? 'Test', i.unit, i.test?.category ?? 'Tests', dayOf(o), v.trim(), i.flag)
+      put(`t:${i.test_id}`, i.test?.name ?? 'Test', i.unit, i.test?.category ?? 'Tests', whenOf(o), v, i.flag)
     }
   }
 
@@ -122,7 +126,8 @@ export async function getStayLabs(admissionId: string): Promise<StayLabs> {
   const cultures: StayLabs['cultures'] = []
   for (const o of all) for (const i of o.items) {
     if (!/culture/i.test(i.test?.name ?? '')) continue
-    const result = RELEASED.includes(o.status) ? (i.result_text ?? i.result_value ?? null) : null
+    const rawResult = RELEASED.includes(o.status) ? (i.result_text ?? i.result_value ?? null) : null
+    const result = rawResult == null ? null : String(rawResult)
     cultures.push({ orderId: o.id, test: i.test?.name ?? 'Culture', sample: i.test?.sample_type ?? null, status: o.status, orderedAt: o.ordered_at, result })
   }
 
