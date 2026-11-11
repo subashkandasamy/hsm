@@ -243,7 +243,7 @@ export default function SurgeryRecordPanel({ schedule, editable, onSaved }: {
                     <button onClick={() => signStep(s.step, true)} disabled={!allTicked || stepBusy === s.step}
                       className="px-2.5 py-1 rounded-lg text-xs font-semibold"
                       style={{ background: allTicked ? '#0D9488' : '#CBD5E1', color: '#fff', border: 'none', cursor: allTicked ? 'pointer' : 'not-allowed' }}>
-                      {stepBusy === s.step ? 'Signing…' : `Sign ${s.title.toLowerCase()}`}
+                      {stepBusy === s.step ? 'Signing…' : 'Sign'}
                     </button>
                   ))}
                 </div>
