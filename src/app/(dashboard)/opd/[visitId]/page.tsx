@@ -90,14 +90,18 @@ export default async function OpdVisitPage({ params }: Props) {
     ? await getObgynContext(patient.id, visit.id).catch((e) => { console.error('[OpdVisitPage] obgyn context failed:', e); return null })
     : null
 
-  // The ER case this visit belongs to: the patient's case that arrived before
-  // the visit was opened (five minutes' margin), and its Initial Evaluation.
+  // The ER case this visit belongs to — the patient's case still on the board
+  // (one at most, 0258); else, for a closed visit, the case that arrived last
+  // before the visit opened (five minutes' margin). Then its Initial Evaluation.
   let erEvaluation: import('@/app/actions/initialAssessment').AssessmentView | null = null
   if (visit.type === 'emergency') {
-    const { data: ec } = await supabase.from('emergency_cases').select('id')
+    const { data: active } = await supabase.from('emergency_cases').select('id')
+      .eq('patient_id', visit.patient_id).in('status', ['waiting', 'in_treatment']).limit(1).maybeSingle()
+    const { data: earlier } = active ? { data: null } : await supabase.from('emergency_cases').select('id')
       .eq('patient_id', visit.patient_id)
       .lte('arrived_at', new Date(new Date(visit.created_at).getTime() + 5 * 60_000).toISOString())
       .order('arrived_at', { ascending: false }).limit(1).maybeSingle()
+    const ec = active ?? earlier
     if (ec) erEvaluation = await getInitialAssessment({ emergencyCaseId: ec.id as string }).catch((e) => {
       console.error('[OpdVisitPage] initial assessment failed:', e); return null
     })
