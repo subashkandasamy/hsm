@@ -15,8 +15,11 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import Money from '@/components/ui/Money'
 import {
   setOtStatus, saveOtNotes, addConsumable, removeConsumable, cancelSurgery,
-  addOtTeamMember, removeOtTeamMember, searchOtStaff,
+  addOtTeamMember, removeOtTeamMember, searchOtStaff, saveSurgeryFees,
 } from '@/app/actions/ot'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { missingFromRecord } from '@/lib/surgery'
+import SurgeryRecordPanel from './SurgeryRecordPanel'
 import { postOpTransferToWard } from '@/app/actions/ipd'
 import { listAvailableBeds } from '@/app/actions/wards'
 import { useAuth } from '@/context/AuthContext'
@@ -100,7 +103,31 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
   const [selectedDrugId, setSelectedDrugId]     = useState<string | null>(null)
   const [selectedDrugIsGlobal, setSelectedDrugIsGlobal] = useState(false)
 
+  // Implant details for the item being added
+  const [isImplant, setIsImplant]   = useState(false)
+  const [implantLot, setImplantLot] = useState('')
+  const [implantMaker, setImplantMaker] = useState('')
+  const [implantSize, setImplantSize]   = useState('')
+  const [consumableError, setConsumableError] = useState<string | null>(null)
+
+  // Cancel (in-page dialog, never the browser's) and "complete anyway"
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [completeWarning, setCompleteWarning] = useState<string[] | null>(null)
+
+  // Doctors' fees, billed as their own lines at completion
+  const [fees, setFees] = useState({
+    surgeon: initial.surgeon_fee != null ? String(initial.surgeon_fee) : '',
+    anaesthetist: initial.anaesthetist_fee != null ? String(initial.anaesthetist_fee) : '',
+    team: Object.fromEntries((initial.team_members ?? []).map((m) => [m.id, m.fee != null ? String(m.fee) : ''])) as Record<string, string>,
+  })
+  const [feesSaving, setFeesSaving] = useState(false)
+  const [feesMsg, setFeesMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
   const isClosed = schedule.status === 'completed' || schedule.status === 'cancelled'
+  // The record (and the free notes) stay open after completion — the operation
+  // note is often written once the patient is out. Never on a cancelled surgery.
+  const recordEditable = canRecord && schedule.status !== 'cancelled'
+  const feesEditable = canSchedule && schedule.status !== 'cancelled' && schedule.billing_status !== 'billed'
 
 
   // Debounced staff search
@@ -128,7 +155,12 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
     setSelectedDrugIsGlobal(drug.is_global ?? false)
   }
 
-  async function handleStatus(status: 'in_progress' | 'completed') {
+  async function handleStatus(status: 'in_progress' | 'completed', force = false) {
+    if (status === 'completed' && !force) {
+      const missing = missingFromRecord(schedule)
+      if (missing.length) { setCompleteWarning(missing); return }
+    }
+    setCompleteWarning(null)
     setActionLoading(true); setError(null)
     const r = await setOtStatus(schedule.id, status)
     setActionLoading(false)
@@ -137,7 +169,7 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
   }
 
   async function handleCancel() {
-    if (!confirm('Cancel this surgery? This cannot be undone.')) return
+    setConfirmCancel(false)
     setActionLoading(true); setError(null)
     const r = await cancelSurgery(schedule.id)
     setActionLoading(false)
@@ -145,6 +177,23 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
     setSchedule(s => ({ ...s, status: 'cancelled' }))
   }
 
+
+  async function handleSaveFees() {
+    const num = (v: string) => (v.trim() === '' ? null : Number(v))
+    const all = [fees.surgeon, fees.anaesthetist, ...Object.values(fees.team)]
+    if (all.some((v) => v.trim() !== '' && !(Number(v) >= 0))) { setFeesMsg({ ok: false, text: 'Fees are amounts in rupees' }); return }
+    setFeesSaving(true); setFeesMsg(null)
+    const r = await saveSurgeryFees(schedule.id, {
+      surgeon_fee: num(fees.surgeon),
+      anaesthetist_fee: schedule.anaesthetist_id ? num(fees.anaesthetist) : null,
+      team: team.map((m) => ({ id: m.id, fee: num(fees.team[m.id] ?? '') })),
+    })
+    setFeesSaving(false)
+    if (!r.success) { setFeesMsg({ ok: false, text: r.error }); return }
+    setSchedule((s) => ({ ...s, surgeon_fee: num(fees.surgeon), anaesthetist_fee: num(fees.anaesthetist) }))
+    setTeam((t) => t.map((m) => ({ ...m, fee: num(fees.team[m.id] ?? '') })))
+    setFeesMsg({ ok: true, text: 'Fees saved — billed with the surgery when it is marked completed' })
+  }
 
   async function handleSaveNotes() {
     setNoteSaving(true)
@@ -172,21 +221,25 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
   const handleAddConsumable = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newDesc.trim()) return
-    setAddingC(true)
+    setAddingC(true); setConsumableError(null)
     const r = await addConsumable({
       ot_schedule_id:  schedule.id,
       description:     newDesc.trim(),
       qty:             parseInt(newQty, 10) || 1,
       drug_master_id:  selectedDrugId && selectedDrugIsGlobal  ? selectedDrugId : null,
       drug_id:         selectedDrugId && !selectedDrugIsGlobal ? selectedDrugId : null,
+      is_implant:      isImplant,
+      implant_lot_no:  isImplant ? implantLot : null,
+      implant_maker:   isImplant ? implantMaker : null,
+      implant_size:    isImplant ? implantSize : null,
     })
     setAddingC(false)
-    if (r.success) {
-      setConsumables(c => [...c, r.consumable])
-      setNewDesc(''); setDrugQuery(''); setNewQty('1')
-      setSelectedDrugId(null); setSelectedDrugIsGlobal(false)
-    }
-  }, [schedule.id, newDesc, newQty, selectedDrugId, selectedDrugIsGlobal])
+    if (!r.success) { setConsumableError(r.error); return }
+    setConsumables(c => [...c, r.consumable])
+    setNewDesc(''); setDrugQuery(''); setNewQty('1')
+    setSelectedDrugId(null); setSelectedDrugIsGlobal(false)
+    setIsImplant(false); setImplantLot(''); setImplantMaker(''); setImplantSize('')
+  }, [schedule.id, newDesc, newQty, selectedDrugId, selectedDrugIsGlobal, isImplant, implantLot, implantMaker, implantSize])
 
   async function handleRemoveConsumable(id: string) {
     await removeConsumable(id)
@@ -321,7 +374,7 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
             </button>
           )}
           {canSchedule && schedule.status === 'scheduled' && (
-            <button onClick={handleCancel} disabled={actionLoading}
+            <button onClick={() => setConfirmCancel(true)} disabled={actionLoading}
               className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-sm font-medium text-center"
               style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
               Cancel Surgery
@@ -329,6 +382,32 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
           )}
         </div>
       )}
+
+      {completeWarning && (
+        <div className="rounded-xl p-3.5" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+          <p className="text-sm font-semibold" style={{ color: '#92400E' }}>The record is not complete yet</p>
+          <ul className="text-xs mt-1 list-disc pl-4 space-y-0.5" style={{ color: '#78350F' }}>
+            {completeWarning.map((m) => <li key={m}>{m}</li>)}
+          </ul>
+          <p className="text-xs mt-1.5" style={{ color: '#78350F' }}>You can complete now and fill these in afterwards — the record stays open.</p>
+          <div className="flex gap-2 mt-2.5">
+            <button onClick={() => handleStatus('completed', true)} disabled={actionLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: '#15803D', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              Complete anyway
+            </button>
+            <button onClick={() => setCompleteWarning(null)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+              Fill the record first
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog open={confirmCancel} onClose={() => setConfirmCancel(false)} onConfirm={handleCancel}
+        title="Cancel this surgery?" confirmLabel="Cancel surgery" confirmVariant="danger" loading={actionLoading}
+        description="The booking is cancelled and its pending consumables are withdrawn. This cannot be undone." />
 
       {/* Surgical Team */}
       <GlassCard className="p-4">
@@ -419,11 +498,60 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
         )}
       </GlassCard>
 
-      {/* OT Notes */}
+      {/* Doctors' fees — each billed as its own line when the surgery is completed */}
+      <GlassCard className="p-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Fees</h2>
+            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+              {schedule.billing_status === 'billed'
+                ? 'Billed — change a fee on the bill'
+                : 'Each fee becomes its own bill line when the surgery is completed. Leave blank if the procedure price already includes it.'}
+            </p>
+          </div>
+          {feesEditable && (
+            <button onClick={handleSaveFees} disabled={feesSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: feesSaving ? 'wait' : 'pointer' }}>
+              <Save className="w-3.5 h-3.5" /> {feesSaving ? 'Saving…' : 'Save fees'}
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span style={{ color: '#475569' }}>Procedure — {schedule.procedure_name}</span>
+            <span className="font-semibold" style={{ color: '#0F172A' }}><Money amount={schedule.price_snapshot} /></span>
+          </div>
+          {([
+            ['surgeon', `Surgeon — ${schedule.surgeon?.full_name ?? '—'}`, true],
+            ['anaesthetist', `Anaesthetist — ${schedule.anaesthetist?.full_name ?? '—'}`, !!schedule.anaesthetist_id],
+          ] as const).filter(([, , show]) => show).map(([k, label]) => (
+            <div key={k} className="flex items-center justify-between gap-3 text-sm">
+              <span style={{ color: '#475569' }}>{label}</span>
+              <Input inputMode="decimal" value={fees[k]} disabled={!feesEditable} placeholder="₹ —"
+                onChange={(e) => setFees((f) => ({ ...f, [k]: e.target.value }))} style={{ width: '8rem', textAlign: 'right' }} />
+            </div>
+          ))}
+          {team.map((m) => (
+            <div key={m.id} className="flex items-center justify-between gap-3 text-sm">
+              <span style={{ color: '#475569' }}>{TEAM_ROLES.find((r) => r.value === m.role)?.label ?? m.role} — {m.profile?.full_name ?? '—'}</span>
+              <Input inputMode="decimal" value={fees.team[m.id] ?? ''} disabled={!feesEditable} placeholder="₹ —"
+                onChange={(e) => setFees((f) => ({ ...f, team: { ...f.team, [m.id]: e.target.value } }))} style={{ width: '8rem', textAlign: 'right' }} />
+            </div>
+          ))}
+        </div>
+        {feesMsg && <p className="text-xs mt-2" style={{ color: feesMsg.ok ? '#15803D' : '#DC2626' }}>{feesMsg.text}</p>}
+      </GlassCard>
+
+      {/* The surgery record: before surgery, WHO checklist, anaesthesia, operation note */}
+      <SurgeryRecordPanel schedule={schedule} editable={recordEditable}
+        onSaved={(patch) => setSchedule((s) => ({ ...s, ...patch }))} />
+
+      {/* Other notes */}
       <GlassCard className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>OT Notes</h2>
-          {canRecord && !isClosed && (
+          <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Other notes</h2>
+          {recordEditable && (
             <button onClick={handleSaveNotes} disabled={noteSaving}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ background: noteSaved ? '#DCFCE7' : '#0D9488', color: noteSaved ? '#15803D' : '#fff', border: 'none', cursor: 'pointer' }}>
@@ -437,9 +565,9 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
           fieldKey="ot.notes"
           value={notes}
           onChange={setNotes}
-          placeholder="Intraoperative notes, findings, complications, post-op instructions…"
-          disabled={isClosed || !canRecord}
-          style={{ minHeight: '7rem', ...(isClosed ? { opacity: 0.7 } : {}) }}
+          placeholder="Anything the sections above do not cover"
+          disabled={!recordEditable}
+          style={{ minHeight: '5rem', ...(!recordEditable ? { opacity: 0.7 } : {}) }}
         />
       </GlassCard>
 
@@ -461,6 +589,7 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium" style={{ color: '#0F172A' }}>{c.description}</p>
                     <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Qty: {c.qty}</p>
+                    {c.is_implant && <p className="text-xs mt-0.5" style={{ color: '#7C3AED' }}>{implantText(c)}</p>}
                   </div>
                   {!isClosed && canRecord && (
                     <button onClick={() => handleRemoveConsumable(c.id)}
@@ -484,7 +613,10 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
               <tbody>
                 {consumables.map((c, i) => (
                   <tr key={c.id} style={{ borderBottom: i < consumables.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                    <td className="px-3 py-2.5" style={{ color: '#0F172A' }}>{c.description}</td>
+                    <td className="px-3 py-2.5" style={{ color: '#0F172A' }}>
+                      {c.description}
+                      {c.is_implant && <span className="block text-xs mt-0.5" style={{ color: '#7C3AED' }}>{implantText(c)}</span>}
+                    </td>
                     <td className="px-3 py-2.5" style={{ color: '#475569' }}>{c.qty}</td>
                     <td className="px-3 py-2.5">
                       {!isClosed && canRecord && (
@@ -545,6 +677,20 @@ export default function OtDetailClient({ schedule: initial, wardBoard }: Props) 
                 </ul>
               )}
             </div>
+            {/* Implant — needs a lot number so a recalled implant can be traced to the patient */}
+            <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+              <input type="checkbox" checked={isImplant} onChange={(e) => setIsImplant(e.target.checked)}
+                style={{ width: '15px', height: '15px', accentColor: '#7C3AED', cursor: 'pointer' }} />
+              This is an implant (plate, screw, mesh, lens, stent…)
+            </label>
+            {isImplant && (
+              <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
+                <Input value={implantLot} onChange={(e) => setImplantLot(e.target.value)} placeholder="Lot / batch no. *" />
+                <Input value={implantMaker} onChange={(e) => setImplantMaker(e.target.value)} placeholder="Manufacturer" />
+                <Input value={implantSize} onChange={(e) => setImplantSize(e.target.value)} placeholder="Size" />
+              </div>
+            )}
+            {consumableError && <p className="text-xs" style={{ color: '#DC2626' }}>{consumableError}</p>}
             {/* Qty + Add */}
             <div className="flex gap-2 items-center">
               <label className="text-xs font-medium flex-shrink-0" style={{ color: '#64748B' }}>Qty</label>
@@ -708,4 +854,8 @@ function TeamChip({
       )}
     </div>
   )
+}
+
+function implantText(c: OtConsumable): string {
+  return ['Implant', c.implant_lot_no && `lot ${c.implant_lot_no}`, c.implant_maker, c.implant_size].filter(Boolean).join(' · ')
 }

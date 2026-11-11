@@ -565,6 +565,7 @@ export type OtStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export interface OtConsumable {
   id: string; ot_schedule_id: string; description: string; qty: number; unit_price: number
   drug_master_id?: string | null; drug_id?: string | null; pharmacy_request_id?: string | null
+  is_implant?: boolean; implant_lot_no?: string | null; implant_maker?: string | null; implant_size?: string | null
 }
 
 export type OtTeamRole = 'surgeon' | 'assistant' | 'anaesthetist' | 'scrub_nurse' | 'other'
@@ -575,6 +576,8 @@ export interface OtTeamMember {
   profile_id: string
   role: OtTeamRole
   created_at: string
+  /** This doctor's fee for the surgery, billed as its own line (0282). */
+  fee?: number | null
   profile?: Pick<Profile, 'id' | 'full_name'>
 }
 
@@ -594,6 +597,18 @@ export interface OtSchedule {
   } | null
   consumables?: OtConsumable[]
   team_members?: OtTeamMember[]
+  // The surgery record (0282)
+  pre_op_checklist?: import('@/lib/surgery').PreOpChecklist | null
+  safety_checklist?: import('@/lib/surgery').SafetyChecklist | null
+  anaesthesia_type?: string | null; asa_grade?: string | null
+  anaesthesia_start?: string | null; anaesthesia_end?: string | null
+  incision_at?: string | null; closure_at?: string | null
+  pre_op_diagnosis?: string | null; post_op_diagnosis?: string | null
+  findings?: string | null; procedure_details?: string | null
+  blood_loss_ml?: number | null; drains?: string | null; specimens?: string | null
+  counts_correct?: boolean | null; complications?: string | null; post_op_orders?: string | null
+  surgeon_fee?: number | null; anaesthetist_fee?: number | null
+  record_updated_at?: string | null
 }
 
 // ---- Phase 4: Blood Bank ----

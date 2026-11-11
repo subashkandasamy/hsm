@@ -33,6 +33,9 @@ export const NOTE_FIELDS = {
   'ipd.progress_note':      'Clinical Note (ward round)',
   'ipd.discharge_summary':  'Discharge Summary',
   'ot.notes':               'Operation Notes',
+  'ot.findings':            'Operative Findings',
+  'ot.procedure_details':   'Procedure Details',
+  'ot.post_op_orders':      'Post-op Orders',
   'eye.notes':              'Ophthalmic Notes',
 
   'nursing.situation':      'Handover — Situation',
@@ -50,7 +53,7 @@ export const NOTE_FIELD_GROUPS: { label: string; keys: NoteFieldKey[] }[] = [
   { label: 'History',      keys: ['hx.past_medical', 'hx.past_surgical', 'hx.drug_history', 'hx.family_history', 'hx.social_history'] },
   { label: 'Inpatient',    keys: ['ipd.progress_note', 'ipd.discharge_summary'] },
   { label: 'Nursing handover', keys: ['nursing.situation', 'nursing.background', 'nursing.assessment', 'nursing.recommendation'] },
-  { label: 'Theatre & specialty', keys: ['ot.notes', 'eye.notes'] },
+  { label: 'Theatre & specialty', keys: ['ot.notes', 'ot.findings', 'ot.procedure_details', 'ot.post_op_orders', 'eye.notes'] },
 ]
 
 export function isNoteFieldKey(k: string): k is NoteFieldKey {

@@ -4,7 +4,14 @@ import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
-import { OtRoomSchema, OtScheduleSchema, OtConsumableSchema } from '@/lib/schemas'
+import {
+  OtRoomSchema, OtScheduleSchema, OtConsumableSchema,
+  SurgeryRecordSchema, PreOpChecklistSchema, SafetyStepSchema, SurgeryFeesSchema,
+} from '@/lib/schemas'
+import {
+  SAFETY_STEPS, surgeryChargeLines,
+  type PreOpChecklist, type SafetyChecklist, type SafetyStepRecord, type SurgeryChargeSource,
+} from '@/lib/surgery'
 import type { OtRoom, OtSchedule, OtConsumable, OtTeamMember, Profile } from '@/lib/types'
 import { autoIpdBill } from '@/lib/ipdBilling'
 import { admissionClosedError, ADMISSION_CLOSED_ERROR } from '@/lib/admissionOpen'
@@ -218,13 +225,15 @@ export async function setOtStatus(
   const from = status === 'in_progress' ? ['scheduled'] : ['scheduled', 'in_progress']
   const { data: updated, error } = await supabase.from('ot_schedules')
     .update({ status }).eq('id', id).in('status', from)
-    .select('id, admission_id, patient_id, procedure_name, price_snapshot')
+    .select(`id, admission_id, patient_id, procedure_name, price_snapshot, surgeon_fee, anaesthetist_fee,
+      surgeon:profiles!ot_schedules_surgeon_id_fkey(full_name), anaesthetist:profiles!ot_schedules_anaesthetist_id_fkey(full_name),
+      team_members:ot_team_members(role, fee, profile:profiles(full_name))`)
   if (error) return { success: false, error: error.message }
   const row = updated?.[0]
   if (!row) return { success: false, error: 'This surgery is no longer in a state that allows that change.' }
 
   let billId: string | null = null
-  if (status === 'completed') billId = await billCompletedSurgery(supabase, actor, row)
+  if (status === 'completed') billId = await billCompletedSurgery(supabase, actor, row as unknown as CompletedSurgery)
 
   await logAudit(actor.id, `status_${status}`, 'ot_schedule', id, billId ? { bill_id: billId } : undefined)
   revalidatePath('/ot')
@@ -237,12 +246,16 @@ export async function setOtStatus(
  * twice; if billing doesn't happen (no IPD in the plan, zero price, error) the
  * claim is released and the charge stays available in the Bill Builder.
  */
+type CompletedSurgery = SurgeryChargeSource & { admission_id: string | null; patient_id: string }
+
 async function billCompletedSurgery(
   supabase: Awaited<ReturnType<typeof createClient>>,
   actor: { id: string; tenant_id: string },
-  row: { id: string; admission_id: string | null; patient_id: string; procedure_name: string; price_snapshot: number },
+  row: CompletedSurgery,
 ): Promise<string | null> {
-  if (!row.admission_id || !(Number(row.price_snapshot) > 0)) return null
+  // The procedure and each doctor's fee, one line each (insurers ask for the break-up).
+  const lineItems = surgeryChargeLines(row)
+  if (!row.admission_id || !lineItems.length) return null
   const { data: claimed } = await supabase.from('ot_schedules')
     .update({ billing_status: 'billed' }).eq('id', row.id).eq('billing_status', 'unbilled').select('id')
   if (!claimed?.length) return null
@@ -253,7 +266,7 @@ async function billCompletedSurgery(
     patientId:   row.patient_id,
     billingDate: istToday(),
     billSource:  'ot',
-    lineItems: [{ source: 'ot', ref_id: row.id, description: row.procedure_name, qty: 1, unit_price: Number(row.price_snapshot) }],
+    lineItems,
   })
   if (!billId) await supabase.from('ot_schedules').update({ billing_status: 'unbilled' }).eq('id', row.id)
   return billId
@@ -267,6 +280,152 @@ export async function saveOtNotes(id: string, notes: string): Promise<SimpleResu
   const { error } = await supabase.from('ot_schedules').update({ notes }).eq('id', id)
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'notes', 'ot_schedule', id)
+  return { success: true }
+}
+
+// ── The surgery record ───────────────────────────────────────────────────────
+//
+// Editable after completion (the operation note is often written once the
+// patient is out of theatre); never on a cancelled surgery. Every save is
+// audited with the fields it changed.
+
+async function recordTarget(supabase: Awaited<ReturnType<typeof createClient>>, id: string) {
+  const { data } = await supabase.from('ot_schedules')
+    .select('id, status, billing_status, pre_op_checklist, safety_checklist, anaesthesia_start, anaesthesia_end, incision_at, closure_at')
+    .eq('id', id).maybeSingle()
+  if (!data) return { error: 'Surgery not found' as const }
+  if (data.status === 'cancelled') return { error: 'This surgery was cancelled — its record cannot be changed.' as const }
+  return { row: data }
+}
+
+export async function saveSurgeryRecord(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ot:record')
+  const parsed = SurgeryRecordSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+
+  // Only the keys this card sent — the other cards' fields are left alone.
+  const sent = Object.keys(input).filter((k) => k in parsed.data) as Array<keyof typeof parsed.data>
+  if (!sent.length) return { success: true }
+  const patch: Record<string, unknown> = {}
+  for (const k of sent) patch[k] = parsed.data[k] ?? null
+
+  const supabase = await createClient()
+  const t = await recordTarget(supabase, id)
+  if ('error' in t) return { success: false, error: t.error as string }
+
+  // Order against what is already stored, so the reason is in words (the
+  // database constraint would only say "check constraint").
+  const at = (k: 'anaesthesia_start' | 'anaesthesia_end' | 'incision_at' | 'closure_at') =>
+    (k in patch ? patch[k] : t.row[k]) as string | null
+  const after = (a: string | null, b: string | null) => !!a && !!b && new Date(b).getTime() < new Date(a).getTime()
+  if (after(at('anaesthesia_start'), at('anaesthesia_end'))) return { success: false, error: 'Anaesthesia ends before it starts' }
+  if (after(at('incision_at'), at('closure_at'))) return { success: false, error: 'Closure is before the incision' }
+
+  const { error } = await supabase.from('ot_schedules').update({
+    ...patch, record_updated_at: new Date().toISOString(), record_updated_by: actor.id,
+  }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'record', 'ot_schedule', id, { fields: sent })
+  return { success: true }
+}
+
+export async function savePreOpChecklist(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ot:record')
+  const parsed = PreOpChecklistSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+
+  const supabase = await createClient()
+  const t = await recordTarget(supabase, id)
+  if ('error' in t) return { success: false, error: t.error as string }
+
+  const checklist: PreOpChecklist = {
+    ...((t.row.pre_op_checklist as PreOpChecklist | null) ?? {}),
+    ...parsed.data,
+    done_at: new Date().toISOString(),
+    done_by: actor.id,
+  }
+  const { error } = await supabase.from('ot_schedules').update({
+    pre_op_checklist: checklist, record_updated_at: checklist.done_at, record_updated_by: actor.id,
+  }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'pre_op_checklist', 'ot_schedule', id, parsed.data)
+  return { success: true }
+}
+
+/** One WHO step. Signing stamps who and when; un-signing clears it. */
+export async function saveSafetyStep(
+  id: string, input: Record<string, unknown>,
+): Promise<{ success: true; record: SafetyStepRecord } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ot:record')
+  const parsed = SafetyStepSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { step, items, sign } = parsed.data
+
+  const def = SAFETY_STEPS.find((s) => s.step === step)!
+  const known = new Set(def.items.map((i) => i.key))
+  const clean = Object.fromEntries(Object.entries(items).filter(([k]) => known.has(k)))
+  if (sign && !def.items.every((i) => clean[i.key])) {
+    return { success: false, error: `Tick every ${def.title.toLowerCase()} item before signing it` }
+  }
+
+  const supabase = await createClient()
+  const t = await recordTarget(supabase, id)
+  if ('error' in t) return { success: false, error: t.error as string }
+
+  const all = ((t.row.safety_checklist as SafetyChecklist | null) ?? {})
+  const prev = all[step]
+  const record: SafetyStepRecord = {
+    items: clean,
+    done_at: sign ? (prev?.done_at ?? new Date().toISOString()) : null,
+    done_by: sign ? (prev?.done_by ?? actor.id) : null,
+  }
+  const { error } = await supabase.from('ot_schedules').update({
+    safety_checklist: { ...all, [step]: record }, record_updated_at: new Date().toISOString(), record_updated_by: actor.id,
+  }).eq('id', id)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, `who_${step}`, 'ot_schedule', id, { signed: sign })
+  return { success: true, record }
+}
+
+/**
+ * Doctors' fees for this surgery, billed as their own lines at completion.
+ * Once the surgery is on a bill, a change here would not reach it — so it is
+ * refused and the bill is where it gets corrected.
+ */
+export async function saveSurgeryFees(id: string, input: Record<string, unknown>): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ot:schedule')
+  const parsed = SurgeryFeesSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+
+  const supabase = await createClient()
+  const t = await recordTarget(supabase, id)
+  if ('error' in t) return { success: false, error: t.error as string }
+  if (t.row.billing_status === 'billed') {
+    return { success: false, error: 'This surgery is already billed — change the fee on the bill instead.' }
+  }
+
+  const patch: Record<string, unknown> = {}
+  if ('surgeon_fee' in parsed.data) patch.surgeon_fee = parsed.data.surgeon_fee ?? null
+  if ('anaesthetist_fee' in parsed.data) patch.anaesthetist_fee = parsed.data.anaesthetist_fee ?? null
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from('ot_schedules').update(patch).eq('id', id)
+    if (error) return { success: false, error: error.message }
+  }
+  for (const m of parsed.data.team ?? []) {
+    const { data: done, error } = await supabase.from('ot_team_members').update({ fee: m.fee })
+      .eq('id', m.id).eq('ot_schedule_id', id).select('id')
+    if (error) return { success: false, error: error.message }
+    if (!done?.length) return { success: false, error: 'That team member is no longer on this surgery — refresh.' }
+  }
+  await logAudit(actor.id, 'fees', 'ot_schedule', id, parsed.data)
   return { success: true }
 }
 
@@ -423,6 +582,10 @@ export async function addConsumable(
     drug_master_id: drugMasterId,
     drug_id:        drugId,
     pharmacy_request_id: pharmacyRequestId,
+    is_implant:     parsed.data.is_implant ?? false,
+    implant_lot_no: parsed.data.is_implant ? (parsed.data.implant_lot_no?.trim() || null) : null,
+    implant_maker:  parsed.data.is_implant ? (parsed.data.implant_maker?.trim() || null) : null,
+    implant_size:   parsed.data.is_implant ? (parsed.data.implant_size?.trim() || null) : null,
   })
   if (error) return { success: false, error: error.message }
 

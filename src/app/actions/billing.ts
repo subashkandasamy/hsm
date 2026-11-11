@@ -19,6 +19,7 @@ import { getTenantGstConfig, roomRentGstRate, resolveLineGst, canTax } from '@/l
 import { reconcileBill, overpaidMessage } from '@/lib/billing/reconcile'
 import { getCollectionSummary, SERVICE_BILLS_ONLY, istToday, istDayBoundsISO } from '@/lib/billing/collections'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { surgeryChargeLines, type SurgeryChargeSource } from '@/lib/surgery'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -267,7 +268,10 @@ export async function getUnbilledCharges(params: {
   {
     let q = supabase
       .from('ot_schedules')
-      .select('id, procedure_name, price_snapshot, billing_status, consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id, billing_status)')
+      .select(`id, procedure_name, price_snapshot, billing_status, surgeon_fee, anaesthetist_fee,
+        surgeon:profiles!ot_schedules_surgeon_id_fkey(full_name), anaesthetist:profiles!ot_schedules_anaesthetist_id_fkey(full_name),
+        team_members:ot_team_members(role, fee, profile:profiles(full_name)),
+        consumables:ot_consumables(id, description, qty, unit_price, pharmacy_request_id, billing_status)`)
       .eq('patient_id', patientId)
       // Deliberately NOT filtered on the schedule's own billing_status.
       //
@@ -293,14 +297,10 @@ export async function getUnbilledCharges(params: {
     const { data } = await q
     for (const s of data ?? []) {
       if (s.billing_status !== 'billed') {
-        lines.push({
-          source: 'ot',
-          ref_id: s.id,
-          description: s.procedure_name as string,
-          qty: 1,
-          unit_price: s.price_snapshot as number,
-          amount: s.price_snapshot as number,
-        })
+        // The procedure and each doctor's fee — the same lines completion bills.
+        for (const l of surgeryChargeLines(s as unknown as SurgeryChargeSource)) {
+          lines.push({ ...l, amount: l.unit_price * l.qty })
+        }
       }
       // Consumables requested through pharmacy are priced and billed when pharmacy
       // dispatches them (as IPD pharmacy lines) — listing them here too showed ₹0

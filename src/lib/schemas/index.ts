@@ -3,6 +3,7 @@ import type { Role } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { VPA_PATTERN } from '@/lib/upi'
 import { DISCHARGE_TYPES } from '@/lib/dischargeType'
+import { ANAESTHESIA_VALUES, ASA_PATTERN } from '@/lib/surgery'
 
 // ---- Dates and times that are actually dates and times ----
 //
@@ -493,6 +494,71 @@ export const OtConsumableSchema = z.object({
   qty:             z.number().int().min(1),
   drug_master_id:  z.string().uuid().nullable().optional(),
   drug_id:         z.string().uuid().nullable().optional(),
+  // An implant is a consumable that must be traceable to the patient if recalled.
+  is_implant:      z.boolean().optional(),
+  implant_lot_no:  z.string().trim().max(100).nullable().optional(),
+  implant_maker:   z.string().trim().max(120).nullable().optional(),
+  implant_size:    z.string().trim().max(60).nullable().optional(),
+}).refine((d) => !d.is_implant || !!d.implant_lot_no?.trim(), {
+  message: 'Enter the implant lot number', path: ['implant_lot_no'],
+})
+
+/** An instant from the browser (ISO), or cleared. "banana" never reaches Postgres. */
+const isoInstant = (label: string) => z.string()
+  .refine((v) => !Number.isNaN(new Date(v).getTime()), `${label} is not a valid time`).nullable()
+
+const optText = (max: number) => z.string().max(max).nullable().optional()
+  .transform((v) => (v == null ? v : v.trim() || null))
+
+/**
+ * Part of the surgery record — only the keys sent are saved, so each card on
+ * the OT screen saves its own fields.
+ */
+export const SurgeryRecordSchema = z.object({
+  anaesthesia_type:  z.enum(ANAESTHESIA_VALUES).nullable().optional(),
+  asa_grade:         z.string().regex(ASA_PATTERN, 'ASA grade is I to VI, with E for an emergency').nullable().optional(),
+  anaesthesia_start: isoInstant('Anaesthesia start').optional(),
+  anaesthesia_end:   isoInstant('Anaesthesia end').optional(),
+  incision_at:       isoInstant('Incision time').optional(),
+  closure_at:        isoInstant('Closure time').optional(),
+  pre_op_diagnosis:  optText(1000),
+  post_op_diagnosis: optText(1000),
+  findings:          optText(4000),
+  procedure_details: optText(8000),
+  blood_loss_ml:     z.number().int().min(0).max(50000).nullable().optional(),
+  drains:            optText(500),
+  specimens:         optText(1000),
+  counts_correct:    z.boolean().nullable().optional(),
+  complications:     optText(2000),
+  post_op_orders:    optText(4000),
+}).superRefine((d, ctx) => {
+  const before = (a?: string | null, b?: string | null) => !!a && !!b && new Date(b).getTime() < new Date(a).getTime()
+  if (before(d.anaesthesia_start, d.anaesthesia_end)) ctx.addIssue({ code: 'custom', path: ['anaesthesia_end'], message: 'Anaesthesia ends before it starts' })
+  if (before(d.incision_at, d.closure_at)) ctx.addIssue({ code: 'custom', path: ['closure_at'], message: 'Closure is before the incision' })
+})
+export type SurgeryRecordInput = z.input<typeof SurgeryRecordSchema>
+
+/** Before surgery. Who saved it and when are stamped by the server. */
+export const PreOpChecklistSchema = z.object({
+  consent_signed:          z.boolean().optional(),
+  fasting_since:           isoInstant('Fasting since').optional(),
+  site_marked:             z.enum(['yes', 'no', 'not_applicable']).optional(),
+  pac_done:                z.boolean().optional(),
+  blood:                   z.enum(['not_needed', 'arranged', 'pending']).optional(),
+  investigations_reviewed: z.boolean().optional(),
+})
+
+/** One step of the WHO checklist; "sign" marks the step done (server stamps who/when). */
+export const SafetyStepSchema = z.object({
+  step:  z.enum(['sign_in', 'time_out', 'sign_out']),
+  items: z.record(z.string().max(60), z.boolean()),
+  sign:  z.boolean(),
+})
+
+export const SurgeryFeesSchema = z.object({
+  surgeon_fee:      z.number().min(0).max(10_000_000).nullable().optional(),
+  anaesthetist_fee: z.number().min(0).max(10_000_000).nullable().optional(),
+  team: z.array(z.object({ id: z.string().uuid(), fee: z.number().min(0).max(10_000_000).nullable() })).optional(),
 })
 
 // ---- Phase 4: Blood Bank ----

@@ -1,5 +1,6 @@
 import { Text, View } from '@react-pdf/renderer'
 import type { OtSchedule, TenantProfile } from '@/lib/types'
+import { SAFETY_STEPS, anaesthesiaLabel, stepComplete } from '@/lib/surgery'
 import {
   A4, DataTable, InfoGrid, Letterhead, PageChrome, SectionTitle, TextBlock, TitleBand, WriteIn,
   ageSex, fmtDate, shortRef, s, C, type LogoImage,
@@ -17,6 +18,18 @@ export interface OtRecordExtra {
 }
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+const when = (iso: string | null | undefined) => (iso ? `${fmtDate(iso)}, ${time(iso)}` : null)
+
+/** What was recorded, or the ruled line to write it on when nothing was. */
+function Field({ label, value, lines = 1 }: { label: string; value?: string | null; lines?: number }) {
+  if (!value?.trim()) return <WriteIn label={label} lines={lines} />
+  return (
+    <View wrap={false} style={{ paddingHorizontal: 6, paddingTop: 7 }}>
+      <Text style={s.label}>{label}</Text>
+      <Text style={{ fontSize: 9.5, color: C.ink, marginTop: 2 }}>{value.trim()}</Text>
+    </View>
+  )
+}
 
 /**
  * Operation record. Prints what the system holds (patient, schedule, team, notes,
@@ -36,6 +49,11 @@ export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: O
     if (m.profile?.full_name) team.push([TEAM_ROLE[m.role] ?? m.role, m.profile.full_name])
   }
   const consumables = (o.consumables ?? []).filter((c) => c.qty > 0)
+  const implants = consumables.filter((c) => c.is_implant)
+  const pre = o.pre_op_checklist ?? null
+  const yn = (v: boolean | undefined) => (v === undefined ? null : v ? 'Yes' : 'No')
+  const anaesthesia = [anaesthesiaLabel(o.anaesthesia_type), o.asa_grade ? `ASA ${o.asa_grade}` : null].filter(Boolean).join(' · ') || null
+  const span = (a?: string | null, b?: string | null) => (a || b ? `${a ? time(a) : '—'}  –  ${b ? time(b) : '—'}` : null)
 
   return (
     <A4 title={`Operation record ${p.full_name}`}>
@@ -71,27 +89,62 @@ export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: O
           empty="No team recorded." />
       </View>
 
+      {pre ? (
+        <View wrap={false}>
+          <SectionTitle>Before surgery</SectionTitle>
+          <InfoGrid items={[
+            ['Consent signed', yn(pre.consent_signed)],
+            ['Nil by mouth since', when(pre.fasting_since)],
+            ['Site marked', pre.site_marked === 'not_applicable' ? 'Not applicable' : pre.site_marked === 'yes' ? 'Yes' : pre.site_marked === 'no' ? 'No' : null],
+            ['Pre-anaesthetic check-up', yn(pre.pac_done)],
+            ['Blood', pre.blood === 'not_needed' ? 'Not needed' : pre.blood === 'arranged' ? 'Arranged' : pre.blood === 'pending' ? 'Requested, not ready' : null],
+            ['Investigations reviewed', yn(pre.investigations_reviewed)],
+          ]} />
+        </View>
+      ) : null}
+
+      <View wrap={false}>
+        <SectionTitle>WHO surgical safety checklist</SectionTitle>
+        <DataTable columns={[{ label: 'Step', width: 90 }, { label: 'When', flex: 1 }, { label: 'Signed', width: 150 }]}
+          rows={SAFETY_STEPS.map((st) => {
+            const rec = o.safety_checklist?.[st.step]
+            const done = stepComplete(rec, st.step)
+            return [{ text: st.title, bold: true }, { text: st.when, color: C.muted }, done && rec?.done_at ? when(rec.done_at) ?? '' : '']
+          })} />
+      </View>
+
       <View wrap={false}>
         <SectionTitle>Intra-operative record</SectionTitle>
         <View style={{ flexDirection: 'row' }}>
-          <View style={{ flex: 1 }}><WriteIn label="Pre-operative diagnosis" /></View>
-          <View style={{ flex: 1 }}><WriteIn label="Post-operative diagnosis" /></View>
+          <View style={{ flex: 1 }}><Field label="Pre-operative diagnosis" value={o.pre_op_diagnosis} /></View>
+          <View style={{ flex: 1 }}><Field label="Post-operative diagnosis" value={o.post_op_diagnosis} /></View>
         </View>
         <View style={{ flexDirection: 'row' }}>
-          <View style={{ flex: 1 }}><WriteIn label="Anaesthesia type" /></View>
-          <View style={{ flex: 1 }}><WriteIn label="Incision time  /  Closure time" /></View>
-        </View>
-        <WriteIn label="Findings" lines={2} />
-        <WriteIn label="Procedure details" lines={3} />
-        <View style={{ flexDirection: 'row' }}>
-          <View style={{ flex: 1 }}><WriteIn label="Estimated blood loss" /></View>
-          <View style={{ flex: 1 }}><WriteIn label="Specimens sent (HPE / culture)" /></View>
+          <View style={{ flex: 1 }}><Field label="Anaesthesia type" value={anaesthesia} /></View>
+          <View style={{ flex: 1 }}><Field label="Anaesthesia start  /  end" value={span(o.anaesthesia_start, o.anaesthesia_end)} /></View>
         </View>
         <View style={{ flexDirection: 'row' }}>
-          <View style={{ flex: 1 }}><WriteIn label="Implants used (type / lot no)" /></View>
-          <View style={{ flex: 1 }}><WriteIn label="Swab / instrument count correct (Y/N)" /></View>
+          <View style={{ flex: 1 }}><Field label="Incision time  /  Closure time" value={span(o.incision_at, o.closure_at)} /></View>
+          <View style={{ flex: 1 }}><Field label="Swab / instrument count correct (Y/N)" value={o.counts_correct == null ? null : o.counts_correct ? 'Yes' : 'NO — see notes'} /></View>
         </View>
       </View>
+      <Field label="Findings" value={o.findings} lines={2} />
+      <Field label="Procedure details" value={o.procedure_details} lines={3} />
+      <View wrap={false} style={{ flexDirection: 'row' }}>
+        <View style={{ flex: 1 }}><Field label="Estimated blood loss" value={o.blood_loss_ml != null ? `${o.blood_loss_ml} ml` : null} /></View>
+        <View style={{ flex: 1 }}><Field label="Specimens sent (HPE / culture)" value={o.specimens} /></View>
+      </View>
+      <View wrap={false} style={{ flexDirection: 'row' }}>
+        <View style={{ flex: 1 }}><Field label="Drains" value={o.drains} /></View>
+        <View style={{ flex: 1 }}><Field label="Complications" value={o.complications} /></View>
+      </View>
+      {implants.length ? (
+        <View wrap={false}>
+          <SectionTitle>Implants</SectionTitle>
+          <DataTable columns={[{ label: 'Implant', flex: 1 }, { label: 'Lot / batch', width: 110 }, { label: 'Manufacturer', width: 110 }, { label: 'Size', width: 60 }, { label: 'Qty', width: 30, align: 'right' }]}
+            rows={implants.map((c) => [c.description, c.implant_lot_no ?? '', c.implant_maker ?? '', c.implant_size ?? '', String(c.qty)])} />
+        </View>
+      ) : <WriteIn label="Implants used (type / lot no)" />}
 
       {o.notes?.trim() ? (
         <>
@@ -100,17 +153,17 @@ export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: O
         </>
       ) : null}
 
-      {consumables.length ? (
+      {consumables.some((c) => !c.is_implant) ? (
         <>
           <View wrap={false}><SectionTitle>Consumables used</SectionTitle></View>
           <DataTable columns={[{ label: '#', width: 18 }, { label: 'Item', flex: 1 }, { label: 'Qty', width: 50, align: 'right' }]}
-            rows={consumables.map((c, i) => [{ text: String(i + 1), color: C.faint }, c.description, String(c.qty)])} />
+            rows={consumables.filter((c) => !c.is_implant).map((c, i) => [{ text: String(i + 1), color: C.faint }, c.description, String(c.qty)])} />
         </>
       ) : null}
 
       <View wrap={false}>
         <SectionTitle>Post-operative instructions</SectionTitle>
-        <WriteIn label="Shift to / monitoring / orders" lines={3} />
+        <Field label="Shift to / monitoring / orders" value={o.post_op_orders} lines={3} />
       </View>
 
       <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 34 }}>
