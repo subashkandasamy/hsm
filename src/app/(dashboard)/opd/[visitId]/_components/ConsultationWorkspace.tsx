@@ -35,6 +35,7 @@ import FollowUpCard from './FollowUpCard'
 import ReferPatientModal from '@/components/clinical/ReferPatientModal'
 import ReferralsOutCard from '@/components/clinical/ReferralsOutCard'
 import ExaminationPanel from './ExaminationPanel'
+import InitialEvaluationForm from '@/components/clinical/InitialEvaluationForm'
 import SendToPatientButton from '@/components/ui/SendToPatientButton'
 import { sendPrescriptionNotification } from '@/app/actions/notifications'
 import AdmitModal from '@/app/(dashboard)/wards/_components/AdmitModal'
@@ -60,6 +61,8 @@ interface WardOption {
 }
 
 interface Props {
+  /** ER visits: the case's Initial Evaluation (null on OPD visits). */
+  erEvaluation?: import('@/app/actions/initialAssessment').AssessmentView | null
   visit: Visit
   patient: Patient
   history: Visit[]
@@ -97,11 +100,12 @@ export default function ConsultationWorkspace({
   visit: initialVisit, patient, history, labCatalog, radiologyCatalog, labOrders = [], radiologyOrders = [], allergies,
   clinicalTemplate = 'general', dentalTeeth, dentalTreatments, dentalRecalls,
   admitDoctors, admitWards, admitTariffs, admitGeneralTariffPrice, admitAdvancePercentage = 50,
-  paediatricAssessment = null, obgynContext = null, plan = 'starter', tenantStatus = 'trial',
+  paediatricAssessment = null, obgynContext = null, plan = 'starter', tenantStatus = 'trial', erEvaluation = null,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
   const isDoctor = profile?.role === 'doctor' || profile?.role === 'admin'
+  const isNurse = profile?.role === 'nurse'
   const canVitals = profile?.role === 'nurse' || isDoctor
 
   const [visit, setVisit] = useState(initialVisit)
@@ -521,8 +525,14 @@ export default function ConsultationWorkspace({
             <HistoryProblemsPanel patientId={patient.id} canWrite={!isClosed && isDoctor} />
           )}
 
+          {/* ER: the Initial Evaluation — its secondary survey is the examination. */}
+          {erEvaluation && (
+            <InitialEvaluationForm view={erEvaluation} owner={{ emergencyCaseId: erEvaluation.context.emergencyCaseId }}
+              editable={!isClosed && (isDoctor || isNurse)} defaultOpen />
+          )}
+
           {/* General + systemic examination (auto-BMI from vitals); collapsed by default. */}
-          {isDoctor && (
+          {isDoctor && !erEvaluation && (
             <ExaminationPanel
               visitId={visit.id}
               initialExam={(visit.clinical_data as Record<string, unknown> | null)?.general_exam as Record<string, unknown> | null}

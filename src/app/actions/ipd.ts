@@ -272,7 +272,7 @@ export async function admitPatient(
     for (const v of await erVisitIdsForCase(supabase, patient_id, erCase.arrived_at)) sourceVisitIds.add(v)
   }
   const carried = await carryIntoAdmission(supabase, {
-    admissionId, visitIds: [...sourceVisitIds], emergencyCaseId: erCase?.id ?? null,
+    admissionId, visitIds: [...sourceVisitIds], emergencyCaseId: erCase?.id ?? null, actorId: actor.id,
   })
 
   // Direct ICU admission: if admitted to an ICU bed, flag critical care + open

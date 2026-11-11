@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { linkAssessmentToAdmission } from '@/lib/initialAssessmentDb'
 
 /**
  * Moving a patient into IPD — what comes with them.
@@ -55,6 +56,8 @@ export interface CarriedIntoAdmission {
   bloodRequests: number
   visitsClosed: number
   erCaseAdmitted: boolean
+  /** The ER Initial Evaluation now opens the IP file. */
+  assessmentLinked: boolean
 }
 
 /**
@@ -65,14 +68,15 @@ export interface CarriedIntoAdmission {
  *    the lab no longer asks an admitted patient to pay first, and the results
  *    show on the IP page;
  *  - the source visits are closed, whatever day they were opened;
- *  - the ER case leaves the board as "admitted".
+ *  - the ER case leaves the board as "admitted", and its Initial Evaluation
+ *    opens the IP file.
  * Only rows not already on an admission are touched; cancelled ones are left.
  */
 export async function carryIntoAdmission(
   supabase: SupabaseClient,
-  p: { admissionId: string; visitIds: string[]; emergencyCaseId: string | null },
+  p: { admissionId: string; visitIds: string[]; emergencyCaseId: string | null; actorId: string },
 ): Promise<CarriedIntoAdmission> {
-  const out: CarriedIntoAdmission = { bills: 0, labOrders: 0, radiologyOrders: 0, bloodRequests: 0, visitsClosed: 0, erCaseAdmitted: false }
+  const out: CarriedIntoAdmission = { bills: 0, labOrders: 0, radiologyOrders: 0, bloodRequests: 0, visitsClosed: 0, erCaseAdmitted: false, assessmentLinked: false }
   const { admissionId, visitIds, emergencyCaseId } = p
 
   if (visitIds.length) {
@@ -108,6 +112,11 @@ export async function carryIntoAdmission(
     const { data: adm } = await supabase.from('emergency_cases').update({ status: 'admitted' })
       .eq('id', emergencyCaseId).in('status', ['waiting', 'in_treatment']).select('id')
     out.erCaseAdmitted = !!adm?.length
+
+    // The ER Initial Evaluation becomes the first page of the IP file.
+    out.assessmentLinked = await linkAssessmentToAdmission(supabase, {
+      emergencyCaseId, admissionId, actorId: p.actorId,
+    })
   }
   return out
 }

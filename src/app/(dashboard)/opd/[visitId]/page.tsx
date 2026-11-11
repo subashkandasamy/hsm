@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getVisit, getPatientVisits } from '@/app/actions/opd'
+import { getInitialAssessment } from '@/app/actions/initialAssessment'
 import { getPatient } from '@/app/actions/patients'
 import { listLabCatalog, listLabOrders } from '@/app/actions/lab'
 import { listRadiologyCatalog, listRadiologyOrders } from '@/app/actions/radiology'
@@ -32,7 +33,9 @@ export default async function OpdVisitPage({ params }: Props) {
   if (!visit) notFound()
 
   let template: import('@/lib/types').ClinicalTemplate = 'general'
-  try {
+  // An ER visit uses the ER Initial Evaluation, not the attending doctor's
+  // department template (a gynaecologist on ER duty used to get the obgyn form).
+  if (visit.type !== 'emergency') try {
     template = await resolveVisitTemplate({
       id: visit.id,
       appointment_id: visit.appointment_id,
@@ -87,6 +90,19 @@ export default async function OpdVisitPage({ params }: Props) {
     ? await getObgynContext(patient.id, visit.id).catch((e) => { console.error('[OpdVisitPage] obgyn context failed:', e); return null })
     : null
 
+  // The ER case this visit belongs to: the patient's case that arrived before
+  // the visit was opened (five minutes' margin), and its Initial Evaluation.
+  let erEvaluation: import('@/app/actions/initialAssessment').AssessmentView | null = null
+  if (visit.type === 'emergency') {
+    const { data: ec } = await supabase.from('emergency_cases').select('id')
+      .eq('patient_id', visit.patient_id)
+      .lte('arrived_at', new Date(new Date(visit.created_at).getTime() + 5 * 60_000).toISOString())
+      .order('arrived_at', { ascending: false }).limit(1).maybeSingle()
+    if (ec) erEvaluation = await getInitialAssessment({ emergencyCaseId: ec.id as string }).catch((e) => {
+      console.error('[OpdVisitPage] initial assessment failed:', e); return null
+    })
+  }
+
   const admitWards = (wards as import('@/lib/types').WardWithBeds[]).map((w) => ({
     id: w.id,
     name: w.name,
@@ -120,6 +136,7 @@ export default async function OpdVisitPage({ params }: Props) {
       tenantStatus={tenantStatus}
       paediatricAssessment={paediatricAssessment}
       obgynContext={obgynContext}
+      erEvaluation={erEvaluation}
     />
   )
 }

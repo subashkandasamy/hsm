@@ -5,18 +5,12 @@ import { Activity, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveExamination } from '@/app/actions/opd'
+import { EXAM_SIGNS, EXAM_SIGN_LABELS, EXAM_SYSTEMS } from '@/lib/clinicalExam'
 
-const SIGNS = ['pallor', 'icterus', 'cyanosis', 'clubbing', 'oedema', 'lymphadenopathy'] as const
-const SIGN_LABELS: Record<string, string> = {
-  pallor: 'Pallor', icterus: 'Icterus', cyanosis: 'Cyanosis', clubbing: 'Clubbing', oedema: 'Oedema', lymphadenopathy: 'Lymphadenopathy',
-}
-const SYSTEMS: { key: string; label: string; placeholder: string }[] = [
-  { key: 'cvs', label: 'CVS', placeholder: 'S1 S2 heard, no murmur' },
-  { key: 'rs',  label: 'Respiratory', placeholder: 'B/L air entry equal, no added sounds' },
-  { key: 'pa',  label: 'Abdomen (P/A)', placeholder: 'Soft, non-tender, no organomegaly' },
-  { key: 'cns', label: 'CNS', placeholder: 'Conscious, oriented, no focal deficit' },
-  { key: 'other', label: 'Other / Local', placeholder: 'Local examination findings' },
-]
+// One list with the Initial Evaluation's secondary survey (lib/clinicalExam).
+const SIGNS = EXAM_SIGNS
+const SIGN_LABELS = EXAM_SIGN_LABELS
+const SYSTEMS = EXAM_SYSTEMS
 
 function bmiInfo(weight: string, height: string): { bmi: string; label: string; color: string } | null {
   const w = parseFloat(weight), hCm = parseFloat(height)

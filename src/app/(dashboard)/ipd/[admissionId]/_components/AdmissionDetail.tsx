@@ -33,6 +33,8 @@ import CareTeamPanel from './CareTeamPanel'
 import CriticalCarePanel from './CriticalCarePanel'
 import NursingDocsPanel from './NursingDocsPanel'
 import FollowUpCard from '@/app/(dashboard)/opd/[visitId]/_components/FollowUpCard'
+import HistoryProblemsPanel from '@/app/(dashboard)/opd/[visitId]/_components/HistoryProblemsPanel'
+import InitialEvaluationForm from '@/components/clinical/InitialEvaluationForm'
 import NursingPanel from './NursingPanel'
 import LabourDeliveryPanel from './LabourDeliveryPanel'
 import type { LabourContext } from '@/app/actions/labour'
@@ -67,6 +69,8 @@ interface Props {
   otTariffs: ProcedureTariff[]
   initialOtSchedules: OtSchedule[]
   labourContext?: LabourContext | null
+  /** The Initial Evaluation — written in the ER for an ER admission, else on admission. */
+  evaluation?: import('@/app/actions/initialAssessment').AssessmentView | null
 }
 
 const OT_STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -86,7 +90,7 @@ function fmtDateShort(iso: string) {
 export default function AdmissionDetail({
   admission, initialNotes, availableWards,
   nurses, today, depositStatus, todayAssignments,
-  otDoctors, otTariffs, initialOtSchedules, labourContext = null,
+  otDoctors, otTariffs, initialOtSchedules, labourContext = null, evaluation = null,
 }: Props) {
   const router = useRouter()
   const { profile } = useAuth()
@@ -498,6 +502,13 @@ export default function AdmissionDetail({
       {/* ── Clinical tab ── */}
       {activeTab === 'clinical' && (
         <div className="space-y-4">
+
+          {/* The first page of the IP file: the Initial Evaluation, then the patient's history */}
+          {evaluation && (
+            <InitialEvaluationForm view={evaluation} owner={{ admissionId: adm.id }}
+              editable={!!canNote} defaultOpen={!evaluation.assessment} />
+          )}
+          {canNote && <HistoryProblemsPanel patientId={adm.patient_id} canWrite={!!canNote} />}
 
           {/* Care team & doctor visits (multi-doctor + per-visit billing) */}
           {adm.status === 'admitted' && (
