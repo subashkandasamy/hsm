@@ -10,6 +10,7 @@ import { createServiceBill } from '@/lib/billing/serviceBill'
 import { getTenantGstConfig } from '@/lib/billing/gst'
 import { reconcileBill } from '@/lib/billing/reconcile'
 import { stampBillItem } from '@/lib/ipdBilling'
+import { erVisitIdsForCase } from '@/lib/admissionSources'
 import type { EmergencyCase, TriageLevel } from '@/lib/types'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -174,23 +175,17 @@ export async function getOrCreateEmergencyVisit(
 
   const { data: ec } = await supabase
     .from('emergency_cases')
-    .select('patient_id, complaint, attended_by')
+    .select('patient_id, complaint, attended_by, arrived_at')
     .eq('id', caseId)
     .single()
   if (!ec) return { success: false, error: 'Emergency case not found' }
 
-  // Reuse existing open emergency visit so the doctor resumes where they left off
-  const { data: existing } = await supabase
-    .from('visits')
-    .select('id')
-    .eq('patient_id', ec.patient_id)
-    .eq('type', 'emergency')
-    .eq('status', 'open')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (existing?.id) return { success: true, visitId: existing.id }
+  // Reuse this case's open ER visit so the doctor resumes where they left off.
+  // Only this case's: an earlier ER visit left open (a referral, a night
+  // arrival admitted after midnight) used to be reopened for the next case,
+  // and that case's charges landed on the old visit.
+  const [existing] = await erVisitIdsForCase(supabase, ec.patient_id as string, ec.arrived_at as string, { openOnly: true })
+  if (existing) return { success: true, visitId: existing }
 
   // Opening an existing visit is a read; creating a visit + bill is a write.
   await requireWriteAccess()
@@ -285,44 +280,25 @@ export async function resolveEmergency(
   const supabase = await createClient()
   const status = outcome === 'discharge' ? 'discharged' : 'referred'
 
-  const { error } = await supabase
+  // Only a case still on the board — an admitted case belongs to IPD now.
+  const { data: resolved, error } = await supabase
     .from('emergency_cases')
     .update({ status, outcome: outcomeNote })
     .eq('id', caseId)
+    .in('status', ['waiting', 'in_treatment'])
+    .select('patient_id, arrived_at')
   if (error) return { success: false, error: error.message }
+  const ec = resolved?.[0]
+  if (!ec) return { success: false, error: 'This case is no longer on the board — refresh.' }
 
-  // On discharge: close any open emergency visits
-  if (outcome === 'discharge') {
-    const { data: ec } = await supabase
-      .from('emergency_cases').select('patient_id').eq('id', caseId).single()
-    if (ec?.patient_id) {
-      await supabase.from('visits')
-        .update({ status: 'closed' })
-        .eq('patient_id', ec.patient_id)
-        .eq('type', 'emergency')
-        .eq('status', 'open')
-    }
+  // The patient has left the ER either way: close this case's ER visit(s), so
+  // the next arrival starts a fresh one. A referral used to leave it open.
+  const visitIds = await erVisitIdsForCase(supabase, ec.patient_id as string, ec.arrived_at as string, { openOnly: true })
+  if (visitIds.length) {
+    await supabase.from('visits').update({ status: 'closed' }).in('id', visitIds).eq('status', 'open')
   }
 
   await logAudit(actor.id, outcome, 'emergency_case', caseId, { outcome: outcomeNote })
-  return { success: true }
-}
-
-export async function admitFromEmergency(
-  caseId: string
-): Promise<SimpleResult> {
-  await requireWriteAccess()
-  const actor = await getActorProfile()
-  await requirePermission(actor.role, 'emergency:triage')
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('emergency_cases')
-    .update({ status: 'admitted' })
-    .eq('id', caseId)
-  if (error) return { success: false, error: error.message }
-
-  await logAudit(actor.id, 'admit_from_emergency', 'emergency_case', caseId)
   return { success: true }
 }
 

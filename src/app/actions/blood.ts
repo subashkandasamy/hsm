@@ -708,9 +708,15 @@ export async function issueUnit(input: {
   const rpcResult = result as { ok: boolean; error?: string }
   if (!rpcResult.ok) return { success: false, error: rpcResult.error ?? 'Issue failed' }
 
-  // IPD: auto-attach the processing charge to the admission bill so it isn't
-  // missed at the manual counter.
-  if (req.admission_id && price > 0) {
+  // Raised in OPD or the ER and billed then, the request keeps that bill when
+  // the patient is admitted (admission moves the bill onto the IP bill) — so it
+  // is not charged a second time at issue.
+  const requestBill = req.admission_id ? await resolveServiceBill(supabase, 'blood', input.requestId) : null
+  if (requestBill && requestBill.status !== 'cancelled') {
+    await supabase.from('blood_issues').update({ billing_status: 'billed' }).eq('id', issueId)
+  } else if (req.admission_id && price > 0) {
+    // IPD: auto-attach the processing charge to the admission bill so it isn't
+    // missed at the manual counter.
     const today = istToday()
     const billId = await autoIpdBill(supabase, actor.id, {
       tenantId:    actor.tenant_id,

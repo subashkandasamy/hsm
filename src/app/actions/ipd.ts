@@ -14,6 +14,7 @@ import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { findOpenWork, cancelTestsNotDone, closeOpenWork, type OpenWork } from '@/lib/closeAdmission'
 import { dischargeSkipsBalanceGate } from '@/lib/dischargeType'
 import { admissionClosedError } from '@/lib/admissionOpen'
+import { activeErCaseFor, erVisitIdsForCase, carryIntoAdmission } from '@/lib/admissionSources'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -242,44 +243,37 @@ export async function admitPatient(
     sourceVisitId = (latestTodayVisit?.id as string | undefined) ?? null
   }
 
+  // The ER case this admission comes from: the one passed in, or — whichever
+  // screen started the admission (the ER doctor's consultation, the IPD list) —
+  // the patient's case still on the ER board. A patient has at most one (0258),
+  // and if they are being admitted while on the board, that is the case.
+  let erCase: { id: string; arrived_at: string } | null = null
+  if (emergency_case_id) {
+    const { data: ec } = await supabase
+      .from('emergency_cases').select('id, patient_id, arrived_at').eq('id', emergency_case_id).maybeSingle()
+    if (ec && ec.patient_id === patient_id) erCase = { id: ec.id as string, arrived_at: ec.arrived_at as string }
+  } else {
+    erCase = await activeErCaseFor(supabase, patient_id)
+  }
+
   const admissionUpdate: Record<string, unknown> = {}
   if (admissionCombinedNo) admissionUpdate.combined_bill_no = admissionCombinedNo
   if (sourceVisitId) admissionUpdate.source_visit_id = sourceVisitId
-  if (emergency_case_id) admissionUpdate.source_emergency_case_id = emergency_case_id
+  if (erCase) admissionUpdate.source_emergency_case_id = erCase.id
   if (Object.keys(admissionUpdate).length > 0) {
     await supabase.from('admissions').update(admissionUpdate).eq('id', admissionId)
   }
 
-  // Admitted from ER: the ER consultation and any ER orders were billed against the
-  // ER visit. Link those bills to this admission so they are on the IPD final bill,
-  // count in the discharge balance check and can use the admission's advance.
-  if (emergency_case_id) {
-    const { data: erCase } = await supabase
-      .from('emergency_cases').select('patient_id, arrived_at').eq('id', emergency_case_id).maybeSingle()
-    if (erCase && erCase.patient_id === patient_id) {
-      const { data: erVisits } = await supabase
-        .from('visits').select('id')
-        .eq('patient_id', patient_id).eq('type', 'emergency')
-        // The ER visit is created after arrival; a small margin covers clock skew.
-        .gte('created_at', new Date(new Date(erCase.arrived_at as string).getTime() - 5 * 60_000).toISOString())
-      const erVisitIds = (erVisits ?? []).map((v) => v.id as string)
-      if (erVisitIds.length) {
-        const { error: visitLinkErr } = await supabase.from('bills')
-          .update({ admission_id: admissionId })
-          .in('visit_id', erVisitIds)
-          .is('admission_id', null)
-          .neq('status', 'cancelled')
-        if (visitLinkErr) console.error('[admitPatient] linking ER visit bills failed:', visitLinkErr.message)
-      }
-      // ER registration fee and ER procedure charges are billed against the case.
-      const { error: caseLinkErr } = await supabase.from('bills')
-        .update({ admission_id: admissionId })
-        .eq('emergency_case_id', emergency_case_id)
-        .is('admission_id', null)
-        .neq('status', 'cancelled')
-      if (caseLinkErr) console.error('[admitPatient] linking ER case bills failed:', caseLinkErr.message)
-    }
+  // Bring the source encounter in: its bills join the IP bill (discharge
+  // balance, advance), its tests / scans / blood requests become inpatient
+  // orders, its visits close, and the ER case leaves the board.
+  const sourceVisitIds = new Set<string>(sourceVisitId ? [sourceVisitId] : [])
+  if (erCase) {
+    for (const v of await erVisitIdsForCase(supabase, patient_id, erCase.arrived_at)) sourceVisitIds.add(v)
   }
+  const carried = await carryIntoAdmission(supabase, {
+    admissionId, visitIds: [...sourceVisitIds], emergencyCaseId: erCase?.id ?? null,
+  })
 
   // Direct ICU admission: if admitted to an ICU bed, flag critical care + open
   // the ICU episode automatically.
@@ -287,7 +281,9 @@ export async function admitPatient(
     await enterIcu(supabase, actor.tenant_id, admissionId, bed_id, ward_id ?? null, actor.id)
   }
 
-  await logAudit(actor.id, 'admit', 'admission', admissionId, { patient_id, bed_id })
+  await logAudit(actor.id, 'admit', 'admission', admissionId, {
+    patient_id, bed_id, source_visit_id: sourceVisitId, emergency_case_id: erCase?.id ?? null, carried,
+  })
   return { success: true, admissionId }
 }
 

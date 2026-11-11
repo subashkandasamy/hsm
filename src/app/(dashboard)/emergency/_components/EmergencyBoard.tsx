@@ -13,7 +13,7 @@ import Textarea from '@/components/ui/Textarea'
 import EmptyState from '@/components/ui/EmptyState'
 import {
   listEmergencyCases, listRecentEmergencyCases, setTriage, attendCase,
-  resolveEmergency, admitFromEmergency, getOrCreateEmergencyVisit, getExistingEmergencyVisit,
+  resolveEmergency, getOrCreateEmergencyVisit, getExistingEmergencyVisit,
 } from '@/app/actions/emergency'
 import ErChargesModal from './ErChargesModal'
 import MlcPendingPanel from './MlcPendingPanel'
@@ -616,13 +616,12 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
         </Modal>
       )}
 
-      {/* Admit from ER — uses shared AdmitModal, then marks ER case as admitted */}
+      {/* Admit from ER — shared AdmitModal; admitPatient marks the case admitted and carries its bills and orders over */}
       {admitErCase && (
         <AdmitModal
           open={true}
           onClose={() => { setAdmitErCase(null); setAdmitErVisitId(null) }}
           onSuccess={async (admissionId) => {
-            await admitFromEmergency(admitErCase.id)
             setAdmitErCase(null)
             setAdmitErVisitId(null)
             router.push(`/ipd/${admissionId}`)

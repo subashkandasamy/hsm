@@ -31,6 +31,15 @@ export async function encounterInsurance(
   if (scope.admissionId) ors.push(`admission_id.eq.${scope.admissionId}`)
   if (scope.visitId) ors.push(`visit_id.eq.${scope.visitId}`)
   if (scope.billIds.length) ors.push(`bill_id.in.(${scope.billIds.join(',')})`)
+  // An admission also carries the bills of the ER / OPD visit it came from
+  // (carryIntoAdmission). A claim approved on that visit covers those bills, so
+  // it counts here too — or discharge would ask the patient for money the
+  // insurer has already approved.
+  if (scope.admissionId && scope.billIds.length) {
+    const { data: vb } = await supabase.from('bills').select('visit_id').in('id', scope.billIds).not('visit_id', 'is', null)
+    const visitIds = [...new Set((vb ?? []).map((b) => b.visit_id as string))].filter((v) => v !== scope.visitId)
+    if (visitIds.length) ors.push(`visit_id.in.(${visitIds.join(',')})`)
+  }
   if (!ors.length) return { credit: 0, received: 0, outstanding: 0 }
 
   const { data } = await supabase
