@@ -644,15 +644,13 @@ export async function dischargePatient(
   if (error) return { success: false, error: error.message }
   if (!updated?.length) return { success: false, error: 'This patient has already been discharged.' }
 
-  // Free the bed — delete temp slots, mark regular beds available
+  // Give the bed back. Through release_admission_bed (0281), because beds is
+  // writable only by admin and nurse: a doctor's or receptionist's own UPDATE
+  // matched nothing, silently, and the bed stayed "occupied".
   if (admission.bed_id) {
-    const { data: wardRow } = await supabase
-      .from('wards').select('is_temp').eq('id', admission.ward_id).single()
-    if (wardRow?.is_temp) {
-      await supabase.from('beds').delete().eq('id', admission.bed_id)
-    } else {
-      await supabase.from('beds').update({ status: 'available' }).eq('id', admission.bed_id)
-    }
+    const { data: rel, error: relErr } = await supabase.rpc('release_admission_bed', { p_admission_id: admissionId })
+    const out = rel as { ok: boolean; error?: string } | null
+    if (relErr || !out?.ok) console.error('[dischargePatient] bed not released:', relErr?.message ?? out?.error)
   }
 
   // Close the ICU episode (if any) and everything else still open on the stay.

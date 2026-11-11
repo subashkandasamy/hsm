@@ -41,7 +41,8 @@ export function DischargeSummaryPdf({ admission: adm, allergies, profile, logo, 
         title={discharged ? dischargeDocumentTitle(type) : 'DISCHARGE SUMMARY (DRAFT)'}
         subtitle={discharged ? null : 'Patient is still admitted — this is not the final summary'}
         numberLabel="IP Ref" number={ref}
-        date={discharged ? `Discharged ${fmtDateTime(adm.discharged_at)}` : `Printed ${fmtDateTime(new Date().toISOString())}`}
+        date={died && adm.death_at ? `Died ${fmtDateTime(adm.death_at)}`
+          : discharged ? `Discharged ${fmtDateTime(adm.discharged_at)}` : `Printed ${fmtDateTime(new Date().toISOString())}`}
       />
       <InfoGrid items={[
         ['Patient', p?.full_name],
