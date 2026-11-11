@@ -18,6 +18,10 @@ const OBS_FIELDS: { key: string; label: string; step?: string }[] = [
   { key: 'gcs_e', label: 'GCS E' }, { key: 'gcs_v', label: 'GCS V' }, { key: 'gcs_m', label: 'GCS M' },
   { key: 'rass', label: 'RASS' }, { key: 'pain_score', label: 'Pain' },
   { key: 'fio2', label: 'FiO₂ %' }, { key: 'peep', label: 'PEEP' }, { key: 'tidal_volume', label: 'TV' }, { key: 'vent_rate', label: 'Vent RR' },
+  // ICU sheet detail (0287): ventilator pressures, pupils, limb power
+  { key: 'pip', label: 'PIP' }, { key: 'pplat', label: 'Pplat' }, { key: 'pressure_support', label: 'PS' }, { key: 'mve', label: 'MVe L', step: '0.1' },
+  { key: 'pupil_r_mm', label: 'Pupil R mm', step: '0.5' }, { key: 'pupil_l_mm', label: 'Pupil L mm', step: '0.5' },
+  { key: 'power_rul', label: 'Power RUL' }, { key: 'power_lul', label: 'Power LUL' }, { key: 'power_rll', label: 'Power RLL' }, { key: 'power_lll', label: 'Power LLL' },
 ]
 const IN_CATS = ['iv', 'oral', 'ng', 'blood', 'other']
 const OUT_CATS = ['urine', 'drain', 'vomit', 'stool', 'other']
@@ -37,6 +41,8 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   const [fluids, setFluids] = useState<{ entries: IcuFluidEntry[]; totals: { intake: number; output: number; net: number; todayIntake: number; todayOutput: number } } | null>(null)
   const [obsForm, setObsForm] = useState<Record<string, string>>({})
   const [ventMode, setVentMode] = useState('')
+  const [react, setReact] = useState<{ r: string; l: string }>({ r: '', l: '' })
+  const [obsError, setObsError] = useState<string | null>(null)
   const [showObs, setShowObs] = useState(false)
   const [fluidDir, setFluidDir] = useState<'intake' | 'output'>('intake')
   const [fluidCat, setFluidCat] = useState('iv'); const [fluidVol, setFluidVol] = useState('')
@@ -65,10 +71,14 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
       if (v !== undefined && v !== '') payload[f.key] = f.step ? parseFloat(v) : parseInt(v, 10)
     }
     if (ventMode) payload.vent_mode = ventMode
+    if (react.r) payload.pupil_r_react = react.r
+    if (react.l) payload.pupil_l_react = react.l
     if (obsForm.notes) payload.notes = obsForm.notes
+    setObsError(null)
     const res = await recordIcuObservation(admission.id, payload)
     setBusy(false)
-    if (res.success) { setObsForm({}); setVentMode(''); setShowObs(false); load() }
+    if (!res.success) { setObsError(res.error); return }
+    setObsForm({}); setVentMode(''); setReact({ r: '', l: '' }); setShowObs(false); load()
   }
 
   async function saveFluid() {
@@ -200,7 +210,16 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
                 <label className="text-xs" style={{ color: '#94A3B8' }}>Vent Mode</label>
                 <Input value={ventMode} onChange={(e) => setVentMode(e.target.value)} placeholder="AC/VC…" />
               </div>
+              {(['r', 'l'] as const).map((side) => (
+                <div key={side}>
+                  <label className="text-xs" style={{ color: '#94A3B8' }}>Pupil {side.toUpperCase()} reacts</label>
+                  <Select value={react[side]} onChange={(e) => setReact((x) => ({ ...x, [side]: e.target.value }))}>
+                    <option value="">—</option><option value="brisk">Brisk</option><option value="sluggish">Sluggish</option><option value="fixed">Fixed</option>
+                  </Select>
+                </div>
+              ))}
             </div>
+            {obsError && <p className="text-xs" style={{ color: '#DC2626' }}>{obsError}</p>}
             <Input value={obsForm.notes ?? ''} onChange={(e) => setObsForm((o) => ({ ...o, notes: e.target.value }))} placeholder="Notes (optional)" />
             <div className="flex justify-end">
               <button onClick={saveObs} disabled={busy} className="px-4 py-2 rounded-lg text-xs font-semibold" style={{ background: busy ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>Save Observation</button>

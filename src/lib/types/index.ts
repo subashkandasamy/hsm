@@ -268,6 +268,10 @@ export interface IcuObservation {
   avpu?: string | null; o2_device?: string | null; o2_lpm?: number | null
   glucose_mg_dl?: number | null; glucose_source?: string | null
   insulin_units?: number | null; insulin_type?: string | null
+  // ICU sheet neuro and ventilator detail (0287)
+  pupil_l_mm?: number | null; pupil_r_mm?: number | null; pupil_l_react?: string | null; pupil_r_react?: string | null
+  power_rul?: number | null; power_lul?: number | null; power_rll?: number | null; power_lll?: number | null
+  pip?: number | null; pplat?: number | null; pressure_support?: number | null; mve?: number | null
   recorder?: Pick<Profile, 'id' | 'full_name'> | null
 }
 

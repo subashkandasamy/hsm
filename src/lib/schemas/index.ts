@@ -314,6 +314,16 @@ export const IcuObservationSchema = z.object({
   glucose_source: z.enum(['capillary', 'venous', 'lab']).nullable().optional(),
   insulin_units:  z.number().min(0).max(200).nullable().optional(),
   insulin_type:   z.string().max(60).nullable().optional(),
+  // ICU sheet neuro and ventilator detail (0287)
+  pupil_l_mm:     z.number().min(1).max(9).nullable().optional(),
+  pupil_r_mm:     z.number().min(1).max(9).nullable().optional(),
+  pupil_l_react:  z.enum(['brisk', 'sluggish', 'fixed']).nullable().optional(),
+  pupil_r_react:  z.enum(['brisk', 'sluggish', 'fixed']).nullable().optional(),
+  power_rul: z.number().int().min(0).max(5).nullable().optional(), power_lul: z.number().int().min(0).max(5).nullable().optional(),
+  power_rll: z.number().int().min(0).max(5).nullable().optional(), power_lll: z.number().int().min(0).max(5).nullable().optional(),
+  pip: z.number().int().min(0).max(80).nullable().optional(), pplat: z.number().int().min(0).max(80).nullable().optional(),
+  pressure_support: z.number().int().min(0).max(50).nullable().optional(),
+  mve: z.number().min(0).max(60).nullable().optional(),
   /** When the reading was taken, if not now (charted late). */
   recorded_at:    z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional(),
 })

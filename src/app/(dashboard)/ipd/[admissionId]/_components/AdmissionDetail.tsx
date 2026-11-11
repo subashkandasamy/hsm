@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer, Send,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby, LineChart, FlaskConical,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby, LineChart, FlaskConical, LayoutGrid,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -27,6 +27,7 @@ import DischargeModal, { type DischargeDone } from './DischargeModal'
 import PatientStrip from './PatientStrip'
 import RoundChart from './RoundChart'
 import StayLabs from './StayLabs'
+import IcuDaySheet from './IcuDaySheet'
 import { NOTE_KINDS, SHIFTS, noteKindLabel, shiftOf, type Shift } from '@/lib/noteKinds'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
@@ -103,7 +104,9 @@ export default function AdmissionDetail({
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'chart' | 'labs' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
+  // ICU patients open on the day sheet — the doctor's one-glance screen.
+  const [activeTab, setActiveTab] = useState<'day' | 'clinical' | 'chart' | 'labs' | 'treatment' | 'nursing' | 'critical' | 'labour'>(
+    admission.is_critical_care ? 'day' : 'clinical')
   // Bumped when a round is saved, so the strip's NEWS2 refreshes.
   const [stripKey, setStripKey] = useState(0)
 
@@ -488,6 +491,7 @@ export default function AdmissionDetail({
         <div className="flex gap-1 p-1 rounded-xl w-max"
           style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid #E2E8F0' }}>
         {([
+          { key: 'day',        label: 'Day sheet',  Icon: LayoutGrid  },
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
           { key: 'chart',      label: 'Chart',      Icon: LineChart   },
           { key: 'labs',       label: 'Labs',       Icon: FlaskConical },
@@ -779,6 +783,9 @@ export default function AdmissionDetail({
       )}
 
       {/* ── Critical Care tab ── */}
+      {/* ── Day sheet: KMCH's ICU chart as one screen ── */}
+      {activeTab === 'day' && <IcuDaySheet admission={adm} canNurse={!!canNursing} />}
+
       {/* ── Labs tab: results by day, blood gas, cultures, booked labs ── */}
       {activeTab === 'labs' && <StayLabs admissionId={adm.id} />}
 
