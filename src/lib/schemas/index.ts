@@ -365,6 +365,8 @@ export const HandoverSchema = z.object({
 export const ProgressNoteSchema = z.object({
   note: z.string().min(1, 'Note is required'),
   vitals: VitalsSchema.optional(),
+  kind: z.enum(['doctor', 'nurse', 'rt', 'physio', 'dietitian', 'wound']).optional(),
+  shift: z.enum(['morning', 'evening', 'night']).nullable().optional(),
 })
 export const DischargeSchema = z.object({
   discharge_summary: z.string().trim().min(1, 'Discharge summary is required'),

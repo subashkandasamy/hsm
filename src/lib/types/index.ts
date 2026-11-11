@@ -343,6 +343,7 @@ export interface NursingHandover {
 export interface IpdProgressNote {
   id: string; admission_id: string; author_id: string | null; note: string
   vitals: Vitals | null; created_at: string
+  kind?: string; shift?: string | null
   author?: Pick<Profile, 'id' | 'full_name' | 'role'>
 }
 

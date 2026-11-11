@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, User, BedDouble, Calendar, FileText,
   Plus, ArrowRightLeft, LogOut, Receipt, Printer, Send,
-  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby, LineChart,
+  Pill, IndianRupee, Stethoscope, ChevronDown, ChevronUp, Scissors, Activity, Droplets, Baby, LineChart, FlaskConical,
 } from 'lucide-react'
 import Link from 'next/link'
 import GlassCard from '@/components/ui/GlassCard'
@@ -26,6 +26,8 @@ import { dischargeTypeLabel } from '@/lib/dischargeType'
 import DischargeModal, { type DischargeDone } from './DischargeModal'
 import PatientStrip from './PatientStrip'
 import RoundChart from './RoundChart'
+import StayLabs from './StayLabs'
+import { NOTE_KINDS, SHIFTS, noteKindLabel, shiftOf, type Shift } from '@/lib/noteKinds'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
@@ -101,7 +103,7 @@ export default function AdmissionDetail({
 
   const [notes, setNotes] = useState<IpdProgressNote[]>(initialNotes)
   const [adm, setAdm] = useState(admission)
-  const [activeTab, setActiveTab] = useState<'clinical' | 'chart' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
+  const [activeTab, setActiveTab] = useState<'clinical' | 'chart' | 'labs' | 'treatment' | 'nursing' | 'critical' | 'labour'>('clinical')
   // Bumped when a round is saved, so the strip's NEWS2 refreshes.
   const [stripKey, setStripKey] = useState(0)
 
@@ -109,6 +111,10 @@ export default function AdmissionDetail({
   const [note, setNote] = useState('')
   const [vitals, setVitals] = useState<Vitals>({})
   const [noteSaving, setNoteSaving] = useState(false)
+  // Whose note and which shift — defaults from the writer's role and the clock
+  const [noteKind, setNoteKind] = useState<string>(profile?.role === 'nurse' ? 'nurse' : 'doctor')
+  const [noteShift, setNoteShift] = useState<Shift>(() => shiftOf(new Date()))
+  const [noteFilter, setNoteFilter] = useState<string>('all')
   const [noteError, setNoteError] = useState<string | null>(null)
 
   // OT Schedules
@@ -167,6 +173,8 @@ export default function AdmissionDetail({
     const result = await addProgressNote(adm.id, {
       note,
       vitals: Object.keys(vitalsPayload).length ? vitalsPayload : undefined,
+      kind: noteKind,
+      shift: noteKind === 'nurse' ? noteShift : null,
     })
     setNoteSaving(false)
     if (!result.success) { setNoteError(result.error); return }
@@ -176,6 +184,7 @@ export default function AdmissionDetail({
       author_id: profile?.id ?? null,
       note,
       vitals: Object.keys(vitalsPayload).length ? vitalsPayload : null,
+      kind: noteKind, shift: noteKind === 'nurse' ? noteShift : null,
       created_at: new Date().toISOString(),
       author: profile ? { id: profile.id, full_name: profile.full_name, role: profile.role } : undefined,
     }, ...n])
@@ -481,6 +490,7 @@ export default function AdmissionDetail({
         {([
           { key: 'clinical',   label: 'Clinical',   Icon: FileText    },
           { key: 'chart',      label: 'Chart',      Icon: LineChart   },
+          { key: 'labs',       label: 'Labs',       Icon: FlaskConical },
           { key: 'treatment',  label: 'Treatment',  Icon: Pill        },
           { key: 'critical',   label: 'Critical Care', Icon: Activity },
           { key: 'nursing',    label: 'Nursing',    Icon: Stethoscope },
@@ -653,6 +663,20 @@ export default function AdmissionDetail({
                     </FormField>
                   ))}
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <FormField label="Note by">
+                    <Select value={noteKind} onChange={(e) => setNoteKind(e.target.value)}>
+                      {NOTE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+                    </Select>
+                  </FormField>
+                  {noteKind === 'nurse' && (
+                    <FormField label="Shift">
+                      <Select value={noteShift} onChange={(e) => setNoteShift(e.target.value as Shift)}>
+                        {SHIFTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </Select>
+                    </FormField>
+                  )}
+                </div>
                 <FormField label="Clinical Note">
                   <SpeechTextarea
                     variant="field"
@@ -683,15 +707,33 @@ export default function AdmissionDetail({
             <FileText className="w-4 h-4" style={{ color: '#0D9488' }} />
             Progress Notes
           </h3>
+          {notes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {[{ value: 'all', label: 'All' }, ...NOTE_KINDS, { value: 'system', label: 'System' }]
+                .filter((k) => k.value === 'all' || notes.some((n) => (n.kind ?? 'doctor') === k.value))
+                .map((k) => (
+                  <button key={k.value} onClick={() => setNoteFilter(k.value)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                    style={noteFilter === k.value
+                      ? { background: '#0D9488', color: '#fff', border: '1px solid #0D9488' }
+                      : { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                    {k.label} ({k.value === 'all' ? notes.length : notes.filter((n) => (n.kind ?? 'doctor') === k.value).length})
+                  </button>
+                ))}
+            </div>
+          )}
           {notes.length === 0 ? (
             <GlassCard className="p-6">
               <p className="text-sm text-center" style={{ color: '#94A3B8' }}>No progress notes yet.</p>
             </GlassCard>
           ) : (
-            notes.map((n) => (
+            notes.filter((n) => noteFilter === 'all' || (n.kind ?? 'doctor') === noteFilter).map((n) => (
               <GlassCard key={n.id} className="p-4">
                 <div className="flex items-start justify-between gap-4 mb-2">
                   <p className="text-xs font-semibold" style={{ color: '#0D9488' }}>
+                    <span className="px-1.5 py-0.5 rounded-md mr-1.5" style={{ background: 'rgba(13,148,136,0.08)' }}>
+                      {noteKindLabel(n.kind)}{n.shift ? ` · ${n.shift}` : ''}
+                    </span>
                     {n.author?.full_name ?? 'Unknown'} · <span className="capitalize">{n.author?.role}</span>
                   </p>
                   <span className="text-xs" style={{ color: '#94A3B8' }}>
@@ -737,6 +779,9 @@ export default function AdmissionDetail({
       )}
 
       {/* ── Critical Care tab ── */}
+      {/* ── Labs tab: results by day, blood gas, cultures, booked labs ── */}
+      {activeTab === 'labs' && <StayLabs admissionId={adm.id} />}
+
       {/* ── Chart tab: rounds, NEWS2, sugar & insulin ── */}
       {activeTab === 'chart' && (
         <RoundChart admission={adm} canNurse={!!canNursing} canDoctor={!!canWrite}
