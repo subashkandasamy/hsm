@@ -123,7 +123,15 @@ export async function createOrder(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
 
-  const inputError = ipdOrderError(input)
+  // The form of the drug picked (a tablet must not go IV) — from the catalogue,
+  // not the browser.
+  let drugForm: string | null = null
+  if (input.type === 'medication' && input.drug_ref_id) {
+    const sb = await createClient()
+    const { data: d } = await sb.from(input.drug_is_global ? 'drug_master' : 'drugs').select('form').eq('id', input.drug_ref_id).maybeSingle()
+    drugForm = (d?.form as string | null) ?? null
+  }
+  const inputError = ipdOrderError({ ...input, drug_form: drugForm })
   if (inputError) return { success: false, error: inputError }
 
   const gate = await assertTreatmentStarted(admissionId)
@@ -270,20 +278,14 @@ export async function stopOrder(orderId: string): Promise<SimpleResult> {
   if (error) return { success: false, error: error.message }
 
   // Cancel pending slots
-  // Doses not yet due will never be given — remove them. Marking them "held"
-  // printed a row of H's on the drug chart, merged into "HG" when the drug was
-  // re-ordered (BUG-043). A dose already due and never charted stays visible
-  // as held (not given because the order stopped).
-  const nowIso = new Date().toISOString()
+  // Doses nobody charted come off the chart. Marking them "held" printed a row
+  // of H's — even the dose due the minute the order was written — and merged
+  // into "HG" when the drug was re-ordered (BUG-043). Held means a nurse held
+  // it; a stopped order's untouched doses were never anyone's decision. What
+  // was given, missed or held stays exactly as charted.
   await supabase
     .from('ipd_admin_schedule')
     .delete()
-    .eq('order_id', orderId)
-    .eq('status', 'pending')
-    .gt('due_at', nowIso)
-  await supabase
-    .from('ipd_admin_schedule')
-    .update({ status: 'held' })
     .eq('order_id', orderId)
     .eq('status', 'pending')
 

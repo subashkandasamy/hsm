@@ -158,13 +158,15 @@ export async function closeOpenWork(
 ): Promise<ClosedWork> {
   const { admissionId, closedAt } = p
 
-  // Medicines — as stopOrder does for one: stopped, future doses held,
-  // pending pharmacy requests cancelled.
+  // Medicines — as stopOrder does for one: stopped, the doses after discharge
+  // taken off the chart (the discharge window says so; marking them "held"
+  // printed H's after the patient had gone — BUG-043), pending pharmacy
+  // requests cancelled.
   const { data: meds } = await supabase
     .from('ipd_medication_orders').update({ status: 'stopped', stop_at: closedAt })
     .eq('admission_id', admissionId).eq('status', 'active').select('id')
   const { data: held } = await supabase
-    .from('ipd_admin_schedule').update({ status: 'held', given_notes: 'Not given — patient discharged' })
+    .from('ipd_admin_schedule').delete()
     .eq('admission_id', admissionId).eq('status', 'pending').gt('due_at', closedAt).select('id')
   const { data: pharmacy } = await supabase
     .from('ipd_pharmacy_requests').update({ status: 'cancelled' })

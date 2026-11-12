@@ -9,6 +9,9 @@ const ORAL_FORM = /\b(tab|tabs|tablets?|caps?|capsules?|syrup|suspension|chewabl
 export function ipdOrderError(o: {
   type: MedicationOrderType
   drug_name?: string | null
+  /** The picked drug's form ("Tablet"): a name picked from the list is
+   *  "Pantoprazole 40mg" — the form is not in it, and a tablet went IV. */
+  drug_form?: string | null
   dose?: number | null
   route?: string | null
   fluid_name?: string | null
@@ -21,8 +24,9 @@ export function ipdOrderError(o: {
     const name = (o.drug_name ?? '').trim()
     if (!name) return 'Enter the drug name'
     if (o.dose != null && !(o.dose > 0)) return 'The dose must be more than 0'
-    if (o.route && PARENTERAL.has(o.route) && ORAL_FORM.test(name)) {
-      const form = name.match(ORAL_FORM)![0].toLowerCase()
+    const described = `${name} ${o.drug_form ?? ''}`
+    if (o.route && PARENTERAL.has(o.route) && ORAL_FORM.test(described)) {
+      const form = described.match(ORAL_FORM)![0].toLowerCase()
       return `${name} is a ${/cap/.test(form) ? 'capsule' : /syrup|suspension/.test(form) ? 'liquid taken by mouth' : 'tablet'} — it can't be given ${o.route}. Pick the injection, or change the route.`
     }
   }

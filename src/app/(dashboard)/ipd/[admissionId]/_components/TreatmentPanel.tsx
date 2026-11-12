@@ -1202,7 +1202,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
 
 interface OrderForm {
   type: IpdMedicationOrder['type']
-  drug_name: string; drug_ref_id: string | null; drug_is_global: boolean
+  drug_name: string; drug_ref_id: string | null; drug_is_global: boolean; drug_form: string
   dose: string; dose_unit: string; route: string
   fluid_name: string; volume_ml: string; rate_ml_per_hr: string
   additives: string; dilution: string
@@ -1211,7 +1211,7 @@ interface OrderForm {
   duration_days: string; notes: string
 }
 const BLANK: OrderForm = {
-  type: 'medication', drug_name: '', drug_ref_id: null, drug_is_global: false,
+  type: 'medication', drug_name: '', drug_ref_id: null, drug_is_global: false, drug_form: '',
   dose: '', dose_unit: 'mg', route: 'IV',
   fluid_name: '', volume_ml: '', rate_ml_per_hr: '',
   additives: '', dilution: '',
@@ -1282,7 +1282,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   async function submitOrder() {
     const dur = parseInt(form.duration_days) || 5
     const problem = ipdOrderError({
-      type: form.type, drug_name: form.drug_name, dose: form.dose ? parseFloat(form.dose) : null, route: form.route,
+      type: form.type, drug_name: form.drug_name, drug_form: form.drug_form, dose: form.dose ? parseFloat(form.dose) : null, route: form.route,
       fluid_name: form.fluid_name, volume_ml: form.volume_ml ? parseFloat(form.volume_ml) : null,
       rate_ml_per_hr: form.rate_ml_per_hr ? parseFloat(form.rate_ml_per_hr) : null,
       flow_rate_lpm: form.flow_rate_lpm ? parseFloat(form.flow_rate_lpm) : null, duration_days: dur,
@@ -1332,10 +1332,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       setStoppingId(null)
       if (!res.success) { setError(res.error); return }
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: 'stopped' } : o))
-      const now = Date.now()
-      setSchedule((prev) => prev
-        .filter((s) => !(s.order_id === orderId && s.status === 'pending' && new Date(s.due_at).getTime() > now))
-        .map((s) => s.order_id === orderId && s.status === 'pending' ? { ...s, status: 'held' } : s))
+      setSchedule((prev) => prev.filter((s) => !(s.order_id === orderId && s.status === 'pending')))
     })
   }
 
@@ -1472,6 +1469,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                         ...f,
                         drug_ref_id:    drug?.id ?? null,
                         drug_is_global: drug?.is_global ?? false,
+                        drug_form:      drug?.form ?? '',
                       }))
                     }} />
                 </div>

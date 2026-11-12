@@ -43,6 +43,10 @@ Each run writes `e2e/results/<run>/`: `checks.json`, `ctx.json` (patients,
 admissions and URLs the flows passed along), `shots/`, `prints/` (every PDF
 the run printed) and `report.html`. Results are git-ignored.
 
+A full run starts with `cleanup`: test patients an earlier, unfinished run
+left admitted are discharged as absconded, so their beds are free again. Only
+the suite's own "E2E … R<tag>" patients from other runs are touched.
+
 Flows run in order because later ones use what earlier ones made:
 front-desk registers the patients, OPD admits Lakshmi, emergency admits the
 unknown ICU patient, and so on. Run a single later flow with `--run` pointing
@@ -71,7 +75,7 @@ the HR flow switches on is switched off again.
 ```
 e2e/
   run.ts               runner (picks flows, makes the run folder, builds the report)
-  flows/01-…18-*.ts    one file per area
+  flows/00-…18-*.ts    one file per area (00 = clean-up of earlier runs)
   lib/env.ts           settings from .env.e2e, safety guard
   lib/browser.ts       Chrome, sign-in, screenshots, saving printouts
   lib/ui.ts            finding fields by label, Uyirly's select boxes, cards

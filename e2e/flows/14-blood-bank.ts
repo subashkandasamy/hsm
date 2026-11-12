@@ -13,9 +13,9 @@ export default {
     const today = new Date(), in35 = new Date(Date.now() + 35 * 864e5), past = new Date(Date.now() - 10 * 864e5)
     await withRole('lab_tech', async ({ page }) => {
       const LT = 'lab_tech'
-      const addUnit = async (b: string, exp: Date, donor: 'new' | 'existing') => {
+      const addUnit = async (b: string, exp: Date, donor: 'new' | 'existing', group = 'B+', component = 'Whole Blood') => {
         await go(page, '/blood'); await page.getByRole('button', { name: 'Add Unit' }).click(); await wait(page, 1500)
-        await pick(page, 'Blood Group *', 'B+'); await pick(page, 'Component *', 'Whole Blood')
+        await pick(page, 'Blood Group *', group); await pick(page, 'Component *', component)
         await page.getByPlaceholder('e.g. BB-2026-0142').fill(b); await page.getByPlaceholder('e.g. 350').fill('450')
         const d = page.locator('input[type=date]:visible'); await d.nth(0).fill(ymd(today)); await d.nth(1).fill(ymd(exp))
         if (donor === 'new') { await page.getByRole('button', { name: 'New Donor' }).click(); await page.getByPlaceholder('Donor full name').fill(`E2E Donor ${r.tag}`) }
@@ -43,6 +43,12 @@ export default {
       const sepErr = (await sd.innerText().catch(() => '')).match(/[^\n]*(violates|error|null value)[^\n]*/i)?.[0]
       const rows = (await page.locator('tr').filter({ hasText: bag(1) }).allInnerTexts()).join(' | ')
       r.check({ id: 'BB-05', role: LT, screen: '/blood → Separate', title: 'Separate whole blood into PRBC, FFP and platelets', ok: /PRBC/.test(rows) && /Plasma/.test(rows) && /Platelets/.test(rows), bug: 'BUG-045', detail: sepErr ?? rows.slice(0, 160) })
+      // A patient not yet grouped gets O− red cells only (BUG-046 fix) — stock one.
+      await addUnit(bag(9), in35, 'new', 'O-', 'Packed RBC (PRBC)')
+      await page.getByRole('button', { name: /^Units/ }).click(); await wait(page, 2000)
+      await page.locator('tr').filter({ hasText: bag(9) }).first().getByRole('button', { name: 'Screen' }).click().catch(() => {}); await wait(page, 1500)
+      for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Non-reactive', exact: true }).nth(i).click().catch(() => {})
+      await page.getByRole('button', { name: 'Save Screening' }).click().catch(() => {}); await wait(page, 3000)
       await page.keyboard.press('Escape').catch(() => {})
       // Charges
       await go(page, '/blood'); await page.getByRole('button', { name: 'Charges' }).click(); await wait(page, 2000)

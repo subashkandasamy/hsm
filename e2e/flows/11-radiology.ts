@@ -63,7 +63,8 @@ export default {
     })
     await withRole('doctor', async ({ page }) => {
       await go(page, l.visit)
-      const v = page.getByRole('button', { name: 'View Report' }).first()
+      // The ultrasound's report — the lab report on the same visit has a "View Report" too.
+      const v = await buttonIn(page, 'View Report', ['Ultrasound']).catch(() => page.getByRole('button', { name: 'View Report' }).last())
       await v.scrollIntoViewIfNeeded().catch(() => {}); await v.click(); await wait(page, 5000)
       const dlg = page.locator('div').filter({ has: page.getByText(/^Radiology Report — /) }).filter({ has: page.getByText('Print Report') }).last()
       const dt = (await dlg.innerText().catch(() => '')).replace(/\s+/g, ' ')
