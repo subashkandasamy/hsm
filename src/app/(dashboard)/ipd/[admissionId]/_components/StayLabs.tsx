@@ -89,14 +89,16 @@ export default function StayLabs({ admissionId }: { admissionId: string }) {
       </GlassCard>
 
       <GlassCard className="p-4">
-        <Head icon={Wind} title="Blood gas" hint="From the analyzer. P/F uses the FiO₂ charted within two hours of the sample." />
+        <Head icon={Wind} title="Blood gas" hint="From the analyzer. FiO₂ and the ventilator settings are the round nearest the sample (within two hours)." />
         {data.abg.length === 0 ? <p className="text-sm" style={{ color: '#94A3B8' }}>No blood gas on this stay.</p> : (
           <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
-            <table className="text-xs w-full" style={{ minWidth: '50rem' }}>
+            <table className="text-xs w-full" style={{ minWidth: '64rem' }}>
               <thead><tr style={{ background: '#F8FAFC', color: '#475569' }}>
                 <th className="text-left px-2.5 py-2 font-semibold">Time</th>
                 {ABG_COLUMNS.map((c) => <th key={c.code} className="px-2 py-2 font-semibold text-center">{c.label}</th>)}
                 <th className="px-2 py-2 font-semibold text-center">FiO₂</th><th className="px-2 py-2 font-semibold text-center">P/F</th>
+                <th className="px-2 py-2 font-semibold text-center">Mode</th><th className="px-2 py-2 font-semibold text-center">VT</th>
+                <th className="px-2 py-2 font-semibold text-center">RR</th><th className="px-2 py-2 font-semibold text-center">PS / PEEP</th>
               </tr></thead>
               <tbody>
                 {data.abg.map((r) => (
@@ -109,6 +111,10 @@ export default function StayLabs({ admissionId }: { admissionId: string }) {
                     })}
                     <td className="px-2 py-1.5 text-center">{r.fio2 != null ? `${r.fio2}%` : '—'}</td>
                     <td className="px-2 py-1.5 text-center font-semibold" style={{ color: r.pf != null && r.pf < 300 ? '#B91C1C' : '#0F172A' }}>{r.pf ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">{r.vent?.mode ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-center">{r.vent?.vt ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-center">{r.vent?.rr ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">{r.vent && (r.vent.ps != null || r.vent.peep != null) ? `${r.vent.ps ?? '–'}/${r.vent.peep ?? '–'}` : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -119,8 +125,8 @@ export default function StayLabs({ admissionId }: { admissionId: string }) {
 
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <GlassCard className="p-4">
-          <Head icon={Microscope} title="Cultures" hint="From the lab — the report as the lab wrote it" />
-          {data.cultures.length === 0 ? <p className="text-sm" style={{ color: '#94A3B8' }}>No cultures sent on this stay.</p> : (
+          <Head icon={Microscope} title="Cultures & Gram stains" hint="From the lab — the report as the lab wrote it" />
+          {data.cultures.length === 0 ? <p className="text-sm" style={{ color: '#94A3B8' }}>No cultures or Gram stains sent on this stay.</p> : (
             <div className="space-y-2">
               {data.cultures.map((c) => (
                 <div key={`${c.orderId}:${c.test}`} className="rounded-xl p-2.5 text-xs" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>

@@ -385,11 +385,23 @@ export const HandoverSchema = z.object({
   recommendation: z.string().nullable().optional(),
 })
 
+const woundLine = z.string().trim().max(200).nullable().optional()
 export const ProgressNoteSchema = z.object({
-  note: z.string().min(1, 'Note is required'),
+  // A wound note may be the assessment alone — its words are written from the fields.
+  note: z.string().default(''),
   vitals: VitalsSchema.optional(),
   kind: z.enum(['doctor', 'nurse', 'rt', 'physio', 'dietitian', 'wound']).optional(),
   shift: z.enum(['morning', 'evening', 'night']).nullable().optional(),
+  /** KMCH wound assessment (0290) — only with kind 'wound'. */
+  wound: z.object({
+    site: z.string().trim().min(1, 'Wound site is required').max(100),
+    t: woundLine, i: woundLine, m: woundLine, e: woundLine,
+    condition: z.enum(['worsening', 'same', 'improved']).nullable().optional(),
+    dressing: woundLine,
+  }).optional(),
+}).superRefine((d, ctx) => {
+  if (d.wound && d.kind !== 'wound') ctx.addIssue({ code: 'custom', path: ['wound'], message: 'A wound assessment goes on a wound note' })
+  if (!d.note.trim() && !d.wound) ctx.addIssue({ code: 'custom', path: ['note'], message: 'Note is required' })
 })
 export const DischargeSchema = z.object({
   discharge_summary: z.string().trim().min(1, 'Discharge summary is required'),

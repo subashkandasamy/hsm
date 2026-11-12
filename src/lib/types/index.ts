@@ -351,6 +351,8 @@ export interface IpdProgressNote {
   id: string; admission_id: string; author_id: string | null; note: string
   vitals: Vitals | null; created_at: string
   kind?: string; shift?: string | null
+  /** Wound note fields (0290) */
+  data?: Record<string, unknown> | null
   author?: Pick<Profile, 'id' | 'full_name' | 'role'>
 }
 

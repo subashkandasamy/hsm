@@ -20,6 +20,8 @@ export interface AbgRow {
   orderId: string; at: string
   values: Record<string, { value: string; flag: string | null }>
   fio2: number | null; pf: number | null
+  /** The ventilator at the time of the sample (KMCH's ABG table: mode, VT, RR, PSV/PEEP), from the nearest round. */
+  vent: { mode: string | null; vt: number | null; rr: number | null; peep: number | null; ps: number | null } | null
 }
 export interface StayLabs {
   days: string[]
@@ -30,6 +32,8 @@ export interface StayLabs {
 }
 
 const ABG_MARKERS = new Set(['BG_PH', 'PCO2', 'PO2'])
+/** Microbiology read as a report, not a number: cultures and Gram stains. */
+const MICRO = /culture|gram\s*stain/i
 const RELEASED = ['verified', 'reported']
 
 type OrderRow = {
@@ -90,7 +94,7 @@ export async function getStayLabs(admissionId: string): Promise<StayLabs> {
       // result_value is numeric in the database — never assume a string.
       const raw = i.result_value ?? i.result_text
       const v = raw == null ? '' : String(raw).trim(); if (!v) continue
-      if (/culture/i.test(i.test?.name ?? '')) continue   // cultures have their own list
+      if (MICRO.test(i.test?.name ?? '')) continue   // cultures and Gram stains have their own list
       put(`t:${i.test_id}`, i.test?.name ?? 'Test', i.unit, i.test?.category ?? 'Tests', whenOf(o), v, i.flag)
     }
   }
@@ -100,32 +104,38 @@ export async function getStayLabs(admissionId: string): Promise<StayLabs> {
   for (const a of analytes) {
     if (!a.analyte) continue
     const o = byOrder.get(a.lab_order_id); if (!o) continue
-    const row = abgOrders.get(o.id) ?? { orderId: o.id, at: whenOf(o), values: {}, fio2: null, pf: null }
+    const row = abgOrders.get(o.id) ?? { orderId: o.id, at: whenOf(o), values: {}, fio2: null, pf: null, vent: null }
     row.values[a.analyte.code] = { value: fmt(a.value_num, a.value_text), flag: a.flag }
     abgOrders.set(o.id, row)
   }
   const abg = [...abgOrders.values()].filter((r) => Object.keys(r.values).some((c) => ABG_MARKERS.has(c)))
   if (abg.length) {
-    const { data: obs } = await supabase.from('icu_observations').select('recorded_at, fio2, o2_device')
+    const { data: obs } = await supabase.from('icu_observations').select('recorded_at, fio2, o2_device, vent_mode, tidal_volume, vent_rate, peep, pressure_support')
       .eq('admission_id', admissionId).order('recorded_at', { ascending: true })
     for (const r of abg) {
       const t = new Date(r.at).getTime()
       let best: { d: number; fio2: number | null } | null = null
+      let vent: { d: number; v: NonNullable<AbgRow['vent']> } | null = null
       for (const o of obs ?? []) {
         const d = Math.abs(new Date(o.recorded_at as string).getTime() - t)
+        if (d > 2 * 3600_000) continue
         const f = o.fio2 != null ? Number(o.fio2) : o.o2_device === 'air' ? 21 : null
-        if (f != null && d <= 2 * 3600_000 && (!best || d < best.d)) best = { d, fio2: f }
+        if (f != null && (!best || d < best.d)) best = { d, fio2: f }
+        if ((o.vent_mode || o.tidal_volume != null || o.peep != null) && (!vent || d < vent.d)) {
+          vent = { d, v: { mode: (o.vent_mode as string | null) ?? null, vt: o.tidal_volume as number | null, rr: o.vent_rate as number | null, peep: o.peep as number | null, ps: o.pressure_support as number | null } }
+        }
       }
       r.fio2 = best?.fio2 ?? null
+      r.vent = vent?.v ?? null
       const po2 = Number(r.values.PO2?.value)
       r.pf = r.fio2 && Number.isFinite(po2) ? Math.round(po2 / (r.fio2 / 100)) : null
     }
   }
 
-  // Cultures: any culture order of the stay, released or not
+  // Cultures and Gram stains (KMCH's "Gramstain — CSF / ET / urine" box): any such order of the stay, released or not
   const cultures: StayLabs['cultures'] = []
   for (const o of all) for (const i of o.items) {
-    if (!/culture/i.test(i.test?.name ?? '')) continue
+    if (!MICRO.test(i.test?.name ?? '')) continue
     const rawResult = RELEASED.includes(o.status) ? (i.result_text ?? i.result_value ?? null) : null
     const result = rawResult == null ? null : String(rawResult)
     cultures.push({ orderId: o.id, test: i.test?.name ?? 'Culture', sample: i.test?.sample_type ?? null, status: o.status, orderedAt: o.ordered_at, result })

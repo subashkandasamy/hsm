@@ -28,7 +28,7 @@ import PatientStrip from './PatientStrip'
 import RoundChart from './RoundChart'
 import StayLabs from './StayLabs'
 import IcuDaySheet from './IcuDaySheet'
-import { NOTE_KINDS, SHIFTS, noteKindLabel, shiftOf, type Shift } from '@/lib/noteKinds'
+import { NOTE_KINDS, SHIFTS, WOUND_CONDITIONS, WOUND_FIELDS, noteKindLabel, shiftOf, woundText, type Shift, type WoundData } from '@/lib/noteKinds'
 import ScheduleModal from '@/app/(dashboard)/ot/_components/ScheduleModal'
 import BillBuilderModal from '@/app/(dashboard)/billing/_components/BillBuilderModal'
 import RaiseRequestModal from '@/app/(dashboard)/blood/_components/RaiseRequestModal'
@@ -119,6 +119,11 @@ export default function AdmissionDetail({
   const [noteShift, setNoteShift] = useState<Shift>(() => shiftOf(new Date()))
   const [noteFilter, setNoteFilter] = useState<string>('all')
   const [noteError, setNoteError] = useState<string | null>(null)
+  // KMCH wound assessment: site, T-I-M-E, condition, dressing done
+  const blankWound = { site: '', t: '', i: '', m: '', e: '', condition: '', dressing: '' }
+  const [wound, setWound] = useState(blankWound)
+  const isWound = noteKind === 'wound'
+  const canSaveNote = !!note.trim() || (isWound && !!wound.site.trim())
 
   // OT Schedules
   const [otSchedules, setOtSchedules] = useState<OtSchedule[]>(initialOtSchedules)
@@ -167,17 +172,22 @@ export default function AdmissionDetail({
 
   async function handleAddNote(e: React.FormEvent) {
     e.preventDefault()
-    if (!note.trim()) return
+    if (!canSaveNote) return
     setNoteSaving(true)
     setNoteError(null)
     const vitalsPayload: Vitals = Object.fromEntries(
       Object.entries(vitals).filter(([, v]) => v)
     ) as Vitals
+    const w: WoundData | null = isWound && wound.site.trim() ? {
+      site: wound.site.trim(), t: wound.t.trim() || null, i: wound.i.trim() || null, m: wound.m.trim() || null, e: wound.e.trim() || null,
+      condition: (wound.condition || null) as WoundData['condition'], dressing: wound.dressing.trim() || null,
+    } : null
     const result = await addProgressNote(adm.id, {
       note,
       vitals: Object.keys(vitalsPayload).length ? vitalsPayload : undefined,
       kind: noteKind,
       shift: noteKind === 'nurse' ? noteShift : null,
+      ...(w ? { wound: w } : {}),
     })
     setNoteSaving(false)
     if (!result.success) { setNoteError(result.error); return }
@@ -185,14 +195,15 @@ export default function AdmissionDetail({
       id: crypto.randomUUID(),
       admission_id: adm.id,
       author_id: profile?.id ?? null,
-      note,
+      note: [w ? woundText(w) : null, note.trim() || null].filter(Boolean).join('\n'),
       vitals: Object.keys(vitalsPayload).length ? vitalsPayload : null,
-      kind: noteKind, shift: noteKind === 'nurse' ? noteShift : null,
+      kind: noteKind, shift: noteKind === 'nurse' ? noteShift : null, data: w as Record<string, unknown> | null,
       created_at: new Date().toISOString(),
       author: profile ? { id: profile.id, full_name: profile.full_name, role: profile.role } : undefined,
     }, ...n])
     setNote('')
     setVitals({})
+    setWound(blankWound)
   }
 
   async function handleTransfer() {
@@ -681,7 +692,30 @@ export default function AdmissionDetail({
                     </FormField>
                   )}
                 </div>
-                <FormField label="Clinical Note">
+                {isWound && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl p-3" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                    <FormField label="Wound site">
+                      <Input value={wound.site} onChange={(e) => setWound({ ...wound, site: e.target.value })} placeholder="e.g. Sacrum, stage 2" />
+                    </FormField>
+                    <FormField label="Condition">
+                      <Select value={wound.condition} onChange={(e) => setWound({ ...wound, condition: e.target.value })}>
+                        <option value="">—</option>
+                        {WOUND_CONDITIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </Select>
+                    </FormField>
+                    {WOUND_FIELDS.map((f) => (
+                      <FormField key={f.key} label={f.label}>
+                        <Input value={wound[f.key]} onChange={(e) => setWound({ ...wound, [f.key]: e.target.value })} placeholder={f.hint} />
+                      </FormField>
+                    ))}
+                    <div className="sm:col-span-2">
+                      <FormField label="Dressing done">
+                        <Input value={wound.dressing} onChange={(e) => setWound({ ...wound, dressing: e.target.value })} placeholder="e.g. Saline wash, povidone, gauze" />
+                      </FormField>
+                    </div>
+                  </div>
+                )}
+                <FormField label={isWound ? 'More (optional)' : 'Clinical Note'}>
                   <SpeechTextarea
                     variant="field"
                     fieldKey="ipd.progress_note"
@@ -692,12 +726,12 @@ export default function AdmissionDetail({
                   />
                 </FormField>
                 {noteError && <p className="text-xs" style={{ color: '#DC2626' }}>{noteError}</p>}
-                <button type="submit" disabled={noteSaving || !note.trim()}
+                <button type="submit" disabled={noteSaving || !canSaveNote}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
                   style={{
-                    background: (noteSaving || !note.trim()) ? '#94A3B8' : '#0D9488',
+                    background: (noteSaving || !canSaveNote) ? '#94A3B8' : '#0D9488',
                     color: '#fff', border: 'none',
-                    cursor: (noteSaving || !note.trim()) ? 'not-allowed' : 'pointer',
+                    cursor: (noteSaving || !canSaveNote) ? 'not-allowed' : 'pointer',
                   }}>
                   <Plus className="w-4 h-4" />
                   {noteSaving ? 'Saving…' : 'Add Note'}

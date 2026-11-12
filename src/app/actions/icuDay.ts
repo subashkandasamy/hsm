@@ -38,7 +38,22 @@ export interface IcuDay {
   bundles: BundleCheck[]
   labs: StayLabs
   notes: Array<{ id: string; kind: string | null; shift: string | null; note: string; created_at: string; author: string | null }>
+  /** The rest of KMCH's sheet: the stay around the day (current, not only this day). */
+  context: IcuContext
 }
+export interface IcuContext {
+  diagnosis: string[]
+  procedures: Array<{ name: string; at: string; status: string }>
+  consults: Array<{ doctor: string | null; status: string; on: string; reason: string | null }>
+  blood: Array<{ component: string; units: number; status: string; at: string }>
+  /** Running IV fluids and drug infusions — KMCH's IV FLUIDS and INFUSIONS boxes. */
+  infusions: Array<{ kind: 'fluid' | 'drug'; label: string; rate: string | null; dilution: string | null; since: string }>
+  scans: Array<{ name: string; modality: string | null; status: string; at: string; report: string | null }>
+  /** The latest wound assessment up to the end of this day. */
+  wound: { at: string; text: string; author: string | null } | null
+}
+
+const BLOOD_LABEL: Record<string, string> = { whole: 'Whole blood', prbc: 'Packed cells', plasma: 'FFP', platelets: 'Platelets' }
 
 /**
  * Everything on KMCH's ICU sheet for one day (08:00 → 07:59 IST), in one
@@ -51,7 +66,8 @@ export async function getIcuDay(admissionId: string, day: string): Promise<IcuDa
   const supabase = await createClient()
   const { start, end } = sheetDayWindow(day)
   const s = start.toISOString(), e = end.toISOString()
-  const [obs, fluids, doses, lines, bundles, labs, notes] = await Promise.all([
+  const { data: adm } = await supabase.from('admissions').select('patient_id, reason').eq('id', admissionId).maybeSingle()
+  const [obs, fluids, doses, lines, bundles, labs, notes, problems, ots, consults, blood, orders, scans, wound] = await Promise.all([
     supabase.from('icu_observations').select('*, recorder:profiles!recorded_by(id, full_name)')
       .eq('admission_id', admissionId).gte('recorded_at', s).lt('recorded_at', e).order('recorded_at'),
     supabase.from('icu_fluid_balance').select('*')
@@ -66,6 +82,15 @@ export async function getIcuDay(admissionId: string, day: string): Promise<IcuDa
     getStayLabs(admissionId),
     supabase.from('ipd_progress_notes').select('id, kind, shift, note, created_at, author:profiles(full_name)')
       .eq('admission_id', admissionId).gte('created_at', s).lt('created_at', e).order('created_at'),
+    supabase.from('patient_problems').select('problem, icd_code').eq('patient_id', adm?.patient_id ?? '').in('status', ['active', 'chronic']).order('noted_at'),
+    supabase.from('ot_schedules').select('procedure_name, scheduled_start, status').eq('admission_id', admissionId).neq('status', 'cancelled').order('scheduled_start'),
+    supabase.from('doctor_visits').select('status, visit_date, reason, doctor:profiles!doctor_id(full_name)').eq('admission_id', admissionId).eq('visit_type', 'consult').neq('status', 'cancelled').order('created_at'),
+    supabase.from('blood_requests').select('component, units_required, status, requested_at').eq('admission_id', admissionId).neq('status', 'cancelled').order('requested_at'),
+    supabase.from('ipd_medication_orders').select('type, drug_name, dose, dose_unit, fluid_name, volume_ml, rate_ml_per_hr, additives, dilution, frequency_type, start_at')
+      .eq('admission_id', admissionId).eq('status', 'active').order('start_at'),
+    supabase.from('radiology_orders').select('status, ordered_at, report, test:radiology_catalog(name, modality)').eq('admission_id', admissionId).neq('status', 'cancelled').order('ordered_at'),
+    supabase.from('ipd_progress_notes').select('note, created_at, author:profiles(full_name)').eq('admission_id', admissionId).eq('kind', 'wound')
+      .lt('created_at', e).order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
   type Ord = { type: string; drug_name: string | null; dose: number | null; dose_unit: string | null; route: string | null; fluid_name: string | null; volume_ml: number | null; rate_ml_per_hr: number | null; flow_rate_lpm: number | null }
   const label = (o: Ord | null) => !o ? 'Order'
@@ -88,6 +113,23 @@ export async function getIcuDay(admissionId: string, day: string): Promise<IcuDa
     lines: ((lines.data ?? []) as unknown as IpdLine[]).filter((l) => !l.removed_at || l.removed_at >= s),
     bundles: (bundles.data ?? []) as unknown as BundleCheck[],
     labs,
+    context: {
+      diagnosis: [adm?.reason as string | null, ...(problems.data ?? []).map((p) => `${p.problem}${p.icd_code ? ` (${p.icd_code})` : ''}`)]
+        .filter((x): x is string => !!x && !!x.trim()),
+      procedures: (ots.data ?? []).map((o) => ({ name: o.procedure_name as string, at: o.scheduled_start as string, status: o.status as string })),
+      consults: (consults.data ?? []).map((c) => ({ doctor: (c.doctor as unknown as { full_name: string } | null)?.full_name ?? null, status: c.status as string, on: c.visit_date as string, reason: (c.reason as string | null) ?? null })),
+      blood: (blood.data ?? []).map((b) => ({ component: BLOOD_LABEL[b.component as string] ?? (b.component as string), units: Number(b.units_required) || 0, status: b.status as string, at: b.requested_at as string })),
+      // A drip is any IV infusion; a drug infusion is a medicine given continuously or with a dilution.
+      infusions: (orders.data ?? []).filter((o) => o.type === 'iv_infusion' || (o.type === 'medication' && (o.frequency_type === 'continuous' || !!o.dilution)))
+        .map((o) => o.type === 'iv_infusion'
+          ? { kind: 'fluid' as const, label: [o.fluid_name ?? 'IV fluid', o.volume_ml ? `${o.volume_ml} ml` : null, o.additives ? `+ ${o.additives}` : null].filter(Boolean).join(' '), rate: o.rate_ml_per_hr ? `${o.rate_ml_per_hr} ml/h` : null, dilution: null, since: o.start_at as string }
+          : { kind: 'drug' as const, label: [o.drug_name, o.dose != null ? `${o.dose} ${o.dose_unit ?? ''}`.trim() : null].filter(Boolean).join(' '), rate: o.rate_ml_per_hr ? `${o.rate_ml_per_hr} ml/h` : null, dilution: (o.dilution as string | null) ?? null, since: o.start_at as string }),
+      scans: (scans.data ?? []).map((r) => {
+        const t = r.test as unknown as { name: string; modality: string | null } | null
+        return { name: t?.name ?? 'Scan', modality: t?.modality ?? null, status: r.status as string, at: r.ordered_at as string, report: (r.report as string | null) ?? null }
+      }),
+      wound: wound.data ? { at: wound.data.created_at as string, text: wound.data.note as string, author: (wound.data.author as unknown as { full_name: string } | null)?.full_name ?? null } : null,
+    },
     notes: (notes.data ?? []).map((n) => ({
       id: n.id as string, kind: (n.kind as string | null) ?? null, shift: (n.shift as string | null) ?? null, note: n.note as string,
       created_at: n.created_at as string, author: (n.author as unknown as { full_name: string } | null)?.full_name ?? null,

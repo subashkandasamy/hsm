@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Printer, Cable, ShieldCheck, FlaskConical, NotebookPen } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Printer, Cable, ShieldCheck, FlaskConical, NotebookPen, Droplets, Syringe, ScanLine } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
@@ -17,6 +17,7 @@ import type { Admission, IcuObservation } from '@/lib/types'
 
 const addDays = (day: string, n: number) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const hm = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+const dm = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' })
 const dayHead = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
 function toLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
@@ -74,6 +75,7 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
           </div>
         </div>
 
+        <StayHeader c={data.context} />
         <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
           {/* Fixed layout: every hour column the same width, so the trend points sit over their hour. */}
           <table className="text-[11px]" style={{ minWidth: '82rem', width: '100%', tableLayout: 'fixed' }}>
@@ -150,7 +152,9 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
         <LinesCard admissionId={adm.id} lines={data.lines} asOf={data.asOf} canEdit={canNurse && open} onChange={load} />
         <BundlesCard admissionId={adm.id} day={day} today={today} checks={data.bundles} canEdit={canNurse && open && day === today} onChange={load} />
         <LabsCard data={data} day={day} />
-        <NotesCard notes={data.notes} />
+        <NotesCard notes={data.notes} wound={data.context.wound} />
+        <InfusionsCard c={data.context} />
+        <BloodScansCard c={data.context} />
       </div>
     </div>
   )
@@ -352,9 +356,15 @@ function LabsCard({ data, day }: { data: IcuDay; day: string }) {
   )
 }
 
-function NotesCard({ notes }: { notes: IcuDay['notes'] }) {
+function NotesCard({ notes, wound }: { notes: IcuDay['notes']; wound: IcuDay['context']['wound'] }) {
   return (
     <Card icon={NotebookPen} title="Notes this day">
+      {wound && (
+        <div className="text-xs rounded-lg px-2.5 py-1.5 mb-2" style={{ background: '#FFF7ED', border: '1px solid #FED7AA' }}>
+          <p style={{ color: '#9A3412' }}><b>Latest wound assessment</b> · {dm(wound.at)} {hm(wound.at)}{wound.author ? ` · ${wound.author}` : ''}</p>
+          <p className="whitespace-pre-wrap" style={{ color: '#0F172A' }}>{wound.text}</p>
+        </div>
+      )}
       {notes.length === 0 ? <p className="text-xs" style={{ color: '#94A3B8' }}>No notes on this day.</p> : (
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {notes.map((n) => (
@@ -365,6 +375,70 @@ function NotesCard({ notes }: { notes: IcuDay['notes'] }) {
           ))}
         </div>
       )}
+    </Card>
+  )
+}
+
+/** KMCH's sheet header: diagnosis, procedure and referral — read from the stay. */
+function StayHeader({ c }: { c: IcuDay['context'] }) {
+  const items: Array<[string, string]> = [
+    ['Diagnosis', c.diagnosis.join('; ')],
+    ['Procedure', c.procedures.map((p) => `${p.name} (${dm(p.at)}${p.status !== 'completed' ? `, ${p.status.replace('_', ' ')}` : ''})`).join('; ')],
+    ['Referral', c.consults.map((x) => `${x.doctor ?? 'Consultant'}${x.status === 'requested' ? ' (requested)' : ''}`).join('; ')],
+  ]
+  return (
+    <div className="grid gap-x-4 gap-y-1 grid-cols-1 md:grid-cols-3 mb-3 text-xs">
+      {items.map(([k, v]) => (
+        <p key={k}><span style={{ color: '#94A3B8' }}>{k}: </span><span style={{ color: '#0F172A', fontWeight: 600 }}>{v || '—'}</span></p>
+      ))}
+    </div>
+  )
+}
+
+function InfusionsCard({ c }: { c: IcuDay['context'] }) {
+  const fluids = c.infusions.filter((i) => i.kind === 'fluid'), drugs = c.infusions.filter((i) => i.kind === 'drug')
+  return (
+    <Card icon={Droplets} title="IV fluids & infusions">
+      {!c.infusions.length ? <p className="text-xs" style={{ color: '#94A3B8' }}>None running.</p> : (
+        <div className="space-y-2 text-xs">
+          {fluids.length > 0 && (
+            <div>
+              <p className="font-semibold mb-0.5" style={{ color: '#475569' }}>IV fluids</p>
+              {fluids.map((f, i) => <p key={i} style={{ color: '#0F172A' }}>{f.label}{f.rate ? ` @ ${f.rate}` : ''} <span style={{ color: '#94A3B8' }}>· since {dm(f.since)} {hm(f.since)}</span></p>)}
+            </div>
+          )}
+          {drugs.length > 0 && (
+            <div>
+              <p className="font-semibold mb-0.5" style={{ color: '#475569' }}>Infusions</p>
+              {drugs.map((d, i) => <p key={i} style={{ color: '#0F172A' }}>{d.label}{d.dilution ? ` — ${d.dilution}` : ''}{d.rate ? ` @ ${d.rate}` : ''}</p>)}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function BloodScansCard({ c }: { c: IcuDay['context'] }) {
+  return (
+    <Card icon={Syringe} title="Blood & scans">
+      <div className="space-y-2 text-xs">
+        <div>
+          <p className="font-semibold mb-0.5" style={{ color: '#475569' }}>Blood transfusions / reservations</p>
+          {c.blood.length ? c.blood.map((b, i) => (
+            <p key={i} style={{ color: '#0F172A' }}>{b.component} × {b.units} <span style={{ color: '#94A3B8' }}>· {b.status.replace('_', ' ')} · {dm(b.at)}</span></p>
+          )) : <p style={{ color: '#94A3B8' }}>None.</p>}
+        </div>
+        <div>
+          <p className="font-semibold mb-0.5 flex items-center gap-1" style={{ color: '#475569' }}><ScanLine className="w-3 h-3" /> Scans</p>
+          {c.scans.length ? c.scans.map((r, i) => (
+            <p key={i} style={{ color: '#0F172A' }}>
+              {r.name} <span style={{ color: '#94A3B8' }}>· {dm(r.at)} · {r.report ? 'reported' : r.status.replace('_', ' ')}</span>
+              {r.report && <span className="block whitespace-pre-wrap" style={{ color: '#334155' }}>{r.report.length > 240 ? `${r.report.slice(0, 239)}…` : r.report}</span>}
+            </p>
+          )) : <p style={{ color: '#94A3B8' }}>None.</p>}
+        </div>
+      </div>
     </Card>
   )
 }

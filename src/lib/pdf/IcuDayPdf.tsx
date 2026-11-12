@@ -10,6 +10,7 @@ import { hourCells, newsByHour, rowsFor } from '@/lib/icuRows'
 import { registerPdfFonts, ageSex, C, s } from './parts'
 
 const hm = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
+const dm = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' })
 const dayHead = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const LABEL_W = 92, COL_W = 38, TOT_W = 46
@@ -103,6 +104,15 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
           ))}
           <Text style={{ fontSize: 8, color: allergies.length ? '#B91C1C' : C.muted, fontWeight: 700 }}>Allergy: {allergies.length ? allergies.join(', ') : 'not recorded'}</Text>
         </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+          {([
+            ['Diagnosis', data.context.diagnosis.join('; ')],
+            ['Procedure', data.context.procedures.map((p) => `${p.name} (${dm(p.at)})`).join('; ')],
+            ['Referral', data.context.consults.map((x) => `${x.doctor ?? 'Consultant'}${x.status === 'requested' ? ' (requested)' : ''}`).join('; ')],
+          ] as Array<[string, string]>).map(([k, v]) => (
+            <Text key={k} style={{ fontSize: 8, marginRight: 18, marginBottom: 2, maxWidth: 520 }}><Text style={{ color: C.muted }}>{k}: </Text><Text style={{ fontWeight: 700, color: C.ink }}>{v || '—'}</Text></Text>
+          ))}
+        </View>
 
         {/* The 24-hour grid */}
         <View style={{ borderTopWidth: 0.6, borderTopColor: C.muted, borderLeftWidth: 0.6, borderLeftColor: C.muted }}>
@@ -148,7 +158,7 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
               </View>
             ))}
             {abg.map((a) => (
-              <Text key={a.orderId} style={[t7, { marginTop: 2 }]}>ABG {hm(a.at)}: {ABG_COLUMNS.map((c) => { const v = a.values[c.code] ?? (c.alt ? a.values[c.alt] : undefined); return v ? `${c.label} ${v.value}` : null }).filter(Boolean).join(', ')}{a.pf != null ? `, P/F ${a.pf}` : ''}</Text>
+              <Text key={a.orderId} style={[t7, { marginTop: 2 }]}>ABG {hm(a.at)}: {ABG_COLUMNS.map((c) => { const v = a.values[c.code] ?? (c.alt ? a.values[c.alt] : undefined); return v ? `${c.label} ${v.value}` : null }).filter(Boolean).join(', ')}{a.pf != null ? `, P/F ${a.pf}` : ''}{a.fio2 != null ? `; FiO₂ ${a.fio2}%` : ''}{a.vent ? `; ${[a.vent.mode, a.vent.vt != null ? `VT ${a.vent.vt}` : null, a.vent.rr != null ? `RR ${a.vent.rr}` : null, a.vent.ps != null || a.vent.peep != null ? `PS/PEEP ${a.vent.ps ?? '–'}/${a.vent.peep ?? '–'}` : null].filter(Boolean).join(', ')}` : ''}</Text>
             ))}
             {data.labs.cultures.map((c) => <Text key={c.orderId + c.test} style={t7}>{c.test.replace(/ and Sensitivity.*$/, '')}: {c.result ?? 'pending'}</Text>)}
           </Box>
@@ -156,6 +166,28 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
             {data.notes.length === 0 ? <Text style={t7}>No notes.</Text> : data.notes.slice(-8).map((n) => (
               <Text key={n.id} style={t7}><Text style={{ fontWeight: 700 }}>{hm(n.created_at)} {noteKindLabel(n.kind)}{n.shift ? ` (${n.shift})` : ''}: </Text>{n.note.length > 180 ? `${n.note.slice(0, 179)}…` : n.note}</Text>
             ))}
+          </Box>
+        </View>
+
+        {/* Second row: KMCH's back-side boxes */}
+        <View style={{ flexDirection: 'row', marginTop: 6, gap: 6 }}>
+          <Box title="IV fluids & infusions" width={300}>
+            {data.context.infusions.length === 0 ? <Text style={t7}>None running.</Text> : data.context.infusions.map((f, i) => (
+              <Text key={i} style={t7}>{f.kind === 'fluid' ? 'IV: ' : 'Inf: '}{f.label}{f.dilution ? ` — ${f.dilution}` : ''}{f.rate ? ` @ ${f.rate}` : ''}</Text>
+            ))}
+          </Box>
+          <Box title="Blood transfusions / reservations" width={220}>
+            {data.context.blood.length === 0 ? <Text style={t7}>None.</Text> : data.context.blood.map((b, i) => (
+              <Text key={i} style={t7}>{b.component} × {b.units} — {b.status.replace('_', ' ')} ({dm(b.at)})</Text>
+            ))}
+          </Box>
+          <Box title="Scans" width={280}>
+            {data.context.scans.length === 0 ? <Text style={t7}>None.</Text> : data.context.scans.slice(-6).map((r, i) => (
+              <Text key={i} style={t7}>{r.name} ({dm(r.at)}): {r.report ? (r.report.length > 120 ? `${r.report.slice(0, 119)}…` : r.report) : r.status.replace('_', ' ')}</Text>
+            ))}
+          </Box>
+          <Box title="Wound assessment" width={290}>
+            {data.context.wound ? <Text style={t7}>{dm(data.context.wound.at)} {hm(data.context.wound.at)}{data.context.wound.author ? ` · ${data.context.wound.author}` : ''}: {data.context.wound.text}</Text> : <Text style={t7}>None recorded.</Text>}
           </Box>
         </View>
 

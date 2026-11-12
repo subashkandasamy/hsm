@@ -14,7 +14,7 @@ import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { findOpenWork, cancelTestsNotDone, closeOpenWork, type OpenWork } from '@/lib/closeAdmission'
 import { dischargeSkipsBalanceGate } from '@/lib/dischargeType'
 import { admissionClosedError } from '@/lib/admissionOpen'
-import { shiftOf, noteVitalsToObservation } from '@/lib/noteKinds'
+import { shiftOf, noteVitalsToObservation, woundText } from '@/lib/noteKinds'
 import { activeErCaseFor, erVisitIdsForCase, carryIntoAdmission } from '@/lib/admissionSources'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -308,14 +308,18 @@ export async function addProgressNote(
   // Kind defaults from who is writing; a nurse's note carries the shift it was written in.
   const kind = parsed.data.kind ?? (actor.role === 'nurse' ? 'nurse' : 'doctor')
   const shift = parsed.data.shift ?? (kind === 'nurse' ? shiftOf(new Date()) : null)
+  // A wound assessment: the fields kept as data, and as words in the note.
+  const wound = kind === 'wound' ? parsed.data.wound ?? null : null
+  const text = [wound ? woundText(wound) : null, parsed.data.note.trim() || null].filter(Boolean).join('\n')
   const { error } = await supabase.from('ipd_progress_notes').insert({
     id:           crypto.randomUUID(),
     tenant_id:    actor.tenant_id,
     admission_id: admissionId,
     author_id:    actor.id,
-    note:         parsed.data.note,
+    note:         text,
     vitals:       parsed.data.vitals ?? null,
     kind, shift,
+    data:         wound,
   })
   if (error) return { success: false, error: error.message }
 

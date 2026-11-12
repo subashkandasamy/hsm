@@ -48,3 +48,34 @@ export function noteVitalsToObservation(v: { bp?: string | null; pulse?: string 
   const map = row.sbp != null && row.dbp != null ? Math.round((row.sbp + 2 * row.dbp) / 3) : null
   return { ...row, map }
 }
+
+// ── Wound assessment (KMCH ICU chart, 0290) ───────────────────────────────────
+
+export const WOUND_CONDITIONS = [
+  { value: 'worsening', label: 'Worsening' },
+  { value: 'same', label: 'Same' },
+  { value: 'improved', label: 'Improved' },
+] as const
+
+/** KMCH's T-I-M-E lines, with the words a nurse would write in each. */
+export const WOUND_FIELDS = [
+  { key: 't', label: 'T — Tissue', hint: 'e.g. granulation 70%, slough 30%' },
+  { key: 'i', label: 'I — Infection / inflammation', hint: 'e.g. no signs / redness, warmth, pus' },
+  { key: 'm', label: 'M — Moisture', hint: 'e.g. moderate serous exudate' },
+  { key: 'e', label: 'E — Edge', hint: 'e.g. advancing / undermined / rolled' },
+] as const
+
+export interface WoundData {
+  site: string; t?: string | null; i?: string | null; m?: string | null; e?: string | null
+  condition?: 'worsening' | 'same' | 'improved' | null; dressing?: string | null
+}
+
+/** The wound note as words — for the timeline, the day sheet and the print. */
+export function woundText(w: WoundData): string {
+  const cond = WOUND_CONDITIONS.find((c) => c.value === w.condition)?.label
+  return [
+    `Wound — ${w.site}`,
+    w.t ? `T: ${w.t}` : null, w.i ? `I: ${w.i}` : null, w.m ? `M: ${w.m}` : null, w.e ? `E: ${w.e}` : null,
+    cond ? `Condition: ${cond}` : null, w.dressing ? `Dressing done: ${w.dressing}` : null,
+  ].filter(Boolean).join('. ')
+}
