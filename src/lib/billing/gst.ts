@@ -130,12 +130,12 @@ export async function recomputeBillGstTotals(
   const { data: bill } = await supabase.from('bills').select('discount').eq('id', billId).single()
   const { data: items } = await supabase
     .from('bill_items').select('amount, gst_rate, tax_inclusive').eq('bill_id', billId)
+  const discount = (bill?.discount as number) ?? 0
   const gst = summarizeBillGst((items ?? []).map((i) => ({
     amount: (i.amount as number) ?? 0,
     gst_rate: (i.gst_rate as number) ?? 0,
     tax_inclusive: !!i.tax_inclusive,
-  })))
-  const discount = (bill?.discount as number) ?? 0
+  })), discount)
   const { roundOff, total } = computeRoundOff(Math.max(0, gst.subtotal - discount + gst.taxTotal))
   await supabase.from('bills').update({
     subtotal: gst.subtotal, tax: gst.taxTotal, cgst: gst.cgst, sgst: gst.sgst, round_off: roundOff, total,

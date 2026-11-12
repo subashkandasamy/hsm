@@ -193,7 +193,9 @@ function FluidEntryForm({ admissionId, onSaved }: { admissionId: string; onSaved
   )
 }
 
-const hm = (iso: string | number) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+const hm = (iso: string | number) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
+/** The server charts a drip in steps of at least this long (recordDripIntake). */
+const MIN_CHART_MS = 10 * 60_000
 
 /** KMCH's "IVF ml/Hr" column: each running drip, charted since its last entry at the ordered rate. */
 function RunningDrips({ admissionId, onSaved }: { admissionId: string; onSaved: () => void }) {
@@ -230,11 +232,16 @@ function RunningDrips({ admissionId, onSaved }: { admissionId: string; onSaved: 
               {d.rate ? `@ ${d.rate} ml/h · ` : ''}{d.bagNo ? `bag ${d.bagNo} · ` : ''}started {hm(d.startedAt)} · charted {d.charted}{d.volume ? ` of ${d.volume}` : ''} ml{d.lastAt ? ` (to ${hm(d.lastAt)})` : ''}
             </span>
             <span className="ml-auto flex items-center gap-1.5">
-              {est != null && est > 0 && (
+              {/* Under 10 minutes since the last entry the server refuses — say when
+                  it can be charted instead of offering a button that fails (BUG-042). */}
+              {est != null && est > 0 && now - from >= MIN_CHART_MS && (
                 <button onClick={() => chart(d)} disabled={busy === d.scheduleId} className="px-2.5 py-1 rounded-lg font-semibold"
                   style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                   {busy === d.scheduleId ? '…' : `Chart ${est} ml since ${hm(from)}`}
                 </button>
+              )}
+              {d.rate != null && now > 0 && now - from < MIN_CHART_MS && (
+                <span style={{ color: '#64748B' }}>Chart again after {hm(from + MIN_CHART_MS)}</span>
               )}
               <input value={other[d.scheduleId] ?? ''} inputMode="numeric" placeholder="ml" aria-label={`Other amount for ${d.label}`}
                 onChange={(e) => setOther((o) => ({ ...o, [d.scheduleId]: e.target.value }))}

@@ -148,6 +148,7 @@ export default function RaiseRequestModal({ open, onClose, onSuccess, prefill }:
             <Select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} required>
               <option value="">— Select —</option>
               {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+              <option value="unknown">Not known — group &amp; cross-match</option>
             </Select>
           </FormField>
           <FormField label="Component *">

@@ -7,9 +7,9 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { getPatientStrip, savePatientStrip, type PatientStripData } from '@/app/actions/round'
-import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
+import { computeNews, latestCompleteNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
 import { DIETS, DVT_OPTIONS, bmi, labelOf, onOxygen } from '@/lib/round'
-import type { Admission } from '@/lib/types'
+import type { Admission, IcuObservation } from '@/lib/types'
 
 const CODE_LABEL: Record<string, string> = { full: 'Full code', dnr: 'DNR', dni: 'DNI', comfort: 'Comfort care' }
 
@@ -62,11 +62,16 @@ export default function PatientStrip({ admission: adm, canEdit, refreshKey = 0, 
   }, [adm.id, refreshKey])
 
   const allergyText = data?.allergies.length ? data.allergies.join(', ') : adm.patient?.allergies?.trim() || null
-  const o = data?.latest ?? null
-  const news = o ? computeNews({
-    rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu,
-    on_oxygen: onOxygen(o, !!adm.on_ventilator),
-  }) : null
+  const scoreOf = (x: IcuObservation) => computeNews({
+    rr: x.rr, spo2: x.spo2, sbp: x.sbp, hr: x.hr, temp: x.temp, gcs_total: x.gcs_total, avpu: x.avpu,
+    gcs_e: x.gcs_e, gcs_m: x.gcs_m, on_oxygen: onOxygen(x, !!adm.on_ventilator),
+  })
+  // The newest complete set is the score; a newer partial one is only noted.
+  const full = latestCompleteNews(data?.recent ?? [], scoreOf)
+  const newest = data?.latest ?? null
+  const o = full?.row ?? newest
+  const news = full?.news ?? (newest ? scoreOf(newest) : null)
+  const partialNewer = !!newest && (!full || full.row.id !== newest.id)
   const b = bmi(adm.weight_kg, adm.height_cm)
   const open = adm.status === 'admitted'
 
@@ -80,7 +85,8 @@ export default function PatientStrip({ admission: adm, canEdit, refreshKey = 0, 
         <span title={`Early-warning score from the round ${o ? ago(o.recorded_at) : ''}`}
           className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold whitespace-nowrap"
           style={{ background: NEWS_BAND_STYLE[news.band].bg, color: NEWS_BAND_STYLE[news.band].color }}>
-          NEWS2 {news.score} · {o ? ago(o.recorded_at) : ''}
+          NEWS2 {news.score}{news.complete ? '' : ' (incomplete)'} · {o ? ago(o.recorded_at) : ''}
+          {partialNewer && full && <span style={{ fontWeight: 400 }}> · newer reading incomplete</span>}
         </span>
       ) : <Chip>No round yet</Chip>}
       {adm.on_ventilator && <Chip tone="red">Ventilated</Chip>}

@@ -9,6 +9,7 @@ import { autoIpdBill } from '@/lib/ipdBilling'
 import { AddCareTeamSchema, RequestConsultSchema, LogVisitSchema, CompleteVisitSchema } from '@/lib/schemas'
 import type { CareTeamMember, DoctorVisit } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { doctorName } from '@/lib/doctors'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 type Supa = Awaited<ReturnType<typeof createClient>>
@@ -137,7 +138,7 @@ async function billVisit(supabase: Supa, actorId: string, tenantId: string, visi
     tenantId, admissionId, patientId: adm.patient_id as string, billingDate: today, billSource: 'consultation',
     lineItems: [{
       source: 'consultation', ref_id: visitId,
-      description: `Dr. ${doc?.full_name ?? 'Consultant'} — ${visitType} (${today})`,
+      description: `${doc?.full_name ? doctorName(doc.full_name) : 'Consultant'} — ${visitType} (${today})`,
       qty: 1, unit_price: fee,
     }],
   })

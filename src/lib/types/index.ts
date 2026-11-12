@@ -481,6 +481,9 @@ export interface RadiologyOrder {
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'gender'>
   test?: Pick<RadiologyCatalog, 'id' | 'name' | 'modality'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
+  /** Who released the report (radiology_orders.verified_by, 0169). */
+  verifier?: Pick<Profile, 'id' | 'full_name'> | null
+  verified_at?: string | null
 }
 
 // ---- Phase 3: Pharmacy ----
@@ -509,6 +512,9 @@ export interface Drug {
   is_global?: boolean
   mrp?: number | null
   brand_aliases?: string[]  // brand names only, for autocomplete search
+  /** Unexpired units this hospital's pharmacy holds (searchDrugs) — so a doctor
+   *  orders what can be issued and billed (BUG-041). */
+  stock_qty?: number
   brand_data?: Array<{
     brand_name: string
     manufacturer: string | null
@@ -680,6 +686,10 @@ export interface BloodRequest {
   payment_status?: 'paid' | 'unpaid' | 'due' | 'cashless' | null
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   requester?: Pick<Profile, 'id' | 'full_name'> | null
+  /** Units issued so far, and compatible units cross-matched but not yet issued
+   *  (listRequests) — a 2-unit request stalled after its first unit (BUG-048). */
+  issued_count?: number
+  ready_count?: number
 }
 
 export interface BloodCrossmatch {
@@ -943,6 +953,8 @@ export interface CombinedBillData {
   generatedAt: string
   sections: CombinedBillSection[]
   grandTotal: number
+  /** Σ bill-level discounts — GST is on the value after them (BUG-063). */
+  discountTotal?: number
   totalPaid: number
   /** Refunds issued as credit notes on the bills in this summary (money paid back). */
   refunded?: number
@@ -1363,6 +1375,8 @@ export interface PatientAllergy {
   id: string; patient_id: string; allergen: string; reaction: string | null
   severity: AllergySeverity; recorded_by: string | null; created_at: string
   recorder?: Pick<Profile, 'id' | 'full_name'> | null
+  /** 'registration': typed in the free-text box when the patient was registered — no severity was asked for. */
+  source?: 'registration'
 }
 
 export type DocumentCategory = 'external_report' | 'referral' | 'consent_form' | 'identity' | 'insurance' | 'other'
@@ -1478,7 +1492,7 @@ export type Permission =
   | 'barcode:print:patient' | 'barcode:print:sample'
   | 'scheduling:read' | 'scheduling:manage' | 'leave:request' | 'leave:approve'
 
-export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string }
+export interface NavItem { label: string; href: string; icon: string; requiredPermission: Permission; moduleKey?: string; hideForRoles?: Role[] }
 export interface NavGroup { label: string; items: NavItem[] }
 
 // ---- Phase 12: Specialty Clinical Templates ----

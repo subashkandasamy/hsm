@@ -13,6 +13,7 @@ import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
 import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { checkPlausible } from '@/lib/labPlausible'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -339,6 +340,19 @@ export async function enterResults(
   }
   if (order.status === 'cancelled') {
     return { success: false, error: 'This order was cancelled' }
+  }
+
+  // Refuse values no patient can have (BUG-023) before writing any of them.
+  for (const raw of items) {
+    const parsed = LabResultItemSchema.safeParse(raw)
+    if (!parsed.success || parsed.data.result_value == null) continue
+    const { data: it } = await supabase.from('lab_order_items')
+      .select('test:lab_tests_catalog(code, name, unit)')
+      .eq('id', parsed.data.item_id).eq('lab_order_id', orderId).maybeSingle()
+    const t = (it?.test as unknown as { code: string | null; name: string; unit: string | null } | null)
+    if (!t) continue
+    const p = checkPlausible({ code: t.code, name: t.name, unit: parsed.data.unit || t.unit, value: parsed.data.result_value })
+    if (p?.level === 'impossible') return { success: false, error: p.message }
   }
 
   for (const raw of items) {
@@ -751,6 +765,19 @@ export async function saveAnalyteResults(
   await requirePermission(actor.role, 'lab:process')
   const supabase = await createClient()
 
+  // Refuse values no patient can have (BUG-023) — the screen checks too.
+  const ids = [...new Set(items.filter((i) => i.value_num != null).map((i) => i.analyte_id))]
+  if (ids.length) {
+    const { data: analytes } = await supabase.from('lab_analytes').select('id, code, name, short_name, unit_ucum').in('id', ids)
+    const byId = new Map((analytes ?? []).map((a) => [a.id as string, a]))
+    for (const i of items) {
+      const a = byId.get(i.analyte_id)
+      if (!a || i.value_num == null) continue
+      const p = checkPlausible({ code: a.code as string, name: (a.short_name as string) || (a.name as string), unit: a.unit_ucum as string | null, value: i.value_num })
+      if (p?.level === 'impossible') return { success: false, error: p.message }
+    }
+  }
+
   const { data, error } = await supabase.rpc('save_lab_analyte_results', {
     p_order_id: orderId,
     p_items: items,
@@ -902,7 +929,9 @@ export async function listOpenCriticalResults(): Promise<OpenCritical[]> {
     doctor: { full_name: string } | null
     order: { accession_no: string | null; patient: { full_name: string; uhid: string } | null } | null
   }
-  return ((data ?? []) as unknown as Row[]).map((r) => ({
+  // A test-keyed entry with no value is the duplicate a panel's flag roll-up
+  // used to queue beside the analyte's own entry (BUG-025, fixed in 0292).
+  return ((data ?? []) as unknown as Row[]).filter((r) => r.analyte || r.value_num != null).map((r) => ({
     id: r.id,
     lab_order_id: r.lab_order_id,
     accession_no: r.order?.accession_no ?? null,

@@ -88,6 +88,9 @@ export async function signDeclarationDigitally(input: {
 
   const signerName = input.signerName.trim()
   if (!signerName) return { success: false, error: 'Signer name is required' }
+  if (!input.signatureData || !/^data:image\/png;base64,/.test(input.signatureData)) {
+    return { success: false, error: 'Ask the signer to sign in the box' }
+  }
 
   const supabase = await createClient()
   const { data: admission } = await supabase

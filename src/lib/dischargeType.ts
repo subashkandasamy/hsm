@@ -31,11 +31,13 @@ export function dischargeTypeLabel(t: string | null | undefined): string {
  *
  * Under the Charter of Patients' Rights a hospital may not detain a patient, or
  * the body of one who has died, over an unpaid bill. Someone who absconded has
- * already gone. The amount stays due on the bills and is recorded with the
+ * already gone. A patient referred on is going for care this hospital cannot
+ * give — an unconscious, unidentified MLC patient's transfer was blocked by the
+ * bill (BUG-059). The amount stays due on the bills and is recorded with the
  * discharge — it is not written off.
  */
 export function dischargeSkipsBalanceGate(t: DischargeType): boolean {
-  return t === 'dama' || t === 'absconded' || t === 'death'
+  return t === 'dama' || t === 'absconded' || t === 'death' || t === 'referred'
 }
 
 /** Printed title of the summary for each type. */

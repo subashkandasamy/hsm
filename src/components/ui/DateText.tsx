@@ -3,13 +3,17 @@ interface DateTextProps {
   className?: string
 }
 
+// Always the hospital's (IST) calendar day. Without the time zone the server
+// (UTC) and the browser (IST) disagree for anything stamped between midnight
+// and 05:30 IST, and React throws a hydration error (#418) — BUG-003.
+const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' })
+
 export default function DateText({ date, className = '' }: DateTextProps) {
   if (!date) return <span className={className}>—</span>
 
   const d = new Date(date)
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
+  if (isNaN(d.getTime())) return <span className={className}>—</span>
+  const p = Object.fromEntries(parts.formatToParts(d).map((x) => [x.type, x.value]))
 
-  return <span className={className}>{`${day}-${month}-${year}`}</span>
+  return <span className={className}>{`${p.day}-${p.month}-${p.year}`}</span>
 }

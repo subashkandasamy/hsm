@@ -15,11 +15,25 @@ export interface InsuranceCreditRow {
   status: string | null
   settled_amount: number | null
   shortfall_resolution: string | null
+  /** What the insurer approved for the claim (stage 3) — once known, the credit. */
+  approved_amount?: number | null
+  claim_amount?: number | null
+}
+
+/**
+ * What the insurer is to pay on a claim: the approved amount once there is one,
+ * else the pre-auth sanction (capped at the claim). The settlement shortfall is
+ * measured against this, not the pre-auth estimate (BUG-067).
+ */
+export function settlementCovered(c: { approved_amount?: number | null; claim_amount?: number | null; eligibility_approved_amount: number | null }): number {
+  if (c.approved_amount != null) return c.approved_amount
+  const e = c.eligibility_approved_amount ?? 0
+  return c.claim_amount != null ? Math.min(e, c.claim_amount) : e
 }
 
 /** Insurance credit for a single claim against the patient's balance. */
 export function claimInsuranceCredit(c: InsuranceCreditRow): number {
-  const eligibility = c.eligibility_approved_amount ?? 0
+  const eligibility = c.status === 'approved' || c.status === 'settled' ? settlementCovered(c) : (c.eligibility_approved_amount ?? 0)
 
   if (c.status === 'settled') {
     // Recovering the shortfall from the patient → only credit what actually
@@ -45,4 +59,4 @@ export function totalInsuranceCredit(rows: InsuranceCreditRow[]): number {
 // The exact column set the helper needs — reuse in every Supabase select so
 // call sites can't drift.
 export const INSURANCE_CREDIT_COLUMNS =
-  'eligibility_status, eligibility_approved_amount, status, settled_amount, shortfall_resolution'
+  'eligibility_status, eligibility_approved_amount, status, settled_amount, shortfall_resolution, approved_amount, claim_amount'

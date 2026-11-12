@@ -339,14 +339,11 @@ export async function createReferral(input: {
   }
 
   const supabase = await createClient()
-  const { data: refNo, error: serialErr } = await supabase.rpc('get_next_referral_no')
-  if (serialErr || !refNo) return { success: false, error: 'Could not allocate a referral number' }
-
   const id = crypto.randomUUID()
-  const { error } = await supabase.from('referrals_out').insert({
+  const insertReferral = (refNo: string) => supabase.from('referrals_out').insert({
     id,
     tenant_id: actor.tenant_id,
-    ref_no: refNo as string,
+    ref_no: refNo,
     patient_id: input.patient_id,
     visit_id: input.visit_id ?? null,
     admission_id: input.admission_id ?? null,
@@ -386,6 +383,19 @@ export async function createReferral(input: {
 
     created_by: actor.id,
   })
+
+  // The counter can sit behind numbers already used (BUG-058: the letter failed
+  // with "duplicate key … referrals_out_ref_no_key"). A taken number is skipped —
+  // the next one is drawn — rather than the doctor being told to click again.
+  let refNo: string | null = null
+  let error: { message: string; code?: string } | null = null
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const { data: n, error: serialErr } = await supabase.rpc('get_next_referral_no')
+    if (serialErr || !n) return { success: false, error: 'Could not allocate a referral number' }
+    refNo = n as string
+    ;({ error } = await insertReferral(refNo))
+    if (!error || error.code !== '23505' || !/ref_no/.test(error.message)) break
+  }
   if (error) return { success: false, error: error.message }
 
   await logAudit(actor.id, 'refer_out', 'referral', id, {

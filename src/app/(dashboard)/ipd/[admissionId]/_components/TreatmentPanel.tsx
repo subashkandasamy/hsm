@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import DrugChartView from './DrugChartView'
-import { istToday } from '@/lib/istDate'
+import { istToday, istDate } from '@/lib/istDate'
 
 // ─── Collapsible Section wrapper ─────────────────────────────────────────────
 
@@ -22,9 +22,14 @@ interface CollapsibleSectionProps {
   iconColor: string
   action?: React.ReactNode
   children: React.ReactNode
+  /** Held open while true — e.g. while its New Order form is showing (BUG-038:
+   *  "New Order" did nothing visible while the section was collapsed). */
+  forceOpen?: boolean
 }
-function CollapsibleSection({ icon, title, badge, iconColor, action, children }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState(false)
+function CollapsibleSection({ icon, title, badge, iconColor, action, children, forceOpen }: CollapsibleSectionProps) {
+  const [openState, setOpenState] = useState(false)
+  const open = openState || !!forceOpen
+  const setOpen = (fn: (v: boolean) => boolean) => setOpenState(fn(open))
   return (
     <GlassCard>
       <div className="p-4">
@@ -75,6 +80,9 @@ import type {
   LabOrder, LabTestCatalog, LabOrderStatus,
   RadiologyOrder, RadiologyCatalog, RadiologyOrderStatus, RxWarning,
 } from '@/lib/types'
+import { doctorName } from '@/lib/doctors'
+import { ipdOrderError } from '@/lib/ipdOrderCheck'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
   return arr.reduce<Record<string, T[]>>((acc, item) => {
@@ -138,8 +146,21 @@ const RAD_STATUS_STYLE: Record<RadiologyOrderStatus, { label: string; color: str
 
 function fmtDue(d: string) {
   return new Date(d).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
   })
+}
+
+/** How early a dose may be charted as given (the usual ±1 hour window). */
+const EARLY_GIVE_MIN = 60
+
+/** The clock, ticking each minute — so a dose opens for charting on time. */
+function useNow(stepMs = 60_000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), stepMs)
+    return () => clearInterval(t)
+  }, [stepMs])
+  return now
 }
 function fmtDay(d: string) {
   return new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })
@@ -168,7 +189,10 @@ function DrugCombobox({ value, onChange, onOpenChange }: DrugComboboxProps) {
   const [query, setQuery] = useState(value)
 
   const q = query.trim().toLowerCase()
-  const filtered = useDrugSearch(query, 10)
+  const found = useDrugSearch(query, 10)
+  // What the pharmacy holds first — an order for a drug it does not stock
+  // reaches the pharmacy as "Not in stock" and cannot be billed (BUG-041).
+  const filtered = [...found].sort((a, b) => Number((b.stock_qty ?? 0) > 0) - Number((a.stock_qty ?? 0) > 0))
 
   function select(drug: Drug, label: string) {
     setQuery(label); onChange(label, drug); setOpen(false)
@@ -207,6 +231,9 @@ function DrugCombobox({ value, onChange, onOpenChange }: DrugComboboxProps) {
                     <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{drug.strength}</span>
                   )}
                   {drug.form && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F1F5F9', color: '#64748B' }}>{drug.form}</span>}
+                  {drug.stock_qty != null && (drug.stock_qty > 0
+                    ? <span className="text-xs px-1.5 py-0.5 rounded-md font-medium" style={{ background: '#DCFCE7', color: '#15803D' }}>{drug.stock_qty} in stock</span>
+                    : <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F8FAFC', color: '#94A3B8' }}>not stocked</span>)}
                 </div>
               </button>
             )
@@ -244,7 +271,14 @@ function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, o
   const [giving, setGiving] = useState(false)
   const [checker, setChecker] = useState('')
   const [bagNo, setBagNo] = useState('')
-  const slotDay  = slot.due_at.split('T')[0]
+  // The IST day — due_at is UTC, so a 2 am dose used to land on "yesterday".
+  const slotDay  = istDate(slot.due_at)
+  // Tonight's dose was offered "Given" in the morning (BUG-020): Given / Missed
+  // only open close to the due time; Hold (a doctor's instruction) any time.
+  const now = useNow()
+  const dueMs = new Date(slot.due_at).getTime()
+  const canChartNow = dueMs - EARLY_GIVE_MIN * 60_000 <= now
+  const isDueYet = dueMs <= now
   const isToday  = slotDay === todayStr
   const isPast   = slotDay < todayStr
   const isFuture = slotDay > todayStr
@@ -315,7 +349,11 @@ function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, o
       {/* Today / overdue: Given + Missed + Hold */}
       {!isActed && !giving && canGive && (isToday || isPast) && (
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-          {pharmacyReady ? (
+          {!canChartNow ? (
+            <span className="px-2 py-1 rounded-lg text-xs" style={{ color: '#64748B', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              Can be given from {new Date(dueMs - EARLY_GIVE_MIN * 60_000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
+            </span>
+          ) : pharmacyReady ? (
             !giving && <button onClick={() => setGiving(true)} disabled={isActing}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
               style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
@@ -327,11 +365,13 @@ function SlotRow({ slot, todayStr, canGive, pharmacyReady, actingId, onAction, o
               ⏳ Awaiting pharmacy
             </span>
           )}
-          <button onClick={() => onAction(slot.id, 'missed')} disabled={isActing}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
-            style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
-            <Ban className="w-3 h-3" />Missed
-          </button>
+          {isDueYet && (
+            <button onClick={() => onAction(slot.id, 'missed')} disabled={isActing}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
+              <Ban className="w-3 h-3" />Missed
+            </button>
+          )}
           <button onClick={() => onAction(slot.id, 'held')} disabled={isActing}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
             style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE', cursor: 'pointer' }}>
@@ -634,7 +674,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                         )}
                         <span className="text-xs" style={{ color: '#94A3B8' }}>
                           {fmtDateTime(order.ordered_at)}
-                          {order.orderer?.full_name ? ` · Dr. ${order.orderer.full_name}` : ''}
+                          {order.orderer?.full_name ? ` · ${doctorName(order.orderer.full_name)}` : ''}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -997,7 +1037,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
                         )}
                         <span className="text-xs" style={{ color: '#94A3B8' }}>
                           {fmtDateTime(order.ordered_at)}
-                          {order.orderer?.full_name ? ` · Dr. ${order.orderer.full_name}` : ''}
+                          {order.orderer?.full_name ? ` · ${doctorName(order.orderer.full_name)}` : ''}
                         </span>
                       </div>
                       {order.report && (
@@ -1240,8 +1280,15 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
   function setF(k: keyof OrderForm, v: string) { setForm((f) => ({ ...f, [k]: v })) }
 
   async function submitOrder() {
-    setFormSaving(true); setFormError('')
     const dur = parseInt(form.duration_days) || 5
+    const problem = ipdOrderError({
+      type: form.type, drug_name: form.drug_name, dose: form.dose ? parseFloat(form.dose) : null, route: form.route,
+      fluid_name: form.fluid_name, volume_ml: form.volume_ml ? parseFloat(form.volume_ml) : null,
+      rate_ml_per_hr: form.rate_ml_per_hr ? parseFloat(form.rate_ml_per_hr) : null,
+      flow_rate_lpm: form.flow_rate_lpm ? parseFloat(form.flow_rate_lpm) : null, duration_days: dur,
+    })
+    if (problem) { setFormError(problem); return }
+    setFormSaving(true); setFormError('')
     const res = await createOrder(admissionId, {
       type:            form.type,
       drug_name:       form.drug_name || undefined,
@@ -1271,14 +1318,24 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     setShowForm(false); setForm(BLANK); setDoseOverride(false); setRxAck(false)
   }
 
-  async function handleStop(orderId: string) {
+  // Stopping took one click with no way back — a mis-aimed tap stopped four
+  // ICU drugs in testing (BUG-040). Ask first.
+  const [confirmStop, setConfirmStop] = useState<IpdMedicationOrder | null>(null)
+  function handleStop(orderId: string) {
+    setConfirmStop(orders.find((o) => o.id === orderId) ?? null)
+  }
+  async function doStop(orderId: string) {
+    setConfirmStop(null)
     setStoppingId(orderId)
     startTransition(async () => {
       const res = await stopOrder(orderId)
       setStoppingId(null)
       if (!res.success) { setError(res.error); return }
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: 'stopped' } : o))
-      setSchedule((prev) => prev.map((s) => s.order_id === orderId && s.status === 'pending' ? { ...s, status: 'held' } : s))
+      const now = Date.now()
+      setSchedule((prev) => prev
+        .filter((s) => !(s.order_id === orderId && s.status === 'pending' && new Date(s.due_at).getTime() > now))
+        .map((s) => s.order_id === orderId && s.status === 'pending' ? { ...s, status: 'held' } : s))
     })
   }
 
@@ -1288,8 +1345,10 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     setActingId(null)
     if (!res.success) { setError(res.error); return }
     const checker = extra?.checked_by ? staff.find((p) => p.id === extra.checked_by) : null
+    // Show who gave it at once — it read "by —" until a reload (BUG-019).
     setSchedule((prev) => prev.map((s) => s.id === scheduleId
       ? { ...s, status, given_at: new Date().toISOString(), checked_by: extra?.checked_by ?? null, bag_no: extra?.bag_no ?? null,
+          given_by: profile?.id ?? s.given_by, nurse: profile?.full_name ? { full_name: profile.full_name } : s.nurse,
           checker: checker ? { full_name: checker.full_name } : null } : s))
   }
 
@@ -1342,6 +1401,15 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={!!confirmStop}
+        onClose={() => setConfirmStop(null)}
+        onConfirm={() => { if (confirmStop) doStop(confirmStop.id) }}
+        title={`Stop ${confirmStop ? orderLabel(confirmStop) : 'this order'}?`}
+        description="Its remaining doses are cancelled and the order moves to Stopped Orders. To give it again you will need a new order."
+        confirmLabel="Stop order"
+        confirmVariant="danger"
+      />
 
       {error && (
         <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
@@ -1357,6 +1425,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
         title="Medications / IV / O₂"
         badge={`(${activeOrders.length} active)`}
         iconColor="#0D9488"
+        forceOpen={showForm}
         action={canOrder ? (
           <>
             <button onClick={openCopy}

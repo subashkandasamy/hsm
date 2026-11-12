@@ -8,7 +8,7 @@ import Input from '@/components/ui/Input'
 import {
   setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance, admissionBedIsIcu,
 } from '@/app/actions/icu'
-import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
+import { computeNews, latestCompleteNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
 import { onOxygen, toCelsius, POSITIONS, SUCTION } from '@/lib/round'
 import { gcsCell } from '@/lib/icuRows'
 import type { Admission, IcuObservation, IcuFluidEntry } from '@/lib/types'
@@ -121,9 +121,13 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   // Same score as the Chart tab and the strip: AVPU from ward rounds, oxygen by device / flow / FiO₂.
   const newsFor = (o: IcuObservation) => computeNews({
     rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu,
-    on_oxygen: onOxygen(o, flags.on_ventilator),
+    gcs_e: o.gcs_e, gcs_m: o.gcs_m, on_oxygen: onOxygen(o, flags.on_ventilator),
   })
-  const latestNews = obs.length ? newsFor(obs[0]) : null
+  // The alert follows the newest COMPLETE set — a partial reading (HR only)
+  // scored 3 and cleared a High alert (BUG-036).
+  const full = latestCompleteNews(obs, newsFor)
+  const latestNews = full?.news ?? null
+  const newestPartial = obs.length && (!full || full.row.id !== obs[0].id) ? newsFor(obs[0]) : null
 
   return (
     <div className="space-y-4">
@@ -136,7 +140,10 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
             <p className="text-sm font-semibold" style={{ color: NEWS_BAND_STYLE[latestNews.band].color }}>
               {latestNews.band === 'high' ? '⚠ High NEWS — urgent clinical review' : 'Elevated NEWS — increase monitoring / review'}
             </p>
-            <p className="text-xs" style={{ color: '#64748B' }}>Latest early-warning score from the most recent observation.</p>
+            <p className="text-xs" style={{ color: '#64748B' }}>
+              Early-warning score from the latest complete observation ({full ? new Date(full.row.recorded_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : ''}).
+              {newestPartial && ` A newer reading is incomplete (no ${newestPartial.missing.join(', ')}) and is not scored.`}
+            </p>
           </div>
         </div>
       )}

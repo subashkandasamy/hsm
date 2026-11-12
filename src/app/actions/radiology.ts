@@ -317,7 +317,7 @@ export async function listRadiologyOrders(filters?: {
   const supabase = await createClient()
   let q = supabase
     .from('radiology_orders')
-    .select('*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
+    .select('*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name), verifier:profiles!verified_by(id,full_name)')
     .order('ordered_at', { ascending: false })
 
   if (filters?.status) q = q.eq('status', filters.status)

@@ -27,6 +27,7 @@ import CollectionAccountPicker, { useCollectionPlan, pickAccount } from './Colle
 import { isDirected } from '@/lib/billing/collectionAccounts'
 import { showSuccess as showPaidOnDisplay } from '@/lib/counterDisplay'
 import type { Bill, BillItemSource, TenantProfile, DiscountRequestRow, CreditNote } from '@/lib/types'
+import { realPhone } from '@/lib/patientPhone'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -558,7 +559,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
         const gstSummary = gstRegistered
           ? summarizeBillGst((bill.items ?? []).map((i) => ({
               amount: i?.amount ?? 0, gst_rate: i?.gst_rate ?? 0, tax_inclusive: !!i?.tax_inclusive,
-            })))
+            })), bill.discount ?? 0)
           : null
 
         return (
@@ -604,10 +605,10 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
                 <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.6px', margin: 0 }}>UHID</p>
                 <p style={{ fontSize: '13px', fontWeight: 600, color: '#0D9488', fontFamily: 'monospace', margin: '2px 0 0' }}>{bill.patient?.uhid}</p>
               </div>
-              {bill.patient?.phone && (
+              {realPhone(bill.patient?.phone) && (
                 <div style={{ padding: '8px 12px', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
                   <p style={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.6px', margin: 0 }}>Phone</p>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: '2px 0 0' }}>{bill.patient.phone}</p>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: '2px 0 0' }}>{realPhone(bill.patient?.phone)}</p>
                 </div>
               )}
               <div style={{ padding: '8px 12px', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0' }}>
@@ -711,6 +712,13 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
                         <td style={{ padding: '3px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmt(r.total)}</td>
                       </tr>
                     ))}
+                    {gstSummary.exemptValue > 0 && (
+                      <tr style={{ color: '#475569' }}>
+                        <td style={{ padding: '3px 14px 3px 0' }}>Exempt</td>
+                        <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(gstSummary.exemptValue)}</td>
+                        <td colSpan={3} style={{ padding: '3px 0', textAlign: 'right', color: '#94A3B8' }}>no GST</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -730,7 +738,7 @@ export default function BillDetailClient({ bill: initialBill, tenantProfile, pen
               <div className="bill-totals-panel" style={{ minWidth: '300px', padding: '16px 24px' }}>
                 {(gstRegistered || bill.subtotal !== bill.total) && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span style={{ fontSize: '13px', color: '#64748B' }}>{gstRegistered ? 'Taxable Value' : 'Subtotal'}</span>
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>Subtotal</span>
                     <span style={{ fontSize: '13px', color: '#334155', fontFamily: 'monospace' }}>{fmt(bill.subtotal)}</span>
                   </div>
                 )}

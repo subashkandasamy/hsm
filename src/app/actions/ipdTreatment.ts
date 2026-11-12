@@ -17,6 +17,7 @@ import { pageAll } from '@/lib/supabase/pageAll'
 import { requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
 import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
 import { planSosDose, writeSosDose, resolveChecker, pharmacyDispensed } from '@/lib/sosDose'
+import { ipdOrderError } from '@/lib/ipdOrderCheck'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -121,6 +122,9 @@ export async function createOrder(
   await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:write')
+
+  const inputError = ipdOrderError(input)
+  if (inputError) return { success: false, error: inputError }
 
   const gate = await assertTreatmentStarted(admissionId)
   if (!gate.success) return gate
@@ -266,6 +270,17 @@ export async function stopOrder(orderId: string): Promise<SimpleResult> {
   if (error) return { success: false, error: error.message }
 
   // Cancel pending slots
+  // Doses not yet due will never be given — remove them. Marking them "held"
+  // printed a row of H's on the drug chart, merged into "HG" when the drug was
+  // re-ordered (BUG-043). A dose already due and never charted stays visible
+  // as held (not given because the order stopped).
+  const nowIso = new Date().toISOString()
+  await supabase
+    .from('ipd_admin_schedule')
+    .delete()
+    .eq('order_id', orderId)
+    .eq('status', 'pending')
+    .gt('due_at', nowIso)
   await supabase
     .from('ipd_admin_schedule')
     .update({ status: 'held' })
@@ -316,6 +331,14 @@ export async function updateSlotStatus(
 
   const { data: scheduleRow } = await supabase
     .from('ipd_admin_schedule').select('admission_id, due_at').eq('id', scheduleId).maybeSingle()
+  // A dose can be charted given from an hour before it is due, and missed only
+  // once it is due — tonight's antibiotic was markable in the morning (BUG-020).
+  if (scheduleRow?.due_at && status !== 'held') {
+    const due = new Date(scheduleRow.due_at as string).getTime()
+    const at = new Date(due - 60 * 60_000).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+    if (status === 'given' && due - 60 * 60_000 > Date.now()) return { success: false, error: `This dose can be charted from ${at} (an hour before it is due).` }
+    if (status === 'missed' && due > Date.now()) return { success: false, error: 'This dose is not due yet — it cannot be missed.' }
+  }
   if (scheduleRow?.admission_id) {
     // A dose given before discharge can still be charted after it — but only
     // one that was due before the patient left.
@@ -472,7 +495,9 @@ export async function recordDripIntake(
     return { success: false, error: 'This patient has been discharged — only intake before discharge can be charted.' }
   }
   const hhmm = (d: Date) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
-  if (until.getTime() - from.getTime() < 10 * 60_000) return { success: false, error: `Already charted up to ${hhmm(from)}.` }
+  if (until.getTime() - from.getTime() < 10 * 60_000) {
+    return { success: false, error: `Charted up to ${hhmm(from)} — chart again after ${hhmm(new Date(from.getTime() + 10 * 60_000))} (at least 10 minutes).` }
+  }
 
   const left = order.volume_ml && order.volume_ml > 0 ? Math.round(order.volume_ml) - charted : Infinity
   let ml: number
@@ -762,6 +787,8 @@ export async function dispenseIpdRequest(
   notes?: string,
   /** Why it is supplied — required for Schedule X; written to the register (0269). */
   reason?: string | null,
+  /** The stocked drug supplied in place of the one requested (same generic) — BUG-018. */
+  substitute?: { id: string; isMaster: boolean; label: string } | null,
 ): Promise<SimpleResult | { success: false; error: string; needsReason: true }> {
   await requireWriteAccess()
   await requireModule('ipd')
@@ -781,6 +808,24 @@ export async function dispenseIpdRequest(
   if (req?.admission_id) {
     const gate = await assertTreatmentStarted(req.admission_id as string)
     if (!gate.success) return gate
+  }
+
+  // Supplied as a stocked drug of the same generic: the request now points at
+  // what was actually given, so the bill, the GST and the stock all follow it.
+  if (req && substitute?.id) {
+    const col = substitute.isMaster ? 'drug_master_id' : 'drug_id'
+    const { data: held } = await supabase.from('drug_batches').select('id')
+      .eq(col, substitute.id).gt('qty_available', 0).gt('expiry', istToday()).limit(1)
+    if (!held?.length) return { success: false, error: `${substitute.label} is not in stock any more` }
+    const label = substitute.label.trim().slice(0, 120)
+    const itemName = `${req.item_name as string} → ${label}`.slice(0, 300)
+    const { error: subErr } = await supabase.from('ipd_pharmacy_requests').update({
+      drug_master_id: substitute.isMaster ? substitute.id : null,
+      drug_id: substitute.isMaster ? null : substitute.id,
+      item_name: itemName,
+    }).eq('id', requestId).eq('status', 'pending')
+    if (subErr) return { success: false, error: subErr.message }
+    Object.assign(req, { drug_master_id: substitute.isMaster ? substitute.id : null, drug_id: substitute.isMaster ? null : substitute.id, item_name: itemName })
   }
 
   // A Schedule X supply to the ward goes in the X register with its reason.

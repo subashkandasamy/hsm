@@ -94,6 +94,7 @@ export default function Sidebar({
         {NAV_CONFIG.map((group) => {
           const visibleItems = group.items.filter((item) => {
             if (!hasPermission(role, item.requiredPermission as Permission, granted)) return false
+            if (item.hideForRoles?.includes(role)) return false
             if (item.moduleKey && enabledModules && !enabledModules.includes(item.moduleKey)) return false
             return true
           })

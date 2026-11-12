@@ -9,6 +9,7 @@ import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server
 import { encounterInsurance } from '@/lib/billing/insuranceShare'
 import type { AdmissionAdvance, AdmissionAdvanceRefund, AdmissionFinancials, AdvanceDepositRequest, AdvanceReceiptData } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { applyAdvanceToStayBills } from '@/lib/billing/applyAdvance'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -199,6 +200,19 @@ export async function applyAdvanceToBill(
 
   await logAudit(actor.id, 'apply_advance', 'bill', billId, { amount: res.applied, admissionId })
   return { success: true }
+}
+
+/** Apply the unused advance to every unpaid bill of the stay in one go. */
+export async function applyAdvanceToStay(admissionId: string): Promise<{ success: true; applied: number; bills: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'billing:advance')
+  const supabase = await createClient()
+  const r = await applyAdvanceToStayBills(supabase, admissionId)
+  if (r.error && r.applied === 0) return { success: false, error: r.error }
+  if (r.applied > 0) await logAudit(actor.id, 'apply_advance_stay', 'admission', admissionId, { amount: r.applied, bills: r.bills })
+  return { success: true, applied: r.applied, bills: r.bills }
 }
 
 // ---- Advance deposit requests (pending obligations at the billing counter) ----

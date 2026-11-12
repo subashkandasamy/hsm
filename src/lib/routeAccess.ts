@@ -32,6 +32,8 @@ export const ROUTE_RULES: RouteRule[] = [
   { prefix: '/radiology',                  anyOf: ['radiology:read'] },
   { prefix: '/pcpndt',                     anyOf: ['pcpndt:record', 'pcpndt:report'] },
   { prefix: '/pcpndt/returns',             anyOf: ['pcpndt:report'] },
+  // The page sent anyone else back to /pcpndt without a word (BUG-005).
+  { prefix: '/pcpndt/setup',               anyOf: ['pcpndt:report'] },
   { prefix: '/pharmacy',                   anyOf: ['pharmacy:read'] },
   { prefix: '/pharmacy/receive',           anyOf: ['pharmacy:manage'] },
   { prefix: '/ot',                         anyOf: ['ot:read'] },

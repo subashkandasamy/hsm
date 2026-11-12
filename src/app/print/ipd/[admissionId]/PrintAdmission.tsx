@@ -7,6 +7,7 @@ import type {
   Admission, IpdProgressNote, IpdMedicationOrder, IpdAdminSchedule,
   LabOrder, RadiologyOrder, TenantProfile,
 } from '@/lib/types'
+import { realPhone } from '@/lib/patientPhone'
 
 interface Props {
   admission: Admission
@@ -266,7 +267,7 @@ export default function PrintAdmission({ admission: adm, notes, orders, schedule
                 </div>
                 <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0' }}>
                   {label('Phone')}
-                  {value(patient?.phone ?? null)}
+                  {value(realPhone(patient?.phone))}
                 </div>
 
                 {/* Row 3: Blood group + Allergies */}

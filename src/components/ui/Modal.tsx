@@ -35,6 +35,7 @@ export default function Modal({ open, onClose, title, children, maxWidth = '32re
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
+        role="dialog" aria-modal="true" aria-label={title}
         className="glass-card w-full flex flex-col rounded-t-2xl md:rounded-2xl"
         style={{ maxWidth, maxHeight: '92vh' }}
       >

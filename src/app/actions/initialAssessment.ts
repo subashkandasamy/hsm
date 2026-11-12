@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { SECTION_KEYS, type AssessmentData, type AssessmentSetting, type SectionKey } from '@/lib/initialAssessment'
 import { ASSESSMENT_COLUMNS, syncArrivalObservation, type AssessmentRow } from '@/lib/initialAssessmentDb'
+import { zodIssuesText } from '@/lib/zodMessage'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -167,7 +168,7 @@ export async function saveAssessmentSection(
   if (!SECTION_KEYS.includes(section as SectionKey)) return { success: false, error: 'Unknown section' }
   const key = section as SectionKey
   const parsed = SECTION_SCHEMAS[key].safeParse(value)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  if (!parsed.success) return { success: false, error: zodIssuesText(parsed.error) }
   // Temperature on arrival is kept in °C (it becomes the first chart reading); KMCH writes °F.
   if (key === 'on_arrival') {
     const oa = parsed.data as { temp?: number | null }

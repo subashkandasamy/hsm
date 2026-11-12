@@ -4,6 +4,7 @@ import {
   A4, AmountInWords, DataTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   SectionTitle, fmtDate, fmtDateTime, money, shortRef, type LogoImage,
 } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 const METHOD: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque' }
 
@@ -24,7 +25,7 @@ export function AdvanceReceiptPdf({ data, profile, logo }: { data: AdvanceReceip
       <InfoGrid items={[
         ['Patient', data.patient.full_name],
         ['UHID', data.patient.uhid],
-        ['Phone', data.patient.phone],
+        ['Phone', realPhone(data.patient.phone)],
         ['Admitted', fmtDateTime(data.admission.admitted_at)],
         ['Ward / Bed', [data.admission.ward, data.admission.bed].filter(Boolean).join(' / ') || null],
       ]} />

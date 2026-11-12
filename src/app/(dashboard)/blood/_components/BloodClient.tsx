@@ -22,6 +22,7 @@ import SeparateModal from './SeparateModal'
 import CampModal from './CampModal'
 import UnitTraceModal from './UnitTraceModal'
 import { istToday } from '@/lib/istDate'
+import { bloodGroupLabel } from '@/lib/bloodCompat'
 
 // Eligibility: deferred if under active deferral or donated within 90 days.
 function donorEligible(d: BloodDonor): boolean {
@@ -519,12 +520,15 @@ function RequestsView({ requests, canIssue, canRequest, canTransfuse, actionId, 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-sm px-2.5 py-1 rounded-lg"
-                  style={{ background: '#FEE2E2', color: '#DC2626' }}>{r.blood_group}</span>
+                  style={{ background: '#FEE2E2', color: '#DC2626' }}>{bloodGroupLabel(r.blood_group)}</span>
                 <span className="text-xs px-2 py-0.5 rounded-lg capitalize font-medium"
                   style={{ background: '#F1F5F9', color: '#475569' }}>
                   {COMPONENT_LABELS[r.component as BloodComponent] ?? r.component}
                 </span>
-                <span className="text-xs" style={{ color: '#64748B' }}>{r.units_required} unit{r.units_required !== 1 ? 's' : ''} required</span>
+                <span className="text-xs" style={{ color: '#64748B' }}>
+                  {r.units_required} unit{r.units_required !== 1 ? 's' : ''} required
+                  {r.units_required > 1 && r.status !== 'cancelled' && r.issued_count != null ? ` · ${r.issued_count} issued` : ''}
+                </span>
                 <StatusBadge status={STATUS_MAP[r.status] ?? 'pending'} label={r.status.replace('_', ' ')} />
                 {r.urgency && r.urgency !== 'routine' && (
                   <span className="text-xs px-2 py-0.5 rounded-lg font-semibold"
@@ -555,21 +559,24 @@ function RequestsView({ requests, canIssue, canRequest, canTransfuse, actionId, 
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              {r.status === 'requested' && canIssue && (
+              {/* Unit by unit: cross-match the next unit while fewer than required are
+                  matched or issued; transfuse any unit already issued (BUG-048). */}
+              {(r.status === 'requested' || r.status === 'cross_matched') && canIssue
+                && (r.issued_count ?? 0) + (r.ready_count ?? 0) < r.units_required && (
                 <button onClick={() => onCrossMatch(r)} disabled={actionId === r.id}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
-                  Cross-match
+                  {(r.issued_count ?? 0) + (r.ready_count ?? 0) > 0 ? 'Cross-match next unit' : 'Cross-match'}
                 </button>
               )}
-              {r.status === 'cross_matched' && canIssue && (
+              {r.status === 'cross_matched' && canIssue && (r.ready_count ?? 1) > 0 && (
                 <button onClick={() => onIssue(r)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
                   Issue Unit
                 </button>
               )}
-              {r.status === 'issued' && canTransfuse && (
+              {(r.status === 'issued' || (r.status === 'cross_matched' && (r.issued_count ?? 0) > 0)) && canTransfuse && (
                 <button onClick={() => onTransfuse(r)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>

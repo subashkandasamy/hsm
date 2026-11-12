@@ -15,6 +15,9 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export interface PatientStripData {
   allergies: string[]
   latest: IcuObservation | null
+  /** The last day's observations, newest first — the strip scores NEWS2 from
+   *  the newest COMPLETE one, not just the newest (BUG-036). */
+  recent: IcuObservation[]
   icuSince: string | null
   consultants: string[]
 }
@@ -27,13 +30,14 @@ export async function getPatientStrip(admissionId: string): Promise<PatientStrip
   const [allergies, { data: latest }, { data: icu }, { data: team }] = await Promise.all([
     listAllergies(adm.patient_id as string),
     supabase.from('icu_observations').select('*').eq('admission_id', admissionId)
-      .order('recorded_at', { ascending: false }).limit(1).maybeSingle(),
+      .order('recorded_at', { ascending: false }).limit(30),
     supabase.from('icu_stays').select('entered_at').eq('admission_id', admissionId).is('exited_at', null).maybeSingle(),
     supabase.from('admission_care_team').select('doctor:profiles(full_name)').eq('admission_id', admissionId).is('removed_at', null),
   ])
   return {
     allergies: allergies.map((a) => a.allergen),
-    latest: (latest as IcuObservation | null) ?? null,
+    latest: ((latest ?? []) as IcuObservation[])[0] ?? null,
+    recent: (latest ?? []) as IcuObservation[],
     icuSince: (icu?.entered_at as string | undefined) ?? null,
     consultants: (team ?? []).map((t) => (t.doctor as unknown as { full_name: string } | null)?.full_name).filter(Boolean) as string[],
   }

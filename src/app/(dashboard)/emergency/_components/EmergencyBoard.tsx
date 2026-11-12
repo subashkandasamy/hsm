@@ -383,7 +383,7 @@ export default function EmergencyBoard({ initialCases, wardOptions, doctors, adm
                       <div className="flex items-center gap-2 mt-2.5 flex-wrap" style={{ borderTop: '1px solid #F1F5F9', paddingTop: '0.5rem' }}>
                         {ec.status === 'waiting' && (
                           <button
-                            onClick={() => { setAttendCase(ec); setSelectedDoctor(doctors[0]?.id ?? '') }}
+                            onClick={() => { setAttendCase(ec); setSelectedDoctor('') /* "Self" — the first doctor in the list was pre-picked (BUG-029) */ }}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold"
                             style={{ background: '#DBEAFE', color: '#1D4ED8', border: 'none', cursor: 'pointer' }}>
                             Attend

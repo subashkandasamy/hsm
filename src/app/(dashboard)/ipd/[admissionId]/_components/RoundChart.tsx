@@ -18,15 +18,20 @@ function toLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
-const dayHm = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+const dayHm = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
 
-function newsOf(o: Pick<IcuObservation, 'rr' | 'spo2' | 'sbp' | 'hr' | 'temp' | 'gcs_total' | 'avpu' | 'o2_device' | 'o2_lpm' | 'fio2'>, ventilated: boolean): NewsResult {
-  return computeNews({ rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu, on_oxygen: onOxygen(o, ventilated) })
+function newsOf(o: Pick<IcuObservation, 'rr' | 'spo2' | 'sbp' | 'hr' | 'temp' | 'gcs_total' | 'avpu' | 'o2_device' | 'o2_lpm' | 'fio2'> & { gcs_e?: number | null; gcs_m?: number | null }, ventilated: boolean): NewsResult {
+  return computeNews({ rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu, gcs_e: o.gcs_e, gcs_m: o.gcs_m, on_oxygen: onOxygen(o, ventilated) })
 }
 
 function NewsChip({ n }: { n: NewsResult }) {
   if (n.params === 0) return <span style={{ color: '#94A3B8' }}>—</span>
   const s = NEWS_BAND_STYLE[n.band]
+  // A partial set is not a NEWS2 — shown greyed with what is missing (BUG-036).
+  if (!n.complete) {
+    return <span title={`Incomplete — no ${n.missing.join(', ')}`} className="px-1.5 py-0.5 rounded-md text-xs"
+      style={{ background: '#F1F5F9', color: '#64748B', border: '1px dashed #CBD5E1' }}>{n.score}*</span>
+  }
   return <span className="px-1.5 py-0.5 rounded-md text-xs font-bold" style={{ background: s.bg, color: s.color }}>{n.score}</span>
 }
 

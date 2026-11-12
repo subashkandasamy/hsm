@@ -19,6 +19,7 @@ import OrderRadiologyModal from './OrderRadiologyModal'
 import ReportEntryModal from './ReportEntryModal'
 import AddRadiologyTestModal from './AddRadiologyTestModal'
 import ViewScanButton from './ViewScanButton'
+import RadiologyReportModal from './RadiologyReportModal'
 
 const STATUS_MAP: Record<string, string> = {
   ordered: 'pending', performed: 'info', verified: 'info', reported: 'success', cancelled: 'cancelled',
@@ -58,6 +59,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const [showOrder, setShowOrder] = useState(false)
   const [showAddTest, setShowAddTest] = useState(false)
   const [reportOrder, setReportOrder] = useState<RadiologyOrder | null>(null)
+  const [viewOrder, setViewOrder] = useState<RadiologyOrder | null>(null)
   const canFormF = !!role && hasPermission(role, 'pcpndt:record', profile?.granted_permissions)
 
   async function refresh() {
@@ -227,8 +229,20 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
                           {tab === 'reported' && order.report && (
                             <p className="text-xs mt-1.5 line-clamp-2" style={{ color: '#475569' }}>{order.report}</p>
                           )}
-                          {tab === 'reported' && order.image_url && (
-                            <a href={order.image_url} target="_blank" rel="noreferrer" className="text-xs mt-1 inline-block" style={{ color: '#0D9488' }}>View Image →</a>
+                          {tab === 'reported' && order.verifier?.full_name && (
+                            <p className="text-xs mt-1" style={{ color: '#64748B' }}>Reported by {order.verifier.full_name}</p>
+                          )}
+                          {/* The stored image is a private path — a plain link to it opened a
+                              404 (BUG-026). The report popup signs it, and prints. */}
+                          {tab === 'reported' && (
+                            <div className="flex items-center gap-3 mt-1">
+                              <button onClick={() => setViewOrder(order)} className="text-xs font-medium"
+                                style={{ color: '#0D9488', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                                {order.image_url ? 'View Image →' : 'View Report →'}
+                              </button>
+                              <a href={`/print/radiology/${order.id}/pdf`} target="_blank" rel="noreferrer"
+                                className="text-xs font-medium" style={{ color: '#0D9488' }}>Print</a>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -283,6 +297,7 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
       <OrderRadiologyModal open={showOrder} onClose={() => setShowOrder(false)} catalog={catalog}
         onSuccess={() => { setShowOrder(false); refresh() }} />
 
+      {viewOrder && <RadiologyReportModal order={viewOrder} onClose={() => setViewOrder(null)} />}
       {reportOrder && (
         <ReportEntryModal open={true} order={reportOrder}
           onClose={() => setReportOrder(null)}

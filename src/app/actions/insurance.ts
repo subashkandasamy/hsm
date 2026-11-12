@@ -12,7 +12,7 @@ import {
   SetClaimOwnerSchema, ChecklistItemSchema, EnhancementSchema, DecideEnhancementSchema,
   TariffPackageSchema, RemittanceBatchSchema,
 } from '@/lib/schemas'
-import { INSURANCE_CREDIT_COLUMNS, totalInsuranceCredit, type InsuranceCreditRow } from '@/lib/insuranceCredit'
+import { INSURANCE_CREDIT_COLUMNS, totalInsuranceCredit, settlementCovered, type InsuranceCreditRow } from '@/lib/insuranceCredit'
 import { listAdmissions } from '@/app/actions/ipd'
 import { getPatientVisits } from '@/app/actions/opd'
 import type {
@@ -593,6 +593,12 @@ export async function advanceClaim(
   if (nextStatus === 'rejected')  { updateData.rejected_at = now; if (parsed.data.denial_reason) updateData.denial_reason = parsed.data.denial_reason }
 
   if (nextStatus === 'approved') {
+    // The insurer cannot approve more than was claimed — ₹3,500 was accepted on a
+    // ₹2,900 claim, so the insurer appeared to owe more than the bill (BUG-066).
+    const claimedNow = (claim.claim_amount as number | null) ?? null
+    if (parsed.data.approved_amount != null && claimedNow != null && parsed.data.approved_amount > claimedNow + 0.005) {
+      return { success: false, error: `The approved amount (₹${parsed.data.approved_amount.toFixed(2)}) cannot be more than the claim (₹${claimedNow.toFixed(2)}).` }
+    }
     if (parsed.data.approved_amount != null) updateData.approved_amount = parsed.data.approved_amount
     if (parsed.data.copay_amount != null) {
       updateData.copay_amount = parsed.data.copay_amount
@@ -632,7 +638,7 @@ export async function recordSettlement(
   const supabase = await createClient()
   const { data: claim } = await supabase
     .from('insurance_claims')
-    .select('status, admission_id, visit_id, bill_id, eligibility_approved_amount')
+    .select('status, admission_id, visit_id, bill_id, eligibility_approved_amount, approved_amount, claim_amount')
     .eq('id', d.id).maybeSingle()
   if (!claim) return { success: false, error: 'Claim not found' }
   if (claim.status !== 'approved') return { success: false, error: 'The claim must be approved before it can be settled' }
@@ -640,12 +646,15 @@ export async function recordSettlement(
   // The gap between what pre-auth covered and what actually settled must be
   // resolved explicitly — otherwise it silently reads as fully covered while
   // less money was collected (the revenue-leak fix). Force a choice.
-  const covered = (claim.eligibility_approved_amount as number | null) ?? 0
+  // Measured against what the insurer APPROVED for this claim — the pre-auth
+  // sanction is an estimate (₹22,000 sanctioned on a ₹2,900 bill read as a
+  // ₹22,000 shortfall, BUG-067).
+  const covered = settlementCovered(claim)
   const shortfall = Math.max(0, covered - d.settled_amount)
-  if (shortfall > 0 && !d.shortfall_resolution) {
+  if (shortfall > 0.005 && !d.shortfall_resolution) {
     return {
       success: false,
-      error: `Settlement is ₹${shortfall.toFixed(0)} short of the ₹${covered.toFixed(0)} covered at eligibility. Choose whether to write it off or recover it from the patient.`,
+      error: `Settlement is ₹${shortfall.toFixed(0)} short of the ₹${covered.toFixed(0)} approved for this claim. Choose whether to write it off or recover it from the patient.`,
     }
   }
 
@@ -1286,7 +1295,7 @@ export async function upsertBankAccount(input: Record<string, unknown>): Promise
   const supabase = await createClient()
   const row: Record<string, unknown> = {
     tenant_id: actor.tenant_id, account_name: d.account_name, bank_name: d.bank_name ?? null,
-    account_number: d.account_number ?? null, ifsc_code: d.ifsc_code ?? null, is_active: d.is_active,
+    account_number: d.account_number || null, ifsc_code: d.ifsc_code || null, is_active: d.is_active,
   }
   if (d.upi_vpa !== undefined) row.upi_vpa = d.upi_vpa || null
   if (d.upi_payee_name !== undefined) row.upi_payee_name = d.upi_payee_name || null

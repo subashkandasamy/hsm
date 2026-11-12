@@ -84,6 +84,7 @@ export default function BottomTabBar({ role, enabledModules }: BottomTabBarProps
     .filter((item): item is NonNullable<typeof item> =>
       !!item &&
       hasPermission(role, item.requiredPermission, granted) &&
+      !(item.href === '/dashboard' && role === 'accountant') &&
       (!item.moduleKey || !enabledModules || enabledModules.includes(item.moduleKey))
     )
     .slice(0, 5)

@@ -35,11 +35,18 @@ export default function ComponentChargesModal({ open, onClose }: Props) {
     })
   }, [open])
 
+  // A refused value said nothing at all (BUG-047) — every outcome now shows.
+  const [errors, setErrors] = useState<Record<string, string>>({})
   async function save(component: BloodComponent) {
+    const raw = (prices[component] ?? '').trim()
+    const price = raw === '' ? 0 : Number(raw)
+    if (!Number.isFinite(price) || price < 0) { setErrors((e) => ({ ...e, [component]: 'Enter a charge of ₹0 or more' })); return }
+    setErrors((e) => ({ ...e, [component]: '' }))
     setSavingId(component); setSavedId(null)
-    const res = await upsertComponentCharge({ component, price: parseFloat(prices[component] || '0') || 0 })
+    const res = await upsertComponentCharge({ component, price })
     setSavingId(null)
     if (res.success) { setSavedId(component); setTimeout(() => setSavedId(null), 1500) }
+    else setErrors((e) => ({ ...e, [component]: res.error }))
   }
 
   return (
@@ -54,7 +61,7 @@ export default function ComponentChargesModal({ open, onClose }: Props) {
         ) : (
           <div className="space-y-2">
             {COMPONENTS.map((c) => (
-              <div key={c.value} className="flex items-center gap-3 rounded-xl px-3.5 py-2.5"
+              <div key={c.value} className="flex items-center flex-wrap gap-3 rounded-xl px-3.5 py-2.5"
                 style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
                 <span className="text-sm font-medium flex-1" style={{ color: '#0F172A' }}>{c.label}</span>
                 <div className="flex items-center gap-1">
@@ -70,6 +77,7 @@ export default function ComponentChargesModal({ open, onClose }: Props) {
                   style={{ background: savedId === c.value ? '#DCFCE7' : '#0D9488', color: savedId === c.value ? '#15803D' : '#fff', border: 'none', cursor: 'pointer', minWidth: '4.5rem' }}>
                   {savingId === c.value ? 'Saving…' : savedId === c.value ? 'Saved ✓' : 'Save'}
                 </button>
+                {errors[c.value] && <p className="text-xs w-full" style={{ color: '#DC2626' }}>{errors[c.value]}</p>}
               </div>
             ))}
           </div>

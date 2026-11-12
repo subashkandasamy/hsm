@@ -1133,7 +1133,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     if (!fbPatient) return null
     const { data: admBillsFb } = await supabase
       .from('bills')
-      .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
+      .select('id, bill_no, billing_date, created_at, total, paid, discount, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
       .eq('admission_id', admissionId).neq('status', 'cancelled')
       .order('billing_date', { ascending: true }).order('created_at', { ascending: true })
     const allBillsFb = ((admBillsFb ?? []) as unknown as CombinedBillRaw[]).filter((b) => (b as { bill_source?: string | null }).bill_source !== 'consolidated')
@@ -1150,6 +1150,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
       generatedAt: new Date().toISOString(),
       sections: secFb,
       grandTotal: regFb.reduce((s, b) => s + (b as { total: number }).total, 0),
+      discountTotal: regFb.reduce((s, b) => s + Number((b as { discount?: number | null }).discount ?? 0), 0),
       totalPaid: regFb.reduce((s, b) => s + (b as { paid: number }).paid, 0),
       refunded: await sumCreditNotes(supabase, regFb.map((b) => (b as unknown as { id: string }).id)),
       // Both of these were missing on this path, and the omission showed on a
@@ -1192,7 +1193,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     items: Array<{ source: string; description: string; qty: number; unit_price: number; amount: number }>
   }
 
-  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
+  const BILL_SELECT = 'id, bill_no, billing_date, created_at, total, paid, discount, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)'
 
   // 4. Fetch all non-cancelled IPD bills for this admission
   const { data: admBills } = await supabase
@@ -1250,6 +1251,7 @@ export async function getCombinedBillData(admissionId: string): Promise<Combined
     generatedAt: new Date().toISOString(),
     sections,
     grandTotal,
+    discountTotal: regularBills.reduce((s, b) => s + Number((b as { discount?: number | null }).discount ?? 0), 0),
     totalPaid,
     refunded: await sumCreditNotes(supabase, regularBills.map((b) => b.id)),
     advanceAdjusted: await sumAdvanceAdjusted(supabase, regularBills.map((b) => b.id)),
@@ -1486,7 +1488,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
 
   const { data: bills } = await supabase
     .from('bills')
-    .select('id, bill_no, billing_date, created_at, total, paid, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
+    .select('id, bill_no, billing_date, created_at, total, paid, discount, bill_source, items:bill_items(source, description, qty, unit_price, amount, gst_rate, hsn_sac, tax_inclusive)')
     .eq('patient_id', patientId)
     .neq('status', 'cancelled')
     .order('billing_date', { ascending: true })
@@ -1519,6 +1521,7 @@ export async function getPatientCombinedBillData(patientId: string): Promise<Com
     generatedAt: new Date().toISOString(),
     sections,
     grandTotal,
+    discountTotal: regularBills3.reduce((s, b) => s + Number((b as { discount?: number | null }).discount ?? 0), 0),
     totalPaid,
     refunded: await sumCreditNotes(supabase, regularBills3.map((b) => b.id)),
     advanceAdjusted: await sumAdvanceAdjusted(supabase, regularBills3.map((b) => b.id)),

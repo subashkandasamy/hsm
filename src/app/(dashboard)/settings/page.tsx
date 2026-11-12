@@ -1,25 +1,39 @@
 export const dynamic = 'force-dynamic'
+import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
-import { Settings } from 'lucide-react'
+import { NAV_CONFIG } from '@/lib/rbac'
+import { canOpen } from '@/lib/routeAccess'
+import { getActorGrantedPermissions, getActorProfile } from '@/lib/server-utils'
 
-export default function SettingsPage() {
+// Was a "Coming in a later phase" placeholder (BUG-069). Every settings screen
+// this person may open, from the same list the menu uses.
+export default async function SettingsPage() {
+  const actor = await getActorProfile()
+  const granted = await getActorGrantedPermissions().catch(() => [])
+  const items = NAV_CONFIG.flatMap((g) => g.items)
+    .filter((i) => i.href.startsWith('/settings/') && canOpen(actor.role, i.href, granted))
+
   return (
     <div>
-      <PageHeader title="Settings" subtitle="System configuration" />
-      <GlassCard className="p-8">
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-            style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.15)' }}
-          >
-            <Settings className="w-6 h-6" style={{ color: '#0D9488' }} />
-          </div>
-          <p className="text-base font-semibold" style={{ color: '#475569' }}>Coming in a later phase</p>
-          <p className="mt-1 text-sm max-w-xs" style={{ color: '#94A3B8' }}>
-            Settings features will be added in Phase 1.
-          </p>
-        </div>
+      <PageHeader title="Settings" subtitle="How this hospital is set up" />
+      <GlassCard className="p-2">
+        {items.length === 0 ? (
+          <p className="text-sm p-6 text-center" style={{ color: '#64748B' }}>There are no settings your role can change.</p>
+        ) : (
+          <ul>
+            {items.map((i, n) => (
+              <li key={i.href} style={{ borderTop: n ? '1px solid #F1F5F9' : 'none' }}>
+                <Link href={i.href} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
+                  style={{ color: '#0F172A', minHeight: '44px' }}>
+                  <span className="text-sm font-medium">{i.label}</span>
+                  <ChevronRight className="w-4 h-4" style={{ color: '#94A3B8' }} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </GlassCard>
     </div>
   )

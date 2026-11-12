@@ -109,7 +109,7 @@ export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: O
           rows={SAFETY_STEPS.map((st) => {
             const rec = o.safety_checklist?.[st.step]
             const done = stepComplete(rec, st.step)
-            return [{ text: st.title, bold: true }, { text: st.when, color: C.muted }, done && rec?.done_at ? when(rec.done_at) ?? '' : '']
+            return [{ text: st.title, bold: true }, { text: st.when, color: C.muted }, done && rec?.done_at ? [when(rec.done_at), rec.done_by_name].filter(Boolean).join(' · ') : '']
           })} />
       </View>
 

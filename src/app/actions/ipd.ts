@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { AdmitPatientSchema, ProgressNoteSchema, DischargeSchema } from '@/lib/schemas'
 import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
+import { applyAdvanceToStayBills } from '@/lib/billing/applyAdvance'
 import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
 import { catchUpDailyCharges } from '@/lib/ipdDailyBilling'
 import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
@@ -428,6 +429,8 @@ export async function transferBed(
 export interface DischargeReadiness extends OpenWork {
   patientBalanceDue: number
   insuranceApproved: number
+  /** Advance on deposit not yet set against a bill — discharge applies it first (BUG-052). */
+  unusedAdvance: number
   isMlc: boolean
   /** Future appointments — after a death the family should not be called about them. */
   upcomingAppointments: number
@@ -458,6 +461,7 @@ export async function getDischargeReadiness(admissionId: string): Promise<Discha
     ...open,
     patientBalanceDue: financials.patientBalanceDue,
     insuranceApproved: financials.insuranceApproved,
+    unusedAdvance: financials.unusedAdvance,
     isMlc: !!(erCase.data as { is_mlc?: boolean } | null)?.is_mlc,
     upcomingAppointments: appts.count ?? 0,
   }
@@ -574,7 +578,16 @@ export async function dischargePatient(
   // Gate on the patient's own outstanding balance before discharge. An
   // approved-but-unsettled insurance claim covers its portion — the TPA settles
   // later — so only the patient's residual share must be collected now.
-  const financials = await getAdmissionFinancials(admissionId)
+  let financials = await getAdmissionFinancials(admissionId)
+  // The advance on deposit pays the bills first — the gate asked for ₹66,010
+  // while ₹21,000 sat unused (BUG-052).
+  if (financials.unusedAdvance > 0 && financials.balanceDue > 0) {
+    const adv = await applyAdvanceToStayBills(supabase, admissionId)
+    if (adv.applied > 0) {
+      await logAudit(actor.id, 'apply_advance_stay', 'admission', admissionId, { amount: adv.applied, bills: adv.bills, at: 'discharge' })
+      financials = await getAdmissionFinancials(admissionId)
+    }
+  }
   if (!skipsGate && financials.patientBalanceDue > 0) {
     const insuranceNote = financials.insuranceApproved > 0
       ? ` (₹${financials.insuranceApproved.toFixed(2)} is covered by an approved insurance claim)`

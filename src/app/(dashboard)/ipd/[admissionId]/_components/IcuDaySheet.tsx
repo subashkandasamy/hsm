@@ -311,7 +311,11 @@ function BundlesCard({ admissionId, day, today, checks, canEdit, onChange }: { a
                   </label>
                 ))}
               </div>
-              {canEdit && <button onClick={() => save(b.key)} className="mt-1 text-[11px] font-semibold" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>Sign {b.title.split(' (')[0]}</button>}
+              {/* Nothing ticked, nothing to sign — a stray click recorded "0/5" signed (BUG-037). */}
+              {canEdit && <button onClick={() => save(b.key)} disabled={done === 0}
+                title={done === 0 ? 'Tick what was done first' : undefined}
+                className="mt-1 text-[11px] font-semibold"
+                style={{ color: done === 0 ? '#94A3B8' : '#0D9488', background: 'none', border: 'none', cursor: done === 0 ? 'not-allowed' : 'pointer' }}>Sign {b.title.split(' (')[0]}</button>}
             </div>
           )
         })}

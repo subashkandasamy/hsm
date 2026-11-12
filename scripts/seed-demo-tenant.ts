@@ -337,6 +337,30 @@ async function createLabCatalogue(tenantId: string): Promise<Array<{ id: string;
  * level, one batch a few weeks from expiry, one sold out, and two vaccines set
  * up for the immunisation screens.
  */
+/**
+ * The catalogue entry for a brand: the brand's own link first, then the generic
+ * at the strength in the brand name ("Dolo 650" → Paracetamol 650mg), then any
+ * single-ingredient entry. Taking the first generic match stocked Dolo 650 as
+ * Paracetamol 500mg and Engerix-B as a Hep A + Hep B combination (BUG-017).
+ */
+async function masterFor(search: string, brand: string, anywhere = false): Promise<{ id: string } | null> {
+  const { data: b } = await db.from('drug_brands').select('drug_master_id').ilike('brand_name', brand).limit(1).maybeSingle()
+  if (b?.drug_master_id) return { id: b.drug_master_id as string }
+  const pattern = anywhere ? `%${search}%` : `${search}%`
+  const strength = brand.match(/(\d+(?:\.\d+)?)\s*$/)?.[1]
+  if (strength) {
+    const { data } = await db.from('drug_master').select('id').ilike('name', pattern)
+      .in('strength', [`${strength}mg`, `${strength} mg`]).eq('is_active', true).order('name').limit(1).maybeSingle()
+    if (data) return data as { id: string }
+  }
+  const { data: single } = await db.from('drug_master').select('id').ilike('name', pattern)
+    .not('name', 'ilike', '%+%').eq('is_active', true).order('name').limit(1).maybeSingle()
+  if (single) return single as { id: string }
+  const { data: any } = await db.from('drug_master').select('id').ilike('name', pattern)
+    .eq('is_active', true).order('name').limit(1).maybeSingle()
+  return (any as { id: string } | null) ?? null
+}
+
 async function createStock(tenantId: string, staff: Staff[]): Promise<void> {
   const pharmacist = staff.find((s) => s.role === 'pharmacist')!.id
 
@@ -362,8 +386,7 @@ async function createStock(tenantId: string, staff: Staff[]): Promise<void> {
 
   const batches: Record<string, unknown>[] = []
   for (const [search, brand, pack, rate, mrp, qty, reorder, expiryDays, rack] of spec) {
-    const { data: master } = await db.from('drug_master')
-      .select('id, name').ilike('name', `${search}%`).eq('is_active', true).order('name').limit(1).maybeSingle()
+    const master = await masterFor(search, brand)
     if (!master) { console.log(`  · no catalogue match for ${search}, skipped`); continue }
     batches.push({
       id: uuid(), tenant_id: tenantId, drug_master_id: master.id,
@@ -383,8 +406,7 @@ async function createStock(tenantId: string, staff: Staff[]): Promise<void> {
     ['Hepatitis B', 'hepatitis b', 'Engerix-B', 320],
     ['Pentavalent (DPT-HepB-Hib)', 'pentavalent', 'Pentavac', 750],
   ] as Array<[string, string, string, number]>) {
-    const { data: master } = await db.from('drug_master')
-      .select('id').ilike('name', `%${search}%`).eq('is_active', true).order('name').limit(1).maybeSingle()
+    const master = await masterFor(search, brand, true)
     if (!master) { console.log(`  · no catalogue match for ${vaccine}, skipped`); continue }
     const { count } = await db.from('immunization_schedule')
       .select('vaccine', { count: 'exact', head: true }).eq('vaccine', vaccine)

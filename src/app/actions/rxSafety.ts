@@ -5,6 +5,8 @@ import type { RxWarning } from '@/lib/types'
 import { evaluateRxSafety, type RxInteractionRow } from '@/lib/rxMatch'
 import { resolveGenerics, type DrugRef } from '@/lib/drugResolve'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { splitAllergyText } from '@/lib/allergyText'
+import { withBuiltInInteractions } from '@/lib/rxInteractions'
 
 /** How far back a previous prescription still counts as something to warn about. */
 const RX_LOOKBACK_DAYS = 90
@@ -33,8 +35,15 @@ async function runSafetyCheck(
   if (name.length < 3) return []
 
   // ---- Allergies ----
-  const { data: allergies } = await supabase
-    .from('patient_allergies').select('allergen').eq('patient_id', input.patientId)
+  // Structured allergies and anything typed at registration (BUG-008).
+  const [{ data: structured }, { data: pat }] = await Promise.all([
+    supabase.from('patient_allergies').select('allergen').eq('patient_id', input.patientId),
+    supabase.from('patients').select('allergies').eq('id', input.patientId).maybeSingle(),
+  ])
+  const allergyNames = [
+    ...(structured ?? []).map((a) => (a.allergen as string) || ''),
+    ...splitAllergyText(pat?.allergies as string | null),
+  ]
 
   // ---- The other drugs to check against ----
   //
@@ -81,13 +90,13 @@ async function runSafetyCheck(
   // is the interaction check, and the failure mode of a short read is a
   // dangerous pair that simply does not get flagged.
   const interactions = others.size
-    ? await pageAll<RxInteractionRow>((f, t) => supabase.from('drug_interactions')
-      .select('drug_a, drug_b, severity, description').order('id').range(f, t))
+    ? withBuiltInInteractions(await pageAll<RxInteractionRow>((f, t) => supabase.from('drug_interactions')
+      .select('drug_a, drug_b, severity, description').order('id').range(f, t)))
     : []
 
   return evaluateRxSafety({
     drug: { label: name, names: namesOf(name), identified: resolved.get(name)?.identified ?? false },
-    allergies: (allergies ?? []).map((a) => (a.allergen as string) || ''),
+    allergies: allergyNames,
     others: [...others.values()].map((o) => ({ label: o.label, names: namesOf(o.label), provenance: o.provenance })),
     interactions,
   })
@@ -95,13 +104,13 @@ async function runSafetyCheck(
 
 /** OPD: a drug being added to a prescription, checked against the prescription's other lines and the patient's recent ones. */
 export async function checkPrescriptionSafety(
-  patientId: string, drugName: string, currentDrugs: string[],
+  patientId: string, drugName: string, currentDrugs: string[], drugRef?: DrugRef | null,
 ): Promise<RxWarning[]> {
   if (drugName.trim().length < 3) return []
   const supabase = await createClient()
   return runSafetyCheck(supabase, {
     patientId,
-    drug: { label: drugName },
+    drug: { label: drugName, ref: drugRef?.id ? drugRef : null },
     others: currentDrugs.map((d) => ({ label: d, provenance: 'on this prescription' })),
   })
 }

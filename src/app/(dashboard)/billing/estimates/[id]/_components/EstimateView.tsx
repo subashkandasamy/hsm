@@ -10,6 +10,7 @@ import { finalizeEstimate, deleteEstimate } from '@/app/actions/costEstimates'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { CostEstimate, TenantProfile, CostEstimateCategory } from '@/lib/types'
+import { realPhone } from '@/lib/patientPhone'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -39,7 +40,7 @@ export default function EstimateView({ estimate, profile }: { estimate: CostEsti
 
   const items = estimate.items ?? []
   const patientName = estimate.patient?.full_name ?? estimate.patient_name ?? 'Walk-in enquiry'
-  const patientPhone = estimate.patient?.phone ?? estimate.patient_phone
+  const patientPhone = realPhone(estimate.patient?.phone) ?? estimate.patient_phone
 
   async function handleFinalize() {
     setBusy(true)

@@ -29,7 +29,7 @@ function fromLocal(v: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
 function clock(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : ''
+  return iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : ''
 }
 
 function CardHead({ icon: Icon, title, hint, right }: { icon: typeof Save; title: string; hint?: string; right?: React.ReactNode }) {
@@ -230,7 +230,7 @@ export default function SurgeryRecordPanel({ schedule, editable, onSaved }: {
                 </div>
                 <div className="mt-2.5 flex items-center justify-between gap-2">
                   {signed ? (
-                    <span className="text-xs font-medium" style={{ color: '#15803D' }}>Signed {clock(rec?.done_at)}</span>
+                    <span className="text-xs font-medium" style={{ color: '#15803D' }}>Signed{rec?.done_by_name ? ` by ${rec.done_by_name}` : ''} {clock(rec?.done_at)}</span>
                   ) : (
                     <span className="text-xs" style={{ color: '#94A3B8' }}>Not signed</span>
                   )}

@@ -70,9 +70,15 @@ function TransfusionForm({ issueId, onSaved }: { issueId: string; onSaved: () =>
   const [error, setError] = useState<string | null>(null)
 
   async function save() {
+    // The box holds a local (IST) time with no zone; sent as-is the server read
+    // it as UTC and stored it 5½ hours off (BUG-050). Convert here.
+    const iso = (v: string) => (v ? new Date(v).toISOString() : null)
+    if (start && end && new Date(end).getTime() <= new Date(start).getTime()) {
+      setError('The end time must be after the start time'); return
+    }
     setSaving(true); setError(null)
     const res = await recordTransfusion(issueId, {
-      started_at: start || null, ended_at: end || null,
+      started_at: iso(start), ended_at: iso(end),
       vitals_pre: { bp: preBp || null, pulse: prePulse || null, temp: preTemp || null },
       vitals_post: { bp: postBp || null, pulse: postPulse || null, temp: postTemp || null },
       notes: notes || null,
@@ -130,7 +136,7 @@ function TransfusionRecorded({ transfusion, onChanged }: { transfusion: NonNulla
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs" style={{ color: '#15803D' }}>
         <span className="px-2 py-0.5 rounded font-semibold" style={{ background: '#DCFCE7' }}>✓ Transfused</span>
-        {transfusion.started_at && <span style={{ color: '#64748B' }}>{new Date(transfusion.started_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
+        {transfusion.started_at && <span style={{ color: '#64748B' }}>{new Date(transfusion.started_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}</span>}
       </div>
       {reactions.map((r) => (
         <div key={r.id} className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>

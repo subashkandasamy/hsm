@@ -5,15 +5,28 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { PatientAllergy, AllergySeverity } from '@/lib/types'
+import { registrationOnly, REGISTRATION_ALLERGY } from '@/lib/allergyText'
 
+/**
+ * Every allergy known for the patient: the structured entries, then anything
+ * typed at registration that has not been entered as a structured allergy
+ * (BUG-008 — those were invisible to the doctor and to the prescription check).
+ */
 export async function listAllergies(patientId: string): Promise<PatientAllergy[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('patient_allergies')
-    .select('*, recorder:profiles(id, full_name)')
-    .eq('patient_id', patientId)
-    .order('created_at', { ascending: false })
-  return (data ?? []) as unknown as PatientAllergy[]
+  const [{ data }, { data: patient }] = await Promise.all([
+    supabase.from('patient_allergies').select('*, recorder:profiles(id, full_name)')
+      .eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('patients').select('allergies, created_at').eq('id', patientId).maybeSingle(),
+  ])
+  const rows = (data ?? []) as unknown as PatientAllergy[]
+  const extra: PatientAllergy[] = registrationOnly(patient?.allergies as string | null, rows.map((r) => r.allergen))
+    .map((allergen, i) => ({
+      id: `${REGISTRATION_ALLERGY}${i}`, patient_id: patientId, allergen, reaction: null,
+      severity: 'moderate', recorded_by: null, created_at: (patient?.created_at as string) ?? new Date().toISOString(),
+      recorder: null, source: 'registration',
+    }))
+  return [...rows, ...extra]
 }
 
 export async function addAllergy(input: {
@@ -58,6 +71,9 @@ export async function removeAllergy(
 ): Promise<{ success: true } | { success: false; error: string }> {
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'emr:allergy:write')
+  if (id.startsWith(REGISTRATION_ALLERGY)) {
+    return { success: false, error: 'This allergy was typed at registration — change it in the patient\'s details (Edit).' }
+  }
 
   const supabase = await createClient()
   const { data: existing } = await supabase

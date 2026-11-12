@@ -66,6 +66,9 @@ const REVIEWED: Record<string, { n: number; why: string }> = {
   'src/app/actions/labour.ts::partograph_obs':        { n: 1, why: ".limit(1) — the previous reading" },
   'src/app/actions/ipd.ts::visits':                   { n: 1, why: "scoped .eq('patient_id') + type + a 5-minute window" },
   'src/app/actions/referOut.ts::visits':              { n: 1, why: ".limit(1).maybeSingle()" },
+  'src/app/actions/ipdTreatment.ts::drug_batches':    { n: 1, why: ".limit(1) on a later line — is the substituted drug still in stock (BUG-018)" },
+  'src/app/actions/wards.ts::admissions':             { n: 1, why: "admitted patients' beds only — never more than the hospital has beds (BUG-055)" },
+  'src/lib/billing/applyAdvance.ts::bills':           { n: 1, why: "scoped .eq('admission_id') on a later line — one stay's bills (BUG-053)" },
 }
 
 const BOUNDED = [/\.single\(\)/, /\.maybeSingle\(\)/, /\.limit\(/, /\.range\(/, /head:\s*true/, /pageAll/]

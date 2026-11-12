@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input'
 import DateText from '@/components/ui/DateText'
 import { recordCrossMatch, listCompatibleUnits } from '@/app/actions/blood'
 import type { BloodRequest, BloodUnit } from '@/lib/types'
+import { bloodGroupLabel } from '@/lib/bloodCompat'
 
 const COMPONENT_LABELS: Record<string, string> = {
   whole: 'Whole Blood', prbc: 'PRBC', plasma: 'Plasma', platelets: 'Platelets',
@@ -23,8 +24,10 @@ export default function CrossMatchModal({ request, onClose, onSuccess }: Props) 
   const [units, setUnits] = useState<BloodUnit[]>([])
   const [selected, setSelected] = useState<BloodUnit | null>(null)
   const [sampleNo, setSampleNo] = useState(request.recipient_sample_no ?? '')
-  const [major, setMajor] = useState<XmResult>('compatible')
-  const [minor, setMinor] = useState<XmResult>('compatible')
+  // No pre-set result: one click recorded "compatible" that nobody had read
+  // off the tube (BUG-049). Both results and the sample number are entered.
+  const [major, setMajor] = useState<XmResult | null>(null)
+  const [minor, setMinor] = useState<XmResult | null>(null)
   const [fetching, setFetching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +39,8 @@ export default function CrossMatchModal({ request, onClose, onSuccess }: Props) 
 
   async function save() {
     if (!selected) { setError('Select a unit to cross-match'); return }
+    if (!sampleNo.trim()) { setError('Enter the recipient sample number'); return }
+    if (!major || !minor) { setError('Record both the major and the minor cross-match result'); return }
     setSaving(true); setError(null)
     const res = await recordCrossMatch(request.id, selected.id, {
       recipient_sample_no: sampleNo.trim() || null,
@@ -49,7 +54,7 @@ export default function CrossMatchModal({ request, onClose, onSuccess }: Props) 
 
   return (
     <Modal open onClose={onClose}
-      title={`Cross-match — ${request.blood_group} ${COMPONENT_LABELS[request.component] ?? request.component}`}
+      title={`Cross-match — ${bloodGroupLabel(request.blood_group)} ${COMPONENT_LABELS[request.component] ?? request.component}`}
       maxWidth="38rem">
       <div className="space-y-4">
         <div className="p-3 rounded-xl" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
@@ -58,7 +63,7 @@ export default function CrossMatchModal({ request, onClose, onSuccess }: Props) 
             <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>{request.patient?.uhid}</span>
           </p>
           <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-            Recipient {request.blood_group} · compatible donor units shown (incl. valid substitutions)
+            Recipient {bloodGroupLabel(request.blood_group)} · compatible donor units shown (incl. valid substitutions)
           </p>
         </div>
 
@@ -99,7 +104,7 @@ export default function CrossMatchModal({ request, onClose, onSuccess }: Props) 
           )}
         </div>
 
-        <FormField label="Recipient Sample No.">
+        <FormField label="Recipient Sample No. *">
           <Input value={sampleNo} onChange={(e) => setSampleNo(e.target.value)} placeholder="e.g. XM-2026-0042" />
         </FormField>
 

@@ -139,7 +139,7 @@ export default function FollowUpsPanel({ doctors }: { doctors: Doctor[] }) {
                     </div>
                     <p className="text-xs mt-1" style={{ color: '#64748B' }}>
                       {fu.suggested_date && <>Suggested <strong style={{ color: overdue ? '#B91C1C' : '#475569' }}>{fu.suggested_date}</strong>{' · '}</>}
-                      {fu.suggested_doctor?.full_name ? `Dr ${fu.suggested_doctor.full_name}` : 'No doctor set'}
+                      {fu.suggested_doctor?.full_name ? doctorName(fu.suggested_doctor.full_name) : 'No doctor set'}
                       {fu.recommender?.full_name && fu.source !== 'manual' && <> · rec. by {doctorName(fu.recommender.full_name)}</>}
                     </p>
                     {fu.reason && <p className="text-xs mt-1" style={{ color: '#475569' }}>{fu.reason}</p>}

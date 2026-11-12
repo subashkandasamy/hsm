@@ -34,9 +34,11 @@ export default function ErChargesModal({ ec, erTariffs, readOnly, onClose }: {
 
   async function add() {
     setBusy(true); setError(null)
+    // A refused call threw and left the button on "Adding…" for good (BUG-031).
     const r = await addEmergencyCharge(tariffId === 'custom'
       ? { caseId: ec.id, description: custom.description, unitPrice: Number(custom.amount), qty: Number(qty) }
       : { caseId: ec.id, tariffId, qty: Number(qty) })
+      .catch(() => ({ success: false as const, error: 'Could not add the charge — you may not have billing access. Ask an admin.' }))
     setBusy(false)
     if (!r.success) { setError(r.error); return }
     setTariffId(''); setCustom({ description: '', amount: '' }); setQty('1')
@@ -46,6 +48,7 @@ export default function ErChargesModal({ ec, erTariffs, readOnly, onClose }: {
   async function remove(itemId: string) {
     setRemoving(itemId); setError(null)
     const r = await removeEmergencyCharge(ec.id, itemId)
+      .catch(() => ({ success: false as const, error: 'Could not remove the charge — you may not have billing access.' }))
     setRemoving(null)
     if (!r.success) { setError(r.error); return }
     await load()

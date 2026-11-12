@@ -7,7 +7,7 @@ import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
 import { planSosDose, writeSosDose } from '@/lib/sosDose'
 import { onOxygen } from '@/lib/round'
-import { computeNews, type NewsBand } from '@/lib/earlyWarning'
+import { computeNews, latestCompleteNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
 import type { IcuObservation, IcuFluidEntry } from '@/lib/types'
 import { istToday, istDate } from '@/lib/istDate'
@@ -36,26 +36,29 @@ export async function getDeterioratingPatients(): Promise<DeterioratingPatient[]
 
   const { data: obs } = await supabase
     .from('icu_observations')
-    .select('admission_id, recorded_at, hr, sbp, spo2, rr, temp, gcs_total, fio2, avpu, o2_device, o2_lpm')
+    .select('admission_id, recorded_at, hr, sbp, spo2, rr, temp, gcs_total, gcs_e, gcs_m, fio2, avpu, o2_device, o2_lpm')
     .in('admission_id', ids)
     // Only recent readings — the latest per patient is all this needs.
     .gte('recorded_at', new Date(Date.now() - 48 * 3600_000).toISOString())
     .order('recorded_at', { ascending: false })
 
-  const latest = new Map<string, NonNullable<typeof obs>[number]>()
+  // Newest first per patient; the score is the newest COMPLETE set (BUG-036).
+  const byAdm = new Map<string, NonNullable<typeof obs>>()
   for (const o of obs ?? []) {
     const aid = o.admission_id as string
-    if (!latest.has(aid)) latest.set(aid, o)
+    byAdm.set(aid, [...(byAdm.get(aid) ?? []), o])
   }
 
   const out: DeterioratingPatient[] = []
   for (const a of admList) {
-    const o = latest.get(a.id as string)
-    if (!o) continue
-    const news = computeNews({
+    const rows = byAdm.get(a.id as string)
+    if (!rows?.length) continue
+    const full = latestCompleteNews(rows, (o) => computeNews({
       rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu,
-      on_oxygen: onOxygen(o, !!a.on_ventilator),
-    })
+      gcs_e: o.gcs_e, gcs_m: o.gcs_m, on_oxygen: onOxygen(o, !!a.on_ventilator),
+    }))
+    if (!full) continue
+    const { row: o, news } = full
     if (news.band === 'medium' || news.band === 'high') {
       const p = a.patient as unknown as { full_name?: string; uhid?: string } | null
       out.push({
@@ -119,7 +122,7 @@ export async function recordIcuObservation(admissionId: string, input: Record<st
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = IcuObservationSchema.safeParse(input)
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  if (!parsed.success) return { success: false, error: parsed.error.issues.slice(0, 4).map((i) => i.message).join(' · ') }
   const { recorded_at, insulin_order_id, ...d } = parsed.data
   // A component marked C (eyes closed by swelling) or T (tube) is not scored —
   // its number is dropped, and so is the total (a sum without it would read as

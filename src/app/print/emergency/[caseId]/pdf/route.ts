@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   // The ER consultation visit for this case: the patient's emergency visit opened after arrival.
   const since = new Date(new Date(erCase.arrived_at).getTime() - 5 * 60_000).toISOString()
   const [{ data: patient }, { data: visitRow }, recorded, profile, { data: adm }, { data: evalRow }] = await Promise.all([
-    supabase.from('patients').select('full_name, uhid, dob, gender, phone, blood_group, allergies').eq('id', erCase.patient_id).maybeSingle(),
+    supabase.from('patients').select('full_name, uhid, dob, dob_estimated, gender, phone, blood_group, allergies').eq('id', erCase.patient_id).maybeSingle(),
     supabase.from('visits').select('id').eq('patient_id', erCase.patient_id).eq('type', 'emergency')
       .gte('created_at', since).order('created_at', { ascending: true }).limit(1).maybeSingle(),
     listAllergies(erCase.patient_id),

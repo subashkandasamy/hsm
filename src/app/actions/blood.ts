@@ -11,7 +11,7 @@ import { admissionClosedError } from '@/lib/admissionOpen'
 import { resolveServiceBill } from '@/lib/cashlessCover'
 import { requiresPaymentFirst, unpaidAllowed } from '@/lib/payGate'
 import { BloodDonorSchema, BloodUnitSchema, BloodRequestSchema, BloodComponentChargeSchema, BloodScreeningSchema, BloodCrossmatchSchema, BloodTransfusionSchema, BloodReactionSchema, BloodDonationCampSchema, BloodSeparationSchema } from '@/lib/schemas'
-import { compatibleDonorGroups, isCompatible } from '@/lib/bloodCompat'
+import { compatibleDonorGroups, isCompatible, bloodGroupLabel } from '@/lib/bloodCompat'
 import type { BloodDonor, BloodUnit, BloodRequest, BloodInventoryCell, BloodGroup, BloodComponent, BloodComponentCharge, BloodIssuedUnit, BloodDonationCamp, BloodStockSummary, BloodUnitTrace, BloodCrossmatch, BloodTransfusion, BloodTransfusionReaction } from '@/lib/types'
 import { istToday, istAddDays } from '@/lib/istDate'
 import { pageAll } from '@/lib/supabase/pageAll'
@@ -158,7 +158,12 @@ export async function listUnits(filters?: {
   if (filters?.component)   q = q.eq('component', filters.component)
   if (filters?.status)      q = q.eq('status', filters.status)
   const { data } = await q.limit(500)
-  return (data ?? []) as unknown as BloodUnit[]
+  // A unit past its expiry is expired whether or not anyone has pressed
+  // "Expire Old Units" — it listed as available (BUG-051).
+  const today = istToday()
+  const units = ((data ?? []) as unknown as BloodUnit[]).map((u) =>
+    (u.status === 'available' || u.status === 'reserved') && u.expiry < today ? { ...u, status: 'expired' as BloodUnit['status'] } : u)
+  return filters?.status === 'available' ? units.filter((u) => u.status === 'available') : units
 }
 
 // ---- Inventory ----
@@ -244,7 +249,7 @@ export async function raiseRequest(
       const bill = await createServiceBill(supabase, {
         tenantId: actor.tenant_id, patientId: parsed.data.patient_id, actorId: actor.id, visitId: parsed.data.visit_id,
         billSource: 'blood',
-        lines: [{ source: 'blood', ref_id: id, description: `Blood: ${parsed.data.blood_group} ${COMPONENT_LABELS[parsed.data.component]} ×${units}`, qty: units, unit_price: unitPrice }],
+        lines: [{ source: 'blood', ref_id: id, description: `Blood: ${bloodGroupLabel(parsed.data.blood_group)} ${COMPONENT_LABELS[parsed.data.component]} ×${units}`, qty: units, unit_price: unitPrice }],
       })
       if ('error' in bill) console.error('[raiseRequest] OPD blood bill failed:', bill.error)
     }
@@ -384,6 +389,25 @@ export async function listRequests(status?: string): Promise<BloodRequest[]> {
   const { data } = await q.limit(200)
   const list = (data ?? []) as unknown as BloodRequest[]
 
+  // Progress of each open request, unit by unit.
+  const open = list.filter((r) => r.status !== 'cancelled').map((r) => r.id)
+  if (open.length) {
+    const [{ data: issues }, { data: xms }] = await Promise.all([
+      supabase.from('blood_issues').select('request_id, blood_unit_id').in('request_id', open),
+      supabase.from('blood_crossmatches').select('request_id, blood_unit_id, unit:blood_units(status)').eq('compatible', true).in('request_id', open),
+    ])
+    const issued = new Map<string, number>()
+    for (const i of issues ?? []) issued.set(i.request_id as string, (issued.get(i.request_id as string) ?? 0) + 1)
+    const ready = new Map<string, Set<string>>()
+    for (const x of xms ?? []) {
+      const st = (x.unit as unknown as { status: string } | null)?.status
+      if (st !== 'reserved' && st !== 'available') continue
+      const set = ready.get(x.request_id as string) ?? new Set<string>()
+      set.add(x.blood_unit_id as string); ready.set(x.request_id as string, set)
+    }
+    for (const r of list) { r.issued_count = issued.get(r.id) ?? 0; r.ready_count = ready.get(r.id)?.size ?? 0 }
+  }
+
   // Attach the pre-issue payment status to pure-OPD requests so staff see
   // paid / awaiting-payment / cashless before attempting to issue.
   const opd = list.filter((r) => r.visit_id && !r.admission_id && !r.ot_schedule_id)
@@ -448,8 +472,9 @@ export async function getStockSummary(): Promise<BloodStockSummary> {
   const s: BloodStockSummary = { total: 0, available: 0, reserved: 0, issued: 0, unscreened: 0, nearExpiry: 0, expired: 0, separated: 0 }
   for (const u of data ?? []) {
     s.total++
-    if (u.status === 'available') s.available++
-    if (u.status === 'reserved') s.reserved++
+    const lapsed = (u.expiry as string) < today
+    if (u.status === 'available' && !lapsed) s.available++
+    if (u.status === 'reserved' && !lapsed) s.reserved++
     if (u.status === 'issued') s.issued++
     if (u.status === 'separated') s.separated++
     const active = u.status === 'available' || u.status === 'reserved'
@@ -541,7 +566,23 @@ export async function separateComponents(
   if (unit.status !== 'available') return { success: false, error: 'Unit must be available to separate' }
   if (unit.screening_status !== 'passed') return { success: false, error: 'Screen the unit before separating (children inherit screening)' }
 
+  // Each component keeps for its own time: platelets 5 days, frozen plasma a
+  // year, red cells as the bag (the whole-blood date gave platelets 35 days).
+  const plusDays = (d: string, n: number) => {
+    const t = new Date(`${d.slice(0, 10)}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10)
+  }
+  const expiryOf = (comp: string): string => {
+    const base = unit.collected_at as string | null
+    if (!base) return unit.expiry as string
+    if (comp === 'platelets') { const p = plusDays(base, 5); return p < (unit.expiry as string) ? p : unit.expiry as string }
+    if (comp === 'plasma') return plusDays(base, 365)
+    return unit.expiry as string
+  }
+
   const children = parsed.data.components.map((comp) => ({
+    // blood_units.id has no default (0005) — every separation failed with
+    // 'null value in column "id"' (BUG-045).
+    id:               crypto.randomUUID(),
     tenant_id:        actor.tenant_id,
     blood_group:      unit.blood_group,
     component:        comp,
@@ -549,13 +590,15 @@ export async function separateComponents(
     camp_id:          unit.camp_id ?? null,
     parent_unit_id:   wholeUnitId,
     collected_at:     unit.collected_at,
-    expiry:           unit.expiry,
+    expiry:           expiryOf(comp),
     status:           'available',
     // Screening inherited from the parent whole-blood unit
     screening_status: 'passed',
     hiv: unit.hiv, hbsag: unit.hbsag, hcv: unit.hcv, syphilis: unit.syphilis, malaria: unit.malaria,
     screened_by: unit.screened_by, screened_at: unit.screened_at,
-    bag_number: unit.bag_number ? `${unit.bag_number}-${comp.toUpperCase().slice(0, 3)}` : null,
+    // Plasma and platelets both began "PLA" — the second clashed with the first
+    // on the bag-number key (found once separation worked, BUG-045).
+    bag_number: unit.bag_number ? `${unit.bag_number}-${({ prbc: 'PRBC', plasma: 'FFP', platelets: 'PLT', whole: 'WB' } as Record<string, string>)[comp] ?? comp.toUpperCase()}` : null,
     volume_ml: null,
   }))
 

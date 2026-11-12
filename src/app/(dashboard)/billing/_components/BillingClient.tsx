@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import {
   Plus, RefreshCw, Receipt, LayoutList, Users,
   Wallet, AlertCircle, ChevronDown, ChevronRight, BedDouble, FileText,
+  IndianRupee,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PageHeader from '@/components/ui/PageHeader'
@@ -14,7 +15,7 @@ import Money from '@/components/ui/Money'
 import DateText from '@/components/ui/DateText'
 import Link from 'next/link'
 import { listBills, getBillingStats, cancelBill } from '@/app/actions/billing'
-import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, recordAdvance, listAdvanceSummariesBatch, issueAdvanceRefundBill } from '@/app/actions/admissionBilling'
+import { collectAdvanceDeposit, listAllAdvanceDeposits, applyAdvanceToBill, applyAdvanceToStay, recordAdvance, listAdvanceSummariesBatch, issueAdvanceRefundBill } from '@/app/actions/admissionBilling'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import type { Bill, AdvanceDepositRequest } from '@/lib/types'
@@ -290,6 +291,17 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
     if (!res.success) { setTopUpError(res.error); return }
     setTopUpAdmissionId(null)
     setTopUpAmount('')
+    refresh()
+  }
+
+  const [applyingStay, setApplyingStay] = useState<string | null>(null)
+  const [applyStayMsg, setApplyStayMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null)
+  async function handleApplyStay(admissionId: string) {
+    setApplyingStay(admissionId); setApplyStayMsg(null)
+    const r = await applyAdvanceToStay(admissionId)
+    setApplyingStay(null)
+    if (!r.success) { setApplyStayMsg({ id: admissionId, ok: false, text: r.error }); return }
+    setApplyStayMsg({ id: admissionId, ok: true, text: r.applied > 0 ? `₹${r.applied.toFixed(2)} of the advance applied to ${r.bills} bill${r.bills === 1 ? '' : 's'}.` : 'Nothing to apply.' })
     refresh()
   }
 
@@ -571,6 +583,56 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
               color={totalOutstanding > 0 ? '#EF4444' : '#10B981'}
             />
           </div>
+        )
+      })()}
+
+      {/* ── Pending IPD advances — one place to take them, without opening the
+          patient → month → IPD section first (BUG-022). ── */}
+      {canAdvance && (() => {
+        const pending = deposits.filter((d) => d.status === 'pending')
+        if (pending.length === 0) return null
+        return (
+          <GlassCard className="p-3 sm:p-4 mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <IndianRupee className="w-4 h-4" style={{ color: '#B45309' }} />
+              <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Pending advances</h2>
+              <span className="text-xs" style={{ color: '#94A3B8' }}>({pending.length})</span>
+            </div>
+            <div className="space-y-2">
+              {pending.map((dep) => (
+                <div key={dep.id} className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-xl"
+                  style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{dep.patient?.full_name ?? 'Patient'}</p>
+                    <p className="text-xs" style={{ color: '#92400E' }}>{dep.patient?.uhid ?? ''} · advance due <Money amount={Number(dep.amount)} style={{ color: '#92400E', fontSize: 'inherit' }} /></p>
+                  </div>
+                  {collectingId === dep.id ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {collectError && <span className="text-xs w-full" style={{ color: '#DC2626' }}>{collectError}</span>}
+                      <Select value={collectMethod} onChange={(e) => setCollectMethod(e.target.value as typeof collectMethod)} style={{ minWidth: '110px' }} aria-label="Payment method">
+                        {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </Select>
+                      <button onClick={() => handleCollect(dep.id)} disabled={collectPending}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                        {collectPending ? '…' : 'Confirm'}
+                      </button>
+                      <button onClick={() => { setCollectingId(null); setCollectError('') }}
+                        className="px-2 py-1.5 rounded-lg text-xs"
+                        style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                      {collectMethod === 'upi' && <AdvanceUpiQr amount={Number(dep.amount)} admissionId={dep.admission_id} />}
+                    </div>
+                  ) : (
+                    <button onClick={() => { setCollectingId(dep.id); setCollectMethod('cash'); setCollectError('') }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                      style={{ background: '#D97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                      Collect <Money amount={Number(dep.amount)} style={{ color: '#fff', fontSize: 'inherit' }} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </GlassCard>
         )
       })()}
 
@@ -1150,6 +1212,45 @@ export default function BillingClient({ initialBills, initialStats, initialDepos
                                           </div>
                                         )
                                       })}
+
+                                      {/* The whole stay at once: apply the advance to every bill, then
+                                          collect what is left in one payment — settling took a top-up and
+                                          seven "Adjust Advance" clicks (BUG-053). */}
+                                      {(() => {
+                                        const due = payableBills(ipd.bills)
+                                        const dueTotal = due.reduce((t, b) => t + (b.total - b.paid), 0)
+                                        if (!due.length || isReadOnly) return null
+                                        return (
+                                          <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+                                            style={{ background: 'rgba(13,148,136,0.05)', borderBottom: '1px solid #F1F5F9' }}>
+                                            <span className="text-xs" style={{ color: '#475569' }}>
+                                              <Money amount={dueTotal} /> due across {due.length} bill{due.length === 1 ? '' : 's'} of this stay
+                                              {ipdAdvHasBalance && <> · <Money amount={ipdAdvNet} /> advance unused</>}
+                                            </span>
+                                            <span className="flex items-center gap-2">
+                                              {canAdvance && ipdAdvHasBalance && (
+                                                <button type="button" disabled={applyingStay === ipd.admissionId}
+                                                  onClick={() => handleApplyStay(ipd.admissionId)}
+                                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                  style={{ background: '#fff', color: '#0D9488', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}>
+                                                  {applyingStay === ipd.admissionId ? 'Applying…' : 'Apply advance to all bills'}
+                                                </button>
+                                              )}
+                                              {canWrite && (
+                                                <button type="button"
+                                                  onClick={() => setCollectFor({ key: ipdKey, bills: due })}
+                                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                  Collect <Money amount={dueTotal} />
+                                                </button>
+                                              )}
+                                            </span>
+                                            {applyStayMsg?.id === ipd.admissionId && (
+                                              <p className="text-xs w-full" style={{ color: applyStayMsg.ok ? '#15803D' : '#DC2626' }}>{applyStayMsg.text}</p>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
 
                                       {/* IPD bill rows */}
                                       {ipd.bills.map((bill, i) => {

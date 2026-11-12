@@ -102,6 +102,9 @@ export default function StartTreatmentModal({ admissionId, patientName, onClose,
 
   async function handleSign() {
     if (!signerName.trim()) { setError('Signer name is required'); return }
+    // A "digital signature" with nothing drawn printed as signed with no mark
+    // anywhere (BUG-015). No paper to sign? Use "Sign on paper" instead.
+    if (!signatureData) { setError('Ask the signer to sign in the box'); return }
     setSubmitting(true); setError(null)
     const res = await signDeclarationDigitally({ admissionId, signerName, signerRelationship: relationship, signatureData })
     setSubmitting(false)
@@ -181,7 +184,7 @@ export default function StartTreatmentModal({ admissionId, patientName, onClose,
             {mode === 'sign' && (
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: '#475569' }}>
-                  Signature <span className="font-normal" style={{ color: '#94A3B8' }}>(optional — typed name alone is also valid)</span>
+                  Signature <span style={{ color: '#DC2626' }}>*</span>
                 </label>
                 <SignaturePad onChange={setSignatureData} />
               </div>

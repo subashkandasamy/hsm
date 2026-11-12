@@ -126,9 +126,35 @@ export async function createWardRoomType(input: {
   return { success: true, roomType: data as WardRoomType }
 }
 
+/**
+ * Whether a room type's rooms may change between one bed and many. An ICU set
+ * up as a single room could never get its other beds — the choice was only
+ * offered when the type was created. Going back to single rooms is refused
+ * while any room of the type holds more than one bed.
+ */
+async function multiBedChange(
+  supabase: Awaited<ReturnType<typeof createClient>>, typeId: string, multi: boolean, tenantId: string,
+): Promise<string | null> {
+  if (multi) return null
+  const { data: rooms } = await supabase.from('wards').select('id, name, is_temp').eq('room_type_id', typeId)
+  for (const r of rooms ?? []) {
+    const { count } = await supabase.from('beds').select('id', { count: 'exact', head: true }).eq('ward_id', r.id)
+    if ((count ?? 0) > 1) return `${r.name} has ${count} beds — remove beds until each room of this type has one before making them single rooms.`
+  }
+  // A single room needs its one bed to be admitted into.
+  for (const r of rooms ?? []) {
+    if (r.is_temp) continue
+    const { count } = await supabase.from('beds').select('id', { count: 'exact', head: true }).eq('ward_id', r.id)
+    if (!count) {
+      await supabase.from('beds').insert({ id: crypto.randomUUID(), tenant_id: tenantId, ward_id: r.id, bed_no: '1', status: 'available' as BedStatus })
+    }
+  }
+  return null
+}
+
 export async function updateWardRoomType(
   id: string,
-  input: { name: string; daily_rate: number; is_icu?: boolean }
+  input: { name: string; daily_rate: number; is_icu?: boolean; is_multi_bed?: boolean }
 ): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
@@ -139,9 +165,17 @@ export async function updateWardRoomType(
   if (input.daily_rate < 0) return { success: false, error: 'Rate cannot be negative' }
 
   const supabase = await createClient()
+  if (input.is_multi_bed !== undefined) {
+    const blocked = await multiBedChange(supabase, id, input.is_multi_bed, actor.tenant_id)
+    if (blocked) return { success: false, error: blocked }
+  }
   const { error } = await supabase
     .from('ward_room_types')
-    .update({ name: trimmed, daily_rate: input.daily_rate, ...(input.is_icu !== undefined ? { is_icu: input.is_icu } : {}) })
+    .update({
+      name: trimmed, daily_rate: input.daily_rate,
+      ...(input.is_icu !== undefined ? { is_icu: input.is_icu } : {}),
+      ...(input.is_multi_bed !== undefined ? { is_multi_bed: input.is_multi_bed } : {}),
+    })
     .eq('id', id)
   if (error) {
     if (error.code === '23505') return { success: false, error: 'Room type name already exists' }
@@ -152,6 +186,20 @@ export async function updateWardRoomType(
   await supabase.from('wards').update({ daily_rate: input.daily_rate }).eq('room_type_id', id)
 
   await logAudit(actor.id, 'update', 'ward_room_type', id, input as Record<string, unknown>)
+  return { success: true }
+}
+
+/** The room dialog's "Multiple beds in this room" — set on the room's type. */
+export async function setRoomTypeMultiBed(typeId: string, multi: boolean): Promise<SimpleResult> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'wards:manage')
+  const supabase = await createClient()
+  const blocked = await multiBedChange(supabase, typeId, multi, actor.tenant_id)
+  if (blocked) return { success: false, error: blocked }
+  const { error } = await supabase.from('ward_room_types').update({ is_multi_bed: multi }).eq('id', typeId)
+  if (error) return { success: false, error: error.message }
+  await logAudit(actor.id, 'update', 'ward_room_type', typeId, { is_multi_bed: multi })
   return { success: true }
 }
 
@@ -412,8 +460,13 @@ export async function listAvailableBeds(wardId?: string): Promise<Bed[]> {
   const supabase = await createClient()
   let q = supabase.from('beds').select('*').eq('status', 'available').order('bed_no')
   if (wardId) q = q.eq('ward_id', wardId)
-  const { data } = await q
-  return (data ?? []) as Bed[]
+  const [{ data }, { data: held }] = await Promise.all([
+    q,
+    supabase.from('admissions').select('bed_id').eq('status', 'admitted').not('bed_id', 'is', null),
+  ])
+  // Not a bed an admitted patient is still in, whatever its flag says (BUG-055).
+  const taken = new Set((held ?? []).map((a) => a.bed_id as string))
+  return ((data ?? []) as Bed[]).filter((b) => !taken.has(b.id))
 }
 
 export async function getWardBoard(): Promise<WardWithBeds[]> {
@@ -431,7 +484,7 @@ export async function getWardBoard(): Promise<WardWithBeds[]> {
     .select(`
       id, ward_id, bed_no, status,
       admissions!admissions_bed_id_fkey(
-        id,
+        id, status,
         patients(id, full_name, uhid)
       )
     `)
@@ -441,16 +494,20 @@ export async function getWardBoard(): Promise<WardWithBeds[]> {
   for (const b of (bedsRaw ?? [])) {
     const admissions = (b as Record<string, unknown>).admissions as Array<{
       id: string
+      status: string
       patients: { id: string; full_name: string; uhid: string } | null
     }> | null
 
-    const activeAdmission = admissions?.find(() => true) ?? null
+    // The patient in the bed now — not any admission that ever used it.
+    const activeAdmission = admissions?.find((a) => a.status === 'admitted') ?? null
 
     const bed = {
       id: b.id,
       ward_id: b.ward_id,
       bed_no: b.bed_no,
-      status: b.status as BedStatus,
+      // A bed with an admitted patient is occupied whatever its own flag says —
+      // a stale "available" offered ICU bed I1 to a second patient (BUG-055).
+      status: (activeAdmission && b.status === 'available' ? 'occupied' : b.status) as BedStatus,
       created_at: '',
       admission_id: activeAdmission?.id ?? null,
       patient_name: activeAdmission?.patients?.full_name ?? null,

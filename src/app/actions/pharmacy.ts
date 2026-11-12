@@ -1078,11 +1078,27 @@ export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
     if (word.test(name) || word.test(generic)) return { s: 5, brandLen }
     return { s: 6, brandLen }
   }
-  return [...tenant, ...globals]
+  const ranked = [...tenant, ...globals]
     .map((d, i) => ({ d, ...rank(d), i }))
     .sort((a, b) => a.s - b.s || a.brandLen - b.brandLen || a.d.name.length - b.d.name.length || a.i - b.i)
     .map((x) => x.d)
     .slice(0, limit)
+
+  // What the pharmacy holds of each, unexpired. One query for the whole list.
+  const tIds = ranked.filter((d) => !d.is_global).map((d) => d.id)
+  const gIds = ranked.filter((d) => d.is_global).map((d) => d.id)
+  const ors = [tIds.length ? `drug_id.in.(${tIds.join(',')})` : '', gIds.length ? `drug_master_id.in.(${gIds.join(',')})` : ''].filter(Boolean).join(',')
+  if (ors) {
+    const { data: stock } = await supabase.from('drug_batches')
+      .select('drug_id, drug_master_id, qty_available').or(ors).gt('expiry', istToday()).gt('qty_available', 0)
+    const qty = new Map<string, number>()
+    for (const b of stock ?? []) {
+      const k = (b.drug_id ?? b.drug_master_id) as string | null
+      if (k) qty.set(k, (qty.get(k) ?? 0) + Number(b.qty_available))
+    }
+    for (const d of ranked) d.stock_qty = qty.get(d.id) ?? 0
+  }
+  return ranked
 }
 
 // ---- Stock ----

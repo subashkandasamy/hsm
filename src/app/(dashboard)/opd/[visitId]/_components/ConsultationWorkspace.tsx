@@ -132,6 +132,7 @@ export default function ConsultationWorkspace({
   })
   const [vitalsSaving, setVitalsSaving] = useState(false)
   const [vitalsSaved, setVitalsSaved] = useState(false)
+  const [vitalsError, setVitalsError] = useState<string | null>(null)
 
   // Consultation form
   const [consult, setConsult] = useState({
@@ -157,6 +158,9 @@ export default function ConsultationWorkspace({
   // one acknowledges an allergy/interaction warning and is recorded against the
   // prescription (F-59).
   const [rxAck, setRxAck] = useState(false)
+  // The catalogue row the drug was picked from, so the safety check knows
+  // exactly what it is (BUG-009 — "Amoxicillin 500mg Capsule" was "not found").
+  const [rxRef, setRxRef] = useState<{ id: string; isGlobal: boolean } | null>(null)
 
   // Prescribing safety — allergy + interaction check as the doctor types a drug.
   useEffect(() => {
@@ -164,7 +168,7 @@ export default function ConsultationWorkspace({
     if (!isDoctor || isClosed || name.length < 3) { setRxWarnings([]); return }
     let active = true
     const t = setTimeout(async () => {
-      const w = await checkPrescriptionSafety(patient.id, name, prescriptions.map((p) => p.drug_name))
+      const w = await checkPrescriptionSafety(patient.id, name, prescriptions.map((p) => p.drug_name), rxRef)
       if (active) {
         setRxWarnings(w)
         // A tick must not survive the drug it was made for.
@@ -172,7 +176,7 @@ export default function ConsultationWorkspace({
       }
     }, 400)
     return () => { active = false; clearTimeout(t) }
-  }, [newRx.drug_name, isDoctor, isClosed, patient.id, prescriptions])
+  }, [newRx.drug_name, isDoctor, isClosed, patient.id, prescriptions, rxRef])
 
   // Drug autocomplete
   const drugSuggestions = useDrugSearch(newRx.drug_name, 10)
@@ -200,6 +204,7 @@ export default function ConsultationWorkspace({
     setVitalsSaving(true)
     const result = await saveVitals(visit.id, vitals)
     setVitalsSaving(false)
+    setVitalsError(result.success ? null : result.error)
     if (result.success) {
       setVitalsSaved(true)
       setTimeout(() => setVitalsSaved(false), 2000)
@@ -256,6 +261,8 @@ export default function ConsultationWorkspace({
   async function handleAddRx(e: React.FormEvent) {
     e.preventDefault()
     if (!newRx.drug_name.trim()) { setRxError('Drug name is required'); return }
+    // BUG-010: a line with no frequency printed "—" and left the patient guessing.
+    if (!newRx.frequency.trim()) { setRxError('Choose how often it is taken (frequency)'); return }
     setRxSaving(true)
     setRxError(null)
     const result = await addPrescription(visit.id, {
@@ -271,6 +278,7 @@ export default function ConsultationWorkspace({
     if (result.success) {
       setPrescriptions((p) => [...p, result.prescription])
       setNewRx({ drug_name: '', dosage: '', frequency: '', duration: '', instructions: '' })
+      setRxRef(null)
       setRxOverride(false)
       setRxAck(false)
     } else {
@@ -498,6 +506,9 @@ export default function ConsultationWorkspace({
                 </button>
               )}
             </div>
+            {vitalsError && (
+              <p className="text-xs font-medium mb-3" role="alert" style={{ color: '#DC2626' }}>{vitalsError}</p>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
               {([
                 { key: 'bp', label: 'BP', placeholder: '120/80 mmHg' },
@@ -760,6 +771,7 @@ export default function ConsultationWorkspace({
                         onChange={(e) => {
                           const q = e.target.value
                           setNewRx((r) => ({ ...r, drug_name: q }))
+                          setRxRef(null)
                           setRxError(null)
                           setActiveSuggestion(-1)
                           setShowSuggestions(q.trim().length >= 2)
@@ -778,7 +790,7 @@ export default function ConsultationWorkspace({
                             const lower2 = newRx.drug_name.toLowerCase()
                             const matchBrand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(lower2))
                             const label = matchBrand ? matchBrand : [d.name, d.strength, d.form].filter(Boolean).join(' ')
-                            setNewRx((r) => ({ ...r, drug_name: label, dosage: d.strength ?? r.dosage }))
+                            setNewRx((r) => ({ ...r, drug_name: label, dosage: d.strength ?? r.dosage })); setRxRef({ id: d.id, isGlobal: !!d.is_global })
                             setShowSuggestions(false)
                             setActiveSuggestion(-1)
                           } else if (e.key === 'Escape') {
@@ -815,7 +827,7 @@ export default function ConsultationWorkspace({
                                 key={d.id}
                                 type="button"
                                 onMouseDown={() => {
-                                  setNewRx((r) => ({ ...r, drug_name: label, dosage: d.strength ?? r.dosage }))
+                                  setNewRx((r) => ({ ...r, drug_name: label, dosage: d.strength ?? r.dosage })); setRxRef({ id: d.id, isGlobal: !!d.is_global })
                                   setShowSuggestions(false)
                                   setActiveSuggestion(-1)
                                 }}

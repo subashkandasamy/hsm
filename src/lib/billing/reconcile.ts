@@ -33,7 +33,7 @@ export async function reconcileBill(
   const total = round2(await recomputeBillGstTotals(supabase, billId))
 
   const [{ data: bill }, { data: pays }] = await Promise.all([
-    supabase.from('bills').select('status').eq('id', billId).maybeSingle(),
+    supabase.from('bills').select('status, discount').eq('id', billId).maybeSingle(),
     supabase.from('payments').select('id, amount, method, received_at').eq('bill_id', billId),
   ])
   const payments = (pays ?? []) as Array<{ id: string; amount: number; method: string; received_at: string }>
@@ -59,9 +59,13 @@ export async function reconcileBill(
   }
 
   const current = (bill?.status as string | undefined) ?? 'unpaid'
+  // Discounted down to nothing is settled — such a bill sat "unpaid" (BUG-062).
+  // (An empty draft stays a draft: it has had no discount.)
+  const waived = total <= 0 && Number(bill?.discount ?? 0) > 0
   const status =
     current === 'cancelled' ? 'cancelled'
-      : current === 'draft' && paid === 0 ? 'draft'
+      : current === 'draft' && paid === 0 && !waived ? 'draft'
+      : waived ? 'paid'
       : paid <= 0 ? 'unpaid'
       : paid >= total ? 'paid'
       : 'partial'

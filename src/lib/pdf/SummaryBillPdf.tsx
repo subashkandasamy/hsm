@@ -6,6 +6,7 @@ import {
   A4, AmountInWords, ChargesTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   ageSex, fmtDate, fmtDateRange, fmtDateTime, money, s, C, type ChargeRow, type ChargeSection, type LogoImage, type TotalLine,
 } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 /**
  * Collapses identical repeated charges (same description, rate and GST — e.g. a
@@ -85,20 +86,20 @@ export function SummaryBillPdf({ data, profile, detailed, logo }: { data: Combin
   if (insurance > 0 && data.patientBalance != null) lines.push({ label: 'Payable by patient', value: data.patientBalance, strong: true, tone: data.patientBalance > 0 ? 'danger' : 'ok' })
 
   const advanceAvailable = Math.max(0, data.advanceCollected - advanceAdjusted - data.advanceRefunded)
-  const gst = taxed ? summarizeBillGst(liveRows.map((r) => ({ amount: Number(r.amount), gst_rate: r.gstRate ?? 0, tax_inclusive: !!r.taxInclusive }))) : null
+  const gst = taxed ? summarizeBillGst(liveRows.map((r) => ({ amount: Number(r.amount), gst_rate: r.gstRate ?? 0, tax_inclusive: !!r.taxInclusive })), data.discountTotal ?? 0) : null
 
   const info: Array<[string, string | null | undefined]> = [
     ['Patient', data.patient.full_name],
     ['UHID', data.patient.uhid],
     ['Age / Sex', ageSex(data.patient.dob, data.patient.gender)],
-    ['Phone', data.patient.phone],
+    ['Phone', realPhone(data.patient.phone)],
   ]
   if (kind === 'ipd' && enc) {
     info.push(['Admitted', fmtDateTime(enc.admittedAt)])
     info.push(['Discharged', enc.dischargedAt ? fmtDateTime(enc.dischargedAt) : 'Currently admitted'])
     info.push(['Ward / Bed', [enc.ward, enc.bed].filter(Boolean).join(' / ') || null])
     info.push(['Consultant', enc.doctor])
-    if (enc.admittedAt) info.push(['Length of stay', `${daysBetween(enc.admittedAt, enc.dischargedAt ?? null)} days`])
+    if (enc.admittedAt) { const n = daysBetween(enc.admittedAt, enc.dischargedAt ?? null); info.push(['Length of stay', `${n} ${n === 1 ? 'day' : 'days'}`]) }
   } else if (kind === 'opd' && enc) {
     info.push(['Visit date', fmtDate(enc.visitDate)])
     info.push(['Doctor', enc.doctor])
@@ -152,6 +153,7 @@ export function SummaryBillPdf({ data, profile, detailed, logo }: { data: Combin
               {gst.rateSummary.map((r) => (
                 <Text key={r.rate} style={{ fontSize: 8, color: C.muted }}>{r.rate}%  ·  taxable {money(r.taxableValue)}  ·  CGST {money(r.cgst)}  ·  SGST {money(r.sgst)}</Text>
               ))}
+              {gst.exemptValue > 0 && <Text style={{ fontSize: 8, color: C.muted }}>Exempt  ·  {money(gst.exemptValue)}  ·  no GST</Text>}
             </View>
           ) : composition ? (
             <Text style={{ fontSize: 8, color: C.muted }}>{COMPOSITION_DECLARATION}</Text>

@@ -37,6 +37,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ visi
       : Promise.resolve([] as DentalTreatment[]),
   ])
   if (!patient) return new Response('Patient not found', { status: 404 })
+  // BUG-011: the tests ordered and the follow-up the doctor recommended belong
+  // on the patient's copy — they were only on the screen.
+  const [{ data: labs }, { data: scans }, { data: fu }] = await Promise.all([
+    supabase.from('lab_orders').select('status, items:lab_order_items(test:lab_tests_catalog(name))').eq('visit_id', visit.id).neq('status', 'cancelled'),
+    supabase.from('radiology_orders').select('status, test:radiology_catalog(name)').eq('visit_id', visit.id).neq('status', 'cancelled'),
+    supabase.from('follow_ups').select('suggested_date, reason').eq('source_visit_id', visit.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  type Named = { name?: string | null } | Array<{ name?: string | null }> | null
+  const nameOf = (t: Named) => (Array.isArray(t) ? t[0]?.name : t?.name) ?? null
+  const investigations = [
+    ...(labs ?? []).flatMap((o) => ((o.items ?? []) as Array<{ test: Named }>).map((i) => nameOf(i.test))),
+    ...(scans ?? []).map((o) => nameOf(o.test as Named)),
+  ].filter((n): n is string => !!n)
+  const followUp = fu ? { date: (fu.suggested_date as string | null) ?? null, reason: (fu.reason as string | null) ?? null } : null
   const [logo, paediatric, obgyn] = await Promise.all([
     loadLogo(profile?.logo_url),
     template === 'paediatrics' ? getPaediatricAssessment(visit.patient_id, visit.id).catch(() => null) : Promise.resolve(null),
@@ -46,6 +60,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ visi
   return renderPdfResponse(request,
     createElement(PrescriptionPdf, {
       visit, patient: patient as RxPatient, prescriptions: visit.prescriptions ?? [], allergies, template, dental, profile, logo, paediatric, obgyn,
+      investigations, followUp,
     }),
     `Prescription_${fileSafe(patient.full_name)}_${istDate(visit.visit_date)}.pdf`)
 }

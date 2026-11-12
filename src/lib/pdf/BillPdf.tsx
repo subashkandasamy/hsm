@@ -6,6 +6,7 @@ import {
   A4, AmountInWords, ChargesTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   ageSex, fmtDate, money, s, C, type ChargeSection, type LogoImage, type TotalLine,
 } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 export const SOURCE_LABELS: Record<string, string> = {
   consultation: 'Consultation', bed: 'Room Charges', lab: 'Laboratory', radiology: 'Radiology',
@@ -49,7 +50,8 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
   const balance = Math.max(0, Number(bill.total) - Number(bill.paid))
 
   const lines: TotalLine[] = []
-  if (gstRegistered || Number(bill.subtotal) !== Number(bill.total)) lines.push({ label: taxed ? 'Taxable value' : 'Subtotal', value: Number(bill.subtotal) })
+  // "Subtotal": exempt services are on it too — "Taxable value" was wrong (BUG-061).
+  if (gstRegistered || Number(bill.subtotal) !== Number(bill.total)) lines.push({ label: 'Subtotal', value: Number(bill.subtotal) })
   if (Number(bill.discount) > 0) lines.push({ label: `Discount${Number(bill.discount_pct ?? 0) > 0 ? ` (${bill.discount_pct}%)` : ''}`, value: Number(bill.discount), negative: true })
   if (Number(bill.cgst ?? 0) > 0) lines.push({ label: 'CGST', value: Number(bill.cgst) })
   if (Number(bill.sgst ?? 0) > 0) lines.push({ label: 'SGST', value: Number(bill.sgst) })
@@ -64,7 +66,7 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
   if (refunded > 0) lines.push({ label: 'Refunded (credit note)', value: refunded, negative: true, tone: 'muted' })
   lines.push({ label: 'Balance due', value: balance, strong: true, big: true, rule: true, tone: balance > 0 ? 'danger' : 'ok' })
 
-  const gst = taxed ? summarizeBillGst(items.map((i) => ({ amount: Number(i.amount), gst_rate: Number(i.gst_rate ?? 0), tax_inclusive: !!i.tax_inclusive }))) : null
+  const gst = taxed ? summarizeBillGst(items.map((i) => ({ amount: Number(i.amount), gst_rate: Number(i.gst_rate ?? 0), tax_inclusive: !!i.tax_inclusive })), Number(bill.discount ?? 0)) : null
 
   return (
     <A4 title={`${title} ${bill.bill_no}`}>
@@ -75,7 +77,7 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
         ['Patient', bill.patient?.full_name],
         ['UHID', bill.patient?.uhid],
         ['Age / Sex', ageSex(bill.patient?.dob, bill.patient?.gender)],
-        ['Phone', bill.patient?.phone],
+        ['Phone', realPhone(bill.patient?.phone)],
         ['Status', bill.status === 'cancelled' ? 'CANCELLED' : balance <= 0 ? 'Paid' : Number(bill.paid) > 0 ? 'Partly paid' : 'Unpaid'],
         ['Type', kind],
       ]} />
@@ -92,6 +94,7 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
               {r.rate}%  ·  taxable {money(r.taxableValue)}  ·  CGST {money(r.cgst)}  ·  SGST {money(r.sgst)}
             </Text>
           ))}
+          {gst.exemptValue > 0 && <Text style={{ fontSize: 8, color: C.muted }}>Exempt  ·  {money(gst.exemptValue)}  ·  no GST</Text>}
         </View>
       ) : composition ? (
         /* The declaration a composition taxpayer must carry. Not a note — it is

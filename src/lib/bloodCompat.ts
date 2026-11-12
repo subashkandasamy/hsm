@@ -33,12 +33,21 @@ const PLASMA: Record<BloodGroup, BloodGroup[]> = {
   'AB+': ['AB-', 'AB+'],
 }
 
-export function compatibleDonorGroups(recipient: BloodGroup, component: BloodComponent): BloodGroup[] {
+/** A request raised before the patient is grouped: only universal-donor units
+ *  (O− red cells, AB plasma) until the blood bank records the group. */
+export const UNKNOWN_GROUP = 'unknown'
+
+export function bloodGroupLabel(g: string): string {
+  return g === UNKNOWN_GROUP ? 'Group ?' : g
+}
+
+export function compatibleDonorGroups(recipient: BloodGroup | typeof UNKNOWN_GROUP, component: BloodComponent): BloodGroup[] {
+  if (recipient === UNKNOWN_GROUP) return component === 'plasma' ? ['AB-', 'AB+'] : ['O-']
   if (component === 'plasma') return PLASMA[recipient] ?? [recipient]
   // whole, prbc, platelets → red-cell compatibility
   return RBC[recipient] ?? [recipient]
 }
 
-export function isCompatible(recipient: BloodGroup, donor: BloodGroup, component: BloodComponent): boolean {
+export function isCompatible(recipient: BloodGroup | typeof UNKNOWN_GROUP, donor: BloodGroup, component: BloodComponent): boolean {
   return compatibleDonorGroups(recipient, component).includes(donor)
 }

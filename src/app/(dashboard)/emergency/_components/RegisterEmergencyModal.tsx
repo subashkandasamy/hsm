@@ -48,7 +48,9 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
   const [provAge, setProvAge] = useState('')
 
   // Case fields
-  const [triageLevel, setTriageLevel] = useState<TriageLevel>(3)
+  // No default: an unconscious patient was silently queued as 3 · Urgent when
+  // nobody touched the buttons (BUG-028). The desk must choose.
+  const [triageLevel, setTriageLevel] = useState<TriageLevel | null>(null)
   const [arrivalMode, setArrivalMode] = useState<'walk_in' | 'ambulance' | 'referral' | ''>('')
   const [complaint, setComplaint] = useState('')
 
@@ -80,6 +82,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!unknown && !selectedPatient) { setError('Select a patient or mark as unknown'); return }
+    if (triageLevel == null) { setError('Choose a triage level (1 = Immediate … 5 = Non-urgent)'); return }
 
     setLoading(true)
     setError(null)
@@ -101,12 +104,12 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
     // Reset
     setUnknown(false); setPatientQuery(''); setSelectedPatient(null)
     setProvName(''); setProvGender(''); setProvAge('')
-    setTriageLevel(3); setArrivalMode(''); setComplaint('')
+    setTriageLevel(null); setArrivalMode(''); setComplaint('')
     setMlcChoice(null)
     onSuccess()
   }
 
-  const tc = TRIAGE_COLORS[triageLevel]
+  const tc = triageLevel ? TRIAGE_COLORS[triageLevel] : { bg: '#F8FAFC', border: '#E2E8F0', text: '#B45309' }
 
   return (
     <Modal open={open} onClose={onClose} title="Register Emergency Case" maxWidth="38rem">
@@ -139,7 +142,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
             })}
           </div>
           <p className="text-xs mt-1.5 font-medium" style={{ color: tc.text }}>
-            {TRIAGE_LABELS[triageLevel]}
+            {triageLevel ? TRIAGE_LABELS[triageLevel] : 'Not chosen yet — tap a level'}
           </p>
         </div>
 
@@ -233,7 +236,7 @@ export default function RegisterEmergencyModal({ open, onClose, onSuccess }: Pro
           <div className="flex items-end pb-0.5">
             <div className="px-3 py-2 rounded-xl text-sm font-semibold"
               style={{ background: tc.bg, color: tc.text, border: `1px solid ${tc.border}` }}>
-              Triage Level {triageLevel}
+              {triageLevel ? `Triage Level ${triageLevel}` : 'Triage not set'}
             </div>
           </div>
         </div>

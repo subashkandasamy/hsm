@@ -40,6 +40,8 @@ export default function ChangePasswordForm({ hospitalName }: Props) {
     if (password !== confirm) { setError('Passwords do not match.'); return }
 
     setLoading(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     const res = await forcePasswordChange(password)
     if (!res.success) {
       setError(res.error)
@@ -47,10 +49,19 @@ export default function ChangePasswordForm({ hospitalName }: Props) {
       return
     }
 
-    // Refresh the client session's token so it carries the new password state,
-    // then hand off to the dashboard via a full navigation so the proxy/layout
-    // re-run with the cleared force-change flag.
-    try { await createClient().auth.refreshSession() } catch { /* non-fatal */ }
+    // Changing the password ends the session it was changed from (BUG-001:
+    // staff landed back on sign-in with no word of what happened). Sign in
+    // again here with the new password, then go to the dashboard.
+    const email = user?.email
+    const { error: signInErr } = email
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : { error: new Error('no email') }
+    if (signInErr) {
+      setError('Your password was changed. Please sign in again with your new password.')
+      setLoading(false)
+      setTimeout(() => { window.location.href = '/login' }, 2500)
+      return
+    }
     setDone(true)
     setTimeout(() => { window.location.href = '/dashboard' }, 1200)
   }

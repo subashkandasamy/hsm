@@ -6,6 +6,7 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { enterResults, getOrderAnalyteForm, saveAnalyteResults } from '@/app/actions/lab'
+import { checkPlausible, type Plausibility } from '@/lib/labPlausible'
 import type { LabOrder, LabFlag, AnalyteFormRow, AnalyteFlag } from '@/lib/types'
 
 const FLAG_COLORS: Record<string, { bg: string; color: string }> = {
@@ -99,7 +100,34 @@ export default function ResultEntryModal({ open, order, onClose, onSuccess }: Pr
 
   useEffect(() => { if (open) load() }, [open, load])
 
+  // An "unusual" value (far past the range) needs a second Save to confirm.
+  const [confirmUnusual, setConfirmUnusual] = useState<string | null>(null)
+
+  function plausibilityProblems() {
+    const out: Array<NonNullable<Plausibility>> = []
+    for (const r of rows) {
+      const raw = values[`${r.test_id}|${r.analyte_id}`] ?? ''
+      if (r.value_type !== 'numeric' || raw === '') continue
+      const p = checkPlausible({ code: r.code, name: r.short_name || r.name, unit: r.unit_ucum, value: parseFloat(raw), refHigh: r.ref_high })
+      if (p) out.push(p)
+    }
+    for (const item of order.items ?? []) {
+      const r = singles[item.id]
+      if (!r || r.result_value === '') continue
+      const p = checkPlausible({ code: item.test?.code, name: item.test?.name ?? 'Result', unit: r.unit || item.test?.unit, value: parseFloat(r.result_value), refHigh: item.test?.ref_high })
+      if (p) out.push(p)
+    }
+    return out
+  }
+
   async function handleSave() {
+    const problems = plausibilityProblems()
+    const impossible = problems.filter((p) => p.level === 'impossible')
+    if (impossible.length) { setError(impossible.map((p) => p.message).join('. ')); setConfirmUnusual(null); return }
+    const unusualKey = problems.map((p) => p.message).join('. ')
+    if (unusualKey && confirmUnusual !== unusualKey) {
+      setError(`${unusualKey}. Check it, then press Save again to keep it.`); setConfirmUnusual(unusualKey); return
+    }
     setSaving(true); setError(null)
 
     if (rows.length) {

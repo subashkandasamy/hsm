@@ -167,10 +167,30 @@ export const FollowUpConvertSchema = z.object({
 })
 
 // ---- Visit / OPD ----
+// OPD vitals are typed as text ("130/84", "102 bpm", "101.2 °F"). BUG-007:
+// "abc" was saved as a blood pressure. Each value must read as a number in a
+// range a living patient can have; units after the number are allowed.
+const vitalNum = (label: string, min: number, max: number, unit = '') => z.string().nullable().optional().refine((v) => {
+  const t = (v ?? '').trim(); if (!t) return true
+  const m = t.match(/^(\d+(?:\.\d+)?)\s*[a-z°%]*\.?$/i); if (!m) return false
+  const n = Number(m[1]); return n >= min && n <= max
+}, `${label} must be a number between ${min} and ${max}${unit}`)
 export const VitalsSchema = z.object({
-  bp: z.string().nullable().optional(), pulse: z.string().nullable().optional(),
-  temp: z.string().nullable().optional(), spo2: z.string().nullable().optional(),
-  weight: z.string().nullable().optional(), height: z.string().nullable().optional(),
+  bp: z.string().nullable().optional().refine((v) => {
+    const t = (v ?? '').trim(); if (!t) return true
+    const m = t.match(/^(\d{2,3})\s*\/\s*(\d{2,3})\s*(mm ?hg)?$/i); if (!m) return false
+    const sys = Number(m[1]), dia = Number(m[2]); return sys >= 50 && sys <= 300 && dia >= 20 && dia <= 200 && sys > dia
+  }, 'BP must be written systolic/diastolic, e.g. 120/80'),
+  pulse: vitalNum('Pulse', 20, 250, ' /min'),
+  // °C or °F — whichever the hospital uses.
+  temp: z.string().nullable().optional().refine((v) => {
+    const t = (v ?? '').trim(); if (!t) return true
+    const m = t.match(/^(\d+(?:\.\d+)?)\s*°?\s*[cf]?$/i); if (!m) return false
+    const n = Number(m[1]); return (n >= 30 && n <= 45) || (n >= 86 && n <= 113)
+  }, 'Temperature must be in °C (30–45) or °F (86–113)'),
+  spo2: vitalNum('SpO₂', 50, 100, ' %'),
+  weight: vitalNum('Weight', 0.3, 400, ' kg'),
+  height: vitalNum('Height', 20, 250, ' cm'),
 })
 export const AncRecordSchema = z.object({
   lmp:             z.string().nullable().optional(),
@@ -244,7 +264,8 @@ export const ConsultationSchema = z.object({
 })
 export const PrescriptionSchema = z.object({
   drug_name: z.string().min(1, 'Drug name is required'),
-  dosage: z.string().nullable().optional(), frequency: z.string().nullable().optional(),
+  dosage: z.string().nullable().optional(),
+  frequency: z.string({ message: 'Choose how often it is taken (frequency)' }).trim().min(1, 'Choose how often it is taken (frequency)'),
   duration: z.string().nullable().optional(), instructions: z.string().nullable().optional(),
 })
 
@@ -298,13 +319,19 @@ export const CompleteVisitSchema = z.object({
   note: z.string().nullable().optional(),
 })
 
-const optInt = z.number().int().nullable().optional()
+// Each reading within what a living patient can show — FiO₂ 150 % was saved (BUG-035).
+const icuInt = (label: string, min: number, max: number, unit = '') =>
+  z.number().int(`${label} must be a whole number`)
+    .min(min, `${label} must be ${min}–${max}${unit}`).max(max, `${label} must be ${min}–${max}${unit}`).nullable().optional()
 export const IcuObservationSchema = z.object({
-  hr: optInt, sbp: optInt, dbp: optInt, map: optInt, cvp: optInt, spo2: optInt, rr: optInt,
+  hr: icuInt('Heart rate', 0, 300), sbp: icuInt('Systolic BP', 0, 300), dbp: icuInt('Diastolic BP', 0, 200),
+  map: icuInt('MAP', 0, 250), cvp: icuInt('CVP', -10, 40), spo2: icuInt('SpO₂', 0, 100, ' %'), rr: icuInt('Respiratory rate', 0, 80),
   // °C — the early-warning score is calibrated in Celsius; 98.6 is refused rather than scored as fever.
   temp: z.number().min(25, 'Temperature is in °C').max(45, 'Temperature is in °C').nullable().optional(),
-  gcs_e: optInt, gcs_v: optInt, gcs_m: optInt, gcs_total: optInt, rass: optInt, pain_score: optInt,
-  vent_mode: z.string().nullable().optional(), fio2: optInt, peep: optInt, tidal_volume: optInt, vent_rate: optInt,
+  gcs_e: icuInt('GCS E', 1, 4), gcs_v: icuInt('GCS V', 1, 5), gcs_m: icuInt('GCS M', 1, 6), gcs_total: icuInt('GCS total', 2, 15),
+  rass: icuInt('RASS', -5, 4), pain_score: icuInt('Pain score', 0, 10),
+  vent_mode: z.string().nullable().optional(), fio2: icuInt('FiO₂', 21, 100, ' %'), peep: icuInt('PEEP', 0, 30),
+  tidal_volume: icuInt('Tidal volume', 0, 2000, ' ml'), vent_rate: icuInt('Ventilator rate', 0, 80),
   notes: z.string().nullable().optional(),
   // The ward round (0284)
   avpu:           z.enum(['A', 'C', 'V', 'P', 'U']).nullable().optional(),
@@ -661,6 +688,15 @@ export const BloodUnitSchema = z.object({
   bag_number:   z.string().nullable().optional(),
   volume_ml:    z.number().int().positive().nullable().optional(),
   camp_id:      z.string().uuid().nullable().optional(),
+}).superRefine((u, ctx) => {
+  // A unit that expired before it was collected was saved (BUG-044).
+  const day = (v: string) => v.slice(0, 10)
+  if (u.collected_at && u.expiry && day(u.expiry) <= day(u.collected_at)) {
+    ctx.addIssue({ code: 'custom', path: ['expiry'], message: 'Expiry must be after the collection date' })
+  }
+  if (u.collected_at && new Date(u.collected_at).getTime() > Date.now() + 5 * 60_000) {
+    ctx.addIssue({ code: 'custom', path: ['collected_at'], message: 'Collection date cannot be in the future' })
+  }
 })
 
 const BLOOD_MARKER = z.enum(['reactive', 'non_reactive'])
@@ -674,7 +710,9 @@ export const BloodScreeningSchema = z.object({
 
 export const BloodRequestSchema = z.object({
   patient_id:     z.string().uuid('Please select a patient'),
-  blood_group:    z.enum(BLOOD_GROUPS),
+  // 'unknown': the doctor asks the blood bank to group the sample — they had to
+  // guess a group before it was known (BUG-046).
+  blood_group:    z.enum([...BLOOD_GROUPS, 'unknown']),
   component:      z.enum(BLOOD_COMPONENTS),
   units_required: z.number().int().min(1, 'At least 1 unit required'),
   notes:          z.string().nullable().optional(),
@@ -693,9 +731,9 @@ export const BloodComponentChargeSchema = z.object({
 })
 
 export const BloodCrossmatchSchema = z.object({
-  recipient_sample_no: z.string().nullable().optional(),
-  major_result: z.enum(['compatible', 'incompatible']),
-  minor_result: z.enum(['compatible', 'incompatible']).nullable().optional(),
+  recipient_sample_no: z.string().trim().min(1, 'Enter the recipient sample number'),
+  major_result: z.enum(['compatible', 'incompatible'], 'Record the major cross-match result'),
+  minor_result: z.enum(['compatible', 'incompatible'], 'Record the minor cross-match result'),
 })
 
 const BloodVitalsSchema = z.object({
@@ -703,12 +741,22 @@ const BloodVitalsSchema = z.object({
   pulse: z.string().nullable().optional(),
   temp:  z.string().nullable().optional(),
 })
+// Times carry their zone (the screen sends ISO). A zone-less time is read as
+// IST, not UTC — that stored transfusions 5½ hours off (BUG-050).
+const istTime = z.string().transform((v) => (/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${v}+05:30`))
+  .refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time')
 export const BloodTransfusionSchema = z.object({
-  started_at:  z.string().nullable().optional(),
-  ended_at:    z.string().nullable().optional(),
+  started_at:  istTime.nullable().optional(),
+  ended_at:    istTime.nullable().optional(),
   vitals_pre:  BloodVitalsSchema.nullable().optional(),
   vitals_post: BloodVitalsSchema.nullable().optional(),
   notes:       z.string().nullable().optional(),
+}).superRefine((t, ctx) => {
+  const s = t.started_at ? new Date(t.started_at).getTime() : null
+  const e = t.ended_at ? new Date(t.ended_at).getTime() : null
+  if (s != null && e != null && e <= s) ctx.addIssue({ code: 'custom', path: ['ended_at'], message: 'The end time must be after the start time' })
+  if (s != null && s > Date.now() + 5 * 60_000) ctx.addIssue({ code: 'custom', path: ['started_at'], message: 'The start time is in the future' })
+  if (e != null && e > Date.now() + 5 * 60_000) ctx.addIssue({ code: 'custom', path: ['ended_at'], message: 'The end time is in the future' })
 })
 export const BloodReactionSchema = z.object({
   reaction_type: z.enum(['febrile', 'allergic', 'hemolytic', 'anaphylactic', 'taco', 'trali', 'septic', 'other']),
@@ -1009,8 +1057,13 @@ export const InsuranceBankAccountSchema = z.object({
   id:             z.string().uuid().optional(),
   account_name:   z.string().min(1, 'Account name is required').max(120),
   bank_name:      z.string().max(120).nullable().optional(),
-  account_number: z.string().max(40).nullable().optional(),
-  ifsc_code:      z.string().max(20).nullable().optional(),
+  account_number: z.string().trim().max(40)
+                    .refine((v) => v === '' || /^[A-Za-z0-9]{6,18}$/.test(v.replace(/\s/g, '')), 'An account number is 6–18 digits')
+                    .nullable().optional(),
+  // 4 letters (bank), 0, 6 letters/digits (branch) — "ABCD0123" was saved (BUG-068).
+  ifsc_code:      z.string().trim().toUpperCase()
+                    .refine((v) => v === '' || /^[A-Z]{4}0[A-Z0-9]{6}$/.test(v), 'IFSC is 11 characters, e.g. HDFC0001234')
+                    .nullable().optional(),
   is_active:      z.boolean().optional().default(true),
   /** Left out = unchanged. The insurance desk's form does not send these, so it can never clear them. */
   upi_vpa:        z.string().trim().max(130)
@@ -1110,6 +1163,11 @@ export const StockAdjustSchema = z.object({
 })
 
 // ---- Phase 6: HR ----
+// Optional staff mobile: blank is fine, anything else must be a real Indian
+// mobile (BUG-002: "12345" was saved and shown on the staff list).
+const optionalMobile = z.string().nullable().optional()
+  .transform((v) => (v ?? '').replace(/[\s\-().]/g, '') || null)
+  .refine((v) => v == null || /^(\+91)?[6-9]\d{9}$/.test(v), 'Enter a valid 10-digit mobile number (or leave it blank)')
 export const CreateStaffSchema = z.object({
   full_name: z.string().min(1, 'Full name required').max(200),
   email: z.string().email('Valid email required'),
@@ -1117,7 +1175,7 @@ export const CreateStaffSchema = z.object({
   temp_password: z.string().min(8, 'Password must be ≥ 8 characters').optional(),
   role: z.enum(ROLE_VALUES),
   department_id: z.string().uuid().nullable().optional(),
-  phone: z.string().nullable().optional(),
+  phone: optionalMobile,
   designation: z.string().nullable().optional(),
   joining_date: z.string().nullable().optional(),
   consultation_fee: z.number().nonnegative().nullable().optional(),
@@ -1128,7 +1186,7 @@ export const UpdateStaffSchema = z.object({
   full_name: z.string().min(1).max(200).optional(),
   role: z.enum(ROLE_VALUES).optional(),
   department_id: z.string().uuid().nullable().optional(),
-  phone: z.string().nullable().optional(),
+  phone: optionalMobile,
   designation: z.string().nullable().optional(),
   joining_date: z.string().nullable().optional(),
   address: z.string().nullable().optional(),

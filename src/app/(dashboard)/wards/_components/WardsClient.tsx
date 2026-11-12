@@ -27,6 +27,7 @@ import { createRoom as createOtRoom, updateRoom as updateOtRoom, deleteRoom as d
 import type { WardWithBeds, BedWithOccupant, Ward, OtRoom, WardRoomType, NursingUnit } from '@/lib/types'
 import CreateWardModal from './CreateWardModal'
 import EditWardModal from './EditWardModal'
+import MultiBedTick from './MultiBedTick'
 import AddBedsModal from './AddBedsModal'
 import NursingUnitsModal from './NursingUnitsModal'
 
@@ -777,11 +778,12 @@ function DeleteTypeConfirmModal({ typeName, roomCount, onConfirm, onCancel, load
 function EditRoomTypeModal({ roomType, onClose, onSave }: {
   roomType: WardRoomType
   onClose: () => void
-  onSave: (updated: { name: string; daily_rate: number }) => void
+  onSave: (updated: { name: string; daily_rate: number; is_icu: boolean; is_multi_bed: boolean }) => void
 }) {
   const [name, setName]   = useState(roomType.name)
   const [rate, setRate]   = useState(String(roomType.daily_rate))
   const [isIcu, setIsIcu] = useState(!!roomType.is_icu)
+  const [isMultiBed, setIsMultiBed] = useState(!!roomType.is_multi_bed)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -791,10 +793,10 @@ function EditRoomTypeModal({ roomType, onClose, onSave }: {
     if (isNaN(dailyRate) || dailyRate < 0) { setError('Enter a valid rate'); return }
     if (!name.trim()) { setError('Name is required'); return }
     setLoading(true); setError(null)
-    const res = await updateWardRoomType(roomType.id, { name: name.trim(), daily_rate: dailyRate, is_icu: isIcu })
+    const res = await updateWardRoomType(roomType.id, { name: name.trim(), daily_rate: dailyRate, is_icu: isIcu, is_multi_bed: isMultiBed })
     setLoading(false)
     if (!res.success) { setError(res.error); return }
-    onSave({ name: name.trim(), daily_rate: dailyRate })
+    onSave({ name: name.trim(), daily_rate: dailyRate, is_icu: isIcu, is_multi_bed: isMultiBed })
     onClose()
   }
 
@@ -817,6 +819,8 @@ function EditRoomTypeModal({ roomType, onClose, onSave }: {
             </div>
           </div>
           <p className="text-xs" style={{ color: '#94A3B8' }}>Changing the rate updates all rooms of this type.</p>
+          {/* An ICU set up as one room could never get its other beds (KMCH, 12 Nov 2026). */}
+          <MultiBedTick checked={isMultiBed} onChange={setIsMultiBed} />
           <label className="flex items-center gap-3 cursor-pointer rounded-xl p-3"
             style={{ border: `1px solid ${isIcu ? '#DC2626' : '#E2E8F0'}`, background: isIcu ? 'rgba(220,38,38,0.04)' : '#FAFAFA' }}>
             <input type="checkbox" checked={isIcu} onChange={e => setIsIcu(e.target.checked)}
@@ -893,8 +897,8 @@ function AddRoomTypeModal({ open, onClose, onAdd }: {
             <input type="checkbox" checked={isMultiBed} onChange={e => setIsMultiBed(e.target.checked)}
               style={{ width: '1rem', height: '1rem', accentColor: '#0D9488', cursor: 'pointer' }} />
             <div>
-              <p className="text-sm font-medium" style={{ color: '#0F172A' }}>General ward (multiple beds)</p>
-              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Beds are numbered and added manually. Leave unchecked for single private rooms.</p>
+              <p className="text-sm font-medium" style={{ color: '#0F172A' }}>Multiple beds in one room</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>General ward, ICU, HDU — beds are numbered and added after. Leave unchecked for single private rooms.</p>
             </div>
           </label>
           <label className="flex items-center gap-3 cursor-pointer rounded-xl p-3"
@@ -1411,8 +1415,8 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
         <EditRoomTypeModal
           roomType={editingRoomType}
           onClose={() => setEditingRoomType(null)}
-          onSave={({ name, daily_rate }) => {
-            setRoomTypes(rts => rts.map(rt => rt.id === editingRoomType.id ? { ...rt, name, daily_rate } : rt))
+          onSave={({ name, daily_rate, is_icu, is_multi_bed }) => {
+            setRoomTypes(rts => rts.map(rt => rt.id === editingRoomType.id ? { ...rt, name, daily_rate, is_icu, is_multi_bed } : rt))
             setBoard(b => b.map(w => w.room_type_id === editingRoomType.id ? { ...w, daily_rate } : w))
             setEditingRoomType(null)
           }}
@@ -1468,6 +1472,8 @@ export default function WardsClient({ initialBoard, wards, departments, doctors,
           ward={editingWard}
           roomTypes={roomTypes}
           nursingUnits={nursingUnits}
+          roomsOfType={(typeId) => board.filter(w => w.room_type_id === typeId && !w.is_temp).length}
+          onRoomTypeChange={(typeId, isMultiBed) => setRoomTypes(rts => rts.map(rt => rt.id === typeId ? { ...rt, is_multi_bed: isMultiBed } : rt))}
           onClose={() => setEditingWard(null)}
           onSuccess={(details) => handleWardUpdate(editingWard.id, details)}
         />

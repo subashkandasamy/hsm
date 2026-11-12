@@ -29,6 +29,7 @@ import type {
   ClaimAdmissionType, DeductionType, ShortfallResolution,
 } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { settlementCovered } from '@/lib/insuranceCredit'
 
 const STANDARD_DOCS = ['Discharge Summary', 'Final Bill', 'Investigation Reports', 'ID Proof / KYC', 'Pre-auth Form', 'Doctor Notes']
 
@@ -120,7 +121,18 @@ export default function ClaimStepperView({
   const canWrite = !!role && hasPermission(role, 'insurance:write', profile?.granted_permissions)
 
   const [claim, setClaim] = useState(initialClaim)
-  const [policies] = useState(initialPolicies)
+  const [policies, setPolicies] = useState(initialPolicies)
+  // A saved policy with a wrong "Valid Till" could only be re-typed as a new
+  // one, leaving an expired duplicate on the patient (BUG-064).
+  const [fixPolicy, setFixPolicy] = useState<{ id: string; date: string } | null>(null)
+  async function saveValidTill() {
+    if (!fixPolicy?.date) { setError('Enter the Valid Till date'); return }
+    setError(null)
+    const res = await updatePolicy(fixPolicy.id, { valid_till: fixPolicy.date })
+    if (!res.success) { setError(res.error); return }
+    setPolicies((ps) => ps.map((p) => (p.id === fixPolicy.id ? { ...p, valid_till: fixPolicy.date } : p)))
+    setFixPolicy(null)
+  }
   const [notes, setNotes] = useState(initialNotes)
   const [history, setHistory] = useState(initialHistory)
   const [settlementPayments, setSettlementPayments] = useState(initialSettlementPayments)
@@ -335,6 +347,10 @@ export default function ClaimStepperView({
 
   async function saveNewPolicyAndStart() {
     if (!newProvider.trim() || !newPolicyNo.trim()) { setError('Provider and policy number are required'); return }
+    // Checked before saving: a refused claim used to leave the policy saved anyway.
+    if (newValidTill && newValidTill < istToday()) {
+      setError(`Valid Till (${newValidTill.split('-').reverse().join('-')}) is already past — check the date. Nothing was saved.`); return
+    }
     setSavingPolicy(true); setError(null)
     const polRes = await addPolicy({
       patient_id: patientId, provider: newProvider, policy_no: newPolicyNo,
@@ -504,7 +520,8 @@ export default function ClaimStepperView({
   }
 
   // ── Stage 4 action ───────────────────────────────────────────────────────
-  const settleCovered = claim?.eligibility_approved_amount ?? 0
+  // Against what the insurer approved for this claim, not the pre-auth estimate (BUG-067).
+  const settleCovered = claim ? settlementCovered(claim) : 0
   const settleShortfall = Math.max(0, settleCovered - (parseFloat(settledAmount) || 0))
 
   async function handleSettle() {
@@ -822,6 +839,21 @@ export default function ClaimStepperView({
                       </button>
                     ))}
                   </div>
+                  {policies.filter((p) => p.valid_till && p.valid_till < istToday()).map((p) => (
+                    <div key={p.id} className="flex items-center gap-2 flex-wrap text-xs" style={{ color: '#B45309' }}>
+                      <span>{p.provider} · {p.policy_no} expired on {p.valid_till!.split('-').reverse().join('-')}.</span>
+                      {fixPolicy?.id === p.id ? (
+                        <>
+                          <input type="date" value={fixPolicy.date} onChange={(e) => setFixPolicy({ id: p.id, date: e.target.value })}
+                            aria-label="Valid till" className="px-2 py-1 rounded-lg border text-xs" style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+                          <button onClick={saveValidTill} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ background: '#0D9488', color: '#fff' }}>Save date</button>
+                          <button onClick={() => setFixPolicy(null)} className="text-xs" style={{ color: '#64748B' }}>Cancel</button>
+                        </>
+                      ) : (
+                        <button onClick={() => setFixPolicy({ id: p.id, date: p.valid_till ?? '' })} className="text-xs font-semibold underline" style={{ color: '#0D9488' }}>Correct the date</button>
+                      )}
+                    </div>
+                  ))}
                   <button onClick={() => setAddingPolicy(true)} className="flex items-center gap-2 text-sm font-medium" style={{ color: '#0D9488' }}>
                     <Plus className="w-4 h-4" /> Add a new policy
                   </button>
@@ -1355,7 +1387,7 @@ export default function ClaimStepperView({
                 {settleShortfall > 0 && (
                   <div className="p-3 rounded-xl" style={{ background: '#FAE7E0', border: '1px solid #B23A1E' }}>
                     <p className="text-xs font-semibold mb-1" style={{ color: '#B23A1E' }}>
-                      Settlement is <Money amount={settleShortfall} className="font-bold" /> short of the <Money amount={settleCovered} /> covered at eligibility.
+                      Settlement is <Money amount={settleShortfall} className="font-bold" /> short of the <Money amount={settleCovered} /> approved for this claim.
                     </p>
                     <p className="text-xs mb-2" style={{ color: '#7A2E1A' }}>How is the shortfall resolved?</p>
                     <div className="flex gap-2 flex-wrap">

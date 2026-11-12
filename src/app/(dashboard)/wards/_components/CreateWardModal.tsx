@@ -68,7 +68,7 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
     <Modal open={open} onClose={onClose} title="Add Room">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Room name */}
-        <FormField label="Room / Ward Name" required hint={selectedType?.is_multi_bed ? 'e.g. Male General Ward, Female Ward' : 'e.g. 101, Room A, Suite 1'}>
+        <FormField label="Room / Ward Name" required hint={selectedType?.is_multi_bed ? (selectedType.is_icu ? 'e.g. ICU, MICU, HDU' : 'e.g. Male General Ward, Female Ward') : 'e.g. 101, Room A, Suite 1'}>
           <Input value={name} onChange={e => setName(e.target.value)} placeholder={selectedType?.is_multi_bed ? 'e.g. Male General Ward' : 'e.g. 101'} required autoFocus />
         </FormField>
 
@@ -84,7 +84,7 @@ export default function CreateWardModal({ open, onClose, onSuccess, departments,
             <div className="mt-1.5 flex items-center gap-2">
               <span className="text-xs px-2 py-0.5 rounded-full"
                 style={{ background: selectedType.is_multi_bed ? 'rgba(13,148,136,0.08)' : 'rgba(99,102,241,0.08)', color: selectedType.is_multi_bed ? '#0D9488' : '#4F46E5' }}>
-                {selectedType.is_multi_bed ? 'General ward — multiple beds (add beds after creating)' : 'Private single room — 1 bed auto-created'}
+                {selectedType.is_multi_bed ? 'Multiple beds in one room — add beds after creating' : 'Private single room — 1 bed auto-created'}
               </span>
             </div>
           )}

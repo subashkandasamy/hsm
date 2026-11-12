@@ -53,6 +53,7 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
         data.sections.flatMap((s) => s.rows).filter((r) => !r.cancelled).map((r) => ({
           amount: r.amount, gst_rate: r.gstRate ?? 0, tax_inclusive: !!r.taxInclusive,
         })),
+        data.discountTotal ?? 0,
       )
     : null
   const hasGst = !!gstSummary && gstSummary.taxTotal > 0
@@ -283,6 +284,13 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
                       <td style={{ padding: '3px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmt(r.total)}</td>
                     </tr>
                   ))}
+                  {gstSummary.exemptValue > 0 && (
+                    <tr style={{ color: '#475569' }}>
+                      <td style={{ padding: '3px 14px 3px 0' }}>Exempt</td>
+                      <td style={{ padding: '3px 14px 3px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(gstSummary.exemptValue)}</td>
+                      <td colSpan={3} style={{ padding: '3px 0', textAlign: 'right', color: '#94A3B8' }}>no GST</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -300,7 +308,9 @@ export default function CombinedBillView({ data, profile }: { data: CombinedBill
           <div className="bill-totals-wrap" style={{ borderTop: '2px solid #0D9488', display: 'flex', justifyContent: 'flex-end' }}>
             <div className="bill-totals-panel" style={{ minWidth: '320px', padding: '16px 24px' }}>
               {([
-                { label: 'Taxable Value',           value: gstSummary?.subtotal ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
+                // "Subtotal", not "Taxable Value": exempt services are on it too (BUG-061).
+                { label: 'Subtotal',                value: gstSummary?.subtotal ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
+                { label: 'Discount',                value: -(data.discountTotal ?? 0), size: '13px', weight: 500, color: '#10B981', border: false, show: hasGst && (data.discountTotal ?? 0) > 0 },
                 { label: 'CGST',                    value: gstSummary?.cgst ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
                 { label: 'SGST',                    value: gstSummary?.sgst ?? 0, size: '13px', weight: 500, color: '#64748B', border: false, show: hasGst },
                 { label: 'Grand Total',            value: data.grandTotal,       size: '14px', weight: 700, color: '#0F172A', border: true, show: true },

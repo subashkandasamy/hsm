@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { provisionalName, tidyProvisionalName } from '@/lib/provisionalName'
+import { istToday } from '@/lib/istDate'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { EmergencyRegisterSchema, ConsultationSchema } from '@/lib/schemas'
@@ -56,10 +58,8 @@ export async function registerEmergency(
 
   // If no patient identified, create a provisional patient
   if (!patientId) {
-    const age = parsed.data.prov_age ?? 'Unknown'
-    const gender = parsed.data.prov_gender ?? 'unknown'
-    const provName = parsed.data.prov_name?.trim()
-      || `Unknown ${gender.charAt(0).toUpperCase() + gender.slice(1)} ~${age}y`
+    const age = parsed.data.prov_age ?? null
+    const provName = parsed.data.prov_name?.trim() || provisionalName(parsed.data.prov_gender, age)
 
     const provPhone = `PROV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
 
@@ -74,6 +74,10 @@ export async function registerEmergency(
       tenant_id:  actor.tenant_id,
       full_name:  provName,
       gender:     parsed.data.prov_gender ?? null,
+      // The approximate age as an estimated birth date, so the case sheet and
+      // every other print show it — "Age / Sex: Male" had none (BUG-033).
+      dob:           age != null ? `${Number(istToday().slice(0, 4)) - age}-07-01` : null,
+      dob_estimated: age != null,
       phone:      provPhone,
       created_by: actor.id,
     })
@@ -315,7 +319,13 @@ export async function listEmergencyCases(activeOnly = true): Promise<EmergencyCa
   }
 
   const { data } = await q.limit(200)
-  return (data ?? []) as unknown as EmergencyCase[]
+  return tidyCases((data ?? []) as unknown as EmergencyCase[])
+}
+
+/** Old provisional names ("Unknown Unknown ~Unknowny") read as "Unknown patient" (BUG-034). */
+function tidyCases(list: EmergencyCase[]): EmergencyCase[] {
+  for (const c of list) if (c.patient?.full_name) c.patient.full_name = tidyProvisionalName(c.patient.full_name)
+  return list
 }
 
 // ---- Recently closed cases (for reprinting notes) ----
@@ -330,7 +340,7 @@ export async function listRecentEmergencyCases(days = 7): Promise<EmergencyCase[
     .gte('arrived_at', since)
     .order('arrived_at', { ascending: false })
     .limit(200)
-  return (data ?? []) as unknown as EmergencyCase[]
+  return tidyCases((data ?? []) as unknown as EmergencyCase[])
 }
 
 // ---- ER charges (registration fee, ER procedures) ----
@@ -365,6 +375,11 @@ export interface ErChargeLine {
 }
 
 /** All billed ER charges for a case (registration, procedures, consultation). */
+/** ER charges: triage staff, or whoever bills (billing:write). Not exported — not an action. */
+async function requireErBilling(role: Awaited<ReturnType<typeof getActorProfile>>['role']): Promise<void> {
+  try { await requirePermission(role, 'emergency:triage') } catch { await requirePermission(role, 'billing:write') }
+}
+
 export async function listEmergencyCharges(caseId: string): Promise<ErChargeLine[]> {
   const supabase = await createClient()
   const { data } = await supabase
@@ -400,7 +415,9 @@ export async function addEmergencyCharge(input: {
 }): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'emergency:triage')
+  // The front desk bills ER charges too (billing:write); it hung on "Adding…"
+  // because only clinical triage staff were allowed (BUG-031).
+  await requireErBilling(actor.role)
   const supabase = await createClient()
 
   const c = await activeCase(supabase, input.caseId)
@@ -450,7 +467,7 @@ export async function addEmergencyCharge(input: {
 export async function removeEmergencyCharge(caseId: string, itemId: string): Promise<SimpleResult> {
   await requireWriteAccess()
   const actor = await getActorProfile()
-  await requirePermission(actor.role, 'emergency:triage')
+  await requireErBilling(actor.role)
   const supabase = await createClient()
 
   const c = await activeCase(supabase, caseId)

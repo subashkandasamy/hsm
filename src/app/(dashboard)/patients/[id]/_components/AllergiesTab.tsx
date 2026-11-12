@@ -23,7 +23,7 @@ interface Props {
   freeText?: string | null
 }
 
-export default function AllergiesTab({ patientId, initialAllergies, canWrite, freeText }: Props) {
+export default function AllergiesTab({ patientId, initialAllergies, canWrite }: Props) {
   const [allergies, setAllergies] = useState<PatientAllergy[]>(initialAllergies)
   const [form, setForm] = useState({ allergen: '', reaction: '', severity: 'moderate' as AllergySeverity })
   const [saving, setSaving] = useState(false)
@@ -56,20 +56,8 @@ export default function AllergiesTab({ patientId, initialAllergies, canWrite, fr
 
   return (
     <div className="space-y-4">
-      {/* Free-text allergies from registration */}
-      {freeText && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
-          style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
-          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#B45309' }} />
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#B45309' }}>
-              Noted at Registration
-            </p>
-            <p className="text-sm" style={{ color: '#92400E' }}>{freeText}</p>
-          </div>
-        </div>
-      )}
-
+      {/* Allergies typed at registration are listed below as their own
+          entries ("Noted at registration"), so they count and are checked. */}
       {/* Add form */}
       {canWrite && (
         <GlassCard className="p-4">
@@ -121,7 +109,7 @@ export default function AllergiesTab({ patientId, initialAllergies, canWrite, fr
       {allergies.length === 0 ? (
         <EmptyState
           title="No allergies recorded"
-          description="Structured allergy entries will appear here. Free-text allergies are in the Info tab."
+          description="Allergies added here, and any typed at registration, appear here."
         />
       ) : (
         <div className="space-y-2">
@@ -137,10 +125,17 @@ export default function AllergiesTab({ patientId, initialAllergies, canWrite, fr
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{a.allergen}</p>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium capitalize"
-                          style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}>
-                          {a.severity}
-                        </span>
+                        {a.source === 'registration' ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0' }}>
+                            Noted at registration · severity not recorded
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium capitalize"
+                            style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}>
+                            {a.severity}
+                          </span>
+                        )}
                       </div>
                       {a.reaction && (
                         <p className="text-xs mt-0.5" style={{ color: '#475569' }}>
@@ -154,7 +149,7 @@ export default function AllergiesTab({ patientId, initialAllergies, canWrite, fr
                       )}
                     </div>
                   </div>
-                  {canWrite && (
+                  {canWrite && a.source !== 'registration' && (
                     <button
                       onClick={() => handleRemove(a.id)}
                       disabled={removingId === a.id}

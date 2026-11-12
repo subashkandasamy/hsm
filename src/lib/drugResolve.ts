@@ -159,6 +159,15 @@ async function resolveOne(supabase: SupabaseClient, label: string, ref?: DrugRef
   }
   const text = asLiteral(label)
   if (text.length < 3) return UNIDENTIFIED
+  const whole = await resolveText(supabase, text)
+  if (whole.identified) return whole
+  // "Amoxicillin 500mg Capsule", "Paracetamol 650 mg": the suggestion list and
+  // doctors both add strength and form. Try the name before the first number.
+  const head = text.split(/\s+(?=\d)/)[0].trim()
+  return head !== text && head.length >= 3 ? resolveText(supabase, head) : whole
+}
+
+async function resolveText(supabase: SupabaseClient, text: string): Promise<ResolvedDrug> {
   const found = (gens: Array<string | null | undefined>): ResolvedDrug | null => {
     const list = gens.filter((g): g is string => !!g && !!g.trim())
     return list.length ? { generics: withSynonyms(list), identified: true } : null

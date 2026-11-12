@@ -107,26 +107,45 @@ export interface RateSummaryRow {
 }
 
 export interface BillGstSummary {
-  /** Σ taxable value across all lines (net, pre-discount). */
+  /** Σ value across all lines, before tax and before the bill discount. */
   subtotal: number
-  /** Σ GST across all lines. */
+  /** Σ GST across all lines — charged on the value AFTER the discount. */
   taxTotal: number
   cgst: number
   sgst: number
-  /** Taxable value + GST grouped by rate slab — the HSN/rate-wise tax summary. */
+  /** Taxable value (after discount) + GST grouped by rate slab — the HSN/rate-wise tax summary. */
   rateSummary: RateSummaryRow[]
+  /** Value of the GST-able lines after their share of the discount. */
+  taxableValue: number
+  /** Value of exempt / nil-rated lines after their share of the discount — not "taxable value" (BUG-061). */
+  exemptValue: number
 }
 
-/** Aggregates GST across a bill's items, including a rate-wise summary table. */
-export function summarizeBillGst(items: GstBillItem[]): BillGstSummary {
+/**
+ * Aggregates GST across a bill's items, including a rate-wise summary table.
+ *
+ * A discount shown on the invoice lowers the value tax is charged on (CGST Act
+ * s.15(3)(a)). It is shared across the lines in proportion to their value and
+ * the tax worked out on what is left — a 100 % discounted pharmacy bill still
+ * asked ₹90 of GST on goods given free (BUG-063).
+ */
+export function summarizeBillGst(items: GstBillItem[], discount = 0): BillGstSummary {
   const byRate = new Map<number, { taxable: number; tax: number }>()
   let subtotal = 0
 
+  const gross = items.reduce((t, it) => t + computeLineGst(it.amount, it.gst_rate, it.tax_inclusive).taxableValue, 0)
+  const off = Math.min(Math.max(0, discount || 0), gross)
+  // Every line keeps the same fraction of its value; with no discount this is
+  // exactly the line as billed.
+  const keep = gross > 0 && off > 0 ? 1 - off / gross : 1
+  let taxableValue = 0, exemptValue = 0
+
   for (const it of items) {
-    const { taxableValue, taxAmount } = computeLineGst(it.amount, it.gst_rate, it.tax_inclusive)
-    subtotal += taxableValue
+    subtotal += computeLineGst(it.amount, it.gst_rate, it.tax_inclusive).taxableValue
+    const { taxableValue: net, taxAmount } = computeLineGst(it.amount * keep, it.gst_rate, it.tax_inclusive)
+    if (it.gst_rate > 0) taxableValue += net; else exemptValue += net
     const cur = byRate.get(it.gst_rate) ?? { taxable: 0, tax: 0 }
-    cur.taxable += taxableValue
+    cur.taxable += net
     cur.tax += taxAmount
     byRate.set(it.gst_rate, cur)
   }
@@ -153,7 +172,10 @@ export function summarizeBillGst(items: GstBillItem[]): BillGstSummary {
   const cgst = round2(rateSummary.reduce((s, r) => s + r.cgst, 0))
   const sgst = round2(rateSummary.reduce((s, r) => s + r.sgst, 0))
 
-  return { subtotal: round2(subtotal), taxTotal: round2(cgst + sgst), cgst, sgst, rateSummary }
+  return {
+    subtotal: round2(subtotal), taxTotal: round2(cgst + sgst), cgst, sgst, rateSummary,
+    taxableValue: round2(taxableValue), exemptValue: round2(exemptValue),
+  }
 }
 
 /** Nearest-rupee round-off. Returns the signed adjustment and the final total. */

@@ -220,6 +220,7 @@ export async function saveBundle(admissionId: string, input: Record<string, unkn
   const def = BUNDLES.find((b) => b.key === parsed.data.bundle)!
   const known = new Set(def.items.map((i) => i.key))
   const items = Object.fromEntries(Object.entries(parsed.data.items).filter(([k]) => known.has(k)))
+  if (!Object.values(items).some(Boolean)) return { success: false, error: 'Tick what was done before signing the bundle.' }
   const supabase = await createClient()
   const adm = await openAdmission(supabase, admissionId)
   if (adm?.status !== 'admitted') return { success: false, error: 'This patient has been discharged.' }

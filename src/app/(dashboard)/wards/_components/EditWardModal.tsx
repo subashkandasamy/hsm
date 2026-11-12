@@ -5,7 +5,8 @@ import Modal from '@/components/ui/Modal'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
-import { updateWardDetails } from '@/app/actions/wards'
+import { updateWardDetails, setRoomTypeMultiBed } from '@/app/actions/wards'
+import MultiBedTick from './MultiBedTick'
 import { nursingUnitLabel, type WardWithBeds, type WardRoomType, type NursingUnit } from '@/lib/types'
 
 interface Props {
@@ -13,11 +14,14 @@ interface Props {
   ward: WardWithBeds
   roomTypes: WardRoomType[]
   nursingUnits: NursingUnit[]
+  /** Rooms of a type, for "applies to every room of this type". */
+  roomsOfType?: (typeId: string) => number
+  onRoomTypeChange?: (typeId: string, isMultiBed: boolean) => void
   onClose: () => void
   onSuccess: (updated: { name: string; room_type_id: string | null; nursing_unit_id: string | null; floor: string | null; block: string | null }) => void
 }
 
-export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onClose, onSuccess }: Props) {
+export default function EditWardModal({ open, ward, roomTypes, nursingUnits, roomsOfType, onRoomTypeChange, onClose, onSuccess }: Props) {
   const [name, setName]           = useState(ward.name)
   const [roomTypeId, setRoomTypeId] = useState(ward.room_type_id ?? '')
   const [unitId, setUnitId]       = useState(ward.nursing_unit_id ?? '')
@@ -25,12 +29,17 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
   const [block, setBlock]         = useState(ward.block ?? '')
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
+  // null = leave the room type as it is
+  const [multiBed, setMultiBed]   = useState<boolean | null>(null)
+  const type = roomTypes.find(r => r.id === roomTypeId) ?? null
+  const shownMulti = multiBed ?? !!type?.is_multi_bed
+  const others = type && roomsOfType ? roomsOfType(type.id) - (ward.room_type_id === type.id ? 1 : 0) : 0
 
   useEffect(() => {
     if (open) {
       setName(ward.name); setRoomTypeId(ward.room_type_id ?? '')
       setUnitId(ward.nursing_unit_id ?? ''); setError(null)
-      setFloor(ward.floor ?? ''); setBlock(ward.block ?? '')
+      setFloor(ward.floor ?? ''); setBlock(ward.block ?? ''); setMultiBed(null)
     }
   }, [open, ward])
 
@@ -47,6 +56,13 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
     e.preventDefault()
     if (!name.trim()) { setError('Ward name is required'); return }
     setLoading(true); setError(null)
+    // Multiple beds lives on the room type: change it there first, so a refusal
+    // (a room still holding several beds) stops before anything else is saved.
+    if (type && multiBed !== null && multiBed !== !!type.is_multi_bed) {
+      const r = await setRoomTypeMultiBed(type.id, multiBed)
+      if (!r.success) { setLoading(false); setError(r.error); return }
+      onRoomTypeChange?.(type.id, multiBed)
+    }
     // The location is what the form holds. It used to be re-derived from the
     // nursing unit on every save, which quietly wiped the floor and block of any
     // room that had no wing.
@@ -80,6 +96,11 @@ export default function EditWardModal({ open, ward, roomTypes, nursingUnits, onC
             ))}
           </Select>
         </FormField>
+
+        {type && (
+          <MultiBedTick checked={shownMulti} onChange={setMultiBed}
+            note={others > 0 ? `Changes the room type "${type.name}" — ${others} other room${others === 1 ? '' : 's'} of this type too.` : `Changes the room type "${type.name}".`} />
+        )}
 
         <FormField label="Nursing Unit (wing)" hint="Which wing/nursing station covers this room — used for nurse rostering">
           <Select value={unitId} onChange={e => pickUnit(e.target.value)}>

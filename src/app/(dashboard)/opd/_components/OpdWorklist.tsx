@@ -49,7 +49,7 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
   }
 
   const today = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata',
   })
 
   return (
@@ -88,7 +88,7 @@ export default function OpdWorklist({ initialQueue, doctorId, initialBillStatuse
             const isUnpaid = owed && bill.payFirst !== false
             const isDueLater = owed && bill.payFirst === false
             const busy = actionId === a.id
-            const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+            const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 
             return (
               <div key={a.id} className="rounded-2xl overflow-hidden"

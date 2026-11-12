@@ -11,7 +11,7 @@ export const TRIAGE_LABEL: Record<number, string> = { 1: 'Resuscitation', 2: 'Em
 
 export interface EmergencyRecordData {
   ec: EmergencyCase
-  patient: { full_name: string; uhid: string; dob: string | null; gender: string | null; phone: string | null; blood_group: string | null }
+  patient: { full_name: string; uhid: string; dob: string | null; dob_estimated?: boolean | null; gender: string | null; phone: string | null; blood_group: string | null }
   allergies: string[]
   visit: (Visit & { doctor?: { full_name: string } | null }) | null
   prescriptions: Prescription[]
@@ -87,7 +87,8 @@ export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRec
       <InfoGrid items={[
         ['Patient', p.full_name],
         ['UHID', p.uhid],
-        ['Age / Sex', ageSex(p.dob, p.gender)],
+        // An unknown patient's age is the desk's estimate — printed with "~" (BUG-033).
+        ['Age / Sex', p.dob_estimated && p.dob ? `~${ageSex(p.dob, p.gender)}` : ageSex(p.dob, p.gender)],
         ['Phone', p.phone && !p.phone.startsWith('PROV-') ? p.phone : null],
         ['Arrival', ec.arrival_mode ? ec.arrival_mode.replace('_', ' ').replace(/^./, (c) => c.toUpperCase()) : null],
         ['Blood group', p.blood_group],

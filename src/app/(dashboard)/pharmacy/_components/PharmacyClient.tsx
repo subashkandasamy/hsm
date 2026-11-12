@@ -104,7 +104,7 @@ export default function PharmacyClient({
   const [dispensingIpdId, setDispensingIpdId] = useState<string | null>(null)
   // A ward supply that failed, or a Schedule X one waiting for its reason (0269).
   const [ipdError, setIpdError] = useState('')
-  const [ipdPendingX, setIpdPendingX] = useState<{ requestId: string; price: number; name: string } | null>(null)
+  const [ipdPendingX, setIpdPendingX] = useState<{ requestId: string; price: number; name: string; substitute?: StockSubstitute | null } | null>(null)
   const [ipdReason, setIpdReason] = useState('')
   const [opdHistory, setOpdHistory] = useState(initialOpdHistory)
   const [fulfilledSales, setFulfilledSales] = useState(initialFulfilledSales)
@@ -131,10 +131,10 @@ export default function PharmacyClient({
     setLoading(false)
   }
 
-  async function handleIpdDispense(requestId: string, pricePerUnit: number, reason?: string) {
+  async function handleIpdDispense(requestId: string, pricePerUnit: number, reason?: string, substitute?: StockSubstitute | null) {
     setDispensingIpdId(requestId)
     setIpdError('')
-    const res = await dispenseIpdRequest(requestId, pricePerUnit, undefined, reason ?? null)
+    const res = await dispenseIpdRequest(requestId, pricePerUnit, undefined, reason ?? null, substitute ?? null)
     setDispensingIpdId(null)
     if (res.success) {
       setIpdPendingX(null); setIpdReason('')
@@ -143,7 +143,7 @@ export default function PharmacyClient({
     }
     if ('needsReason' in res && res.needsReason) {
       const name = ipdRequests.find((r) => r.id === requestId)?.item_name ?? 'This medicine'
-      setIpdPendingX({ requestId, price: pricePerUnit, name }); setIpdReason('')
+      setIpdPendingX({ requestId, price: pricePerUnit, name, substitute }); setIpdReason('')
       return
     }
     // Shown, not swallowed: a supply that did not go through must say so.
@@ -298,7 +298,7 @@ export default function PharmacyClient({
           <SupplyReasonField value={ipdReason} onChange={setIpdReason} />
           <div className="flex gap-2">
             <button type="button" disabled={dispensingIpdId === ipdPendingX.requestId || ipdReason.trim().length < 2}
-              onClick={() => handleIpdDispense(ipdPendingX.requestId, ipdPendingX.price, ipdReason)}
+              onClick={() => handleIpdDispense(ipdPendingX.requestId, ipdPendingX.price, ipdReason, ipdPendingX.substitute)}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold"
               style={{ background: ipdReason.trim().length < 2 ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
               Dispense
@@ -1641,7 +1641,24 @@ interface IpdWardQueueProps {
   stock: DrugWithStock[]
   canDispense: boolean
   dispensingId: string | null
-  onDispense: (id: string, pricePerUnit: number) => void
+  onDispense: (id: string, pricePerUnit: number, reason?: string, substitute?: StockSubstitute | null) => void
+}
+
+/** A stocked drug dispensed in place of the one requested. */
+type StockSubstitute = { id: string; isMaster: boolean; label: string }
+
+/**
+ * In-stock drugs with the same generic as a ward request. A request typed as a
+ * generic ("Ceftriaxone") never matched the brand on the shelf and could only
+ * be dispensed unbilled, with no stock taken (BUG-018).
+ */
+function stockAlternatives(itemName: string, stock: DrugWithStock[], exclude?: string | null): DrugWithStock[] {
+  const inner = itemName.match(/\(([^)]+)\)/)?.[1] ?? itemName
+  const key = (inner.split(/\s+(?=\d)/)[0] ?? '').trim().toLowerCase().split(/\s+/)[0]
+  if (!key || key.length < 3) return []
+  return stock.filter((d) => d.id !== exclude && d.total_qty > 0 && (
+    (d.generic_name ?? '').toLowerCase().includes(key) || d.name.toLowerCase().includes(key)
+    || (d.stocked_brands ?? []).some((b) => b.toLowerCase().includes(key))))
 }
 
 // Build grouped history: patient → admission → items
@@ -1698,26 +1715,39 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
   const dispensed = requests.filter((r) => r.status === 'dispensed')
   const history   = buildIpdHistory(dispensed)
 
+  const [substitute, setSubstitute] = useState<StockSubstitute | null>(null)
+
   function startDispense(req: IpdPharmacyRequest) {
     const drugRef = (req.drug_master_id || req.drug_id)
       ? { id: req.drug_master_id ?? req.drug_id, isMaster: !!req.drug_master_id }
       : null
     const info = findStockInfo(req.item_name, stock, req.quantity, drugRef)
     setConfirmingStockInfo(info)
+    setSubstitute(null)
     setConfirmingId(req.id)
+  }
+
+  function pickSubstitute(req: IpdPharmacyRequest, drugId: string) {
+    const d = stock.find((x) => x.id === drugId)
+    if (!d) { setSubstitute(null); startDispense(req); return }
+    const label = `${d.stocked_brands?.[0] ?? d.name}${d.strength ? ` ${d.strength}` : ''}`
+    setSubstitute({ id: d.id, isMaster: !!d.is_global, label })
+    setConfirmingStockInfo(findStockInfo(req.item_name, stock, req.quantity, { id: d.id, isMaster: !!d.is_global }))
   }
 
   function cancelDispense() {
     setConfirmingId(null)
     setConfirmingStockInfo(null)
+    setSubstitute(null)
   }
 
   function confirmDispense(reqId: string) {
     // Price always comes from stock MRP — no manual input
     const price = confirmingStockInfo?.mrp ?? 0
-    onDispense(reqId, price)
+    onDispense(reqId, price, undefined, substitute)
     setConfirmingId(null)
     setConfirmingStockInfo(null)
+    setSubstitute(null)
   }
 
   function togglePatient(key: string) {
@@ -1774,12 +1804,20 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                               style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
                               Only {rowStock.availableQty} in stock · ₹{rowStock.mrp}/unit
                             </span>
-                          ) : (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                              style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                              Not in stock
-                            </span>
-                          )}
+                          ) : (() => {
+                            const alt = stockAlternatives(req.item_name, stock, req.drug_master_id ?? req.drug_id)[0]
+                            return alt ? (
+                              <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                                Same medicine in stock: {alt.stocked_brands?.[0] ?? alt.name} · {alt.total_qty} in stock
+                              </span>
+                            ) : (
+                              <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                                Not in stock
+                              </span>
+                            )
+                          })()}
                           {rowStock.location && (
                             <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
                               📍 {rowStock.location}
@@ -1807,10 +1845,32 @@ function IpdWardQueue({ requests, stock, canDispense, dispensingId, onDispense }
                     {isConfirming && (
                       <div className="px-3 pb-3 pt-2 space-y-2"
                         style={{ borderTop: '1px solid rgba(13,148,136,0.15)', background: 'rgba(13,148,136,0.06)' }}>
+                        {(() => {
+                          // Same medicine on the shelf under another name or brand — dispense that.
+                          const reqRow = requests.find((r) => r.id === confirmingId)
+                          const alts = reqRow && (!findStockInfo(reqRow.item_name, stock, reqRow.quantity, (reqRow.drug_master_id || reqRow.drug_id) ? { id: reqRow.drug_master_id ?? reqRow.drug_id, isMaster: !!reqRow.drug_master_id } : null).inStock)
+                            ? stockAlternatives(reqRow.item_name, stock, reqRow.drug_master_id ?? reqRow.drug_id) : []
+                          if (!reqRow || !alts.length) return null
+                          return (
+                            <label className="flex items-center gap-2 text-xs flex-wrap" style={{ color: '#475569' }}>
+                              <span className="font-semibold">Dispense from stock:</span>
+                              <select value={substitute?.id ?? ''} onChange={(e) => pickSubstitute(reqRow, e.target.value)}
+                                aria-label="Dispense from stock"
+                                className="px-2 py-1 rounded-lg border text-xs" style={{ borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }}>
+                                <option value="">— choose the brand on the shelf —</option>
+                                {alts.map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {(d.stocked_brands?.[0] ?? d.name)}{d.strength ? ` ${d.strength}` : ''} · {d.total_qty} in stock · ₹{d.batches.find((b) => b.qty_available > 0)?.mrp ?? 0}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )
+                        })()}
                         {!confirmingStockInfo?.inStock ? (
                           <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"
                             style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
-                            ⚠ <span className="font-semibold">Not in stock — add this drug to stock first so price can be captured correctly.</span>
+                            ⚠ <span className="font-semibold">Not in stock — pick the brand on the shelf above, or add this drug to stock first so the price can be captured.</span>
                           </div>
                         ) : !confirmingStockInfo.sufficient ? (
                           <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg"

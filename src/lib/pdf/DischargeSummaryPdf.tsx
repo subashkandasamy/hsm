@@ -8,6 +8,7 @@ import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage,
 } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 type DischargeAdmission = Admission & {
   patient?: Admission['patient'] & { dob?: string | null; gender?: string | null }
@@ -48,11 +49,11 @@ export function DischargeSummaryPdf({ admission: adm, allergies, profile, logo, 
         ['Patient', p?.full_name],
         ['UHID', p?.uhid],
         ['Age / Sex', ageSex(p?.dob, p?.gender)],
-        ['Phone', p?.phone],
+        ['Phone', realPhone(p?.phone)],
         ['Admitted', fmtDateTime(adm.admitted_at)],
         ['Discharged', discharged ? fmtDateTime(adm.discharged_at) : 'Currently admitted'],
         ['Ward / Bed', [adm.ward?.name, adm.bed?.bed_no].filter(Boolean).join(' / ') || null],
-        ['Length of stay', `${stayDays(adm.admitted_at, adm.discharged_at)} days`],
+        ['Length of stay', (() => { const n = stayDays(adm.admitted_at, adm.discharged_at); return `${n} ${n === 1 ? 'day' : 'days'}` })()],
         ['Consultant', adm.doctor?.full_name],
         ['Blood group', p?.blood_group],
         ...(discharged && typeLabel ? [['Discharge type', typeLabel] as [string, string]] : []),

@@ -168,7 +168,7 @@ export const NAV_CONFIG: NavGroup[] = [
   {
     label: 'Clinical',
     items: [
-      { label: 'Dashboard',    href: '/dashboard',    icon: 'LayoutDashboard', requiredPermission: 'dashboard:read' },
+      { label: 'Dashboard',    href: '/dashboard',    icon: 'LayoutDashboard', requiredPermission: 'dashboard:read', hideForRoles: ['accountant'] }, // the accountant's home is Accounts (dashboard/page.tsx redirects)
       { label: 'Patients',     href: '/patients',     icon: 'Users',           requiredPermission: 'patients:read' },
       { label: 'Appointments', href: '/appointments', icon: 'CalendarDays',    requiredPermission: 'appointments:read' },
       { label: 'OPD',          href: '/opd',          icon: 'Stethoscope',     requiredPermission: 'opd:read' },

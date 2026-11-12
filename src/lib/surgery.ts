@@ -92,6 +92,8 @@ export interface SafetyStepRecord {
   items: Record<string, boolean>
   done_at: string | null
   done_by: string | null
+  /** Who signed, as named when they signed (BUG-021: the step showed only a time). */
+  done_by_name?: string | null
 }
 export type SafetyChecklist = Partial<Record<SafetyStep, SafetyStepRecord>>
 

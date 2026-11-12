@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { tidyProvisionalName } from '@/lib/provisionalName'
+import type { AssessmentData } from '@/lib/initialAssessment'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { revalidatePath } from 'next/cache'
@@ -163,7 +165,7 @@ export async function listMlcPending(): Promise<MlcPendingRow[]> {
 
   const supabase = await createClient()
   const { data } = await supabase.rpc('get_mlc_pending')
-  return (data ?? []) as MlcPendingRow[]
+  return ((data ?? []) as MlcPendingRow[]).map((r) => ({ ...r, patient_name: r.patient_name ? tidyProvisionalName(r.patient_name) : r.patient_name }))
 }
 
 // ── Starting an entry ───────────────────────────────────────────────────────
@@ -198,7 +200,7 @@ export async function startMlc(input: {
     if (existing?.id) return { success: true, id: existing.id as string }
   }
 
-  const [{ data: patient }, { data: ec }] = await Promise.all([
+  const [{ data: patient }, { data: ec }, { data: evalRow }] = await Promise.all([
     supabase.from('patients')
       .select('id, full_name, uhid, dob, gender, phone, address, district, state, pincode')
       .eq('id', input.patient_id).maybeSingle(),
@@ -206,7 +208,13 @@ export async function startMlc(input: {
       ? supabase.from('emergency_cases')
           .select('arrival_mode, complaint, arrived_at').eq('id', input.emergency_case_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    input.emergency_case_id
+      ? supabase.from('initial_assessments').select('data').eq('emergency_case_id', input.emergency_case_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+  // What the ER evaluation already holds, carried in so nobody retypes it —
+  // only the name, sex and cause came across before (BUG-032). All editable.
+  const fromEval = mlcFromEvaluation((evalRow as { data?: AssessmentData | null } | null)?.data ?? null)
 
   if (!patient) return { success: false, error: 'That patient no longer exists' }
 
@@ -230,8 +238,9 @@ export async function startMlc(input: {
     status: 'draft',
     emergency_case_id: input.emergency_case_id ?? null,
     patient_id: patient.id,
-    patient_name: patient.full_name,
+    patient_name: tidyProvisionalName(patient.full_name as string),
     patient_age: age,
+    ...fromEval,
     patient_sex: patient.gender ?? null,
     patient_address: address,
     mr_no: patient.uhid ?? null,
@@ -524,7 +533,7 @@ export async function listMlc(limit = 200): Promise<MlcListRow[]> {
 
   type Row = Omit<MlcListRow, 'intimation_count'> & { intimations: { id: string }[] | null }
   return ((data ?? []) as unknown as Row[]).map(({ intimations, ...r }) => ({
-    ...r, intimation_count: intimations?.length ?? 0,
+    ...r, patient_name: r.patient_name ? tidyProvisionalName(r.patient_name) : r.patient_name, intimation_count: intimations?.length ?? 0,
   }))
 }
 
@@ -541,4 +550,29 @@ export async function getMlc(id: string): Promise<Record<string, unknown> | null
   // opened it".
   await logAudit(actor.id, 'read', 'mlc_record', id, { ar_no: data.ar_no })
   return data as Record<string, unknown>
+}
+
+/** MLC register fields the ER evaluation (0283) already answers. */
+function mlcFromEvaluation(d: AssessmentData | null): Record<string, string> {
+  if (!d) return {}
+  const out: Record<string, string> = {}
+  const marks = (d.on_arrival?.id_marks ?? '').split(/[;\n]|\s+(?=2[.)]\s)/).map((m) => m.replace(/^\s*\d[.)]\s*/, '').trim()).filter(Boolean)
+  if (marks[0]) out.identification_mark_1 = marks[0].slice(0, 300)
+  if (marks[1]) out.identification_mark_2 = marks.slice(1).join('; ').slice(0, 300)
+  if (d.arrival?.bystander?.trim()) out.brought_by_name = d.arrival.bystander.trim().slice(0, 200)
+  const oa = d.on_arrival
+  if (oa) {
+    const LEVEL: Record<string, string> = { unresponsive: 'Unresponsive', altered: 'Altered sensorium', drowsy: 'Drowsy', conscious: 'Conscious' }
+    const level = LEVEL[oa.level || ''] ?? ''
+    const parts = [oa.gcs_e, oa.gcs_v, oa.gcs_m]
+    const gcs = parts.some((x) => x != null)
+      ? `GCS E${oa.gcs_e ?? '?'} V${oa.gcs_v ?? 'T'} M${oa.gcs_m ?? '?'}${parts.every((x) => x != null) ? ` = ${(oa.gcs_e ?? 0) + (oa.gcs_v ?? 0) + (oa.gcs_m ?? 0)}` : ''}`
+      : ''
+    const avpu = oa.avpu ? `AVPU ${oa.avpu}` : ''
+    const text = [level, gcs, avpu].filter(Boolean).join(', ')
+    if (text) out.conscious_state = text
+  }
+  const given = (d.treatment ?? []).map((t) => [t.item, t.dose, t.route].filter(Boolean).join(' ')).filter(Boolean)
+  if (given.length) out.first_aid_given = given.join('; ').slice(0, 1000)
+  return out
 }

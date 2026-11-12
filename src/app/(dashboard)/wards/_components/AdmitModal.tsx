@@ -12,6 +12,15 @@ import { listAvailableBeds } from '@/app/actions/wards'
 import { searchPatients } from '@/app/actions/patients'
 import type { Patient, Bed, ProcedureTariff } from '@/lib/types'
 
+/** "Female ward — the patient is male." when a ward's name says one sex and the patient is the other. */
+export function wardSexMismatch(wardName: string, gender: string | null | undefined): string | null {
+  const female = /\b(female|women|womens|ladies|maternity|labou?r|post-?natal|ante-?natal|gyn(a|ae)?e?)\b/i.test(wardName)
+  const male = /\b(male|men|mens|gents)\b/i.test(wardName)
+  if (female && !male && gender === 'male') return 'Female ward — the patient is male.'
+  if (male && !female && gender === 'female') return 'Male ward — the patient is female.'
+  return null
+}
+
 export interface WardOption {
   id: string
   name: string           // individual room/ward name, e.g. "101"
@@ -38,7 +47,7 @@ interface Props {
   wards: WardOption[]
   procedureTariffs?: ProcedureTariff[]
   preselectedBed?: { id: string; bed_no: string; ward_name: string }
-  preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
+  preselectedPatient?: Pick<Patient, 'id' | 'full_name' | 'uhid'> & { gender?: Patient['gender'] }
   generalTariffPrice?: number
   advancePercentage?: number
   /** OPD (or ER) visit this admission is being launched from, if any — links IPD back to it. */
@@ -53,9 +62,12 @@ export default function AdmitModal({
 }: Props) {
   const [patientQuery, setPatientQuery] = useState(preselectedPatient?.full_name ?? '')
   const [patientResults, setPatientResults] = useState<Patient[]>([])
-  const [selectedPatient, setSelectedPatient] = useState<Pick<Patient, 'id' | 'full_name' | 'uhid'> | null>(
+  const [selectedPatient, setSelectedPatient] = useState<(Pick<Patient, 'id' | 'full_name' | 'uhid'> & { gender?: Patient['gender'] }) | null>(
     preselectedPatient ?? null
   )
+  // A man was admitted to the Female General Ward without a word (BUG-056).
+  // Wards carry no sex of their own, so it is read from the name.
+  const [sexWarned, setSexWarned] = useState<string | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [doctorId, setDoctorId] = useState('')
   const [roomTypeId, setRoomTypeId] = useState('')   // selected room type group id
@@ -135,6 +147,15 @@ export default function AdmitModal({
     if (!directOt && !roomTypeId) { setError('Please select a ward type'); return }
     if (!directOt && !isTempWard && !wardId) { setError('Please select a room'); return }
     if (!directOt && !isTempWard && isMultiBed && !bedId) { setError('Please select a bed'); return }
+    if (!directOt && !isTempWard) {
+      const room = selectedGroup?.wards.find((w) => w.id === wardId)
+      const mismatch = wardSexMismatch(`${selectedGroup?.name ?? ''} ${room?.name ?? ''} ${preselectedBed?.ward_name ?? ''}`, selectedPatient.gender)
+      if (mismatch && sexWarned !== `${wardId}:${selectedPatient.id}`) {
+        setSexWarned(`${wardId}:${selectedPatient.id}`)
+        setError(`${mismatch} Press Admit again to admit here anyway.`)
+        return
+      }
+    }
 
     setLoading(true)
     setError(null)
@@ -262,7 +283,10 @@ export default function AdmitModal({
               }}>
                 <option value="">Select ward…</option>
                 {roomTypeGroups.map((g) => {
-                  const availCount = g.is_temp ? '—' : `${g.wards.filter(w => w.availableBeds.length > 0).length} avail.`
+                  // Free BEDS across the group's rooms — counting rooms said "2 avail." for
+                  // two general wards holding 14 free beds (BUG-013).
+                  const freeBeds = g.wards.reduce((n, w) => n + w.availableBeds.length, 0)
+                  const availCount = g.is_temp ? '—' : `${freeBeds} ${freeBeds === 1 ? 'bed' : 'beds'} avail.`
                   return (
                     <option key={g.id} value={g.id}>
                       {g.is_temp ? `⚠ ${g.name} (overflow)` : `${g.name} (${availCount})`}

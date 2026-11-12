@@ -2,6 +2,7 @@ import { Document, Image, Page, Text, View } from '@react-pdf/renderer'
 import type { TenantProfile } from '@/lib/types'
 import { QrCode, mm } from './barcodes'
 import { ageSex, fmtDate, registerPdfFonts, type LogoImage } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 // CR80 — the ISO/IEC 7810 ID-1 card size (85.6 × 53.98 mm) used by PVC card
 // printers and wallet card holders. The A4 layout prints the same card at
@@ -43,7 +44,7 @@ function Card({ data }: { data: IdCardData }) {
             {[p.dob ? `DOB ${fmtDate(p.dob)}` : null, ageSex(p.dob, p.gender)].filter(Boolean).join('  ·  ') || ' '}
           </Text>
           <Text style={{ fontSize: 6.5 }}>
-            {[p.blood_group ? `Blood group ${p.blood_group}` : null, p.phone ? `Ph ${p.phone}` : null].filter(Boolean).join('  ·  ') || ' '}
+            {[p.blood_group ? `Blood group ${p.blood_group}` : null, realPhone(p.phone) ? `Ph ${realPhone(p.phone)}` : null].filter(Boolean).join('  ·  ') || ' '}
           </Text>
           {emergency ? <Text style={{ fontSize: 5.5, color: '#475569', marginTop: 1, maxLines: 2, textOverflow: 'ellipsis' }}>Emergency contact: {emergency}</Text> : null}
         </View>

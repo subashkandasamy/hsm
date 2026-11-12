@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import type { AdvanceReceiptData, TenantProfile } from '@/lib/types'
+import { realPhone } from '@/lib/patientPhone'
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank Transfer',
@@ -154,7 +155,7 @@ export default function AdvanceReceiptView({ data, profile }: { data: AdvanceRec
               <p style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A', margin: '2px 0 0' }}>{data.patient.full_name}</p>
             </div>
             <InfoCell label="UHID" value={data.patient.uhid} mono />
-            <InfoCell label="Phone" value={data.patient.phone} />
+            <InfoCell label="Phone" value={realPhone(data.patient.phone)} />
             <InfoCell label="Admitted" value={fmtDate(data.admission.admitted_at)} />
             {data.admission.ward || data.admission.bed
               ? <InfoCell label="Ward / Bed"

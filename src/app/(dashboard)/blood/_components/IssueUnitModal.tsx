@@ -6,6 +6,7 @@ import DateText from '@/components/ui/DateText'
 import { issueUnit, listCrossMatchedUnits, listComponentCharges } from '@/app/actions/blood'
 import type { BloodRequest, BloodUnit } from '@/lib/types'
 import { istToday } from '@/lib/istDate'
+import { bloodGroupLabel } from '@/lib/bloodCompat'
 
 const COMPONENT_LABELS: Record<string, string> = {
   whole: 'Whole Blood', prbc: 'PRBC', plasma: 'Plasma', platelets: 'Platelets',
@@ -55,7 +56,7 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
 
   return (
     <Modal open={open} onClose={onClose}
-      title={`Issue Blood — ${request.blood_group} ${COMPONENT_LABELS[request.component] ?? request.component}`}
+      title={`Issue Blood — ${bloodGroupLabel(request.blood_group)} ${COMPONENT_LABELS[request.component] ?? request.component}`}
       maxWidth="36rem">
       <form onSubmit={handleIssue} className="space-y-4">
         {/* Request summary */}
@@ -66,7 +67,7 @@ export default function IssueUnitModal({ open, request, onClose, onSuccess }: Pr
             <span className="ml-2 font-mono text-xs font-normal" style={{ color: '#94A3B8' }}>{request.patient?.uhid}</span>
           </p>
           <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-            {request.blood_group} · {COMPONENT_LABELS[request.component] ?? request.component} · {request.units_required} unit(s) required
+            {bloodGroupLabel(request.blood_group)} · {COMPONENT_LABELS[request.component] ?? request.component} · {request.units_required} unit(s) required
           </p>
         </div>
 

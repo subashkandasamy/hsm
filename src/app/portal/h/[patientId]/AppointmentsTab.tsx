@@ -151,7 +151,7 @@ export default function AppointmentsTab({ patientId, doctors, appointments, requ
                 <Clock style={{ width: 16, height: 16, color: '#B45309', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{r.source === 'patient' ? 'Your appointment request' : 'Follow-up recommended by your doctor'}</p>
-                  <p style={{ fontSize: 12, color: '#64748B' }}>{r.suggestedDate && <>{fmt(r.suggestedDate)} · </>}{r.doctor ? `Dr ${r.doctor}` : 'Any doctor'}{r.reason ? ` · ${r.reason}` : ''}</p>
+                  <p style={{ fontSize: 12, color: '#64748B' }}>{r.suggestedDate && <>{fmt(r.suggestedDate)} · </>}{r.doctor ? doctorName(r.doctor) : 'Any doctor'}{r.reason ? ` · ${r.reason}` : ''}</p>
                 </div>
               </div>
             ))}

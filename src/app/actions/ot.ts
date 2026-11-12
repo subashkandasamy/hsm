@@ -380,10 +380,16 @@ export async function saveSafetyStep(
 
   const all = ((t.row.safety_checklist as SafetyChecklist | null) ?? {})
   const prev = all[step]
+  let signerName = prev?.done_by_name ?? null
+  if (sign && !prev?.done_at) {
+    const { data: me } = await supabase.from('profiles').select('full_name').eq('id', actor.id).maybeSingle()
+    signerName = (me?.full_name as string | undefined) ?? null
+  }
   const record: SafetyStepRecord = {
     items: clean,
     done_at: sign ? (prev?.done_at ?? new Date().toISOString()) : null,
     done_by: sign ? (prev?.done_by ?? actor.id) : null,
+    done_by_name: sign ? signerName : null,
   }
   const { error } = await supabase.from('ot_schedules').update({
     safety_checklist: { ...all, [step]: record }, record_updated_at: new Date().toISOString(), record_updated_by: actor.id,

@@ -229,7 +229,7 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
               const isUnpaid = b && b.status !== 'paid' && !b.cashlessCovered && b.payFirst !== false
               const busy = actionLoading === a.id
               const statusStyle = STATUS_STYLES[a.status] ?? { bg: '#F1F5F9', color: '#64748B' }
-              const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+              const time = new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 
               return (
                 <div key={a.id} className="rounded-2xl overflow-hidden"
@@ -367,7 +367,7 @@ export default function AppointmentsClient({ initialAppointments, doctors, depar
                       <span className="inline-flex items-center gap-1 text-xs font-medium"
                         style={{ color: '#64748B' }}>
                         <Clock className="w-3 h-3" />
-                        {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(a.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-xs max-w-32 truncate" style={{ color: '#475569' }}>{a.reason ?? '—'}</td>

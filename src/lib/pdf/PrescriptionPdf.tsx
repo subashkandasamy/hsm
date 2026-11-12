@@ -10,6 +10,7 @@ import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand,
   ageSex, fmtDate, shortRef, s, C, type LogoImage,
 } from './parts'
+import { realPhone } from '@/lib/patientPhone'
 
 export interface RxPatient {
   full_name: string; uhid: string; phone: string | null
@@ -22,11 +23,15 @@ const TEMPLATE_LABEL: Record<string, string> = {
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
 
-export function PrescriptionPdf({ visit, patient, prescriptions, allergies, template, dental, profile, logo, paediatric, obgyn }: {
+export function PrescriptionPdf({ visit, patient, prescriptions, allergies, template, dental, profile, logo, paediatric, obgyn, investigations = [], followUp = null }: {
   visit: Visit; patient: RxPatient; prescriptions: Prescription[]; allergies: PatientAllergy[]
   template: ClinicalTemplate; dental: DentalTreatment[]; profile: TenantProfile | null; logo: LogoImage
   paediatric?: PaediatricAssessment | null
   obgyn?: ObgynContext | null
+  /** Lab tests and scans ordered at this visit. */
+  investigations?: string[]
+  /** The follow-up the doctor recommended at this visit. */
+  followUp?: { date: string | null; reason: string | null } | null
 }) {
   const hospital = profile?.name || 'Hospital'
   const ref = shortRef('OP', visit.id)
@@ -49,7 +54,7 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
         ['Patient', patient.full_name],
         ['UHID', patient.uhid],
         ['Age / Sex', ageSex(patient.dob, patient.gender)],
-        ['Phone', patient.phone],
+        ['Phone', realPhone(patient.phone)],
         ['Doctor', visit.doctor?.full_name],
         ['Blood group', patient.blood_group],
       ]} />
@@ -158,9 +163,22 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
         </View>
       ) : null}
 
+      {investigations.length > 0 && (
+        <View wrap={false}>
+          <SectionTitle>Investigations advised</SectionTitle>
+          <TextBlock text={investigations.join(', ')} />
+        </View>
+      )}
+
       <View wrap={false} style={{ flexDirection: 'row', marginTop: 16, paddingHorizontal: 6 }}>
         <Text style={[s.label, { marginRight: 8 }]}>Next visit / follow-up:</Text>
-        <View style={{ flex: 1, maxWidth: 200, borderBottomWidth: 0.75, borderBottomColor: C.rule, borderStyle: 'dashed' }} />
+        {followUp?.date || followUp?.reason ? (
+          <Text style={{ fontSize: 9.5, color: C.ink, fontWeight: 700 }}>
+            {[followUp.date ? new Date(followUp.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : null, followUp.reason].filter(Boolean).join(' — ')}
+          </Text>
+        ) : (
+          <View style={{ flex: 1, maxWidth: 200, borderBottomWidth: 0.75, borderBottomColor: C.rule, borderStyle: 'dashed' }} />
+        )}
       </View>
       <Signatures hospital={hospital} left={null} right={{ name: visit.doctor?.full_name, role: 'Consulting Doctor' }} />
     </A4>
@@ -169,7 +187,7 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
 
 const ageText = (days: number | null) => {
   if (days == null || days < 0) return null
-  if (days < 31) return `${days} days`
+  if (days < 31) return `${days} ${days === 1 ? 'day' : 'days'}`
   const mo = Math.floor(days / 30.4375)
   return mo < 24 ? `${mo} months` : `${Math.floor(mo / 12)} y ${mo % 12} m`
 }

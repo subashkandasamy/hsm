@@ -47,7 +47,16 @@ export default function DischargeModal({ open, admissionId, onClose, onDischarge
   onDischarged: (d: DischargeDone) => void
 }) {
   const [type, setType] = useState<DischargeType | null>(null)
-  const [summary, setSummary] = useState('')
+  // Kept as a draft on this computer: a discharge refused for the bill used to
+  // throw the whole summary away (BUG-054).
+  const draftKey = `uyirly:discharge-draft:${admissionId}`
+  const [summary, setSummaryState] = useState(() => {
+    try { return window.localStorage.getItem(draftKey) ?? '' } catch { return '' }
+  })
+  const setSummary = (v: string) => {
+    setSummaryState(v)
+    try { if (v.trim()) window.localStorage.setItem(draftKey, v); else window.localStorage.removeItem(draftKey) } catch { /* private window */ }
+  }
   const [deathAt, setDeathAt] = useState('')
   const [deathCause, setDeathCause] = useState('')
   const [ready, setReady] = useState<DischargeReadiness | null>(null)
@@ -108,6 +117,7 @@ export default function DischargeModal({ open, admissionId, onClose, onDischarge
     })
     setSaving(false)
     if (!r.success) { setError(r.error); void loadReadiness(); return }
+    try { window.localStorage.removeItem(draftKey) } catch { /* nothing to clear */ }
     onDischarged({
       type, summary: summary.trim(), deathAt: deathIso, deathCause: type === 'death' ? deathCause.trim() : null,
       dischargedAt: new Date().toISOString(), dueRecorded: r.dueRecorded,
@@ -241,13 +251,26 @@ export default function DischargeModal({ open, admissionId, onClose, onDischarge
                   </p>
                 </div>
               ) : (
+                ready.unusedAdvance >= ready.patientBalanceDue ? (
+                  <div style={box('rgba(240,253,250,0.9)', '#99F6E4')}>
+                    <p className="text-xs" style={{ color: '#115E59' }}>
+                      <span className="font-semibold"><Money amount={ready.patientBalanceDue} /> on the bills is covered by the <Money amount={ready.unusedAdvance} /> advance held</span>
+                      {' '}— it is applied when you discharge. Today’s room and nursing charges are added then too.
+                    </p>
+                  </div>
+                ) : (
                 <div style={box('#FEF2F2', '#FECACA')}>
                   <p className="text-xs" style={{ color: '#7F1D1D' }}>
-                    <span className="font-semibold"><Money amount={ready.patientBalanceDue} /> balance due</span>
+                    {ready.unusedAdvance > 0 ? (
+                      <><Money amount={ready.patientBalanceDue} /> due − <Money amount={ready.unusedAdvance} /> advance held = <span className="font-semibold"><Money amount={ready.patientBalanceDue - ready.unusedAdvance} /> to collect</span></>
+                    ) : (
+                      <span className="font-semibold"><Money amount={ready.patientBalanceDue} /> balance due</span>
+                    )}
                     {ready.insuranceApproved > 0 && <> (after <Money amount={ready.insuranceApproved} /> approved insurance)</>}
                     {' '}— collect it before discharge. Today’s room and nursing charges are added when you discharge.
                   </p>
                 </div>
+                )
               )
             )}
 
