@@ -8,9 +8,10 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { recordIcuObservation, listIcuObservations } from '@/app/actions/icu'
 import { saveInsulinScale } from '@/app/actions/round'
+import { listOrders } from '@/app/actions/ipdTreatment'
 import IntakeOutputSheet from './IntakeOutputSheet'
 import { computeNews, NEWS_BAND_STYLE, type NewsResult } from '@/lib/earlyWarning'
-import { AVPU, INSULIN_ROUTES, O2_DEVICES, labelOf, onOxygen, scaleDose, scaleProblem, toCelsius, type ScaleRow } from '@/lib/round'
+import { AVPU, INSULIN_NAME, INSULIN_ROUTES, O2_DEVICES, labelOf, onOxygen, scaleDose, scaleProblem, toCelsius, type ScaleRow } from '@/lib/round'
 import type { Admission, IcuObservation } from '@/lib/types'
 
 function toLocal(d: Date): string {
@@ -73,6 +74,16 @@ const NUM_FIELDS: Array<{ key: string; label: string; step?: boolean }> = [
 function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admission; ventilated: boolean; onSaved: () => void }) {
   const blank = () => ({ at: toLocal(new Date()), hr: '', sbp: '', dbp: '', rr: '', spo2: '', temp: '', avpu: '', o2_device: '', o2_lpm: '', glucose: '', glucose_source: 'capillary', insulin: '', insulin_type: adm.insulin_scale_type ?? '', insulin_route: 'sc', notes: '' })
   const [f, setF] = useState<Record<string, string>>(blank)
+  // The patient's insulin SOS orders: a dose given here is charted on the drug chart too.
+  const [insulinOrders, setInsulinOrders] = useState<Array<{ id: string; label: string }>>([])
+  const [insulinOrder, setInsulinOrder] = useState('')
+  useEffect(() => {
+    listOrders(adm.id).then((os) => {
+      const list = os.filter((o) => o.status === 'active' && o.frequency_type === 'sos' && INSULIN_NAME.test(o.drug_name ?? ''))
+        .map((o) => ({ id: o.id, label: [o.drug_name, o.route].filter(Boolean).join(' ') }))
+      setInsulinOrders(list); setInsulinOrder(list[0]?.id ?? '')
+    })
+  }, [adm.id])
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const n = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -95,16 +106,18 @@ function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admissi
       glucose_mg_dl: int(vals.glucose), glucose_source: vals.glucose != null ? f.glucose_source : null,
       insulin_units: vals.insulin, insulin_type: vals.insulin != null ? (f.insulin_type.trim() || null) : null,
       insulin_route: vals.insulin != null ? (f.insulin_route || null) : null,
+      insulin_order_id: vals.insulin != null && insulinOrder ? insulinOrder : null,
       notes: f.notes.trim() || null,
     }
-    if (Object.entries(payload).every(([k, v]) => k === 'recorded_at' || k === 'glucose_source' || k === 'insulin_route' || v == null)) {
+    if (Object.entries(payload).every(([k, v]) => ['recorded_at', 'glucose_source', 'insulin_route', 'insulin_order_id'].includes(k) || v == null)) {
       setMsg({ ok: false, text: 'Nothing to save — enter at least one reading' }); return
     }
     setSaving(true); setMsg(null)
     const r = await recordIcuObservation(adm.id, payload)
     setSaving(false)
     if (!r.success) { setMsg({ ok: false, text: r.error }); return }
-    setF(blank()); setMsg({ ok: true, text: 'Round saved' })
+    setF(blank())
+    setMsg(r.warning ? { ok: false, text: r.warning } : { ok: true, text: vals.insulin != null && insulinOrder ? 'Round saved — insulin on the drug chart' : 'Round saved' })
     onSaved()
   }
 
@@ -174,6 +187,21 @@ function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admissi
           </div>
         </FormField>
       </div>
+      {f.insulin.trim() !== '' && (
+        insulinOrders.length ? (
+          <div className="mt-2 flex items-center gap-2 flex-wrap text-xs" style={{ color: '#334155' }}>
+            <span>On the drug chart as</span>
+            <div style={{ minWidth: '14rem' }}>
+              <Select value={insulinOrder} onChange={(e) => setInsulinOrder(e.target.value)} aria-label="Insulin order">
+                {insulinOrders.map((o) => <option key={o.id} value={o.id}>{o.label} (SOS)</option>)}
+                <option value="">Not on the drug chart</option>
+              </Select>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs" style={{ color: '#94A3B8' }}>No insulin SOS order for this patient — the doctor can add one on the Treatment tab so the dose shows on the drug chart too.</p>
+        )
+      )}
       {suggested != null && f.insulin === '' && (
         <button type="button" onClick={() => setF({ ...f, insulin: String(suggested) })}
           className="mt-2 text-xs font-semibold" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>

@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess, requireModule } from '@/lib/server-utils'
 import { IcuObservationSchema, FluidBalanceSchema, CriticalCareSchema } from '@/lib/schemas'
+import { planSosDose, writeSosDose } from '@/lib/sosDose'
 import { onOxygen } from '@/lib/round'
 import { computeNews, type NewsBand } from '@/lib/earlyWarning'
 import { enterIcu, exitIcu, bedIsIcu } from '@/lib/icuStay'
@@ -112,14 +113,14 @@ export async function setCriticalCare(admissionId: string, input: Record<string,
 
 // ---- ICU flow sheet ----
 
-export async function recordIcuObservation(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {
+export async function recordIcuObservation(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult & { warning?: string }> {
   await requireWriteAccess()
   await requireModule('ipd')
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'ipd:nursing')
   const parsed = IcuObservationSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const { recorded_at, ...d } = parsed.data
+  const { recorded_at, insulin_order_id, ...d } = parsed.data
   // A component marked C (eyes closed by swelling) or T (tube) is not scored —
   // its number is dropped, and so is the total (a sum without it would read as
   // a deeper coma than the patient is in).
@@ -145,12 +146,29 @@ export async function recordIcuObservation(admissionId: string, input: Record<st
     return { success: false, error: 'This patient has been discharged — only a reading taken before discharge can be charted.' }
   }
 
+  // Insulin given from the patient's insulin SOS order: checked before anything
+  // is written, so a refused dose (say, not yet dispensed) saves nothing.
+  let dose: Awaited<ReturnType<typeof planSosDose>> | null = null
+  if (insulin_order_id && d.insulin_units != null) {
+    dose = await planSosDose(supabase, actor, insulin_order_id, {
+      given_at: at, dose: `${d.insulin_units} units${d.insulin_route ? ` ${d.insulin_route.toUpperCase()}` : ''}`,
+      notes: d.glucose_mg_dl != null ? `sugar ${d.glucose_mg_dl} mg/dl (round)` : 'from the round',
+    })
+    if (!dose.ok) return { success: false, error: `Drug chart: ${dose.error}` }
+    if (dose.admissionId !== admissionId) return { success: false, error: 'That insulin order belongs to another stay.' }
+  }
+
   const { error } = await supabase.from('icu_observations').insert({
     tenant_id: actor.tenant_id, admission_id: admissionId, recorded_by: actor.id,
     ...d, map, gcs_total: gcsTotal, recorded_at: at.toISOString(),
   })
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'icu_observation', 'admission', admissionId)
+  if (dose?.ok) {
+    const w = await writeSosDose(supabase, actor, dose)
+    if (!w.ok) return { success: true, warning: `Round saved, but the insulin did not reach the drug chart: ${w.error}` }
+    await logAudit(actor.id, 'sos_dose_given', 'ipd_admin_schedule', w.scheduleId, { order_id: insulin_order_id, from: 'round', units: d.insulin_units })
+  }
   return { success: true }
 }
 
@@ -187,6 +205,37 @@ export async function getIoSheet(admissionId: string, day: string): Promise<{
   const before = { intake: 0, output: 0 }
   for (const r of prior ?? []) before[r.direction as 'intake' | 'output'] += Number(r.volume_ml) || 0
   return { entries: (rows ?? []) as unknown as IcuFluidEntry[], before }
+}
+
+export interface RunningDrip {
+  scheduleId: string; label: string; bagNo: string | null; startedAt: string
+  rate: number | null; volume: number | null; charted: number; lastAt: string | null
+}
+
+/** IV bags started and not yet finished, with what has been charted from each — for the hourly IV column. */
+export async function listRunningDrips(admissionId: string): Promise<RunningDrip[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('ipd_admin_schedule')
+    .select('id, given_at, bag_no, order:ipd_medication_orders(type, fluid_name, volume_ml, rate_ml_per_hr, additives)')
+    .eq('admission_id', admissionId).eq('status', 'given').is('finished_at', null).not('given_at', 'is', null)
+    .order('given_at', { ascending: true })
+  type O = { type: string; fluid_name: string | null; volume_ml: number | null; rate_ml_per_hr: number | null; additives: string | null }
+  const bags = (data ?? []).filter((r) => (r.order as unknown as O | null)?.type === 'iv_infusion')
+  if (!bags.length) return []
+  const { data: rows } = await supabase.from('icu_fluid_balance').select('source_schedule_id, volume_ml, recorded_at')
+    .in('source_schedule_id', bags.map((b) => b.id as string))
+  return bags.map((b) => {
+    const o = b.order as unknown as O
+    const mine = (rows ?? []).filter((r) => r.source_schedule_id === b.id)
+    const lastAt = mine.reduce<string | null>((m, r) => (!m || (r.recorded_at as string) > m ? (r.recorded_at as string) : m), null)
+    return {
+      scheduleId: b.id as string,
+      label: [o.fluid_name ?? 'IV fluid', o.volume_ml ? `${o.volume_ml} ml` : null, o.additives ? `+ ${o.additives}` : null].filter(Boolean).join(' '),
+      bagNo: (b.bag_no as string | null) ?? null, startedAt: b.given_at as string,
+      rate: o.rate_ml_per_hr ?? null, volume: o.volume_ml ?? null,
+      charted: mine.reduce((n, r) => n + (Number(r.volume_ml) || 0), 0), lastAt,
+    }
+  })
 }
 
 export async function recordFluidBalance(admissionId: string, input: Record<string, unknown>): Promise<SimpleResult> {

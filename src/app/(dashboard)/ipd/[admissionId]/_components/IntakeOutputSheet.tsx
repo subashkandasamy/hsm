@@ -6,7 +6,8 @@ import GlassCard from '@/components/ui/GlassCard'
 import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
-import { getIoSheet, recordFluidBalance } from '@/app/actions/icu'
+import { getIoSheet, recordFluidBalance, listRunningDrips, type RunningDrip } from '@/app/actions/icu'
+import { recordDripIntake } from '@/app/actions/ipdTreatment'
 import {
   INTAKE_CATEGORIES, OUTPUT_CATEGORIES, categoryLabel, hourLabel, sheetDayOf, sheetDayWindow, sheetGrid,
 } from '@/lib/fluids'
@@ -25,7 +26,8 @@ const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toLocaleString('en-IN')}`
 /**
  * KMCH's intake/output chart: the sheet day hour by hour (08:00 → 07:59),
  * 6 / 12 / 24-hour totals, the day's net and the running balance since
- * admission. Finished IV bags arrive here on their own (finishInfusionBag).
+ * admission. A running drip is charted hour by hour at its rate (one tap),
+ * and a finished bag adds what is left of it (finishInfusionBag).
  */
 export default function IntakeOutputSheet({ admissionId, canWrite }: { admissionId: string; canWrite: boolean }) {
   const [day, setDay] = useState(() => sheetDayOf(new Date()))
@@ -56,7 +58,7 @@ export default function IntakeOutputSheet({ admissionId, canWrite }: { admission
           <Droplets className="w-4 h-4 mt-0.5" style={{ color: '#0D9488' }} />
           <div>
             <h2 className="text-sm font-semibold" style={{ color: '#0F172A' }}>Intake &amp; output</h2>
-            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Day runs 08:00 → 07:59. Finished IV bags are added automatically.</p>
+            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Day runs 08:00 → 07:59. Running drips are charted at their rate; a finished bag adds the rest.</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -119,6 +121,7 @@ export default function IntakeOutputSheet({ admissionId, canWrite }: { admission
         </table>
       </div>
 
+      {canWrite && day === today && <RunningDrips admissionId={admissionId} onSaved={load} />}
       {canWrite && <FluidEntryForm admissionId={admissionId} onSaved={load} />}
 
       {sheet?.entries.length ? (
@@ -186,6 +189,64 @@ function FluidEntryForm({ admissionId, onSaved }: { admissionId: string; onSaved
         <Input value={notes} placeholder="Note (optional) — e.g. stool loose ×2" onChange={(e) => setNotes(e.target.value)} />
         {msg && <span className="text-xs whitespace-nowrap" style={{ color: msg.ok ? '#15803D' : '#DC2626' }}>{msg.text}</span>}
       </div>
+    </div>
+  )
+}
+
+const hm = (iso: string | number) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+/** KMCH's "IVF ml/Hr" column: each running drip, charted since its last entry at the ordered rate. */
+function RunningDrips({ admissionId, onSaved }: { admissionId: string; onSaved: () => void }) {
+  const [drips, setDrips] = useState<RunningDrip[]>([])
+  // "Now" for the estimate, taken when the list loads — never read during render.
+  const [now, setNow] = useState(0)
+  const [other, setOther] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const load = useCallback(() => { listRunningDrips(admissionId).then((d) => { setDrips(d); setNow(Date.now()) }) }, [admissionId])
+  useEffect(() => { load() }, [load])
+  if (!drips.length) return null
+
+  async function chart(d: RunningDrip, ml?: number) {
+    setBusy(d.scheduleId); setMsg(null)
+    const r = await recordDripIntake(d.scheduleId, ml != null ? { ml } : {})
+    setBusy(null)
+    if (!r.success) { setMsg({ ok: false, text: r.error }); return }
+    setMsg({ ok: true, text: `${r.ml} ml charted` }); setOther((o) => ({ ...o, [d.scheduleId]: '' }))
+    load(); onSaved()
+  }
+
+  return (
+    <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: 'rgba(13,148,136,0.05)', border: '1px solid rgba(13,148,136,0.2)' }}>
+      <p className="text-xs font-semibold" style={{ color: '#0F766E' }}>Running drips</p>
+      {drips.map((d) => {
+        const from = new Date(d.lastAt ?? d.startedAt).getTime()
+        const left = d.volume != null ? d.volume - d.charted : null
+        const est = d.rate && now > from ? Math.min(Math.round((d.rate * (now - from)) / 3_600_000), left ?? Infinity) : null
+        return (
+          <div key={d.scheduleId} className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="font-semibold" style={{ color: '#0F172A' }}>{d.label}</span>
+            <span style={{ color: '#64748B' }}>
+              {d.rate ? `@ ${d.rate} ml/h · ` : ''}{d.bagNo ? `bag ${d.bagNo} · ` : ''}started {hm(d.startedAt)} · charted {d.charted}{d.volume ? ` of ${d.volume}` : ''} ml{d.lastAt ? ` (to ${hm(d.lastAt)})` : ''}
+            </span>
+            <span className="ml-auto flex items-center gap-1.5">
+              {est != null && est > 0 && (
+                <button onClick={() => chart(d)} disabled={busy === d.scheduleId} className="px-2.5 py-1 rounded-lg font-semibold"
+                  style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                  {busy === d.scheduleId ? '…' : `Chart ${est} ml since ${hm(from)}`}
+                </button>
+              )}
+              <input value={other[d.scheduleId] ?? ''} inputMode="numeric" placeholder="ml" aria-label={`Other amount for ${d.label}`}
+                onChange={(e) => setOther((o) => ({ ...o, [d.scheduleId]: e.target.value }))}
+                className="px-2 py-1 rounded-lg border w-16" style={{ borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }} />
+              <button onClick={() => { const v = Number(other[d.scheduleId]); if (v > 0) chart(d, v); else setMsg({ ok: false, text: 'Enter the ml given' }) }}
+                disabled={busy === d.scheduleId} className="px-2 py-1 rounded-lg"
+                style={{ background: '#fff', color: '#0F766E', border: '1px solid rgba(13,148,136,0.3)', cursor: 'pointer' }}>Chart amount</button>
+            </span>
+          </div>
+        )
+      })}
+      {msg && <p className="text-xs" style={{ color: msg.ok ? '#15803D' : '#DC2626' }}>{msg.text}</p>}
     </div>
   )
 }

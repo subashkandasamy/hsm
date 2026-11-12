@@ -86,6 +86,9 @@ export const toFahrenheit = (c: number | null | undefined) => (c == null ? null 
 /** Cerebral perfusion pressure: MAP − ICP. */
 export const cppOf = (map: number | null | undefined, icp: number | null | undefined) => (map != null && icp != null ? map - icp : null)
 
+/** Insulin orders, by name — the round offers a patient's insulin SOS order for a sliding-scale dose. */
+export const INSULIN_NAME = /insulin|actrapid|humulin|novorapid|lispro|aspart|glulisine|glargine|detemir|degludec/i
+
 export const labelOf = (list: ReadonlyArray<{ value: string; label: string }>, v: string | null | undefined) =>
   list.find((x) => x.value === v)?.label ?? null
 

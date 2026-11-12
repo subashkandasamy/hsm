@@ -16,6 +16,7 @@ import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
 import { pageAll } from '@/lib/supabase/pageAll'
 import { requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
 import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
+import { planSosDose, writeSosDose, resolveChecker, pharmacyDispensed } from '@/lib/sosDose'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -338,19 +339,10 @@ export async function updateSlotStatus(
 
     if (slot) {
       const orderType = (slot.order as unknown as { type: string } | null)?.type
-      if (orderType && orderType !== 'oxygen') {
-        const { data: pharmReqs } = await supabase
-          .from('ipd_pharmacy_requests')
-          .select('status')
-          .eq('order_id', slot.order_id as string)
-          .neq('status', 'cancelled')
-
-        const dispensed = (pharmReqs ?? []).some((r) => (r.status as string) === 'dispensed')
-        if (!dispensed) {
-          return {
-            success: false,
-            error: 'Pharmacy has not dispensed this medication yet. The dose cannot be marked as given until the pharmacy prepares and dispatches it.',
-          }
+      if (!(await pharmacyDispensed(supabase, slot.order_id as string, orderType))) {
+        return {
+          success: false,
+          error: 'Pharmacy has not dispensed this medication yet. The dose cannot be marked as given until the pharmacy prepares and dispatches it.',
         }
       }
     }
@@ -359,13 +351,9 @@ export async function updateSlotStatus(
   // The checker is a different, active member of this hospital's clinical staff.
   let checkedBy: string | null = null
   if (status === 'given' && extra?.checked_by) {
-    if (extra.checked_by === actor.id) return { success: false, error: 'The person who checks the dose cannot be the one giving it.' }
-    const { data: checker } = await supabase.from('profiles').select('id, role, is_active')
-      .eq('id', extra.checked_by).eq('tenant_id', actor.tenant_id).maybeSingle()
-    if (!checker?.is_active || !['nurse', 'doctor', 'admin'].includes(checker.role as string)) {
-      return { success: false, error: 'Choose a nurse or doctor of this hospital to check the dose.' }
-    }
-    checkedBy = checker.id as string
+    const c = await resolveChecker(supabase, actor, extra.checked_by)
+    if (!c.ok) return { success: false, error: c.error }
+    checkedBy = c.id
   }
   const bagNo = status === 'given' ? (extra?.bag_no?.trim().slice(0, 20) || null) : null
 
@@ -421,19 +409,120 @@ export async function finishInfusionBag(
   if (error) return { success: false, error: error.message }
   if (!done?.length) return { success: false, error: 'This bag is already marked finished.' }
 
+  // What the bag gave that is not yet on the sheet: its volume, less the
+  // hourly entries already charted from it (recordDripIntake).
   let intakeMl: number | null = null
   if (order.volume_ml && order.volume_ml > 0) {
-    const { error: fbErr } = await supabase.from('icu_fluid_balance').insert({
-      tenant_id: actor.tenant_id, admission_id: slot.admission_id, recorded_by: actor.id,
-      recorded_at: at.toISOString(), direction: 'intake', category: 'iv', volume_ml: Math.round(order.volume_ml),
-      notes: [order.fluid_name, slot.bag_no ? `bag ${slot.bag_no}` : null].filter(Boolean).join(' — ') || 'IV bag',
-      source_schedule_id: scheduleId,
-    })
-    if (fbErr && fbErr.code !== '23505') console.error('[finishInfusionBag] intake row:', fbErr.message)
-    else intakeMl = Math.round(order.volume_ml)
+    const { charted } = await chartedFromBag(supabase, scheduleId)
+    const remainder = Math.round(order.volume_ml) - charted
+    if (remainder > 0) {
+      const { error: fbErr } = await supabase.from('icu_fluid_balance').insert({
+        tenant_id: actor.tenant_id, admission_id: slot.admission_id, recorded_by: actor.id,
+        recorded_at: at.toISOString(), direction: 'intake', category: 'iv', volume_ml: remainder,
+        notes: [order.fluid_name, slot.bag_no ? `bag ${slot.bag_no}` : null, charted ? 'rest of the bag' : null].filter(Boolean).join(' — ') || 'IV bag',
+        source_schedule_id: scheduleId,
+      })
+      if (fbErr) console.error('[finishInfusionBag] intake row:', fbErr.message)
+      else intakeMl = remainder
+    } else intakeMl = 0
   }
   await logAudit(actor.id, 'iv_bag_finished', 'ipd_admin_schedule', scheduleId, { finished_at: at.toISOString(), intake_ml: intakeMl })
   return { success: true, intakeMl }
+}
+
+/** What has been charted from one IV bag so far, and up to when. */
+async function chartedFromBag(supabase: Awaited<ReturnType<typeof createClient>>, scheduleId: string): Promise<{ charted: number; lastAt: string | null }> {
+  const { data } = await supabase.from('icu_fluid_balance').select('volume_ml, recorded_at')
+    .eq('source_schedule_id', scheduleId).order('recorded_at', { ascending: false })
+  return { charted: (data ?? []).reduce((n, r) => n + (Number(r.volume_ml) || 0), 0), lastAt: (data?.[0]?.recorded_at as string) ?? null }
+}
+
+/**
+ * KMCH's "IVF ml/Hr" column: what a running drip gave since it was last
+ * charted, at its ordered rate — never more than is left in the bag. A nurse
+ * can type the amount instead (a drip that slowed or stopped).
+ */
+export async function recordDripIntake(
+  scheduleId: string, input: { until?: string | null; ml?: number | null } = {},
+): Promise<{ success: true; ml: number } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:nursing')
+  const supabase = await createClient()
+
+  const { data: slot } = await supabase.from('ipd_admin_schedule')
+    .select('id, admission_id, status, given_at, finished_at, bag_no, order:ipd_medication_orders(type, fluid_name, volume_ml, rate_ml_per_hr)')
+    .eq('id', scheduleId).maybeSingle()
+  if (!slot) return { success: false, error: 'Drip not found' }
+  const order = slot.order as unknown as { type: string; fluid_name: string | null; volume_ml: number | null; rate_ml_per_hr: number | null } | null
+  if (order?.type !== 'iv_infusion') return { success: false, error: 'Only an IV infusion is charted this way.' }
+  if (slot.status !== 'given' || !slot.given_at) return { success: false, error: 'Start the bag (mark it given) first.' }
+  if (slot.finished_at) return { success: false, error: 'This bag has finished.' }
+  const gate = await assertTreatmentStarted(slot.admission_id as string, { allowDischarged: true })
+  if (!gate.success) return gate
+
+  const { charted, lastAt } = await chartedFromBag(supabase, scheduleId)
+  const from = new Date(lastAt ?? (slot.given_at as string))
+  const until = input.until ? new Date(input.until) : new Date()
+  if (Number.isNaN(until.getTime())) return { success: false, error: 'Not a valid time' }
+  if (until.getTime() > Date.now() + 2 * 60_000) return { success: false, error: 'The time is in the future' }
+  const { data: adm } = await supabase.from('admissions').select('status, discharged_at').eq('id', slot.admission_id).maybeSingle()
+  if (adm?.status !== 'admitted' && (!adm?.discharged_at || until.getTime() > new Date(adm.discharged_at as string).getTime())) {
+    return { success: false, error: 'This patient has been discharged — only intake before discharge can be charted.' }
+  }
+  const hhmm = (d: Date) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
+  if (until.getTime() - from.getTime() < 10 * 60_000) return { success: false, error: `Already charted up to ${hhmm(from)}.` }
+
+  const left = order.volume_ml && order.volume_ml > 0 ? Math.round(order.volume_ml) - charted : Infinity
+  let ml: number
+  if (input.ml != null) {
+    if (!Number.isFinite(input.ml) || input.ml <= 0 || input.ml > 5000) return { success: false, error: 'Enter the ml given' }
+    ml = Math.round(input.ml)
+  } else {
+    if (!order.rate_ml_per_hr) return { success: false, error: 'This drip has no rate — enter the ml given.' }
+    ml = Math.round((order.rate_ml_per_hr * (until.getTime() - from.getTime())) / 3_600_000)
+  }
+  ml = Math.min(ml, left)
+  if (ml < 1) return { success: false, error: 'Nothing left in this bag to chart — mark it finished.' }
+
+  const { data: row, error } = await supabase.from('icu_fluid_balance').insert({
+    tenant_id: actor.tenant_id, admission_id: slot.admission_id, recorded_by: actor.id,
+    recorded_at: until.toISOString(), direction: 'intake', category: 'iv', volume_ml: ml,
+    notes: [order.fluid_name, slot.bag_no ? `bag ${slot.bag_no}` : null, `${hhmm(from)}–${hhmm(until)}`, input.ml == null && order.rate_ml_per_hr ? `at ${order.rate_ml_per_hr} ml/h` : null].filter(Boolean).join(' — '),
+    source_schedule_id: scheduleId,
+  }).select('id').single()
+  if (error) return { success: false, error: error.message }
+  // Two nurses charting the same bag at once: whoever pushed it past the bag's volume steps back.
+  if (Number.isFinite(left)) {
+    const after = await chartedFromBag(supabase, scheduleId)
+    if (after.charted > Math.round(order.volume_ml!)) {
+      await supabase.from('icu_fluid_balance').delete().eq('id', row.id)
+      return { success: false, error: 'Someone has just charted this bag — refresh and check.' }
+    }
+  }
+  await logAudit(actor.id, 'iv_intake_charted', 'ipd_admin_schedule', scheduleId, { ml, from: from.toISOString(), until: until.toISOString() })
+  return { success: true, ml }
+}
+
+/**
+ * One dose from an SOS (as needed) order — KMCH's STAT / SOS table. The order
+ * has no planned slots; the dose is written as it is given.
+ */
+export async function giveSosDose(orderId: string, input: {
+  given_at?: string | null; dose?: string | null; checked_by?: string | null; notes?: string | null
+}): Promise<{ success: true; scheduleId: string } | { success: false; error: string }> {
+  await requireWriteAccess()
+  await requireModule('ipd')
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'ipd:nursing')
+  const supabase = await createClient()
+  const plan = await planSosDose(supabase, actor, orderId, input)
+  if (!plan.ok) return { success: false, error: plan.error }
+  const w = await writeSosDose(supabase, actor, plan)
+  if (!w.ok) return { success: false, error: w.error }
+  await logAudit(actor.id, 'sos_dose_given', 'ipd_admin_schedule', w.scheduleId, { order_id: orderId, given_at: plan.givenAt.toISOString(), checked_by: plan.checkedBy, notes: plan.notes })
+  return { success: true, scheduleId: w.scheduleId }
 }
 
 export async function restoreSlotToPending(scheduleId: string): Promise<SimpleResult> {

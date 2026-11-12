@@ -335,6 +335,8 @@ export const IcuObservationSchema = z.object({
   position:       z.enum(['supine', 'left', 'right', 'prone', 'head_up', 'sitting']).nullable().optional(),
   rt_checked:     z.boolean().optional(),
   insulin_route:  z.enum(['sc', 'iv']).nullable().optional(),
+  /** The insulin SOS order the dose was given from — it then shows on the drug chart too. Not a column. */
+  insulin_order_id: z.string().uuid().nullable().optional(),
   /** When the reading was taken, if not now (charted late). */
   recorded_at:    z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional(),
 })

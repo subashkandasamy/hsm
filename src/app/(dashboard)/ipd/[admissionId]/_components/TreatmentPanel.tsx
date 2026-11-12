@@ -62,6 +62,7 @@ import {
   getVisitPrescriptions, copyPrescriptionsToIPD,
   listIpdLabOrders, createIpdLabOrder, cancelIpdLabOrder, listLabCatalogForIpd,
   listIpdRadiologyOrders, createIpdRadiologyOrder, cancelIpdRadiologyOrder, listRadiologyCatalogForIpd,
+  giveSosDose,
 } from '@/app/actions/ipdTreatment'
 import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
@@ -372,9 +373,26 @@ interface OrderCardProps {
   staff: Array<{ id: string; full_name: string; role: string }>
   meId: string | null
   onFinish: (id: string) => void
+  /** SOS order: chart a dose as it is given. Returns an error, or null when saved. */
+  onGiveSos: (orderId: string, input: { given_at: string | null; dose: string | null; checked_by: string | null; notes: string | null }) => Promise<string | null>
 }
-function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onRestore, onStop, staff, meId, onFinish }: OrderCardProps) {
+function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppingId, onAction, onRestore, onStop, staff, meId, onFinish, onGiveSos }: OrderCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const isSos = order.frequency_type === 'sos'
+  const [sosOpen, setSosOpen] = useState(false)
+  const [sos, setSos] = useState({ at: '', dose: '', checker: '', notes: '' })
+  const [sosBusy, setSosBusy] = useState(false)
+  const [sosErr, setSosErr] = useState<string | null>(null)
+  async function giveSos() {
+    setSosBusy(true); setSosErr(null)
+    const err = await onGiveSos(order.id, {
+      given_at: sos.at ? new Date(sos.at).toISOString() : null, dose: sos.dose.trim() || null,
+      checked_by: sos.checker || null, notes: sos.notes.trim() || null,
+    })
+    setSosBusy(false)
+    if (err) { setSosErr(err); return }
+    setSosOpen(false); setSos({ at: '', dose: '', checker: '', notes: '' }); setExpanded(true)
+  }
   const col = TYPE_COLOR[order.type]
 
   // Oxygen has no pharmacy flow; other types need pharmacy to dispense before nurse can mark 'given'
@@ -416,6 +434,12 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
           </span>
         )}
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isSos && canGive && order.status === 'active' && pharmacyReady && !sosOpen && (
+            <button onClick={() => setSosOpen(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Check className="w-3 h-3" />Give a dose
+            </button>
+          )}
           {canOrder && order.status === 'active' && (
             <button onClick={() => onStop(order.id)} disabled={stoppingId === order.id}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
@@ -429,6 +453,29 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
           </button>
         </div>
       </div>
+      {sosOpen && (
+        <div className="px-3 py-2.5 flex items-center gap-2 flex-wrap" style={{ background: '#fff', borderTop: '1px solid #F1F5F9' }}>
+          <input type="datetime-local" value={sos.at} onChange={(e) => setSos({ ...sos, at: e.target.value })} aria-label="Time given (if earlier)"
+            className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+          <input value={sos.dose} onChange={(e) => setSos({ ...sos, dose: e.target.value })} aria-label="Dose given"
+            placeholder={order.dose != null ? `Dose (${order.dose} ${order.dose_unit ?? ''})` : 'Dose'}
+            className="px-2 py-1 rounded-lg text-xs border w-32" style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+          <select value={sos.checker} onChange={(e) => setSos({ ...sos, checker: e.target.value })} aria-label="Checked by"
+            className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }}>
+            <option value="">Checked by — (optional)</option>
+            {staff.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+          <input value={sos.notes} onChange={(e) => setSos({ ...sos, notes: e.target.value })} aria-label="Reason / note"
+            placeholder="Reason (e.g. fever 101 °F)" className="px-2 py-1 rounded-lg text-xs border flex-1 min-w-[10rem]" style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
+          <button onClick={giveSos} disabled={sosBusy} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+            style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+            <Check className="w-3 h-3" />{sosBusy ? '…' : 'Confirm given'}
+          </button>
+          <button onClick={() => { setSosOpen(false); setSosErr(null) }} className="px-2 py-1 rounded-lg text-xs"
+            style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>Cancel</button>
+          {sosErr && <p className="w-full text-xs" style={{ color: '#DC2626' }}>{sosErr}</p>}
+        </div>
+      )}
       {expanded && (
         <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
           {days.map((day) => (
@@ -449,7 +496,7 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
             </div>
           ))}
           {slots.length === 0 && (
-            <p className="text-xs text-center py-3" style={{ color: '#94A3B8' }}>No schedule slots.</p>
+            <p className="text-xs text-center py-3" style={{ color: '#94A3B8' }}>{isSos ? 'No doses given yet.' : 'No schedule slots.'}</p>
           )}
         </div>
       )}
@@ -1253,6 +1300,13 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
     setSchedule((prev) => prev.map((s) => s.id === scheduleId ? { ...s, finished_at: new Date().toISOString() } : s))
   }
 
+  async function handleGiveSos(orderId: string, input: { given_at: string | null; dose: string | null; checked_by: string | null; notes: string | null }): Promise<string | null> {
+    const res = await giveSosDose(orderId, input)
+    if (!res.success) return res.error
+    setSchedule(await listSchedule(admissionId))
+    return null
+  }
+
   async function handleRestoreSlot(scheduleId: string) {
     setActingId(scheduleId)
     const res = await restoreSlotToPending(scheduleId)
@@ -1526,7 +1580,7 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
                 todayStr={todayStr} canOrder={canOrder} canGive={canGive}
                 actingId={actingId} stoppingId={stoppingId}
                 onAction={handleSlotAction} onRestore={handleRestoreSlot} onStop={handleStop}
-                staff={staff} meId={profile?.id ?? null} onFinish={handleFinishBag} />
+                staff={staff} meId={profile?.id ?? null} onFinish={handleFinishBag} onGiveSos={handleGiveSos} />
             ))}
           </div>
         )}
