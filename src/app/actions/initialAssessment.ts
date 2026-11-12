@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { toCelsius } from '@/lib/round'
 import { createClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { requirePermission } from '@/lib/rbac'
@@ -107,22 +108,42 @@ const num = (min: number, max: number) => z.number().min(min).max(max).nullable(
 const when = z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional()
 
 const SECTION_SCHEMAS: Record<SectionKey, z.ZodTypeAny> = {
-  arrival: z.object({ pre_hospital: txt(), iv_fluids: z.boolean().optional(), inotropes: z.boolean().optional(), ventilated: z.boolean().optional(), bystander: txt(200) }),
+  arrival: z.object({ pre_hospital: txt(), iv_fluids: z.boolean().optional(), inotropes: z.boolean().optional(), ventilated: z.boolean().optional(), bystander: txt(200),
+    iv_fluids_note: txt(200), inotropes_note: txt(200), ventilation_note: txt(200) }),
   on_arrival: z.object({
     at: when, avpu: z.enum(['A', 'V', 'P', 'U', '']).optional(), oriented: z.boolean().nullable().optional(),
-    hr: num(0, 300), sbp: num(0, 350), dbp: num(0, 250), rr: num(0, 120), spo2: num(0, 100), temp: num(25, 45),
+    // °C or °F — KMCH writes °F; a reading of 80 or more is converted before it is kept
+    hr: num(0, 300), sbp: num(0, 350), dbp: num(0, 250), rr: num(0, 120), spo2: num(0, 100), temp: num(25, 110),
     grbs: num(0, 1500), etco2: num(0, 150), weight: num(0, 400),
     gcs_e: num(1, 4), gcs_v: num(1, 5), gcs_m: num(1, 6),
+    level: z.enum(['unresponsive', 'altered', 'drowsy', 'conscious', '']).optional(),
+    orientation: z.object({ time: z.boolean().optional(), place: z.boolean().optional(), person: z.boolean().optional() }).optional(),
+    pain: num(0, 10), id_marks: txt(300), triage_staff: txt(100),
   }),
   primary_survey: z.object({
-    airway: z.object({ status: z.enum(['patent', 'at_risk', 'obstructed', '']).optional(), intervention: txt(500) }).optional(),
-    breathing: z.object({ findings: txt(500), intervention: txt(500) }).optional(),
-    circulation: z.object({ crt: txt(50), bleeding: txt(300), iv_access: txt(200), findings: txt(500) }).optional(),
-    disability: z.object({ pupils_left: txt(50), pupils_right: txt(50), findings: txt(500) }).optional(),
+    airway: z.object({
+      status: z.enum(['patent', 'at_risk', 'obstructed', '']).optional(), intervention: txt(500),
+      signs: z.array(z.enum(['patent', 'impending', 'secretions', 'stridor'])).max(4).optional(), oxygen_lpm: num(0, 60),
+      c_spine: z.enum(['cleared', 'collar', '']).optional(), triple_immobilised: z.boolean().optional(),
+    }).optional(),
+    breathing: z.object({
+      findings: txt(500), intervention: txt(500),
+      trachea: z.enum(['midline', 'shift_right', 'shift_left', '']).optional(), surgical_emphysema: z.enum(['yes', 'no', '']).optional(),
+      breath_r: txt(200), breath_l: txt(200), percussion_r: txt(200), percussion_l: txt(200),
+    }).optional(),
+    circulation: z.object({
+      crt: txt(50), bleeding: txt(300), iv_access: txt(200), findings: txt(500),
+      central_pulse: z.enum(['present', 'absent', '']).optional(), heart_sound: z.enum(['yes', 'no', 'muffled', '']).optional(),
+      peripheral_pulse: z.enum(['present', 'feeble', 'absent', '']).optional(), radio_femoral: z.enum(['present', 'absent', '']).optional(),
+      pelvic_compression: z.enum(['positive', 'negative', '']).optional(), actions: txt(500),
+    }).optional(),
+    disability: z.object({ pupils_left: txt(50), pupils_right: txt(50), findings: txt(500), cbg: num(0, 1500) }).optional(),
     exposure: z.object({ findings: txt(1000) }).optional(),
   }),
-  sample: z.object({ complaint: txt(1000), history: txt(4000), medications: txt(1000), last_meal: txt(100), lmp: txt(100), events: txt(2000) }),
-  efast: z.object({ done: z.enum(['yes', 'no', '']).optional(), results: z.record(z.string().max(30), z.enum(['positive', 'negative', ''])).optional(), notes: txt(1000) }),
+  sample: z.object({ complaint: txt(1000), history: txt(4000), medications: txt(1000), last_meal: txt(100), lmp: txt(100), events: txt(2000),
+    smoking: z.enum(['yes', 'no', 'ex', '']).optional(), alcohol: z.enum(['yes', 'no', 'ex', '']).optional(), social: txt(300) }),
+  efast: z.object({ done: z.enum(['yes', 'no', '']).optional(), results: z.record(z.string().max(30), z.enum(['positive', 'negative', ''])).optional(), notes: txt(1000),
+    echo: txt(500), usg_chest: txt(500), usg_abdomen: txt(500) }),
   secondary_survey: z.object({ signs: z.record(z.string().max(30), z.boolean()).optional(), general: txt(1000), systems: z.record(z.string().max(30), z.string().max(1000)).optional() }),
   burns: z.object({ areas: z.record(z.string().max(30), z.number().min(0).max(1)).optional(), depth: txt(200) }),
   plan: z.object({
@@ -147,6 +168,11 @@ export async function saveAssessmentSection(
   const key = section as SectionKey
   const parsed = SECTION_SCHEMAS[key].safeParse(value)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  // Temperature on arrival is kept in °C (it becomes the first chart reading); KMCH writes °F.
+  if (key === 'on_arrival') {
+    const oa = parsed.data as { temp?: number | null }
+    if (typeof oa.temp === 'number') oa.temp = toCelsius(oa.temp)
+  }
 
   const supabase = await createClient()
   const r = await resolve(supabase, owner)

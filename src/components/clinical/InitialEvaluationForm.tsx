@@ -9,7 +9,7 @@ import Select from '@/components/ui/Select'
 import SpeechTextarea from '@/components/ui/SpeechTextarea'
 import { saveAssessmentSection, type AssessmentOwner, type AssessmentView } from '@/app/actions/initialAssessment'
 import {
-  sectionsFor, burnRegions, burnTotal, gcsTotal, EFAST_VIEWS, DISPOSITIONS,
+  sectionsFor, burnRegions, burnTotal, gcsTotal, EFAST_VIEWS, DISPOSITIONS, AIRWAY_SIGNS, ARRIVAL_LEVELS, HABITS,
   type AssessmentData, type SectionKey, type TreatmentEntry,
 } from '@/lib/initialAssessment'
 import { SURVEY_SIGNS, SURVEY_SYSTEMS, EXAM_SIGN_LABELS } from '@/lib/clinicalExam'
@@ -37,6 +37,20 @@ const filled = (o: unknown): boolean =>
 const check = { width: '15px', height: '15px', accentColor: '#0D9488', cursor: 'pointer', flexShrink: 0 } as const
 const grid = 'grid gap-3 grid-cols-1 sm:grid-cols-2'
 const grid4 = 'grid gap-3 grid-cols-2 sm:grid-cols-4'
+
+/** One of KMCH's tick-one boxes, as a select. */
+function Pick({ label, value, options, disabled, onChange }: {
+  label: string; value: string | undefined; options: ReadonlyArray<readonly [string, string]>; disabled: boolean; onChange: (v: string) => void
+}) {
+  return (
+    <FormField label={label}>
+      <Select value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        <option value="">—</option>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </Select>
+    </FormField>
+  )
+}
 
 /**
  * The Initial Evaluation (KMCH's ER Initial Evaluation Record). The same form
@@ -157,6 +171,13 @@ export default function InitialEvaluationForm({ view, owner, editable, defaultOp
                           </label>
                         ))}
                       </div>
+                      {(data.arrival?.iv_fluids || data.arrival?.inotropes || data.arrival?.ventilated) && (
+                        <div className={grid}>
+                          {data.arrival?.iv_fluids && <FormField label="IV fluids — what"><Input value={data.arrival?.iv_fluids_note ?? ''} disabled={ro} placeholder="e.g. NS 500 ml" onChange={(e) => patch('arrival', { iv_fluids_note: e.target.value })} /></FormField>}
+                          {data.arrival?.inotropes && <FormField label="Inotropes — what"><Input value={data.arrival?.inotropes_note ?? ''} disabled={ro} placeholder="e.g. Noradrenaline 0.1 mcg/kg/min" onChange={(e) => patch('arrival', { inotropes_note: e.target.value })} /></FormField>}
+                          {data.arrival?.ventilated && <FormField label="Ventilation — how"><Input value={data.arrival?.ventilation_note ?? ''} disabled={ro} placeholder="e.g. Bag and mask" onChange={(e) => patch('arrival', { ventilation_note: e.target.value })} /></FormField>}
+                        </div>
+                      )}
                       <FormField label="Brought by (bystander / relative / police)">
                         <Input value={data.arrival?.bystander ?? ''} disabled={ro} onChange={(e) => patch('arrival', { bystander: e.target.value })} />
                       </FormField>
@@ -176,9 +197,13 @@ export default function InitialEvaluationForm({ view, owner, editable, defaultOp
                             <option value="P">P — Responds to pain</option><option value="U">U — Unresponsive</option>
                           </Select>
                         </FormField>
+                        <Pick label="On arrival" value={oa.level} disabled={ro} options={ARRIVAL_LEVELS.map((x) => [x.value, x.label] as const)}
+                          onChange={(v) => patch('on_arrival', { level: v as 'drowsy' })} />
+                        <Pick label="Pain score (0–10)" value={oa.pain != null ? String(oa.pain) : ''} disabled={ro}
+                          options={Array.from({ length: 11 }, (_, i) => [String(i), String(i)] as const)} onChange={(v) => patch('on_arrival', { pain: v === '' ? null : Number(v) })} />
                       </div>
                       <div className={grid4}>
-                        {([['hr', 'Pulse /min'], ['sbp', 'BP systolic'], ['dbp', 'BP diastolic'], ['rr', 'Resp. rate'], ['spo2', 'SpO₂ %'], ['temp', 'Temp °C'],
+                        {([['hr', 'Pulse /min'], ['sbp', 'BP systolic'], ['dbp', 'BP diastolic'], ['rr', 'Resp. rate'], ['spo2', 'SpO₂ %'], ['temp', 'Temp °C or °F'],
                           ['grbs', 'GRBS mg/dl'], ['etco2', 'EtCO₂'], ['weight', 'Weight kg'], ['gcs_e', 'GCS E (1–4)'], ['gcs_v', 'GCS V (1–5)'], ['gcs_m', 'GCS M (1–6)']] as const).map(([k, l]) => (
                           <FormField key={k} label={l}>
                             <Input inputMode="decimal" value={oa[k] != null ? String(oa[k]) : ''} disabled={ro}
@@ -186,61 +211,104 @@ export default function InitialEvaluationForm({ view, owner, editable, defaultOp
                           </FormField>
                         ))}
                       </div>
-                      <label className="flex items-center gap-2 text-sm" style={{ color: '#334155' }}>
-                        <input type="checkbox" style={check} disabled={ro} checked={!!oa.oriented} onChange={(e) => patch('on_arrival', { oriented: e.target.checked })} />
-                        Oriented to time, place and person
-                      </label>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <span className="text-sm" style={{ color: '#334155' }}>Oriented to</span>
+                        {(['time', 'place', 'person'] as const).map((k) => (
+                          <label key={k} className="flex items-center gap-2 text-sm capitalize" style={{ color: '#334155' }}>
+                            <input type="checkbox" style={check} disabled={ro} checked={!!oa.orientation?.[k]}
+                              onChange={(e) => {
+                                const o = { ...(oa.orientation ?? {}), [k]: e.target.checked }
+                                patch('on_arrival', { orientation: o, oriented: !!(o.time && o.place && o.person) })
+                              }} />
+                            {k}
+                          </label>
+                        ))}
+                      </div>
+                      <div className={grid}>
+                        <FormField label="ID marks">
+                          <Input value={oa.id_marks ?? ''} disabled={ro} placeholder="1. Mole on left cheek  2. Scar on right forearm" onChange={(e) => patch('on_arrival', { id_marks: e.target.value })} />
+                        </FormField>
+                        <FormField label="Triage staff">
+                          <Input value={oa.triage_staff ?? ''} disabled={ro} onChange={(e) => patch('on_arrival', { triage_staff: e.target.value })} />
+                        </FormField>
+                      </div>
                       <p className="text-xs" style={{ color: '#94A3B8' }}>
                         {gcsTotal(oa) != null ? `GCS ${gcsTotal(oa)}/15. ` : ''}Once the patient is admitted these become the first reading on the vitals chart.
                       </p>
                     </>
                   )}
 
-                  {key === 'primary_survey' && (
+                  {key === 'primary_survey' && (() => {
+                    const ps = data.primary_survey ?? {}
+                    const A = ps.airway ?? {}, B = ps.breathing ?? {}, Cc = ps.circulation ?? {}, D = ps.disability ?? {}
+                    const sub = (t: string) => <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0D9488' }}>{t}</p>
+                    return (
                     <>
-                      <div className={grid}>
-                        <FormField label="A — Airway">
-                          <Select value={data.primary_survey?.airway?.status ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'airway', { status: e.target.value })}>
-                            <option value="">—</option><option value="patent">Patent</option><option value="at_risk">At risk</option><option value="obstructed">Obstructed</option>
-                          </Select>
-                        </FormField>
-                        <FormField label="Airway intervention">
-                          <Input value={data.primary_survey?.airway?.intervention ?? ''} disabled={ro} placeholder="Suction, airway, intubation…" onChange={(e) => nested('primary_survey', 'airway', { intervention: e.target.value })} />
-                        </FormField>
-                        <FormField label="B — Breathing">
-                          <Input value={data.primary_survey?.breathing?.findings ?? ''} disabled={ro} placeholder="Air entry, chest movement" onChange={(e) => nested('primary_survey', 'breathing', { findings: e.target.value })} />
-                        </FormField>
-                        <FormField label="Breathing intervention">
-                          <Input value={data.primary_survey?.breathing?.intervention ?? ''} disabled={ro} placeholder="O₂, ICD, ventilation" onChange={(e) => nested('primary_survey', 'breathing', { intervention: e.target.value })} />
-                        </FormField>
-                        <FormField label="C — Capillary refill">
-                          <Input value={data.primary_survey?.circulation?.crt ?? ''} disabled={ro} placeholder="< 2 s" onChange={(e) => nested('primary_survey', 'circulation', { crt: e.target.value })} />
-                        </FormField>
-                        <FormField label="Bleeding">
-                          <Input value={data.primary_survey?.circulation?.bleeding ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'circulation', { bleeding: e.target.value })} />
-                        </FormField>
-                        <FormField label="IV access">
-                          <Input value={data.primary_survey?.circulation?.iv_access ?? ''} disabled={ro} placeholder="18G right forearm" onChange={(e) => nested('primary_survey', 'circulation', { iv_access: e.target.value })} />
-                        </FormField>
-                        <FormField label="Circulation — other">
-                          <Input value={data.primary_survey?.circulation?.findings ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'circulation', { findings: e.target.value })} />
-                        </FormField>
-                        <FormField label="D — Pupils, right">
-                          <Input value={data.primary_survey?.disability?.pupils_right ?? ''} disabled={ro} placeholder="3 mm, reacting" onChange={(e) => nested('primary_survey', 'disability', { pupils_right: e.target.value })} />
-                        </FormField>
-                        <FormField label="Pupils, left">
-                          <Input value={data.primary_survey?.disability?.pupils_left ?? ''} disabled={ro} placeholder="3 mm, reacting" onChange={(e) => nested('primary_survey', 'disability', { pupils_left: e.target.value })} />
-                        </FormField>
+                      {sub('A — Airway')}
+                      <div className="flex flex-wrap gap-4">
+                        {AIRWAY_SIGNS.map((x) => (
+                          <label key={x.value} className="flex items-center gap-2 text-sm" style={{ color: '#334155' }}>
+                            <input type="checkbox" style={check} disabled={ro} checked={!!A.signs?.includes(x.value)}
+                              onChange={(e) => nested('primary_survey', 'airway', { signs: e.target.checked ? [...(A.signs ?? []), x.value] : (A.signs ?? []).filter((v) => v !== x.value) })} />
+                            {x.label}
+                          </label>
+                        ))}
                       </div>
-                      <FormField label="Disability — other (lateralising signs)">
-                        <Input value={data.primary_survey?.disability?.findings ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'disability', { findings: e.target.value })} />
-                      </FormField>
-                      <FormField label="E — Exposure (injuries, temperature)">
-                        <SpeechTextarea variant="field" value={data.primary_survey?.exposure?.findings ?? ''} disabled={ro}
-                          onChange={(v) => nested('primary_survey', 'exposure', { findings: v })} style={{ minHeight: '3.5rem' }} />
-                      </FormField>
+                      <div className={grid4}>
+                        <FormField label="Oxygen L/min"><Input inputMode="decimal" value={A.oxygen_lpm != null ? String(A.oxygen_lpm) : ''} disabled={ro} onChange={(e) => nested('primary_survey', 'airway', { oxygen_lpm: numOrNull(e.target.value) })} /></FormField>
+                        <Pick label="C-spine (trauma)" value={A.c_spine} disabled={ro} options={[['cleared', 'Cleared'], ['collar', 'Collar']]} onChange={(v) => nested('primary_survey', 'airway', { c_spine: v })} />
+                        <label className="flex items-center gap-2 text-sm self-end pb-2" style={{ color: '#334155' }}>
+                          <input type="checkbox" style={check} disabled={ro} checked={!!A.triple_immobilised} onChange={(e) => nested('primary_survey', 'airway', { triple_immobilised: e.target.checked })} />
+                          Triple immobilised
+                        </label>
+                      </div>
+                      <FormField label="Airway actions"><Input value={A.intervention ?? ''} disabled={ro} placeholder="Suction, airway, intubation…" onChange={(e) => nested('primary_survey', 'airway', { intervention: e.target.value })} /></FormField>
+
+                      {sub('B — Breathing')}
+                      <div className={grid4}>
+                        <Pick label="Trachea" value={B.trachea} disabled={ro} options={[['midline', 'Midline'], ['shift_right', 'Shift to right'], ['shift_left', 'Shift to left']]} onChange={(v) => nested('primary_survey', 'breathing', { trachea: v })} />
+                        <Pick label="Surgical emphysema" value={B.surgical_emphysema} disabled={ro} options={[['no', 'No'], ['yes', 'Yes']]} onChange={(v) => nested('primary_survey', 'breathing', { surgical_emphysema: v })} />
+                        <FormField label="Breath sound — right"><Input value={B.breath_r ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'breathing', { breath_r: e.target.value })} /></FormField>
+                        <FormField label="Breath sound — left"><Input value={B.breath_l ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'breathing', { breath_l: e.target.value })} /></FormField>
+                        <FormField label="Percussion — right"><Input value={B.percussion_r ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'breathing', { percussion_r: e.target.value })} /></FormField>
+                        <FormField label="Percussion — left"><Input value={B.percussion_l ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'breathing', { percussion_l: e.target.value })} /></FormField>
+                      </div>
+                      <div className={grid}>
+                        <FormField label="Breathing — others"><Input value={B.findings ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'breathing', { findings: e.target.value })} /></FormField>
+                        <FormField label="Breathing actions"><Input value={B.intervention ?? ''} disabled={ro} placeholder="O₂, ICD, ventilation" onChange={(e) => nested('primary_survey', 'breathing', { intervention: e.target.value })} /></FormField>
+                      </div>
+
+                      {sub('C — Circulation')}
+                      <div className={grid4}>
+                        <Pick label="Central pulse" value={Cc.central_pulse} disabled={ro} options={[['present', 'Present'], ['absent', 'Absent']]} onChange={(v) => nested('primary_survey', 'circulation', { central_pulse: v })} />
+                        <Pick label="Heart sound" value={Cc.heart_sound} disabled={ro} options={[['yes', 'Yes'], ['no', 'No'], ['muffled', 'Muffled']]} onChange={(v) => nested('primary_survey', 'circulation', { heart_sound: v })} />
+                        <Pick label="Peripheral pulse" value={Cc.peripheral_pulse} disabled={ro} options={[['present', 'Present'], ['feeble', 'Feeble'], ['absent', 'Absent']]} onChange={(v) => nested('primary_survey', 'circulation', { peripheral_pulse: v })} />
+                        <Pick label="Radio-femoral delay" value={Cc.radio_femoral} disabled={ro} options={[['absent', 'Absent'], ['present', 'Present']]} onChange={(v) => nested('primary_survey', 'circulation', { radio_femoral: v })} />
+                        <Pick label="Pelvic compression & distraction (trauma)" value={Cc.pelvic_compression} disabled={ro} options={[['negative', 'Negative'], ['positive', 'Positive']]} onChange={(v) => nested('primary_survey', 'circulation', { pelvic_compression: v })} />
+                        <FormField label="Capillary refill"><Input value={Cc.crt ?? ''} disabled={ro} placeholder="< 2 s" onChange={(e) => nested('primary_survey', 'circulation', { crt: e.target.value })} /></FormField>
+                        <FormField label="Bleeding"><Input value={Cc.bleeding ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'circulation', { bleeding: e.target.value })} /></FormField>
+                        <FormField label="IV access"><Input value={Cc.iv_access ?? ''} disabled={ro} placeholder="18G right forearm" onChange={(e) => nested('primary_survey', 'circulation', { iv_access: e.target.value })} /></FormField>
+                      </div>
+                      <div className={grid}>
+                        <FormField label="Circulation actions"><Input value={Cc.actions ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'circulation', { actions: e.target.value })} /></FormField>
+                        <FormField label="Circulation — others"><Input value={Cc.findings ?? ''} disabled={ro} onChange={(e) => nested('primary_survey', 'circulation', { findings: e.target.value })} /></FormField>
+                      </div>
+
+                      {sub('D — Disability')}
+                      <p className="text-xs" style={{ color: '#64748B' }}>GCS: {gcsTotal(oa) != null ? `${gcsTotal(oa)}/15 (E${oa.gcs_e} V${oa.gcs_v} M${oa.gcs_m})` : 'enter E, V, M under On arrival'}</p>
+                      <div className={grid4}>
+                        <FormField label="Pupil — right"><Input value={D.pupils_right ?? ''} disabled={ro} placeholder="3 mm, reacting" onChange={(e) => nested('primary_survey', 'disability', { pupils_right: e.target.value })} /></FormField>
+                        <FormField label="Pupil — left"><Input value={D.pupils_left ?? ''} disabled={ro} placeholder="3 mm, reacting" onChange={(e) => nested('primary_survey', 'disability', { pupils_left: e.target.value })} /></FormField>
+                        <FormField label="CBG mg/dl"><Input inputMode="numeric" value={D.cbg != null ? String(D.cbg) : ''} disabled={ro} placeholder={oa.grbs != null ? String(oa.grbs) : ''} onChange={(e) => nested('primary_survey', 'disability', { cbg: numOrNull(e.target.value) })} /></FormField>
+                        <FormField label="Disability — other"><Input value={D.findings ?? ''} disabled={ro} placeholder="Lateralising signs" onChange={(e) => nested('primary_survey', 'disability', { findings: e.target.value })} /></FormField>
+                      </div>
+
+                      {sub('E — Exposure & log roll')}
+                      <SpeechTextarea variant="field" value={ps.exposure?.findings ?? ''} disabled={ro}
+                        onChange={(v) => nested('primary_survey', 'exposure', { findings: v })} style={{ minHeight: '3.5rem' }} />
                     </>
-                  )}
+                    )
+                  })()}
 
                   {key === 'sample' && (
                     <>
@@ -264,7 +332,12 @@ export default function InitialEvaluationForm({ view, owner, editable, defaultOp
                         <FormField label="Events leading up to this">
                           <Input value={data.sample?.events ?? ''} disabled={ro} onChange={(e) => patch('sample', { events: e.target.value })} />
                         </FormField>
+                        <Pick label="Smoking" value={data.sample?.smoking} disabled={ro} options={HABITS.map((h) => [h.value, h.label] as const)} onChange={(v) => patch('sample', { smoking: v as 'no' })} />
+                        <Pick label="Alcohol" value={data.sample?.alcohol} disabled={ro} options={HABITS.map((h) => [h.value, h.label] as const)} onChange={(v) => patch('sample', { alcohol: v as 'no' })} />
                       </div>
+                      <FormField label="Social history — other">
+                        <Input value={data.sample?.social ?? ''} disabled={ro} onChange={(e) => patch('sample', { social: e.target.value })} />
+                      </FormField>
                       <p className="text-xs" style={{ color: '#94A3B8' }}>Allergies, past and drug history are kept on the patient record (History &amp; Problem List) — the same list prescribing checks.</p>
                     </>
                   )}
@@ -288,9 +361,12 @@ export default function InitialEvaluationForm({ view, owner, editable, defaultOp
                           ))}
                         </div>
                       )}
-                      <FormField label="Notes (screening echo / USG)">
-                        <Input value={data.efast?.notes ?? ''} disabled={ro} onChange={(e) => patch('efast', { notes: e.target.value })} />
-                      </FormField>
+                      <div className={grid}>
+                        <FormField label="Screening ECHO"><Input value={data.efast?.echo ?? ''} disabled={ro} onChange={(e) => patch('efast', { echo: e.target.value })} /></FormField>
+                        <FormField label="Screening USG chest"><Input value={data.efast?.usg_chest ?? ''} disabled={ro} onChange={(e) => patch('efast', { usg_chest: e.target.value })} /></FormField>
+                        <FormField label="Screening USG abdomen"><Input value={data.efast?.usg_abdomen ?? ''} disabled={ro} onChange={(e) => patch('efast', { usg_abdomen: e.target.value })} /></FormField>
+                        <FormField label="eFAST remarks"><Input value={data.efast?.notes ?? ''} disabled={ro} onChange={(e) => patch('efast', { notes: e.target.value })} /></FormField>
+                      </div>
                     </>
                   )}
 

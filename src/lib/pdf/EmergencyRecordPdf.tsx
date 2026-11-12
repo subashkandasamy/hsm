@@ -1,6 +1,6 @@
 import { Text, View } from '@react-pdf/renderer'
 import type { EmergencyCase, Prescription, TenantProfile, Visit } from '@/lib/types'
-import { DISPOSITIONS, EFAST_VIEWS, burnTotal, gcsTotal, type AssessmentData } from '@/lib/initialAssessment'
+import { AIRWAY_SIGNS, ARRIVAL_LEVELS, DISPOSITIONS, EFAST_VIEWS, burnTotal, gcsTotal, type AssessmentData } from '@/lib/initialAssessment'
 import { EXAM_SIGN_LABELS, SURVEY_SYSTEMS } from '@/lib/clinicalExam'
 import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand, WriteIn,
@@ -46,14 +46,32 @@ export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRec
     ['AVPU', oa.avpu || null], ['Pulse', num(oa.hr)], ['BP', oa.sbp != null && oa.dbp != null ? `${oa.sbp}/${oa.dbp}` : null],
     ['RR', num(oa.rr)], ['SpO₂', num(oa.spo2, '%')], ['Temp', num(oa.temp, ' °C')], ['GRBS', num(oa.grbs)],
     ['GCS', gcsTotal(oa) != null ? `${gcsTotal(oa)} (E${oa.gcs_e} V${oa.gcs_v} M${oa.gcs_m})` : null], ['Weight', num(oa.weight, ' kg')],
+    ['EtCO₂', num(oa.etco2)], ['Pain', oa.pain != null ? `${oa.pain}/10` : null],
+    ['Level', oa.level ? (ARRIVAL_LEVELS.find((x) => x.value === oa.level)?.label ?? oa.level) : null],
+    ['Oriented to', oa.orientation ? (['time', 'place', 'person'] as const).filter((k) => oa.orientation?.[k]).join(', ') || 'none' : null],
+    ['ID marks', oa.id_marks || null], ['Triage staff', oa.triage_staff || null],
   ] : []
+  const word = (v: string | undefined) => (v ? v.replace('_', ' ') : null)
   const ps = ev?.primary_survey
   const primary: Array<[string, string]> = ps ? ([
-    ['A — Airway', [ps.airway?.status?.replace('_', ' '), ps.airway?.intervention].filter(Boolean).join(' — ')],
-    ['B — Breathing', [ps.breathing?.findings, ps.breathing?.intervention].filter(Boolean).join(' — ')],
-    ['C — Circulation', [ps.circulation?.crt && `CRT ${ps.circulation.crt}`, ps.circulation?.bleeding && `bleeding: ${ps.circulation.bleeding}`, ps.circulation?.iv_access && `IV ${ps.circulation.iv_access}`, ps.circulation?.findings].filter(Boolean).join('; ')],
-    ['D — Disability', [ps.disability?.pupils_right && `R pupil ${ps.disability.pupils_right}`, ps.disability?.pupils_left && `L pupil ${ps.disability.pupils_left}`, ps.disability?.findings].filter(Boolean).join('; ')],
-    ['E — Exposure', ps.exposure?.findings ?? ''],
+    ['A — Airway', [
+      ps.airway?.signs?.length ? ps.airway.signs.map((x) => AIRWAY_SIGNS.find((a) => a.value === x)?.label ?? x).join(', ') : word(ps.airway?.status),
+      ps.airway?.oxygen_lpm != null && `O₂ ${ps.airway.oxygen_lpm} L/min`, ps.airway?.c_spine && `C-spine ${ps.airway.c_spine}`,
+      ps.airway?.triple_immobilised && 'triple immobilised', ps.airway?.intervention && `actions: ${ps.airway.intervention}`].filter(Boolean).join('; ')],
+    ['B — Breathing', [
+      ps.breathing?.trachea && `trachea ${word(ps.breathing.trachea)}`, ps.breathing?.surgical_emphysema && `surgical emphysema ${ps.breathing.surgical_emphysema}`,
+      (ps.breathing?.breath_r || ps.breathing?.breath_l) && `breath sounds R ${ps.breathing?.breath_r || '–'}, L ${ps.breathing?.breath_l || '–'}`,
+      (ps.breathing?.percussion_r || ps.breathing?.percussion_l) && `percussion R ${ps.breathing?.percussion_r || '–'}, L ${ps.breathing?.percussion_l || '–'}`,
+      ps.breathing?.findings, ps.breathing?.intervention && `actions: ${ps.breathing.intervention}`].filter(Boolean).join('; ')],
+    ['C — Circulation', [
+      ps.circulation?.central_pulse && `central pulse ${ps.circulation.central_pulse}`, ps.circulation?.peripheral_pulse && `peripheral pulse ${ps.circulation.peripheral_pulse}`,
+      ps.circulation?.heart_sound && `heart sound ${ps.circulation.heart_sound}`, ps.circulation?.radio_femoral && `radio-femoral delay ${ps.circulation.radio_femoral}`,
+      ps.circulation?.pelvic_compression && `pelvic compression ${ps.circulation.pelvic_compression}`,
+      ps.circulation?.crt && `CRT ${ps.circulation.crt}`, ps.circulation?.bleeding && `bleeding: ${ps.circulation.bleeding}`, ps.circulation?.iv_access && `IV ${ps.circulation.iv_access}`,
+      ps.circulation?.findings, ps.circulation?.actions && `actions: ${ps.circulation.actions}`].filter(Boolean).join('; ')],
+    ['D — Disability', [ps.disability?.pupils_right && `R pupil ${ps.disability.pupils_right}`, ps.disability?.pupils_left && `L pupil ${ps.disability.pupils_left}`,
+      ps.disability?.cbg != null && `CBG ${ps.disability.cbg}`, ps.disability?.findings].filter(Boolean).join('; ')],
+    ['E — Exposure & log roll', ps.exposure?.findings ?? ''],
   ] as Array<[string, string]>).filter(([, t]) => t) : []
   const signs = Object.entries(ev?.secondary_survey?.signs ?? {}).filter(([, on]) => on).map(([k]) => EXAM_SIGN_LABELS[k] ?? k)
   const systems = SURVEY_SYSTEMS.map((f) => [f.label, ev?.secondary_survey?.systems?.[f.key]?.trim() ?? ''] as [string, string]).filter(([, t]) => t)
@@ -88,6 +106,19 @@ export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRec
         <TextBlock text={v?.complaint || ec.complaint} empty="Not recorded" />
       </View>
 
+      {ev?.arrival && (ev.arrival.pre_hospital || ev.arrival.iv_fluids || ev.arrival.inotropes || ev.arrival.ventilated || ev.arrival.bystander) ? (
+        <View wrap={false}>
+          <SectionTitle>Before arrival</SectionTitle>
+          <TextBlock text={[
+            ev.arrival.pre_hospital,
+            ev.arrival.iv_fluids && `IV fluids: ${ev.arrival.iv_fluids_note || 'yes'}`,
+            ev.arrival.inotropes && `Inotropes: ${ev.arrival.inotropes_note || 'yes'}`,
+            ev.arrival.ventilated && `Ventilation: ${ev.arrival.ventilation_note || 'yes'}`,
+            ev.arrival.bystander && `Brought by: ${ev.arrival.bystander}`,
+          ].filter(Boolean).join('\n')} />
+        </View>
+      ) : null}
+
       {arrivalFacts.some(([, x]) => x) ? (
         <View wrap={false}>
           <SectionTitle>On arrival</SectionTitle>
@@ -103,18 +134,22 @@ export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRec
         </View>
       ) : null}
 
-      {ev?.sample && (ev.sample.history || ev.sample.events || ev.sample.medications) ? (
+      {ev?.sample && (ev.sample.history || ev.sample.events || ev.sample.medications || ev.sample.smoking || ev.sample.alcohol || ev.sample.social) ? (
         <View wrap={false}>
           <SectionTitle>History</SectionTitle>
           <TextBlock text={[ev.sample.history, ev.sample.events && `Events: ${ev.sample.events}`, ev.sample.medications && `Medications: ${ev.sample.medications}`,
-            ev.sample.last_meal && `Last meal: ${ev.sample.last_meal}`, ev.sample.lmp && `LMP: ${ev.sample.lmp}`].filter(Boolean).join('\n')} />
+            ev.sample.last_meal && `Last meal: ${ev.sample.last_meal}`, ev.sample.lmp && `LMP: ${ev.sample.lmp}`,
+            (ev.sample.smoking || ev.sample.alcohol || ev.sample.social) && `Social: ${[ev.sample.smoking && `smoking ${ev.sample.smoking}`, ev.sample.alcohol && `alcohol ${ev.sample.alcohol}`, ev.sample.social].filter(Boolean).join(', ')}`].filter(Boolean).join('\n')} />
         </View>
       ) : null}
 
-      {ev?.efast?.done === 'yes' ? (
+      {ev?.efast?.done === 'yes' || ev?.efast?.echo || ev?.efast?.usg_chest || ev?.efast?.usg_abdomen ? (
         <View wrap={false}>
-          <SectionTitle>eFAST</SectionTitle>
-          <TextBlock text={[EFAST_VIEWS.filter((x) => ev.efast?.results?.[x.key]).map((x) => `${x.label}: ${ev.efast?.results?.[x.key]}`).join('; '), ev.efast.notes].filter(Boolean).join('\n')} />
+          <SectionTitle>eFAST and point-of-care scans</SectionTitle>
+          <TextBlock text={[
+            ev.efast?.done === 'yes' ? EFAST_VIEWS.filter((x) => ev.efast?.results?.[x.key]).map((x) => `${x.label}: ${ev.efast?.results?.[x.key] === 'positive' ? 'yes' : 'no'}`).join('; ') : null,
+            ev.efast?.notes, ev.efast?.echo && `Screening ECHO: ${ev.efast.echo}`, ev.efast?.usg_chest && `USG chest: ${ev.efast.usg_chest}`, ev.efast?.usg_abdomen && `USG abdomen: ${ev.efast.usg_abdomen}`,
+          ].filter(Boolean).join('\n')} />
         </View>
       ) : null}
 

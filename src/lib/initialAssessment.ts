@@ -13,6 +13,8 @@ export interface ArrivalSection {
   iv_fluids?: boolean
   inotropes?: boolean
   ventilated?: boolean
+  /** KMCH: "IVF ……", "Inotropes ……", "Ventilation ……" — what was running. */
+  iv_fluids_note?: string; inotropes_note?: string; ventilation_note?: string
   bystander?: string
 }
 
@@ -23,15 +25,45 @@ export interface OnArrivalSection {
   hr?: number | null; sbp?: number | null; dbp?: number | null; rr?: number | null
   spo2?: number | null; temp?: number | null; grbs?: number | null; etco2?: number | null; weight?: number | null
   gcs_e?: number | null; gcs_v?: number | null; gcs_m?: number | null
+  /** KMCH's on-arrival words, and orientation to time / place / person. */
+  level?: 'unresponsive' | 'altered' | 'drowsy' | 'conscious' | ''
+  orientation?: { time?: boolean; place?: boolean; person?: boolean }
+  pain?: number | null
+  id_marks?: string
+  triage_staff?: string
 }
 
+/** KMCH's primary survey, box for box (older entries keep their free-text fields). */
 export interface PrimarySurvey {
-  airway?: { status?: 'patent' | 'at_risk' | 'obstructed' | ''; intervention?: string }
-  breathing?: { findings?: string; intervention?: string }
-  circulation?: { crt?: string; bleeding?: string; iv_access?: string; findings?: string }
-  disability?: { pupils_left?: string; pupils_right?: string; findings?: string }
+  airway?: {
+    status?: 'patent' | 'at_risk' | 'obstructed' | ''; intervention?: string
+    signs?: Array<'patent' | 'impending' | 'secretions' | 'stridor'>; oxygen_lpm?: number | null
+    c_spine?: 'cleared' | 'collar' | ''; triple_immobilised?: boolean
+  }
+  breathing?: {
+    findings?: string; intervention?: string
+    trachea?: 'midline' | 'shift_right' | 'shift_left' | ''; surgical_emphysema?: 'yes' | 'no' | ''
+    breath_r?: string; breath_l?: string; percussion_r?: string; percussion_l?: string
+  }
+  circulation?: {
+    crt?: string; bleeding?: string; iv_access?: string; findings?: string
+    central_pulse?: 'present' | 'absent' | ''; heart_sound?: 'yes' | 'no' | 'muffled' | ''
+    peripheral_pulse?: 'present' | 'feeble' | 'absent' | ''; radio_femoral?: 'present' | 'absent' | ''
+    pelvic_compression?: 'positive' | 'negative' | ''; actions?: string
+  }
+  disability?: { pupils_left?: string; pupils_right?: string; findings?: string; cbg?: number | null }
   exposure?: { findings?: string }
 }
+
+export const AIRWAY_SIGNS = [
+  { value: 'patent', label: 'Patent' }, { value: 'impending', label: 'Impending compromise' },
+  { value: 'secretions', label: 'Secretions' }, { value: 'stridor', label: 'Stridor' },
+] as const
+export const ARRIVAL_LEVELS = [
+  { value: 'unresponsive', label: 'Unresponsive' }, { value: 'altered', label: 'Altered sensorium' },
+  { value: 'drowsy', label: 'Drowsy' }, { value: 'conscious', label: 'Conscious' },
+] as const
+export const HABITS = [{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }, { value: 'ex', label: 'Ex' }] as const
 
 export interface SampleHistory {
   complaint?: string
@@ -40,12 +72,16 @@ export interface SampleHistory {
   last_meal?: string
   lmp?: string
   events?: string
+  /** KMCH social history */
+  smoking?: 'yes' | 'no' | 'ex' | ''; alcohol?: 'yes' | 'no' | 'ex' | ''; social?: string
 }
 
 export interface EfastSection {
   done?: 'yes' | 'no' | ''
   results?: Record<string, 'positive' | 'negative' | ''>
   notes?: string
+  /** KMCH: screening ECHO, USG chest, USG abdomen */
+  echo?: string; usg_chest?: string; usg_abdomen?: string
 }
 
 export interface BurnsSection {
@@ -105,13 +141,18 @@ export function sectionsFor(setting: AssessmentSetting) {
   return SECTIONS.filter((s) => setting === 'er' || !s.erOnly)
 }
 
+/**
+ * KMCH's eFAST table, in its order. "Positive" means the abnormal finding:
+ * pleural sliding ABSENT (pneumothorax), or free fluid present.
+ */
 export const EFAST_VIEWS: Array<{ key: string; label: string }> = [
-  { key: 'ruq', label: 'Right upper quadrant (Morison’s)' },
-  { key: 'luq', label: 'Left upper quadrant' },
-  { key: 'pelvis', label: 'Pelvis' },
-  { key: 'pericardium', label: 'Pericardium' },
-  { key: 'lung_right', label: 'Right lung (pneumothorax)' },
-  { key: 'lung_left', label: 'Left lung (pneumothorax)' },
+  { key: 'lung_right', label: 'Pleural sliding absent — right' },
+  { key: 'lung_left', label: 'Pleural sliding absent — left' },
+  { key: 'pleural', label: 'Free fluid — pleural space' },
+  { key: 'pericardium', label: 'Free fluid — pericardial space' },
+  { key: 'ruq', label: 'Free fluid — Morison’s space' },
+  { key: 'luq', label: 'Free fluid — splenorenal space' },
+  { key: 'pelvis', label: 'Free fluid — suprapubic view' },
 ]
 
 export const DISPOSITIONS: Array<{ value: NonNullable<PlanSection['disposition']>; label: string }> = [
