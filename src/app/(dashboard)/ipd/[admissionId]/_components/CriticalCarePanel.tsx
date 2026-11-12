@@ -9,17 +9,19 @@ import {
   setCriticalCare, recordIcuObservation, listIcuObservations, recordFluidBalance, listFluidBalance, admissionBedIsIcu,
 } from '@/app/actions/icu'
 import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
-import { onOxygen } from '@/lib/round'
+import { onOxygen, toCelsius, POSITIONS, SUCTION } from '@/lib/round'
+import { gcsCell } from '@/lib/icuRows'
 import type { Admission, IcuObservation, IcuFluidEntry } from '@/lib/types'
 
 const OBS_FIELDS: { key: string; label: string; step?: string }[] = [
   { key: 'hr', label: 'HR' }, { key: 'sbp', label: 'SBP' }, { key: 'dbp', label: 'DBP' }, { key: 'map', label: 'MAP' },
-  { key: 'cvp', label: 'CVP' }, { key: 'spo2', label: 'SpO₂' }, { key: 'rr', label: 'RR' }, { key: 'temp', label: 'Temp', step: '0.1' },
+  { key: 'cvp', label: 'CVP' }, { key: 'icp', label: 'ICP' }, { key: 'spo2', label: 'SpO₂' }, { key: 'rr', label: 'RR' }, { key: 'temp', label: 'Temp °C or °F', step: '0.1' },
   { key: 'gcs_e', label: 'GCS E' }, { key: 'gcs_v', label: 'GCS V' }, { key: 'gcs_m', label: 'GCS M' },
   { key: 'rass', label: 'RASS' }, { key: 'pain_score', label: 'Pain' },
   { key: 'fio2', label: 'FiO₂ %' }, { key: 'peep', label: 'PEEP' }, { key: 'tidal_volume', label: 'TV' }, { key: 'vent_rate', label: 'Vent RR' },
   // ICU sheet detail (0287): ventilator pressures, pupils, limb power
-  { key: 'pip', label: 'PIP' }, { key: 'pplat', label: 'Pplat' }, { key: 'pressure_support', label: 'PS' }, { key: 'mve', label: 'MVe L', step: '0.1' },
+  { key: 'pip', label: 'PIP' }, { key: 'pplat', label: 'Pplat' }, { key: 'pressure_support', label: 'IP / PS' }, { key: 'mve', label: 'MVe L', step: '0.1' },
+  { key: 'pifr', label: 'PIFR' }, { key: 'cuff_pressure', label: 'Cuff cmH₂O' },
   { key: 'pupil_r_mm', label: 'Pupil R mm', step: '0.5' }, { key: 'pupil_l_mm', label: 'Pupil L mm', step: '0.5' },
   { key: 'power_rul', label: 'Power RUL' }, { key: 'power_lul', label: 'Power LUL' }, { key: 'power_rll', label: 'Power RLL' }, { key: 'power_lll', label: 'Power LLL' },
 ]
@@ -42,6 +44,8 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
   const [obsForm, setObsForm] = useState<Record<string, string>>({})
   const [ventMode, setVentMode] = useState('')
   const [react, setReact] = useState<{ r: string; l: string }>({ r: '', l: '' })
+  // The rest of KMCH's chart (0288): I:E, suction, position, GCS C / T, Ryles tube check
+  const [extra, setExtra] = useState({ ie_ratio: '', suction: '', position: '', gcs_eye_closed: false, gcs_tube: false, rt_checked: false })
   const [obsError, setObsError] = useState<string | null>(null)
   const [showObs, setShowObs] = useState(false)
   const [fluidDir, setFluidDir] = useState<'intake' | 'output'>('intake')
@@ -70,15 +74,39 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
       const v = obsForm[f.key]
       if (v !== undefined && v !== '') payload[f.key] = f.step ? parseFloat(v) : parseInt(v, 10)
     }
+    // KMCH charts in °F — a reading of 80 or more is taken as °F and stored in °C.
+    if (typeof payload.temp === 'number') payload.temp = toCelsius(payload.temp)
+    if (extra.gcs_eye_closed) delete payload.gcs_e
+    if (extra.gcs_tube) delete payload.gcs_v
     if (ventMode) payload.vent_mode = ventMode
     if (react.r) payload.pupil_r_react = react.r
     if (react.l) payload.pupil_l_react = react.l
     if (obsForm.notes) payload.notes = obsForm.notes
+    if (extra.ie_ratio.trim()) payload.ie_ratio = extra.ie_ratio.trim()
+    if (extra.suction) payload.suction = extra.suction
+    if (extra.position) payload.position = extra.position
     setObsError(null)
-    const res = await recordIcuObservation(admission.id, payload)
+    const res = await recordIcuObservation(admission.id, {
+      ...payload, gcs_eye_closed: extra.gcs_eye_closed, gcs_tube: extra.gcs_tube, rt_checked: extra.rt_checked,
+    })
     setBusy(false)
     if (!res.success) { setObsError(res.error); return }
-    setObsForm({}); setVentMode(''); setReact({ r: '', l: '' }); setShowObs(false); load()
+    setObsForm({}); setVentMode(''); setReact({ r: '', l: '' })
+    setExtra({ ie_ratio: '', suction: '', position: '', gcs_eye_closed: false, gcs_tube: false, rt_checked: false })
+    setShowObs(false); load()
+  }
+
+  // Ventilator settings rarely change hour to hour: one tap copies the last ones charted.
+  const lastVent = obs.find((o) => o.vent_mode || o.fio2 != null || o.peep != null || o.tidal_volume != null)
+  function copyVent() {
+    if (!lastVent) return
+    const keep: Record<string, string> = {}
+    for (const k of ['fio2', 'peep', 'tidal_volume', 'vent_rate', 'pressure_support', 'pifr'] as const) {
+      const v = lastVent[k]; if (v != null) keep[k] = String(v)
+    }
+    setObsForm((o) => ({ ...o, ...keep }))
+    if (lastVent.vent_mode) setVentMode(lastVent.vent_mode)
+    if (lastVent.ie_ratio) setExtra((x) => ({ ...x, ie_ratio: lastVent.ie_ratio ?? '' }))
   }
 
   async function saveFluid() {
@@ -213,12 +241,48 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
               {(['r', 'l'] as const).map((side) => (
                 <div key={side}>
                   <label className="text-xs" style={{ color: '#94A3B8' }}>Pupil {side.toUpperCase()} reacts</label>
-                  <Select value={react[side]} onChange={(e) => setReact((x) => ({ ...x, [side]: e.target.value }))}>
+                  <Select value={react[side]} onChange={(e) => setReact((x) => ({ ...x, [side]: e.target.value }))} aria-label={`Pupil ${side.toUpperCase()} reacts`}>
                     <option value="">—</option><option value="brisk">Brisk</option><option value="sluggish">Sluggish</option><option value="fixed">Fixed</option>
                   </Select>
                 </div>
               ))}
+              <div>
+                <label className="text-xs" style={{ color: '#94A3B8' }}>I:E</label>
+                <Input value={extra.ie_ratio} onChange={(e) => setExtra((x) => ({ ...x, ie_ratio: e.target.value }))} placeholder="1:2" />
+              </div>
+              <div>
+                <label className="text-xs" style={{ color: '#94A3B8' }}>Suction</label>
+                <Select value={extra.suction} onChange={(e) => setExtra((x) => ({ ...x, suction: e.target.value }))} aria-label="Suction">
+                  <option value="">Not done</option>
+                  {SUCTION.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs" style={{ color: '#94A3B8' }}>Position</label>
+                <Select value={extra.position} onChange={(e) => setExtra((x) => ({ ...x, position: e.target.value }))} aria-label="Position">
+                  <option value="">—</option>
+                  {POSITIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </Select>
+              </div>
             </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {([
+                ['gcs_eye_closed', 'Eyes closed by swelling (GCS "C")'],
+                ['gcs_tube', 'ET tube / tracheostomy (GCS "T")'],
+                ['rt_checked', 'Ryles tube position checked'],
+              ] as const).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-1.5 text-xs" style={{ color: '#334155' }}>
+                  <input type="checkbox" checked={extra[k]} style={{ accentColor: '#0D9488' }} onChange={(e) => setExtra((x) => ({ ...x, [k]: e.target.checked }))} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {lastVent && (
+              <button type="button" onClick={copyVent} className="text-xs font-semibold" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                Same ventilator settings as {new Date(lastVent.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                {lastVent.vent_mode ? ` (${lastVent.vent_mode}${lastVent.fio2 != null ? `, FiO₂ ${lastVent.fio2}%` : ''}${lastVent.peep != null ? `, PEEP ${lastVent.peep}` : ''})` : ''}
+              </button>
+            )}
             {obsError && <p className="text-xs" style={{ color: '#DC2626' }}>{obsError}</p>}
             <Input value={obsForm.notes ?? ''} onChange={(e) => setObsForm((o) => ({ ...o, notes: e.target.value }))} placeholder="Notes (optional)" />
             <div className="flex justify-end">
@@ -256,7 +320,7 @@ export default function CriticalCarePanel({ admission, canWrite, canNurse }: Pro
                     <td className="px-2 py-1.5">{o.spo2 ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.rr ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.temp ?? '—'}</td>
-                    <td className="px-2 py-1.5">{o.gcs_total ?? '—'}</td>
+                    <td className="px-2 py-1.5">{gcsCell(o) ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.rass ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.pain_score ?? '—'}</td>
                     <td className="px-2 py-1.5">{o.fio2 ?? '—'}</td>

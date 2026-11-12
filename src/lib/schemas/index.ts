@@ -324,6 +324,17 @@ export const IcuObservationSchema = z.object({
   pip: z.number().int().min(0).max(80).nullable().optional(), pplat: z.number().int().min(0).max(80).nullable().optional(),
   pressure_support: z.number().int().min(0).max(50).nullable().optional(),
   mve: z.number().min(0).max(60).nullable().optional(),
+  // The rest of KMCH's ICU chart (0288)
+  icp:            z.number().int().min(-10).max(100).nullable().optional(),
+  cuff_pressure:  z.number().int().min(0).max(80).nullable().optional(),
+  pifr:           z.number().int().min(0).max(200).nullable().optional(),
+  ie_ratio:       z.string().trim().regex(/^[0-9](\.[0-9])?:[0-9](\.[0-9])?$/, 'I:E like 1:2').nullable().optional(),
+  suction:        z.enum(['none', 'scanty', 'moderate', 'copious']).nullable().optional(),
+  gcs_eye_closed: z.boolean().optional(),
+  gcs_tube:       z.boolean().optional(),
+  position:       z.enum(['supine', 'left', 'right', 'prone', 'head_up', 'sitting']).nullable().optional(),
+  rt_checked:     z.boolean().optional(),
+  insulin_route:  z.enum(['sc', 'iv']).nullable().optional(),
   /** When the reading was taken, if not now (charted late). */
   recorded_at:    z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), 'Not a valid time').nullable().optional(),
 })

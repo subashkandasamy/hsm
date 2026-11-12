@@ -10,7 +10,7 @@ import { recordIcuObservation, listIcuObservations } from '@/app/actions/icu'
 import { saveInsulinScale } from '@/app/actions/round'
 import IntakeOutputSheet from './IntakeOutputSheet'
 import { computeNews, NEWS_BAND_STYLE, type NewsResult } from '@/lib/earlyWarning'
-import { AVPU, O2_DEVICES, labelOf, onOxygen, scaleDose, scaleProblem, type ScaleRow } from '@/lib/round'
+import { AVPU, INSULIN_ROUTES, O2_DEVICES, labelOf, onOxygen, scaleDose, scaleProblem, toCelsius, type ScaleRow } from '@/lib/round'
 import type { Admission, IcuObservation } from '@/lib/types'
 
 function toLocal(d: Date): string {
@@ -67,18 +67,18 @@ export default function RoundChart({ admission: adm, canNurse, canDoctor, onRoun
 
 const NUM_FIELDS: Array<{ key: string; label: string; step?: boolean }> = [
   { key: 'hr', label: 'Pulse' }, { key: 'sbp', label: 'BP sys' }, { key: 'dbp', label: 'BP dia' },
-  { key: 'rr', label: 'Resp. rate' }, { key: 'spo2', label: 'SpO₂ %' }, { key: 'temp', label: 'Temp °C', step: true },
+  { key: 'rr', label: 'Resp. rate' }, { key: 'spo2', label: 'SpO₂ %' }, { key: 'temp', label: 'Temp °C or °F', step: true },
 ]
 
 function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admission; ventilated: boolean; onSaved: () => void }) {
-  const blank = () => ({ at: toLocal(new Date()), hr: '', sbp: '', dbp: '', rr: '', spo2: '', temp: '', avpu: '', o2_device: '', o2_lpm: '', glucose: '', glucose_source: 'capillary', insulin: '', insulin_type: adm.insulin_scale_type ?? '', notes: '' })
+  const blank = () => ({ at: toLocal(new Date()), hr: '', sbp: '', dbp: '', rr: '', spo2: '', temp: '', avpu: '', o2_device: '', o2_lpm: '', glucose: '', glucose_source: 'capillary', insulin: '', insulin_type: adm.insulin_scale_type ?? '', insulin_route: 'sc', notes: '' })
   const [f, setF] = useState<Record<string, string>>(blank)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const n = (v: string) => (v.trim() === '' ? null : Number(v))
 
   const preview = newsOf({
-    hr: n(f.hr), sbp: n(f.sbp), rr: n(f.rr), spo2: n(f.spo2), temp: n(f.temp), gcs_total: null,
+    hr: n(f.hr), sbp: n(f.sbp), rr: n(f.rr), spo2: n(f.spo2), temp: toCelsius(n(f.temp)), gcs_total: null,
     avpu: f.avpu || null, o2_device: f.o2_device || null, o2_lpm: n(f.o2_lpm), fio2: null,
   }, ventilated)
   const suggested = scaleDose(adm.insulin_scale, n(f.glucose))
@@ -89,13 +89,15 @@ function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admissi
     const int = (v: number | null) => (v == null ? null : Math.round(v))
     const payload = {
       recorded_at: f.at ? new Date(f.at).toISOString() : null,
-      hr: int(vals.hr), sbp: int(vals.sbp), dbp: int(vals.dbp), rr: int(vals.rr), spo2: int(vals.spo2), temp: vals.temp,
+      // KMCH charts in °F: 80 or more is taken as °F and stored in °C
+      hr: int(vals.hr), sbp: int(vals.sbp), dbp: int(vals.dbp), rr: int(vals.rr), spo2: int(vals.spo2), temp: toCelsius(vals.temp),
       avpu: f.avpu || null, o2_device: f.o2_device || null, o2_lpm: vals.o2_lpm,
       glucose_mg_dl: int(vals.glucose), glucose_source: vals.glucose != null ? f.glucose_source : null,
       insulin_units: vals.insulin, insulin_type: vals.insulin != null ? (f.insulin_type.trim() || null) : null,
+      insulin_route: vals.insulin != null ? (f.insulin_route || null) : null,
       notes: f.notes.trim() || null,
     }
-    if (Object.entries(payload).every(([k, v]) => k === 'recorded_at' || k === 'glucose_source' || v == null)) {
+    if (Object.entries(payload).every(([k, v]) => k === 'recorded_at' || k === 'glucose_source' || k === 'insulin_route' || v == null)) {
       setMsg({ ok: false, text: 'Nothing to save — enter at least one reading' }); return
     }
     setSaving(true); setMsg(null)
@@ -162,7 +164,14 @@ function RoundForm({ admission: adm, ventilated, onSaved }: { admission: Admissi
           <Input inputMode="decimal" value={f.insulin} placeholder={suggested != null ? `Scale: ${suggested}` : ''} onChange={(e) => setF({ ...f, insulin: e.target.value })} />
         </FormField>
         <FormField label="Insulin">
-          <Input value={f.insulin_type} placeholder="e.g. Actrapid" onChange={(e) => setF({ ...f, insulin_type: e.target.value })} />
+          <div className="flex gap-2">
+            <Input value={f.insulin_type} placeholder="e.g. Actrapid" onChange={(e) => setF({ ...f, insulin_type: e.target.value })} />
+            <div style={{ width: '5.5rem' }}>
+              <Select value={f.insulin_route} onChange={(e) => setF({ ...f, insulin_route: e.target.value })} aria-label="Insulin route">
+                {INSULIN_ROUTES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </Select>
+            </div>
+          </div>
         </FormField>
       </div>
       {suggested != null && f.insulin === '' && (
@@ -372,7 +381,7 @@ function SugarChart({ admission: adm, obs, canDoctor, onScaleSaved }: {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead><tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-              {['Time', 'Sugar mg/dl', 'From', 'Scale says', 'Insulin given'].map((h) => <th key={h} className="text-left px-2 py-1.5 font-semibold" style={{ color: '#475569' }}>{h}</th>)}
+              {['Time', 'Sugar mg/dl', 'From', 'Scale says', 'Insulin given', 'Route', 'Nurse'].map((h) => <th key={h} className="text-left px-2 py-1.5 font-semibold" style={{ color: '#475569' }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {readings.map((o) => {
@@ -387,6 +396,8 @@ function SugarChart({ admission: adm, obs, canDoctor, onScaleSaved }: {
                     <td className="px-2 py-1.5" style={{ color: differs ? '#B45309' : '#0F172A' }}>
                       {o.insulin_units != null ? `${o.insulin_units} u${o.insulin_type ? ` ${o.insulin_type}` : ''}` : '—'}{differs ? ' (differs from scale)' : ''}
                     </td>
+                    <td className="px-2 py-1.5" style={{ color: '#64748B' }}>{o.insulin_units != null && o.insulin_route ? o.insulin_route.toUpperCase() : '—'}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#64748B' }}>{o.recorder?.full_name ?? '—'}</td>
                   </tr>
                 )
               })}

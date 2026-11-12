@@ -1,12 +1,12 @@
 import { Document, Page, Svg, Polyline, Rect, Text, View } from '@react-pdf/renderer'
 import type { Admission, IcuObservation, TenantProfile } from '@/lib/types'
 import type { IcuDay } from '@/app/actions/icuDay'
-import { computeNews } from '@/lib/earlyWarning'
-import { onOxygen, labelOf, DIETS, DVT_OPTIONS, bmi } from '@/lib/round'
+import { labelOf, DIETS, DVT_OPTIONS, HUMIDIFIERS, bmi } from '@/lib/round'
 import { hourLabel, sheetDayWindow, sheetGrid } from '@/lib/fluids'
 import { BUNDLES, BUNDLE_SHIFTS, lineDay, lineKind } from '@/lib/icuBundles'
 import { noteKindLabel } from '@/lib/noteKinds'
 import { ABG_COLUMNS } from '@/lib/abg'
+import { hourCells, newsByHour, rowsFor } from '@/lib/icuRows'
 import { registerPdfFonts, ageSex, C, s } from './parts'
 
 const hm = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
@@ -15,15 +15,6 @@ const dayHead = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en
 const LABEL_W = 92, COL_W = 38, TOT_W = 46
 const cellS = { width: COL_W, fontSize: 7, textAlign: 'center' as const, paddingVertical: 1.5, borderRightWidth: 0.4, borderRightColor: C.rule }
 const labelS = { width: LABEL_W, fontSize: 7, paddingVertical: 1.5, paddingHorizontal: 3, borderRightWidth: 0.6, borderRightColor: C.muted }
-
-function byHour(obs: IcuObservation[], start: number) {
-  const cols: Array<IcuObservation | null> = Array(24).fill(null)
-  for (const o of obs) {
-    const h = Math.floor((new Date(o.recorded_at).getTime() - start) / 3600_000)
-    if (h >= 0 && h < 24 && (!cols[h] || o.recorded_at >= cols[h]!.recorded_at)) cols[h] = o
-  }
-  return cols
-}
 
 function Row({ label, cells, total, bold, fill }: { label: string; cells: Array<string | number | null | undefined>; total?: string | number | null; bold?: boolean; fill?: string }) {
   return (
@@ -73,10 +64,7 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
 }) {
   registerPdfFonts()
   const start = sheetDayWindow(data.day).start.getTime()
-  const cols = byHour(data.obs, start)
   const g = sheetGrid(data.fluids as Array<{ direction: 'intake' | 'output'; category: string; volume_ml: number; recorded_at: string }>, data.day)
-  const val = (f: (o: IcuObservation) => string | number | null | undefined) => cols.map((o) => (o ? f(o) : null))
-  const any = (f: (o: IcuObservation) => unknown) => cols.some((o) => o && f(o) != null && f(o) !== '')
   const doses = new Map<string, string[]>()
   for (const d of data.doses) {
     const h = Math.floor((new Date(d.given_at ?? d.due_at).getTime() - start) / 3600_000)
@@ -122,37 +110,22 @@ export function IcuDayPdf({ data, admission: adm, patient, allergies, profile, i
           <Trend label="Pulse" obs={data.obs} start={start} get={(o) => o.hr} normal={[51, 90]} />
           <Trend label="Systolic" obs={data.obs} start={start} get={(o) => o.sbp} normal={[111, 219]} />
           <Trend label="SpO₂" obs={data.obs} start={start} get={(o) => o.spo2} normal={[96, 100]} />
-          <Row label="NEWS2" bold cells={cols.map((o) => { if (!o) return null; const n = computeNews({ rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu, on_oxygen: onOxygen(o, !!adm.on_ventilator) }); return n.params ? n.score : null })} />
-          <Row label="Pulse" cells={val((o) => o.hr)} />
-          <Row label="BP" cells={val((o) => (o.sbp != null ? `${o.sbp}/${o.dbp ?? '–'}` : null))} />
-          <Row label="MAP" cells={val((o) => o.map)} />
-          {any((o) => o.cvp) ? <Row label="CVP" cells={val((o) => o.cvp)} /> : null}
-          <Row label="SpO₂" cells={val((o) => o.spo2)} />
-          <Row label="Resp. rate" cells={val((o) => o.rr)} />
-          <Row label="Temp °C" cells={val((o) => o.temp)} />
-          <Row label="AVPU / GCS" cells={val((o) => o.avpu ?? o.gcs_total)} />
-          <Row label="Pupils R/L" cells={val((o) => (o.pupil_r_mm != null || o.pupil_l_mm != null ? `${o.pupil_r_mm ?? '–'}${(o.pupil_r_react ?? '').charAt(0)}/${o.pupil_l_mm ?? '–'}${(o.pupil_l_react ?? '').charAt(0)}` : null))} />
-          <Row label="Power RU LU/RL LL" cells={val((o) => ([o.power_rul, o.power_lul, o.power_rll, o.power_lll].some((x) => x != null) ? `${o.power_rul ?? '–'}${o.power_lul ?? '–'}/${o.power_rll ?? '–'}${o.power_lll ?? '–'}` : null))} />
-          <Row label="Vent mode" cells={val((o) => o.vent_mode)} />
-          <Row label="FiO₂ / O₂" cells={val((o) => (o.fio2 != null ? `${o.fio2}%` : o.o2_lpm != null ? `${o.o2_lpm}L` : null))} />
-          <Row label="PEEP" cells={val((o) => o.peep)} />
-          <Row label="PIP / Pplat" cells={val((o) => (o.pip != null || o.pplat != null ? `${o.pip ?? '–'}/${o.pplat ?? '–'}` : null))} />
-          <Row label="Sugar" cells={val((o) => o.glucose_mg_dl)} />
-          <Row label="Insulin u" cells={val((o) => o.insulin_units)} />
+          <Row label="NEWS2" bold cells={newsByHour(data.obs, start, !!adm.on_ventilator).map((n) => n?.score ?? null)} />
+          {rowsFor(data.obs).map((r) => <Row key={r.label} label={r.label} cells={hourCells(data.obs, start, r.get).map((c) => c?.value ?? null)} />)}
           <Row label="Intake ml" bold cells={g.intake.hourly.map((v: number) => v || null)} total={g.intake.h24} fill="#F2FAF9" />
           <Row label="Output ml" bold cells={g.output.hourly.map((v: number) => v || null)} total={g.output.h24} fill="#FBF6F1" />
           <Row label="Net ml" bold cells={Array(24).fill(null)} total={g.intake.h24 - g.output.h24} />
           {[...doses.entries()].slice(0, 14).map(([label, marks]) => <Row key={label} label={label.length > 24 ? `${label.slice(0, 23)}…` : label} cells={marks} />)}
         </View>
         <Text style={{ fontSize: 6.5, color: C.muted, marginTop: 2 }}>
-          Net 6 h {g.intake.h6 - g.output.h6} ml · 12 h {g.intake.h12 - g.output.h12} ml · 24 h {g.intake.h24 - g.output.h24} ml.   Doses: G given · X missed · H held · • due. Pupils: size + b/s/f reaction. Readings: latest in each hour.
+          Net 6 h {g.intake.h6 - g.output.h6} ml · 12 h {g.intake.h12 - g.output.h12} ml · 24 h {g.intake.h24 - g.output.h24} ml.   Doses: G given · X missed · H held · • due. GCS: C eyes closed by swelling, T tube. Pupils: size + b/s/f reaction. CPP = MAP − ICP. Readings: latest in each hour.
         </Text>
 
         {/* Boxes under the grid */}
         <View style={{ flexDirection: 'row', marginTop: 8, gap: 6 }}>
           <Box title="Lines & tubes" width={250}>
-            {data.lines.filter((l) => !l.removed_at).length === 0 ? <Text style={t7}>None in place.</Text> : data.lines.filter((l) => !l.removed_at).map((l) => (
-              <Text key={l.id} style={t7}>{lineKind(l.kind).label}{l.site ? ` — ${l.site}` : ''}{l.size ? ` (${l.size})` : ''}: day {lineDay(l.inserted_at, new Date(start + 12 * 3600_000))}</Text>
+            {data.lines.filter((l) => !l.removed_at || l.removed_at > data.asOf).length === 0 ? <Text style={t7}>None in place.</Text> : data.lines.filter((l) => !l.removed_at || l.removed_at > data.asOf).map((l) => (
+              <Text key={l.id} style={t7}>{lineKind(l.kind).label}{l.site ? ` — ${l.site}` : ''}{l.size ? ` (${l.size})` : ''}{l.lip_level_cm != null ? `, lip ${l.lip_level_cm} cm` : ''}{l.humidifier ? `, ${labelOf(HUMIDIFIERS, l.humidifier)}` : ''}: day {lineDay(l.inserted_at, new Date(data.asOf))}</Text>
             ))}
           </Box>
           <Box title="Care bundles (done / items)" width={250}>

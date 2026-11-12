@@ -36,37 +36,42 @@ export const BUNDLE_SHIFTS = [
 ] as const
 export type BundleShift = (typeof BUNDLE_SHIFTS)[number]['value']
 
+/**
+ * KMCH's own lists, item for item and in the sheet's order (ICU Critical Care
+ * Chart, back side): FAST HUG BSNL and the infection prevention bundles.
+ * Keys kept from the first version where the meaning is the same, so a
+ * shift already signed still counts.
+ */
 export const BUNDLES: Array<{ key: 'fast_hug' | 'vap' | 'crbsi' | 'cauti'; title: string; appliesTo?: string; items: Array<{ key: string; label: string }> }> = [
   {
-    key: 'fast_hug', title: 'FAST HUG BID',
+    key: 'fast_hug', title: 'FAST HUG BSNL',
     items: [
-      { key: 'feeding', label: 'Feeding' }, { key: 'analgesia', label: 'Analgesia' }, { key: 'sedation', label: 'Sedation' },
-      { key: 'thrombo', label: 'Thromboprophylaxis' }, { key: 'hob', label: 'Head of bed 30–45°' }, { key: 'ulcer', label: 'Ulcer prophylaxis' },
-      { key: 'glucose', label: 'Glucose control' }, { key: 'bowel', label: 'Bowel care' },
-      { key: 'catheter', label: 'Indwelling catheters reviewed' }, { key: 'deescalation', label: 'Antibiotic de-escalation' },
+      { key: 'feeding', label: 'Feeding' }, { key: 'analgesia', label: 'Analgesic' }, { key: 'sedation', label: 'Sedation' },
+      { key: 'thrombo', label: 'DVT prophylaxis' }, { key: 'hob', label: 'Head end elevation' }, { key: 'ulcer', label: 'Ulcer prophylaxis' },
+      { key: 'glucose', label: 'Glycemic control' }, { key: 'bedsore', label: 'Bedsore' }, { key: 'bowel', label: 'Stools' },
+      { key: 'neck', label: 'Neck stiffness' }, { key: 'catheter', label: 'Lines' },
     ],
   },
   {
-    key: 'vap', title: 'VAP bundle', appliesTo: 'Ventilated',
+    key: 'vap', title: 'VAP', appliesTo: 'Ventilated',
     items: [
-      { key: 'hob', label: 'Head of bed 30–45°' }, { key: 'sedation_hold', label: 'Daily sedation hold / SBT' },
-      { key: 'oral_care', label: 'Oral care (chlorhexidine)' }, { key: 'cuff', label: 'Cuff pressure 20–30 cmH₂O' },
-      { key: 'suction', label: 'Closed / subglottic suction' }, { key: 'prophylaxis', label: 'DVT & ulcer prophylaxis' },
+      { key: 'oral_care', label: 'Oral hygiene' }, { key: 'cuff', label: 'Cuff pressure' }, { key: 'sedation_hold', label: 'SBT' },
+      { key: 'suction', label: 'Subglottic ETT' }, { key: 'hme', label: 'HME' }, { key: 'oral_rt', label: 'Oral Ryles tube only' },
     ],
   },
   {
-    key: 'crbsi', title: 'Central line (CRBSI) bundle', appliesTo: 'Central line',
+    key: 'crbsi', title: 'CRBSI', appliesTo: 'Central line',
     items: [
-      { key: 'hand_hygiene', label: 'Hand hygiene before touching the line' }, { key: 'dressing', label: 'Dressing clean, dry, intact' },
-      { key: 'scrub_hub', label: 'Hub scrubbed before access' }, { key: 'need_reviewed', label: 'Need for the line reviewed today' },
+      { key: 'dressing', label: 'Proper dressing' }, { key: 'admin_set', label: 'Administration set changed as per protocol' },
+      { key: 'scrub_hub', label: 'Infection port disinfected' },
     ],
   },
   {
-    key: 'cauti', title: 'Urinary catheter (CAUTI) bundle', appliesTo: 'Urinary catheter',
+    key: 'cauti', title: 'UTI', appliesTo: 'Urinary catheter',
     items: [
-      { key: 'need_reviewed', label: 'Need for the catheter reviewed today' }, { key: 'closed', label: 'Closed drainage maintained' },
-      { key: 'bag_below', label: 'Bag below bladder, off the floor' }, { key: 'perineal', label: 'Perineal care done' },
-      { key: 'secured', label: 'Catheter secured' },
+      { key: 'secured', label: 'Anterior thigh placement' }, { key: 'bag_below', label: 'Dependent drainage' },
+      { key: 'no_kink', label: 'Avoid tube kinking' }, { key: 'empty_bag', label: 'Urobag emptied before shifting' },
+      { key: 'recath', label: 'Recatheterised (size in notes)' },
     ],
   },
 ]

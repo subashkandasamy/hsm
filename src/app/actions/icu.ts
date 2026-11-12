@@ -120,8 +120,13 @@ export async function recordIcuObservation(admissionId: string, input: Record<st
   const parsed = IcuObservationSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const { recorded_at, ...d } = parsed.data
+  // A component marked C (eyes closed by swelling) or T (tube) is not scored —
+  // its number is dropped, and so is the total (a sum without it would read as
+  // a deeper coma than the patient is in).
+  if (d.gcs_eye_closed) d.gcs_e = null
+  if (d.gcs_tube) d.gcs_v = null
   // Auto GCS total when components given; MAP from the BP when not measured.
-  const gcsTotal = d.gcs_total ?? (
+  const gcsTotal = d.gcs_eye_closed || d.gcs_tube ? null : d.gcs_total ?? (
     d.gcs_e != null && d.gcs_v != null && d.gcs_m != null ? d.gcs_e + d.gcs_v + d.gcs_m : null
   )
   const map = d.map ?? (d.sbp != null && d.dbp != null ? Math.round((d.sbp + 2 * d.dbp) / 3) : null)

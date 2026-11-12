@@ -272,6 +272,9 @@ export interface IcuObservation {
   pupil_l_mm?: number | null; pupil_r_mm?: number | null; pupil_l_react?: string | null; pupil_r_react?: string | null
   power_rul?: number | null; power_lul?: number | null; power_rll?: number | null; power_lll?: number | null
   pip?: number | null; pplat?: number | null; pressure_support?: number | null; mve?: number | null
+  // The rest of KMCH's ICU chart (0288)
+  icp?: number | null; cuff_pressure?: number | null; pifr?: number | null; ie_ratio?: string | null; suction?: string | null
+  gcs_eye_closed?: boolean; gcs_tube?: boolean; position?: string | null; rt_checked?: boolean; insulin_route?: string | null
   recorder?: Pick<Profile, 'id' | 'full_name'> | null
 }
 

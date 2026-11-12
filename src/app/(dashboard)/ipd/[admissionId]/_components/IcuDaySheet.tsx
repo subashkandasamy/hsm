@@ -6,12 +6,13 @@ import GlassCard from '@/components/ui/GlassCard'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { getIcuDay, addLine, removeLine, saveBundle, type IcuDay } from '@/app/actions/icuDay'
-import { computeNews, NEWS_BAND_STYLE } from '@/lib/earlyWarning'
-import { onOxygen } from '@/lib/round'
+import { NEWS_BAND_STYLE } from '@/lib/earlyWarning'
+import { HUMIDIFIERS, labelOf } from '@/lib/round'
 import { hourLabel, sheetDayOf, sheetDayWindow, sheetGrid } from '@/lib/fluids'
 import { BUNDLES, BUNDLE_SHIFTS, LINE_KINDS, lineDay, lineKind } from '@/lib/icuBundles'
 import { shiftOf, noteKindLabel } from '@/lib/noteKinds'
 import { ABG_COLUMNS } from '@/lib/abg'
+import { hourCells, newsByHour, rowsFor } from '@/lib/icuRows'
 import type { Admission, IcuObservation } from '@/lib/types'
 
 const addDays = (day: string, n: number) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
@@ -21,36 +22,6 @@ function toLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
-
-/** The latest reading in each hour column of the sheet day. */
-function byHour(obs: IcuObservation[], day: string): Array<IcuObservation | null> {
-  const start = sheetDayWindow(day).start.getTime()
-  const cols: Array<IcuObservation | null> = Array(24).fill(null)
-  for (const o of obs) {
-    const h = Math.floor((new Date(o.recorded_at).getTime() - start) / 3600_000)
-    if (h >= 0 && h < 24 && (!cols[h] || o.recorded_at >= cols[h]!.recorded_at)) cols[h] = o
-  }
-  return cols
-}
-
-const ROWS: Array<{ label: string; get: (o: IcuObservation) => string | number | null | undefined; always?: boolean }> = [
-  { label: 'Pulse', get: (o) => o.hr, always: true },
-  { label: 'BP', get: (o) => (o.sbp != null ? `${o.sbp}/${o.dbp ?? '–'}` : null), always: true },
-  { label: 'MAP', get: (o) => o.map },
-  { label: 'CVP', get: (o) => o.cvp },
-  { label: 'SpO₂', get: (o) => o.spo2, always: true },
-  { label: 'Resp. rate', get: (o) => o.rr, always: true },
-  { label: 'Temp °C', get: (o) => o.temp, always: true },
-  { label: 'AVPU / GCS', get: (o) => o.avpu ?? (o.gcs_total != null ? `${o.gcs_total}${o.gcs_e != null ? ` (${o.gcs_e}${o.gcs_v}${o.gcs_m})` : ''}` : null) },
-  { label: 'Pupils R/L', get: (o) => (o.pupil_r_mm != null || o.pupil_l_mm != null ? `${o.pupil_r_mm ?? '–'}${(o.pupil_r_react ?? '').charAt(0)}/${o.pupil_l_mm ?? '–'}${(o.pupil_l_react ?? '').charAt(0)}` : null) },
-  { label: 'Power', get: (o) => ([o.power_rul, o.power_lul, o.power_rll, o.power_lll].some((x) => x != null) ? `${o.power_rul ?? '–'}${o.power_lul ?? '–'}/${o.power_rll ?? '–'}${o.power_lll ?? '–'}` : null) },
-  { label: 'Vent mode', get: (o) => o.vent_mode },
-  { label: 'FiO₂ / O₂', get: (o) => (o.fio2 != null ? `${o.fio2}%` : o.o2_lpm != null ? `${o.o2_lpm} L` : null) },
-  { label: 'PEEP', get: (o) => o.peep },
-  { label: 'PIP / Pplat', get: (o) => (o.pip != null || o.pplat != null ? `${o.pip ?? '–'}/${o.pplat ?? '–'}` : null) },
-  { label: 'Sugar', get: (o) => o.glucose_mg_dl },
-  { label: 'Insulin u', get: (o) => o.insulin_units },
-]
 
 /**
  * KMCH's ICU Critical Care Chart, as a screen: one day (08:00 → 07:59) at a
@@ -69,8 +40,7 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
 
   if (!data) return <GlassCard className="p-4"><p className="text-sm" style={{ color: '#94A3B8' }}>Loading the day…</p></GlassCard>
 
-  const cols = byHour(data.obs, day)
-  const shownRows = ROWS.filter((r) => r.always || cols.some((o) => o && r.get(o) != null && r.get(o) !== ''))
+  const shownRows = rowsFor(data.obs)
   const g = sheetGrid(data.fluids as Array<{ direction: 'intake' | 'output'; category: string; volume_ml: number; recorded_at: string }>, day)
   const start = sheetDayWindow(day).start.getTime()
   const hourOf = (iso: string) => Math.floor((new Date(iso).getTime() - start) / 3600_000)
@@ -130,21 +100,17 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
               ))}
               <tr style={{ borderTop: '1px solid #E2E8F0' }}>
                 <td className="px-2 py-1 font-semibold sticky left-0" style={{ background: '#fff', color: '#0F172A' }}>NEWS2</td>
-                {cols.map((o, i) => {
-                  if (!o) return <td key={i} />
-                  const n = computeNews({ rr: o.rr, spo2: o.spo2, sbp: o.sbp, hr: o.hr, temp: o.temp, gcs_total: o.gcs_total, avpu: o.avpu, on_oxygen: onOxygen(o, !!adm.on_ventilator) })
-                  if (!n.params) return <td key={i} />
-                  return <td key={i} className={td}><span className="px-1 rounded font-bold" style={{ background: NEWS_BAND_STYLE[n.band].bg, color: NEWS_BAND_STYLE[n.band].color }}>{n.score}</span></td>
-                })}
+                {newsByHour(data.obs, start, !!adm.on_ventilator).map((n, i) => (
+                  n ? <td key={i} className={td}><span className="px-1 rounded font-bold" style={{ background: NEWS_BAND_STYLE[n.band].bg, color: NEWS_BAND_STYLE[n.band].color }}>{n.score}</span></td> : <td key={i} />
+                ))}
                 <td />
               </tr>
               {shownRows.map((r) => (
                 <tr key={r.label} style={{ borderTop: '1px solid #F1F5F9' }}>
                   <td className="px-2 py-1 sticky left-0" style={{ background: '#fff', color: '#334155' }}>{r.label}</td>
-                  {cols.map((o, i) => {
-                    const v = o ? r.get(o) : null
-                    return <td key={i} className={td} title={o ? `${hm(o.recorded_at)}${o.recorder?.full_name ? ` · ${o.recorder.full_name}` : ''}` : undefined}>{v ?? ''}</td>
-                  })}
+                  {hourCells(data.obs, start, r.get).map((c, i) => (
+                    <td key={i} className={td} title={c ? `${hm(c.o.recorded_at)}${c.o.recorder?.full_name ? ` · ${c.o.recorder.full_name}` : ''}` : undefined}>{c?.value ?? ''}</td>
+                  ))}
                   <td />
                 </tr>
               ))}
@@ -177,11 +143,11 @@ export default function IcuDaySheet({ admission: adm, canNurse }: { admission: A
             </tbody>
           </table>
         </div>
-        <p className="text-[11px] mt-2" style={{ color: '#94A3B8' }}>Doses: ✓ given · ✗ missed · H held · • due. Pupils: size + b(risk)/s(luggish)/f(ixed). Power: RUL LUL / RLL LLL.</p>
+        <p className="text-[11px] mt-2" style={{ color: '#94A3B8' }}>Doses: ✓ given · ✗ missed · H held · • due. GCS: C eyes closed by swelling, T tube. Pupils: size + b(risk)/s(luggish)/f(ixed). Power: RUL LUL / RLL LLL. CPP = MAP − ICP.</p>
       </GlassCard>
 
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        <LinesCard admissionId={adm.id} lines={data.lines} canEdit={canNurse && open} onChange={load} />
+        <LinesCard admissionId={adm.id} lines={data.lines} asOf={data.asOf} canEdit={canNurse && open} onChange={load} />
         <BundlesCard admissionId={adm.id} day={day} today={today} checks={data.bundles} canEdit={canNurse && open && day === today} onChange={load} />
         <LabsCard data={data} day={day} />
         <NotesCard notes={data.notes} />
@@ -217,17 +183,24 @@ function Card({ icon: Icon, title, children, right }: { icon: typeof Cable; titl
   )
 }
 
-function LinesCard({ admissionId, lines, canEdit, onChange }: { admissionId: string; lines: IcuDay['lines']; canEdit: boolean; onChange: () => void }) {
+function LinesCard({ admissionId, lines, asOf, canEdit, onChange }: { admissionId: string; lines: IcuDay['lines']; asOf: string; canEdit: boolean; onChange: () => void }) {
   const [adding, setAdding] = useState(false)
-  const [f, setF] = useState({ kind: 'peripheral_iv', site: '', size: '', at: '' })
+  const blankLine = { kind: 'peripheral_iv', site: '', size: '', at: '', lip: '', humidifier: '' }
+  const [f, setF] = useState(blankLine)
+  const airway = f.kind === 'et_tube' || f.kind === 'tracheostomy'
   const [removing, setRemoving] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   async function add() {
     setError(null)
-    const r = await addLine(admissionId, { kind: f.kind, site: f.site || null, size: f.size || null, inserted_at: f.at ? new Date(f.at).toISOString() : null })
+    const lip = f.lip.trim() === '' ? null : Number(f.lip)
+    if (lip != null && Number.isNaN(lip)) { setError('Lip level: enter a number (cm)'); return }
+    const r = await addLine(admissionId, {
+      kind: f.kind, site: f.site || null, size: f.size || null, inserted_at: f.at ? new Date(f.at).toISOString() : null,
+      lip_level_cm: airway && f.kind === 'et_tube' ? lip : null, humidifier: airway ? f.humidifier || null : null,
+    })
     if (!r.success) { setError(r.error); return }
-    setAdding(false); setF({ kind: 'peripheral_iv', site: '', size: '', at: '' }); onChange()
+    setAdding(false); setF(blankLine); onChange()
   }
   async function remove(id: string) {
     setError(null)
@@ -235,7 +208,9 @@ function LinesCard({ admissionId, lines, canEdit, onChange }: { admissionId: str
     if (!r.success) { setError(r.error); return }
     setRemoving(null); setReason(''); onChange()
   }
-  const active = lines.filter((l) => !l.removed_at), removed = lines.filter((l) => l.removed_at)
+  // In place as of the sheet's moment: on a past day, a line taken out later still counts as in.
+  const inPlace = (l: IcuDay['lines'][number]) => !l.removed_at || l.removed_at > asOf
+  const active = lines.filter(inPlace), removed = lines.filter((l) => !inPlace(l))
   return (
     <Card icon={Cable} title="Lines & tubes" right={canEdit && !adding ? <button onClick={() => setAdding(true)} className="text-xs font-semibold" style={{ color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer' }}>+ Add</button> : null}>
       {adding && (
@@ -246,6 +221,13 @@ function LinesCard({ admissionId, lines, canEdit, onChange }: { admissionId: str
           <Input value={f.site} placeholder="Site (e.g. R IJV)" onChange={(e) => setF({ ...f, site: e.target.value })} />
           <Input value={f.size} placeholder="Size (e.g. 7 Fr, 18G)" onChange={(e) => setF({ ...f, size: e.target.value })} />
           <Input type="datetime-local" value={f.at} max={toLocal(new Date())} onChange={(e) => setF({ ...f, at: e.target.value })} aria-label="Inserted at" />
+          {f.kind === 'et_tube' && <Input inputMode="decimal" value={f.lip} placeholder="Lip level cm (e.g. 22)" onChange={(e) => setF({ ...f, lip: e.target.value })} aria-label="Lip level cm" />}
+          {airway && (
+            <Select value={f.humidifier} onChange={(e) => setF({ ...f, humidifier: e.target.value })} aria-label="Humidifier">
+              <option value="">Humidifier —</option>
+              {HUMIDIFIERS.map((h) => <option key={h.value} value={h.value}>{h.label}</option>)}
+            </Select>
+          )}
           <div className="col-span-2 flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#475569', cursor: 'pointer' }}>Cancel</button>
             <button onClick={add} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>Save line</button>
@@ -256,11 +238,11 @@ function LinesCard({ admissionId, lines, canEdit, onChange }: { admissionId: str
       {active.length === 0 ? <p className="text-xs" style={{ color: '#94A3B8' }}>No lines or tubes in place.</p> : (
         <div className="space-y-1.5">
           {active.map((l) => {
-            const k = lineKind(l.kind), d = lineDay(l.inserted_at), long = d > k.watchDays
+            const k = lineKind(l.kind), d = lineDay(l.inserted_at, new Date(asOf)), long = d > k.watchDays
             return (
               <div key={l.id} className="flex items-center gap-2 flex-wrap text-xs rounded-lg px-2.5 py-1.5" style={{ background: long ? '#FFFBEB' : '#F8FAFC', border: `1px solid ${long ? '#FDE68A' : '#E2E8F0'}` }}>
                 <span className="font-semibold" style={{ color: '#0F172A' }}>{k.label}</span>
-                <span style={{ color: '#64748B' }}>{[l.site, l.size].filter(Boolean).join(' · ')}</span>
+                <span style={{ color: '#64748B' }}>{[l.site, l.size, l.lip_level_cm != null ? `lip ${l.lip_level_cm} cm` : null, labelOf(HUMIDIFIERS, l.humidifier)].filter(Boolean).join(' · ')}</span>
                 <span className="px-1.5 py-0.5 rounded-md font-bold" style={{ background: long ? '#FEF3C7' : 'rgba(13,148,136,0.08)', color: long ? '#92400E' : '#0F766E' }} title={long ? `Over ${k.watchDays} days — review` : undefined}>Day {d}</span>
                 {canEdit && (removing === l.id ? (
                   <span className="flex items-center gap-1 ml-auto">

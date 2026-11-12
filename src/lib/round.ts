@@ -43,6 +43,49 @@ export const DVT_OPTIONS = [
   { value: 'contraindicated', label: 'Contraindicated' },
 ] as const
 
+// ── The rest of KMCH's ICU chart (0288) ───────────────────────────────────────
+
+export const POSITIONS = [
+  { value: 'supine', label: 'Supine' },
+  { value: 'left', label: 'Left lateral' },
+  { value: 'right', label: 'Right lateral' },
+  { value: 'prone', label: 'Prone' },
+  { value: 'head_up', label: 'Head up 30°' },
+  { value: 'sitting', label: 'Sitting up' },
+] as const
+
+/** Suction done this hour — and how much came up. */
+export const SUCTION = [
+  { value: 'none', label: 'Suctioned — nil' },
+  { value: 'scanty', label: 'Suctioned — scanty' },
+  { value: 'moderate', label: 'Suctioned — moderate' },
+  { value: 'copious', label: 'Suctioned — copious' },
+] as const
+
+export const INSULIN_ROUTES = [
+  { value: 'sc', label: 'SC' },
+  { value: 'iv', label: 'IV' },
+] as const
+
+export const HUMIDIFIERS = [
+  { value: 'hme', label: 'HME' },
+  { value: 'heated', label: 'Heated humidifier' },
+] as const
+
+/**
+ * A temperature typed in either scale, as °C. KMCH charts in °F; Uyirly
+ * stores °C (the early-warning score is calibrated in it). No human reading
+ * is above 45 °C or below 80 °F, so the number itself says which scale.
+ */
+export function toCelsius(v: number | null): number | null {
+  if (v == null || Number.isNaN(v)) return v
+  return v >= 80 ? Math.round(((v - 32) * 5) / 9 * 10) / 10 : v
+}
+export const toFahrenheit = (c: number | null | undefined) => (c == null ? null : Math.round((c * 9 / 5 + 32) * 10) / 10)
+
+/** Cerebral perfusion pressure: MAP − ICP. */
+export const cppOf = (map: number | null | undefined, icp: number | null | undefined) => (map != null && icp != null ? map - icp : null)
+
 export const labelOf = (list: ReadonlyArray<{ value: string; label: string }>, v: string | null | undefined) =>
   list.find((x) => x.value === v)?.label ?? null
 

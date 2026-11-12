@@ -15,6 +15,8 @@ type SimpleResult = { success: true } | { success: false; error: string }
 export interface IpdLine {
   id: string; kind: string; site: string | null; size: string | null
   inserted_at: string; removed_at: string | null; removal_reason: string | null; notes: string | null
+  /** ET tube / tracheostomy (0288) */
+  lip_level_cm?: number | null; humidifier?: string | null
   inserter?: { full_name: string } | null
 }
 export interface BundleCheck {
@@ -27,6 +29,8 @@ export interface DoseOfDay {
 }
 export interface IcuDay {
   day: string
+  /** The moment the sheet is read as of: now, or the end of a past day — line days count to here. */
+  asOf: string
   obs: IcuObservation[]
   fluids: IcuFluidEntry[]
   doses: DoseOfDay[]
@@ -70,6 +74,7 @@ export async function getIcuDay(admissionId: string, day: string): Promise<IcuDa
     : [o.drug_name, o.dose != null ? `${o.dose} ${o.dose_unit ?? ''}` : null, o.route].filter(Boolean).join(' ')
   return {
     day,
+    asOf: new Date(Math.min(Date.now(), end.getTime() - 60_000)).toISOString(),
     obs: (obs.data ?? []) as unknown as IcuObservation[],
     fluids: (fluids.data ?? []) as unknown as IcuFluidEntry[],
     doses: (doses.data ?? []).map((d) => ({
@@ -97,6 +102,8 @@ const LineSchema = z.object({
   size: z.string().trim().max(40).nullable().optional(),
   inserted_at: when,
   notes: z.string().trim().max(300).nullable().optional(),
+  lip_level_cm: z.number().min(5, 'Lip level looks wrong').max(40, 'Lip level looks wrong').nullable().optional(),
+  humidifier: z.enum(['hme', 'heated']).nullable().optional(),
 })
 
 async function openAdmission(supabase: Awaited<ReturnType<typeof createClient>>, admissionId: string) {
@@ -117,9 +124,13 @@ export async function addLine(admissionId: string, input: Record<string, unknown
   if (adm?.status !== 'admitted') return { success: false, error: 'This patient has been discharged.' }
   const at = parsed.data.inserted_at ? new Date(parsed.data.inserted_at) : new Date()
   if (at.getTime() > Date.now() + 2 * 60_000) return { success: false, error: 'The insertion time is in the future' }
+  // Lip level and humidifier belong to an airway tube only.
+  const airway = parsed.data.kind === 'et_tube' || parsed.data.kind === 'tracheostomy'
   const { data, error } = await supabase.from('ipd_lines').insert({
     tenant_id: actor.tenant_id, admission_id: admissionId, kind: parsed.data.kind,
     site: parsed.data.site || null, size: parsed.data.size || null, notes: parsed.data.notes || null,
+    lip_level_cm: airway && parsed.data.kind === 'et_tube' ? parsed.data.lip_level_cm ?? null : null,
+    humidifier: airway ? parsed.data.humidifier ?? null : null,
     inserted_at: at.toISOString(), inserted_by: actor.id,
   }).select('id').single()
   if (error) return { success: false, error: error.message }
