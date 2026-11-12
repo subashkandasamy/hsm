@@ -10,6 +10,7 @@ import {
   FlaskConical, ScanLine, Search, XCircle, RotateCcw,
 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
+import DrugChartView from './DrugChartView'
 import { istToday } from '@/lib/istDate'
 
 // ─── Collapsible Section wrapper ─────────────────────────────────────────────
@@ -1604,6 +1605,11 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
           </GlassCard>
         </details>
       )}
+
+      {/* ── KMCH's Drug & Fluid Chart: by day, and printable ──────── */}
+      <CollapsibleSection icon={<Pill className="w-4 h-4" />} title="Drug chart by day" badge="(as printed)" iconColor="#0D9488">
+        <DrugChartView admissionId={admissionId} orders={orders} schedule={schedule} today={todayStr} />
+      </CollapsibleSection>
 
       {/* ── Lab Tests ─────────────────────────────────────────── */}
       <LabPanel admissionId={admissionId} patientId={patientId} canOrder={canOrder} />
