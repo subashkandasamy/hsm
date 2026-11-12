@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!/e2e/.env.e2e.example
 
 # vercel
 .vercel
@@ -51,3 +52,6 @@ connector/.build/
 
 # Intermediate captures from `npm run shots` — the squeezed .png is the artefact.
 public/guides/*.raw.png
+
+# E2E suite: run output (screenshots, PDFs, reports)
+/e2e/results/

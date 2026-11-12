@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     // reports forty errors in other people's code.
     "connector/.build/**",
     "connector/dist-exe/**",
+    // The browser E2E suite: run output and its own tsconfig.
+    "e2e/results/**",
   ]),
 ]);
 
