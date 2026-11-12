@@ -126,7 +126,10 @@ export const ALIASES: Record<string, string[]> = {
   FIB:      ['fib', 'fibrinogen'],
 
   // Immunoassay — Boditech iChroma II
-  TROP_I: ['tni', 'ctni', 'tropi', 'troponini', 'hstni'],
+  // "TnI Plus" is the iChroma II's newer troponin cartridge (seen on KMCH's machine).
+  TROP_I: ['tni', 'ctni', 'tropi', 'troponini', 'hstni', 'tniplus'],
+  // iChroma II "Vitamin D Neo" — the 25-OH vitamin D test (0295).
+  VITD:   ['vitd', 'vitamind', 'vitamindneo', 'vitdneo', '25ohd', '25ohvitd', '25ohvitamind', 'vitd25', '25hydroxyvitamind'],
   T3:     ['t3', 'tt3', 'totalt3'],
   T4:     ['t4', 'tt4', 'totalt4'],
   FT3:    ['ft3', 'freet3'],

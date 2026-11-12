@@ -66,13 +66,13 @@ check(s('GRAN#')?.analyte.code === 'NEUT_ABS', 'GRAN# → Absolute Neutrophil Co
 
 console.log('\nEvery alias points at a code the catalogue really has')
 {
-  // The catalogue's codes as of migration 0278. A key outside it is a word
-  // list that silently suggests nothing.
+  // The catalogue's codes as of migration 0295 (VITD added there). A key
+  // outside it is a word list that silently suggests nothing.
   const REAL = new Set(('ALB ALP BASO_ABS BASO_PCT BUN CL CREAT DBIL EOS_ABS EOS_PCT ESR FBG FT3 FT4 GLOB HBA1C HCT HDL HGB IBIL K LDL ' +
     'LYMPH_ABS LYMPH_PCT MCH MCHC MCV MENTZER MONO_ABS MONO_PCT MPV NA NEUT_ABS NEUT_PCT P_LCC P_LCR PCT PDW_CV PDW_SD PLT PPBG RBC RBSG ' +
     'RDW_CV RDW_SD RDWI SGOT SGPT TBIL TC TP TRIG TSH UA UREA WBC ' +
     'UR_BLOOD UR_LEU UR_BIL UR_URO UR_KET UR_PROT UR_NIT UR_SG UR_GLU UR_PH ' +
-    'PT_SEC INR APTT_SEC FIB TROP_I T3 T4 BG_PH PCO2 PO2 HCO3 HCO3_STD BE_ECF BE_B TCO2 SO2 BG_THB BG_HCT BG_GLU LACT ICA AGAP OSMO').split(' '))
+    'PT_SEC INR APTT_SEC FIB TROP_I T3 T4 BG_PH PCO2 PO2 HCO3 HCO3_STD BE_ECF BE_B TCO2 SO2 BG_THB BG_HCT BG_GLU LACT ICA AGAP OSMO VITD').split(' '))
   const bad = Object.keys(ALIASES).filter((k) => !REAL.has(k))
   check(bad.length === 0, 'no alias key is a made-up code', bad)
 }
