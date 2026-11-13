@@ -200,9 +200,10 @@ export default {
     await withRole('accountant', async ({ page }) => {
       const A = 'accountant'
       await go(page, '/billing/cash-book'); const cb = await text(page)
-      const n = (re: RegExp) => Number((cb.match(re)?.[1] ?? '0').replace(/,/g, ''))
-      const cash = n(/Cash ₹([\d,]+\.\d\d)/), card = n(/Card ₹([\d,]+\.\d\d)/), upi = n(/UPI ₹([\d,]+\.\d\d)/), bank = n(/Bank ₹([\d,]+\.\d\d)/), out = n(/Refunds Out ₹([\d,]+\.\d\d)/), net = n(/Net Collected ₹([\d,]+\.\d\d)/)
-      r.check({ id: 'BL-50', role: A, screen: '/billing/cash-book', title: 'Cash book: cash + card + UPI + bank − refunds = net collected', ok: Math.abs(cash + card + upi + bank - out - net) < 1, detail: `${cash}+${card}+${upi}+${bank}−${out} vs ${net}` })
+      // A tile can be negative ("-₹50.00": more refunded than taken that way today).
+      const n = (re: RegExp) => { const m = cb.match(new RegExp(re.source.replace('₹', '(-?)₹'))); return m ? Number(m[2].replace(/,/g, '')) * (m[1] ? -1 : 1) : 0 }
+      const cash = n(/Cash ₹([\d,]+\.\d\d)/), card = n(/Card ₹([\d,]+\.\d\d)/), upi = n(/UPI ₹([\d,]+\.\d\d)/), bank = n(/Bank ₹([\d,]+\.\d\d)/), ins = n(/Insurance ₹([\d,]+\.\d\d)/), out = n(/Refunds Out ₹([\d,]+\.\d\d)/), net = n(/Net Collected ₹([\d,]+\.\d\d)/)
+      r.check({ id: 'BL-50', role: A, screen: '/billing/cash-book', title: 'Cash book: cash + card + UPI + bank + insurance = net collected (each already net of its refunds)', ok: Math.abs(cash + card + upi + bank + ins - net) < 1, detail: `${cash}+${card}+${upi}+${bank}+${ins} vs ${net} (refunds out ${out})` })
       await go(page, '/accounts'); const ac = await text(page)
       const col = Number((ac.match(/COLLECTED ₹([\d,]+\.\d\d)/)?.[1] ?? '0').replace(/,/g, ''))
       r.check({ id: 'BL-51', role: A, screen: '/accounts', title: 'Day-end "collected" matches the cash book', ok: Math.abs(col - (cash + card + upi + bank)) < 1 || Math.abs(col - net) < 1, detail: `accounts ${col} · cash book ${net}` })

@@ -102,6 +102,9 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
     { label: 'Card', value: shownSummary.card, color: '#6366F1' },
     { label: 'UPI', value: shownSummary.upi, color: '#8B5CF6' },
     { label: 'Bank', value: shownSummary.bank, color: '#0EA5E9' },
+    // Net Collected counts insurance settlements; without their own tile the
+    // tiles did not add up on a day the TPA paid (found by the e2e cash-book check).
+    { label: 'Insurance', value: shownSummary.insurance, color: '#0891B2' },
     { label: 'Refunds Out', value: shownSummary.refunds, color: '#F59E0B' },
     { label: 'Net Collected', value: shownSummary.net, color: '#0F172A' },
   ]
@@ -147,7 +150,7 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
             {loadingDay && <Loader2 className="w-4 h-4 animate-spin mb-2" style={{ color: '#94A3B8' }} />}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             {summaryCards.map((c) => (
               <GlassCard key={c.label} className="p-3">
                 <p className="text-xs" style={{ color: '#94A3B8' }}>{c.label}</p>
