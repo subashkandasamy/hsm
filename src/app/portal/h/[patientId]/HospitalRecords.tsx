@@ -25,8 +25,8 @@ const FLAG_PILL: Record<string, { bg: string; color: string; label: string }> = 
   low: { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
   normal: { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
   pending: { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
-  critical_high: { bg: '#991B1B', color: '#FFFFFF', label: 'CRITICAL' },
-  critical_low: { bg: '#1E3A8A', color: '#FFFFFF', label: 'CRITICAL' },
+  critical_high: { bg: '#991B1B', color: '#FFFFFF', label: 'CRIT HIGH' },
+  critical_low: { bg: '#1E3A8A', color: '#FFFFFF', label: 'CRIT LOW' },
   abnormal: { bg: '#FEE2E2', color: '#DC2626', label: 'ABNORMAL' },
   unranged: { bg: '#F1F5F9', color: '#64748B', label: '—' },
 }

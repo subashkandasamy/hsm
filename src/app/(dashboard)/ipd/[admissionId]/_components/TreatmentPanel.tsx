@@ -75,10 +75,13 @@ import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
 import RxSafetyBanner from '@/components/ui/RxSafetyBanner'
 import LabReportModal from '@/app/(dashboard)/lab/_components/LabReportModal'
 import RadiologyReportModal from '@/app/(dashboard)/radiology/_components/RadiologyReportModal'
+import PackagePicker from '@/app/(dashboard)/lab/_components/PackagePicker'
+import { listOrderablePackages, orderPackage, cancelPackageOrder } from '@/app/actions/packages'
 import type {
   IpdMedicationOrder, IpdAdminSchedule, FrequencyType, AdminStatus, Drug,
   LabOrder, LabTestCatalog, LabOrderStatus,
   RadiologyOrder, RadiologyCatalog, RadiologyOrderStatus, RxWarning,
+  TestPackage,
 } from '@/lib/types'
 import { doctorName } from '@/lib/doctors'
 import { ipdOrderError } from '@/lib/ipdOrderCheck'
@@ -547,8 +550,12 @@ function OrderCard({ order, slots, todayStr, canOrder, canGive, actingId, stoppi
 
 // ─── Lab Panel ────────────────────────────────────────────────────────────────
 
-interface LabPanelProps { admissionId: string; patientId: string; canOrder: boolean }
-function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
+interface LabPanelProps {
+  admissionId: string; patientId: string; canOrder: boolean
+  /** A package put a scan on the Radiology list — tell it to reload. */
+  onScansOrdered?: () => void
+}
+function LabPanel({ admissionId, patientId, canOrder, onScansOrdered }: LabPanelProps) {
   const todayStr = istToday()
 
   const [orders, setOrders]             = useState<LabOrder[]>([])
@@ -565,14 +572,34 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   const [cancelingId, setCancelingId]   = useState<string | null>(null)
   const [viewOrder, setViewOrder]       = useState<LabOrder | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  // Packages (0296): one per order, plus any extra tests.
+  const [packages, setPackages]         = useState<TestPackage[]>([])
+  const [packageId, setPackageId]       = useState<string | null>(null)
+  const [notice, setNotice]             = useState('')
+  const pkg = packages.find((p) => p.id === packageId) ?? null
+  const inPackage = new Set(pkg ? pkg.items.filter((i) => i.kind === 'lab').map((i) => i.test_id) : [])
 
   useEffect(() => {
     listIpdLabOrders(admissionId).then((o) => { setOrders(o); setLoading(false) })
   }, [admissionId])
 
+  /** Choosing a package takes its tests off the separate list, so nothing is ordered twice. */
+  function choosePackage(id: string | null) {
+    setPackageId(id)
+    const chosen = packages.find((p) => p.id === id)
+    if (!chosen) return
+    const ids = new Set(chosen.items.filter((i) => i.kind === 'lab').map((i) => i.test_id))
+    setSelected((prev) => new Set([...prev].filter((x) => !ids.has(x))))
+  }
+  function toggleTest(id: string) {
+    if (inPackage.has(id)) return
+    setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+
   async function openModal() {
-    setShowModal(true); setSelected(new Set()); setQuery(''); setErr('')
+    setShowModal(true); setSelected(new Set()); setQuery(''); setErr(''); setPackageId(null); setNotice('')
     setPriority('routine'); setScheduledFor(todayStr)
+    listOrderablePackages().then(setPackages).catch(() => setPackages([]))
     if (catalog.length === 0) {
       setCatalogLoading(true)
       const data = await listLabCatalogForIpd()
@@ -586,7 +613,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   const groupNames = Object.keys(catalogGroups).sort()
 
   function toggleGroup(cat: string) {
-    const group = catalogGroups[cat] ?? []
+    const group = (catalogGroups[cat] ?? []).filter(t => !inPackage.has(t.id))
     const allSelected = group.every(t => selected.has(t.id))
     setSelected(prev => {
       const next = new Set(prev)
@@ -598,11 +625,28 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
   }
 
   async function submitOrder() {
-    if (selected.size === 0) return
+    if (selected.size === 0 && !pkg) return
     setSaving(true); setErr('')
-    const res = await createIpdLabOrder(admissionId, patientId, Array.from(selected), priority, scheduledFor)
+    const notes: string[] = []
+    if (pkg) {
+      const r = await orderPackage({ package_id: pkg.id, patient_id: patientId, admission_id: admissionId, priority, scheduled_for: scheduledFor })
+      if (!r.success) { setSaving(false); setErr(r.error); return }
+      setPackageId(null)
+      if (r.skipped.length) notes.push(`${pkg.name}: left out for this patient — ${r.skipped.join(', ')}.`)
+      if (r.keptBoth.length) notes.push(`The patient's sex is not recorded, so both ${r.keptBoth.join(' and ')} were ordered.`)
+      if (r.radiologyOrderIds.length) { notes.push(`${pkg.name}: the scans are on the Radiology list below.`); onScansOrdered?.() }
+    }
+    if (selected.size > 0) {
+      const res = await createIpdLabOrder(admissionId, patientId, Array.from(selected), priority, scheduledFor)
+      if (!res.success) {
+        setSaving(false)
+        setErr(pkg ? `The package was ordered, but the extra tests were not: ${res.error}` : res.error)
+        setOrders(await listIpdLabOrders(admissionId))
+        return
+      }
+    }
     setSaving(false)
-    if (!res.success) { setErr(res.error); return }
+    setNotice(notes.join(' '))
     setOrders(await listIpdLabOrders(admissionId)); setShowModal(false); setSelected(new Set())
   }
 
@@ -611,6 +655,20 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
     await cancelIpdLabOrder(orderId)
     setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: 'cancelled' } : o))
     setCancelingId(null)
+  }
+
+  // A package's lab order is cancelled with the rest of its package — its scans
+  // too — so half a package is never left on the bill.
+  const [confirmPkg, setConfirmPkg] = useState<LabOrder | null>(null)
+  async function cancelWholePackage() {
+    const o = confirmPkg
+    if (!o?.package_order_id) return
+    setCancelingId(o.id)
+    const r = await cancelPackageOrder(o.package_order_id)
+    setCancelingId(null); setConfirmPkg(null)
+    setNotice(r.success ? `${o.package_order?.name_snapshot ?? 'Package'} cancelled.` : r.error)
+    setOrders(await listIpdLabOrders(admissionId))
+    onScansOrdered?.()
   }
 
   const filtered = query.trim()
@@ -626,6 +684,8 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
         icon={<FlaskConical className="w-4 h-4" />}
         title="Lab Tests"
         badge={`(${orders.filter((o) => o.status !== 'cancelled').length} active)`}
+        // After a package order or cancel, open so its note (tests left out, scans added) is seen.
+        forceOpen={!!notice}
         iconColor="#2563EB"
         action={canOrder ? (
           <button onClick={openModal}
@@ -641,6 +701,9 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
           <p className="text-xs text-center py-3" style={{ color: '#94A3B8' }}>No lab orders yet.</p>
         ) : (
           <div className="space-y-2">
+            {notice && (
+              <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4' }}>{notice}</p>
+            )}
             {orders.map((order) => {
               const st = LAB_STATUS_STYLE[order.status]
               const isCancelled = order.status === 'cancelled'
@@ -656,6 +719,12 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                         )}
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                           style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                        {order.package_order?.name_snapshot && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4' }}>
+                            Package: {order.package_order.name_snapshot}
+                          </span>
+                        )}
                         {order.scheduled_for && order.status === 'ordered' && (
                           <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                             style={
@@ -682,9 +751,13 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                           <span key={item.id} className="text-xs px-2 py-0.5 rounded-md"
                             style={{ background: '#DBEAFE', color: '#1E40AF' }}>
                             {item.test?.name ?? item.test_id}
-                            {item.flag !== 'pending' && item.flag !== 'normal' && (
-                              <span className="ml-1 font-bold" style={{ color: item.flag === 'high' ? '#DC2626' : '#D97706' }}>
-                                {item.flag === 'high' ? '↑' : '↓'}
+                            {/* Up for high, down for low, ! for both-ways or critical.
+                                A worded result ('unranged') has no direction. */}
+                            {['high', 'low', 'abnormal', 'critical_high', 'critical_low'].includes(item.flag) && (
+                              <span className="ml-1 font-bold"
+                                style={{ color: item.flag.startsWith('critical') ? '#991B1B' : item.flag === 'high' ? '#DC2626' : '#D97706' }}>
+                                {item.flag === 'high' ? '↑' : item.flag === 'low' ? '↓'
+                                  : item.flag === 'critical_high' ? '↑!' : item.flag === 'critical_low' ? '↓!' : '!'}
                               </span>
                             )}
                           </span>
@@ -703,10 +776,10 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                         </button>
                       )}
                       {canOrder && !isCancelled && order.status === 'ordered' && (
-                        <button onClick={() => handleCancel(order.id)} disabled={cancelingId === order.id}
+                        <button onClick={() => order.package_order_id ? setConfirmPkg(order) : handleCancel(order.id)} disabled={cancelingId === order.id}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
                           style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', cursor: 'pointer' }}>
-                          <X className="w-3 h-3" />{cancelingId === order.id ? '…' : 'Cancel'}
+                          <X className="w-3 h-3" />{cancelingId === order.id ? '…' : order.package_order_id ? 'Cancel package' : 'Cancel'}
                         </button>
                       )}
                     </div>
@@ -726,6 +799,17 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
           onEdit={() => {}}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmPkg}
+        onClose={() => setConfirmPkg(null)}
+        onConfirm={cancelWholePackage}
+        title="Cancel the whole package?"
+        description={`This cancels ${confirmPkg?.package_order?.name_snapshot ?? 'the package'}: its lab tests and any of its scans not yet done, and takes them off the bill.`}
+        confirmLabel="Cancel package"
+        confirmVariant="danger"
+        loading={!!confirmPkg && cancelingId === confirmPkg.id}
+      />
 
       {/* ── Order Lab Test Modal ─────────────────────────────── */}
       {showModal && (
@@ -784,6 +868,12 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
             </div>
             {/* List */}
             <div className="flex-1 overflow-y-auto pb-2" style={{ borderTop: '1px solid #F1F5F9' }}>
+              {packages.length > 0 && !query.trim() && (
+                <div className="px-5 pt-3 pb-1">
+                  <PackagePicker packages={packages} selectedId={packageId} onChange={choosePackage} />
+                  <p className="text-xs font-semibold mt-3" style={{ color: '#0F172A' }}>Or add separate tests</p>
+                </div>
+              )}
               {catalogLoading ? (
                 <p className="text-xs text-center py-6" style={{ color: '#94A3B8' }}>Loading tests…</p>
               ) : query.trim() ? (
@@ -794,9 +884,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                   <div className="px-5 py-2 space-y-1">
                     {filtered.map((test) => (
                       <IpdLabTestRow key={test.id} test={test} selected={selected.has(test.id)}
-                        onToggle={() => setSelected(prev => {
-                          const n = new Set(prev); n.has(test.id) ? n.delete(test.id) : n.add(test.id); return n
-                        })} />
+                        inPackage={inPackage.has(test.id)} onToggle={() => toggleTest(test.id)} />
                     ))}
                   </div>
                 )
@@ -846,9 +934,7 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                         <div className="px-5 py-1.5 space-y-1">
                           {group.map((test) => (
                             <IpdLabTestRow key={test.id} test={test} selected={selected.has(test.id)}
-                              onToggle={() => setSelected(prev => {
-                                const n = new Set(prev); n.has(test.id) ? n.delete(test.id) : n.add(test.id); return n
-                              })} />
+                              inPackage={inPackage.has(test.id)} onToggle={() => toggleTest(test.id)} />
                           ))}
                         </div>
                       )}
@@ -865,7 +951,8 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                   <p className="text-xs truncate" style={{ color: '#DC2626' }}>{err}</p>
                 ) : (
                   <span className="text-xs" style={{ color: '#94A3B8' }}>
-                    {selected.size > 0 ? `${selected.size} test${selected.size !== 1 ? 's' : ''} selected` : 'Select tests to order'}
+                    {pkg ? `${pkg.name}${selected.size ? ` + ${selected.size} test${selected.size !== 1 ? 's' : ''}` : ''}`
+                      : selected.size > 0 ? `${selected.size} test${selected.size !== 1 ? 's' : ''} selected` : 'Select tests to order'}
                   </span>
                 )}
               </div>
@@ -875,14 +962,14 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
                   style={{ background: '#F1F5F9', color: '#64748B', border: 'none', cursor: 'pointer' }}>
                   Cancel
                 </button>
-                <button onClick={submitOrder} disabled={saving || selected.size === 0}
+                <button onClick={submitOrder} disabled={saving || (selected.size === 0 && !pkg)}
                   className="px-4 py-1.5 rounded-lg text-xs font-semibold"
                   style={{
-                    background: (saving || selected.size === 0) ? '#94A3B8' : '#0D9488',
+                    background: (saving || (selected.size === 0 && !pkg)) ? '#94A3B8' : '#0D9488',
                     color: '#fff', border: 'none',
-                    cursor: (saving || selected.size === 0) ? 'not-allowed' : 'pointer',
+                    cursor: (saving || (selected.size === 0 && !pkg)) ? 'not-allowed' : 'pointer',
                   }}>
-                  {saving ? 'Ordering…' : `Order${selected.size > 0 ? ` ${selected.size}` : ''}`}
+                  {saving ? 'Ordering…' : pkg ? (selected.size ? `Order package + ${selected.size}` : 'Order package') : `Order${selected.size > 0 ? ` ${selected.size}` : ''}`}
                 </button>
               </div>
             </div>
@@ -895,16 +982,19 @@ function LabPanel({ admissionId, patientId, canOrder }: LabPanelProps) {
 
 // ─── IpdLabTestRow ────────────────────────────────────────────────────────────
 
-function IpdLabTestRow({ test, selected, onToggle }: {
+function IpdLabTestRow({ test, selected, onToggle, inPackage }: {
   test: LabTestCatalog; selected: boolean; onToggle: () => void
+  /** Already in the chosen package — shown, but not orderable twice. */
+  inPackage?: boolean
 }) {
   return (
-    <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
+    <label className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg ${inPackage ? '' : 'cursor-pointer'}`}
       style={{
         background: selected ? 'rgba(37,99,235,0.06)' : '#F8FAFC',
         border: `1px solid ${selected ? 'rgba(37,99,235,0.2)' : '#E2E8F0'}`,
+        opacity: inPackage ? 0.5 : 1,
       }}>
-      <input type="checkbox" checked={selected} onChange={onToggle} style={{ cursor: 'pointer' }} />
+      <input type="checkbox" checked={selected || !!inPackage} onChange={onToggle} disabled={inPackage} style={{ cursor: inPackage ? 'default' : 'pointer' }} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium" style={{ color: '#0F172A' }}>{test.name}</p>
         {test.sample_type && <p className="text-xs" style={{ color: '#94A3B8' }}>{test.sample_type}</p>}
@@ -916,15 +1006,21 @@ function IpdLabTestRow({ test, selected, onToggle }: {
           {test.analyte_count} tests
         </span>
       )}
-      {test.code && <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{test.code}</span>}
+      {inPackage
+        ? <span className="text-xs flex-shrink-0" style={{ color: '#64748B' }}>in package</span>
+        : test.code && <span className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{test.code}</span>}
     </label>
   )
 }
 
 // ─── Radiology Panel ──────────────────────────────────────────────────────────
 
-interface RadPanelProps { admissionId: string; patientId: string; canOrder: boolean }
-function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
+interface RadPanelProps {
+  admissionId: string; patientId: string; canOrder: boolean
+  /** Bumped when a lab package added a scan, so this list reloads. */
+  refreshKey?: number
+}
+function RadiologyPanel({ admissionId, patientId, canOrder, refreshKey = 0 }: RadPanelProps) {
   const todayStr = istToday()
 
   const [orders, setOrders]                 = useState<RadiologyOrder[]>([])
@@ -944,7 +1040,7 @@ function RadiologyPanel({ admissionId, patientId, canOrder }: RadPanelProps) {
 
   useEffect(() => {
     listIpdRadiologyOrders(admissionId).then((o) => { setOrders(o); setLoading(false) })
-  }, [admissionId])
+  }, [admissionId, refreshKey])
 
   async function openModal() {
     setShowModal(true); setSelectedTest(null); setNotes(''); setQuery(''); setErr('')
@@ -1223,6 +1319,7 @@ const BLANK: OrderForm = {
 
 export default function TreatmentPanel({ admissionId, patientId, canOrder, canGive }: Props) {
   const [orders, setOrders]     = useState<IpdMedicationOrder[]>([])
+  const [radRefresh, setRadRefresh] = useState(0)
   const [schedule, setSchedule] = useState<IpdAdminSchedule[]>([])
   const [loading, setLoading]   = useState(true)
   const [, startTransition]     = useTransition()
@@ -1679,10 +1776,10 @@ export default function TreatmentPanel({ admissionId, patientId, canOrder, canGi
       </CollapsibleSection>
 
       {/* ── Lab Tests ─────────────────────────────────────────── */}
-      <LabPanel admissionId={admissionId} patientId={patientId} canOrder={canOrder} />
+      <LabPanel admissionId={admissionId} patientId={patientId} canOrder={canOrder} onScansOrdered={() => setRadRefresh((k) => k + 1)} />
 
       {/* ── Radiology ─────────────────────────────────────────── */}
-      <RadiologyPanel admissionId={admissionId} patientId={patientId} canOrder={canOrder} />
+      <RadiologyPanel admissionId={admissionId} patientId={patientId} canOrder={canOrder} refreshKey={radRefresh} />
 
       {/* ── Copy from OPD modal ──────────────────────────────── */}
       {showCopy && (

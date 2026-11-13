@@ -20,7 +20,7 @@ function transportOf(source?: string | null): string {
 }
 
 export interface IngestOutcome {
-  status: 'matched' | 'unmatched' | 'unmapped' | 'failed' | 'stored'
+  status: 'matched' | 'unmatched' | 'unmapped' | 'failed' | 'stored' | 'held'
   order?: string
   written?: number
   unmapped?: string[]
@@ -92,6 +92,8 @@ export async function processMessage(
 
   let analyzerId: string | null = null
   let libraryId: string | null = null
+  // A machine met for the first time is 'discovered', so it starts held.
+  let analyzerStatus = 'discovered'
   {
     const { data: known } = await svc.from('lab_analyzers')
       .select('id, status, device_library_id').eq('tenant_id', tenantId)
@@ -99,6 +101,7 @@ export async function processMessage(
 
     if (known) {
       analyzerId = known.id as string
+      analyzerStatus = (known.status as string | null) ?? 'discovered'
       libraryId = (known.device_library_id as string | null) ?? null
       // Met before the library knew it (the library grows): recognise it now.
       if (!libraryId && parsed.fingerprint) {
@@ -246,6 +249,20 @@ export async function processMessage(
     // hospital to re-type a barcode that was already right.
     await svc.from('analyzer_messages').update({ status: 'unmapped', error }).eq('id', messageId)
     return { status: 'unmapped', unmapped: [...new Set(unmapped)], error }
+  }
+
+  // ── Only a machine someone has switched on writes onto a patient ──────────
+  //
+  // An analyzer arrives switched off (Settings → Devices), and the settings
+  // screen has always said so — but nothing here checked, so a newly found
+  // machine, or one the hospital had paused, wrote its numbers onto charts
+  // all the same. Held, not dropped: switching it on replays these.
+  if (analyzerStatus !== 'live') {
+    const error = analyzerStatus === 'paused'
+      ? 'Held: this analyzer is paused. Switch it on in Settings → Devices and these results go through.'
+      : 'Held: this analyzer has not been switched on yet. Check its measurements in Settings → Devices, switch it on, and these results go through.'
+    await svc.from('analyzer_messages').update({ status: 'held', error }).eq('id', messageId)
+    return { status: 'held', barcode, error }
   }
 
   // ── The instrument's own normal ranges ────────────────────────────────────

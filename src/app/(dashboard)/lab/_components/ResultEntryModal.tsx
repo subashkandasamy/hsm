@@ -8,6 +8,7 @@ import Select from '@/components/ui/Select'
 import { enterResults, getOrderAnalyteForm, saveAnalyteResults } from '@/app/actions/lab'
 import { checkPlausible, type Plausibility } from '@/lib/labPlausible'
 import type { LabOrder, LabFlag, AnalyteFormRow, AnalyteFlag } from '@/lib/types'
+import { itemNormal } from '@/lib/lab/reportRange'
 
 const FLAG_COLORS: Record<string, { bg: string; color: string }> = {
   pending:       { bg: '#F1F5F9', color: '#64748B' },
@@ -34,12 +35,16 @@ const FLAG_LABEL: Record<string, string> = {
  */
 function previewFlag(row: AnalyteFormRow, raw: string): AnalyteFlag {
   if (!raw) return 'pending'
-  if (row.value_type === 'text') return 'unranged'
+  // As the database (0299): typed exactly as its written normal is normal;
+  // anything else carries no verdict.
+  if (row.value_type === 'text') {
+    return row.normal_text && raw.trim().toLowerCase() === row.normal_text.trim().toLowerCase() ? 'normal' : 'unranged'
+  }
   if (row.value_type === 'ordinal') {
-    // Normality on an ordered scale is membership, not position. The server
-    // holds normal_values; here the first option is the normal one on every
-    // scale we ship (Negative, or Normal for urobilinogen, or Absent).
-    return raw === (row.allowed_values?.[0] ?? '') ? 'normal' : 'abnormal'
+    // Normality on an ordered scale is membership, not position — the same
+    // normal_values list the database flags by, not "the first option".
+    if (!row.normal_values?.length) return 'unranged'
+    return row.normal_values.includes(raw) ? 'normal' : 'abnormal'
   }
   const v = parseFloat(raw)
   if (Number.isNaN(v)) return 'pending'
@@ -52,7 +57,8 @@ function previewFlag(row: AnalyteFormRow, raw: string): AnalyteFlag {
 }
 
 function rangeLabel(row: AnalyteFormRow): string {
-  if (row.value_type === 'ordinal') return row.allowed_values?.[0] ?? ''
+  if (row.value_type === 'ordinal') return row.normal_values?.join(' / ') ?? ''
+  if (row.value_type === 'text') return row.normal_text ?? ''
   if (row.ref_low != null && row.ref_high != null) return `${row.ref_low} – ${row.ref_high}`
   if (row.ref_high != null) return `< ${row.ref_high}`
   if (row.ref_low != null) return `> ${row.ref_low}`
@@ -131,16 +137,21 @@ export default function ResultEntryModal({ open, order, onClose, onSuccess }: Pr
     setSaving(true); setError(null)
 
     if (rows.length) {
+      // Every line with a value, plus every line that HAD one and is now
+      // empty — that is a correction (a value on the wrong line), and the
+      // database removes it. Lines never filled are left out.
       const items = rows.map((r) => {
-        const raw = values[`${r.test_id}|${r.analyte_id}`] ?? ''
+        const raw = (values[`${r.test_id}|${r.analyte_id}`] ?? '').trim()
         const numeric = r.value_type === 'numeric'
         return {
           test_id: r.test_id,
           analyte_id: r.analyte_id,
           value_num: numeric && raw !== '' ? parseFloat(raw) : null,
           value_text: !numeric && raw !== '' ? raw : null,
+          had: r.value_num != null || (r.value_text ?? '') !== '',
         }
-      }).filter((i) => i.value_num != null || i.value_text != null)
+      }).filter((i) => i.value_num != null || i.value_text != null || i.had)
+        .map((i) => ({ test_id: i.test_id, analyte_id: i.analyte_id, value_num: i.value_num, value_text: i.value_text }))
 
       if (items.length) {
         const res = await saveAnalyteResults(order.id, items)
@@ -208,8 +219,10 @@ export default function ResultEntryModal({ open, order, onClose, onSuccess }: Pr
                       )}
 
                       <span className="text-xs tabular-nums" style={{ color: '#94A3B8' }}>
-                        {ref ? (r.value_type === 'ordinal' ? `Normal: ${ref}` : ref)
-                             : <span title="No reference range is set for this analyte. Your laboratory should set one before relying on the flag.">not set</span>}
+                        {ref ? (r.value_type === 'numeric' ? ref : `Normal: ${ref}`)
+                             : r.value_type === 'numeric'
+                               ? <span title="No normal range is set for this measurement. Set one in Lab → Catalog → this test → its measurements.">no range set</span>
+                               : <span title="Written results are not flagged automatically.">written result</span>}
                       </span>
 
                       <span className="text-xs px-2 py-0.5 rounded-lg font-semibold whitespace-nowrap"
@@ -229,8 +242,12 @@ export default function ResultEntryModal({ open, order, onClose, onSuccess }: Pr
               setSingles((prev) => ({ ...prev, [item.id]: { ...prev[item.id], [f]: v } }))
             return (
               <div key={item.id} className="rounded-xl p-4" style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid #E2E8F0' }}>
-                <p className="font-semibold text-sm mb-3" style={{ color: '#0F172A' }}>
+                <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>
                   {item.test?.name ?? 'Unknown test'}
+                </p>
+                <p className="text-xs mb-3" style={{ color: '#94A3B8' }}>
+                  {/* The catalog's range as it is now — what this value will be judged by. */}
+                  {itemNormal({ test: item.test }) ? `Normal: ${itemNormal({ test: item.test })}` : 'No normal range set for this test'}
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <FormField label="Numeric Value">

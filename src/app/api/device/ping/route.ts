@@ -69,7 +69,7 @@ export async function GET(request: Request) {
     svc.from('analyzer_messages')
       .select('id', { count: 'exact', head: true })
       .eq('connector_id', connector.id)
-      .in('status', ['unmatched', 'unmapped', 'failed']),
+      .in('status', ['unmatched', 'unmapped', 'failed', 'held']),
   ])
 
   const reported = request.headers.get('x-connector-version')?.trim() || null

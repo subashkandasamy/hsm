@@ -7,8 +7,10 @@ import FormField from '@/components/ui/FormField'
 import Input from '@/components/ui/Input'
 import Money from '@/components/ui/Money'
 import { createLabOrder } from '@/app/actions/lab'
+import { listOrderablePackages, orderPackage } from '@/app/actions/packages'
 import { searchPatients } from '@/app/actions/patients'
-import type { LabTestCatalog, Patient } from '@/lib/types'
+import type { LabTestCatalog, Patient, TestPackage } from '@/lib/types'
+import PackagePicker from './PackagePicker'
 
 interface Props {
   open: boolean
@@ -34,6 +36,38 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
   const [showDropdown, setShowDropdown] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Packages (0296): one per order, plus any extra tests.
+  const [packages, setPackages] = useState<TestPackage[]>([])
+  const [packageId, setPackageId] = useState<string | null>(null)
+  const [removedNote, setRemovedNote] = useState('')
+  const [doneNote, setDoneNote] = useState<{ text: string; orderId: string } | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    listOrderablePackages().then(setPackages).catch(() => setPackages([]))
+  }, [open])
+
+  /** A closed window starts fresh next time, whatever it was showing. */
+  function close() {
+    setDoneNote(null); setPackageId(null); setRemovedNote('')
+    onClose()
+  }
+
+  const pkg = packages.find((p) => p.id === packageId) ?? null
+  const inPackage = new Set(pkg ? pkg.items.filter((i) => i.kind === 'lab').map((i) => i.test_id) : [])
+
+  /** Choosing a package takes its tests off the separate list, so nothing is ordered twice. */
+  function choosePackage(id: string | null) {
+    setPackageId(id); setRemovedNote(''); setError(null)
+    const chosen = packages.find((p) => p.id === id)
+    if (!chosen) return
+    const ids = new Set(chosen.items.filter((i) => i.kind === 'lab').map((i) => i.test_id))
+    const dropped = catalog.filter((t) => selected.has(t.id) && ids.has(t.id)).map((t) => t.name)
+    if (dropped.length) {
+      setSelected((prev) => new Set([...prev].filter((x) => !ids.has(x))))
+      setRemovedNote(`${dropped.join(', ')} ${dropped.length === 1 ? 'is' : 'are'} already in ${chosen.name}, so ${dropped.length === 1 ? 'it was' : 'they were'} taken off the separate list.`)
+    }
+  }
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) { setPatientResults([]); return }
@@ -64,7 +98,7 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
   const catalogGroups = groupBy(catalog, t => t.category || 'General')
   const groupNames = Object.keys(catalogGroups).sort()
 
-  const total = catalog.filter((t) => selected.has(t.id)).reduce((s, t) => s + t.price, 0)
+  const total = catalog.filter((t) => selected.has(t.id)).reduce((s, t) => s + t.price, 0) + (pkg?.price ?? 0)
 
   /**
    * Tests that are already inside another selected test.
@@ -92,6 +126,7 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
   })()
 
   function toggleTest(id: string) {
+    if (inPackage.has(id)) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -101,7 +136,7 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
   }
 
   function toggleGroup(cat: string) {
-    const group = catalogGroups[cat] ?? []
+    const group = (catalogGroups[cat] ?? []).filter(t => !inPackage.has(t.id))
     const allSelected = group.every(t => selected.has(t.id))
     setSelected(prev => {
       const next = new Set(prev)
@@ -117,21 +152,58 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
     e.preventDefault()
     const patId = prefill?.patientId ?? patient?.id
     if (!patId) { setError('Please select a patient'); return }
-    if (selected.size === 0) { setError('Select at least one test'); return }
+    if (selected.size === 0 && !pkg) { setError('Choose a package or at least one test'); return }
     setLoading(true); setError(null)
-    const result = await createLabOrder({
-      patient_id: patId,
-      visit_id: prefill?.visitId ?? null,
-      test_ids: [...selected],
-    })
+
+    let orderId = ''
+    const notes: string[] = []
+    if (pkg) {
+      const r = await orderPackage({ package_id: pkg.id, patient_id: patId, visit_id: prefill?.visitId ?? null })
+      if (!r.success) { setLoading(false); setError(r.error); return }
+      orderId = r.labOrderId ?? r.packageOrderId
+      setPackageId(null)
+      if (r.skipped.length) notes.push(`Left out for this patient: ${r.skipped.join(', ')}.`)
+      if (r.keptBoth.length) notes.push(`The patient's sex is not recorded, so both ${r.keptBoth.join(' and ')} were ordered. Record it on the patient's details so next time only the right one is.`)
+      if (r.radiologyOrderIds.length) notes.push('The scans are on the Radiology list.')
+    }
+    if (selected.size > 0) {
+      const result = await createLabOrder({ patient_id: patId, visit_id: prefill?.visitId ?? null, test_ids: [...selected] })
+      if (!result.success) {
+        setLoading(false)
+        setError(pkg ? `The package was ordered, but the extra tests were not: ${result.error}` : result.error)
+        return
+      }
+      orderId = orderId || result.orderId
+    }
     setLoading(false)
-    if (!result.success) { setError(result.error); return }
-    setSelected(new Set()); setTestSearch('')
-    onSuccess(result.orderId)
+    setSelected(new Set()); setTestSearch(''); setRemovedNote('')
+    if (notes.length) { setDoneNote({ text: notes.join(' '), orderId }); return }
+    onSuccess(orderId)
   }
 
+  const submitLabel = (() => {
+    const tests = selected.size ? `${selected.size} test${selected.size === 1 ? '' : 's'}` : ''
+    if (pkg && tests) return `Order package + ${tests}`
+    if (pkg) return 'Order package'
+    return `Order ${tests || 'tests'}`
+  })()
+
   return (
-    <Modal open={open} onClose={onClose} title="Order Lab Tests" maxWidth="40rem">
+    <Modal open={open} onClose={close} title="Order Lab Tests" maxWidth="40rem">
+      {doneNote ? (
+        <div className="space-y-4">
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#F0FDFA', color: '#0F172A', border: '1px solid #99F6E4' }}>
+            <p className="font-semibold mb-1" style={{ color: '#0D9488' }}>Ordered</p>
+            <p>{doneNote.text}</p>
+          </div>
+          <div className="flex justify-end">
+            <button type="button" onClick={() => { const id = doneNote.orderId; setDoneNote(null); onSuccess(id) }}
+              className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} className="space-y-4">
         {!prefill && (
           <FormField label="Patient" required>
@@ -171,14 +243,19 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
           </div>
         )}
 
+        <PackagePicker packages={packages} selectedId={packageId} onChange={choosePackage} />
+        {removedNote && (
+          <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4' }}>{removedNote}</p>
+        )}
+
         {/* Test selector */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Select Tests</p>
-            {selected.size > 0 && (
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{packages.length ? 'Or add separate tests' : 'Select Tests'}</p>
+            {(selected.size > 0 || pkg) && (
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(13,148,136,0.1)', color: '#0D9488' }}>
-                {selected.size} selected · <Money amount={total} />
+                {pkg ? 'Package' : ''}{pkg && selected.size ? ' + ' : ''}{selected.size ? `${selected.size} selected` : ''} · <Money amount={total} />
               </span>
             )}
           </div>
@@ -209,7 +286,7 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
                 <p className="text-center py-4 text-sm" style={{ color: '#94A3B8' }}>No tests match your filter</p>
               ) : filteredCatalog.map((test, i) => (
                 <TestRow key={test.id} test={test} selected={selected.has(test.id)}
-                  onToggle={() => toggleTest(test.id)}
+                  onToggle={() => toggleTest(test.id)} inPackage={inPackage.has(test.id)}
                   border={i < filteredCatalog.length - 1} />
               ))
             ) : (
@@ -256,7 +333,7 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
                     </div>
                     {expanded && group.map((test, i) => (
                       <TestRow key={test.id} test={test} selected={selected.has(test.id)}
-                        onToggle={() => toggleTest(test.id)}
+                        onToggle={() => toggleTest(test.id)} inPackage={inPackage.has(test.id)}
                         border={i < group.length - 1} indent />
                     ))}
                   </div>
@@ -269,33 +346,36 @@ export default function OrderLabModal({ open, onClose, onSuccess, catalog, prefi
         {error && <div className="text-sm rounded-xl px-3 py-2" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}
 
         <div className="flex gap-3 justify-end pt-1">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium"
+          <button type="button" onClick={close} className="px-4 py-2 rounded-xl text-sm font-medium"
             style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>Cancel</button>
-          <button type="submit" disabled={loading || selected.size === 0}
+          <button type="submit" disabled={loading || (selected.size === 0 && !pkg)}
             className="px-5 py-2 rounded-xl text-sm font-semibold"
-            style={{ background: (loading || selected.size === 0) ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: (loading || selected.size === 0) ? 'not-allowed' : 'pointer' }}>
-            {loading ? 'Ordering…' : `Order ${selected.size} Test${selected.size !== 1 ? 's' : ''}`}
+            style={{ background: (loading || (selected.size === 0 && !pkg)) ? '#94A3B8' : '#0D9488', color: '#fff', border: 'none', cursor: (loading || (selected.size === 0 && !pkg)) ? 'not-allowed' : 'pointer' }}>
+            {loading ? 'Ordering…' : submitLabel}
           </button>
         </div>
       </form>
+      )}
     </Modal>
   )
 }
 
 // ─── TestRow ─────────────────────────────────────────────────────────────────
 
-function TestRow({ test, selected, onToggle, border, indent }: {
+function TestRow({ test, selected, onToggle, border, indent, inPackage }: {
   test: LabTestCatalog; selected: boolean; onToggle: () => void
   border: boolean; indent?: boolean
+  /** Already in the chosen package — shown, but not orderable twice. */
+  inPackage?: boolean
 }) {
   return (
-    <button type="button" onClick={onToggle}
+    <button type="button" onClick={onToggle} disabled={inPackage}
       className="w-full flex items-center justify-between"
       style={{
         padding: `0.625rem ${indent ? '1rem' : '0.75rem'} 0.625rem ${indent ? '1.5rem' : '0.75rem'}`,
         borderBottom: border ? '1px solid #F1F5F9' : 'none',
         background: selected ? 'rgba(13,148,136,0.07)' : 'transparent',
-        cursor: 'pointer', textAlign: 'left',
+        cursor: inPackage ? 'default' : 'pointer', textAlign: 'left', opacity: inPackage ? 0.5 : 1,
       }}>
       <div className="flex items-center gap-2 min-w-0">
         <div className="w-4 h-4 rounded-md flex-shrink-0 flex items-center justify-center"
@@ -317,8 +397,8 @@ function TestRow({ test, selected, onToggle, border, indent }: {
           </span>
         )}
       </div>
-      <span className="text-sm font-medium flex-shrink-0 ml-2" style={{ color: '#0D9488' }}>
-        <Money amount={test.price} />
+      <span className="text-sm font-medium flex-shrink-0 ml-2" style={{ color: inPackage ? '#64748B' : '#0D9488' }}>
+        {inPackage ? 'in package' : <Money amount={test.price} />}
       </span>
     </button>
   )

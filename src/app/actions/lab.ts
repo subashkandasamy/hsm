@@ -314,6 +314,14 @@ async function markCollected(
   if (!data?.length) {
     return { success: false, error: 'This sample is no longer awaiting collection — refresh the page' }
   }
+  // When, and by whom, each tube was drawn — printed on the report. The tubes
+  // carried these columns from the start (0183) and nothing ever filled them.
+  // ensure_lab_samples first, for an order raised before tubes existed.
+  await supabase.rpc('ensure_lab_samples', { p_order_id: orderId })
+  const { error: tubeErr } = await supabase.from('lab_samples')
+    .update({ collected_at: new Date().toISOString(), collected_by: actorId })
+    .eq('lab_order_id', orderId).is('collected_at', null)
+  if (tubeErr) console.error('[markCollected] tube times not recorded:', tubeErr.message)
   await logAudit(actorId, 'collect', 'lab_order', orderId)
   return { success: true }
 }
@@ -366,9 +374,10 @@ export async function enterResults(
     // would name the order it was not written to.
     const { data: item } = await supabase
       .from('lab_order_items')
-      .select('test_id')
+      .select('test_id, test:lab_tests_catalog(reference_range)')
       .eq('id', item_id).eq('lab_order_id', orderId).maybeSingle()
     if (!item) continue
+    const catalogText = (item.test as unknown as { reference_range: string | null } | null)?.reference_range?.trim() || null
 
     // The range comes from `effective_test_range`, not from the catalogue
     // columns directly (F-44).
@@ -410,6 +419,11 @@ export async function enterResults(
       // can interpret as a reassurance.
       else if (range?.ref_low != null || range?.ref_high != null) flag = 'normal'
       else flag = 'unranged'
+    } else if (result_text) {
+      // A worded answer ("Negative", "Reactive") is an answer, not 'pending' —
+      // the report printed "Pending" beside it. Like a written panel line, it
+      // carries no automatic verdict.
+      flag = 'unranged'
     } else {
       flag = 'pending'
     }
@@ -417,8 +431,16 @@ export async function enterResults(
     await supabase.from('lab_order_items').update({
       result_value: result_value ?? null,
       result_text: result_text ?? null,
-      unit: unit ?? null,
+      // A unit belongs to a number; "Non-reactive" printed as "Non-reactive mmol/L".
+      unit: result_value != null ? (unit ?? null) : null,
       flag,
+      // The range this result was judged by, kept with it (0298) — as panel
+      // lines always were — so changing the range later does not rewrite an
+      // old report. The hospital's printed wording, where it wrote one, is
+      // what the report shows, as it always was.
+      ref_low: range?.ref_low ?? null,
+      ref_high: range?.ref_high ?? null,
+      ref_text: catalogText,
     }).eq('id', item_id).eq('lab_order_id', orderId)
 
     // A value corrected down out of the critical band has to leave the queue,
@@ -663,7 +685,8 @@ export async function getLabOrder(id: string): Promise<LabOrder | null> {
   const { data } = await supabase
     .from('lab_orders')
     .select(`*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
-             items:lab_order_items(*, test:lab_tests_catalog(*))`)
+             items:lab_order_items(*, test:lab_tests_catalog(*)),
+             samples:lab_samples(tube_no, barcode, tube_type, collected_at, tube:lab_tube_types(label))`)
     .eq('id', id).single()
   return data as unknown as LabOrder | null
 }
@@ -675,8 +698,9 @@ export async function listLabOrders(filters?: {
   let q = supabase
     .from('lab_orders')
     .select(`*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
+             package_order:package_orders(id,name_snapshot),
              items:lab_order_items(*, test:lab_tests_catalog(*)),
-             samples:lab_samples(tube_no, barcode, tube_type, tube:lab_tube_types(label))`)
+             samples:lab_samples(tube_no, barcode, tube_type, collected_at, tube:lab_tube_types(label))`)
     .order('ordered_at', { ascending: false })
     .order('tube_no', { referencedTable: 'lab_samples' })
 

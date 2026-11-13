@@ -1,5 +1,6 @@
 import { Text, View } from '@react-pdf/renderer'
 import type { LabOrder, LabOrderItem, TenantProfile } from '@/lib/types'
+import { analyteNormal, itemNormal, firstCollected, OUT_OF_RANGE } from '@/lib/lab/reportRange'
 import {
   A4, DataTable, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TitleBand,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage, type TableCell,
@@ -10,24 +11,16 @@ export interface ReportPatient {
   dob?: string | null; gender?: string | null; phone?: string | null
 }
 
-function refRange(item: LabOrderItem): string {
-  const t = item.test
-  const unit = item.unit ?? t?.unit
-  if (t?.reference_range) return t.reference_range
-  if (t?.ref_low != null && t?.ref_high != null) return `${t.ref_low} – ${t.ref_high}${unit ? ` ${unit}` : ''}`
-  if (t?.ref_high != null) return `< ${t.ref_high}${unit ? ` ${unit}` : ''}`
-  if (t?.ref_low != null) return `> ${t.ref_low}${unit ? ` ${unit}` : ''}`
-  return '—'
-}
-
 const FLAG: Record<string, { label: string; color: string }> = {
   high: { label: 'HIGH', color: C.danger },
   low: { label: 'LOW', color: '#1D4ED8' },
   normal: { label: 'Normal', color: C.ok },
   pending: { label: 'Pending', color: C.faint },
   abnormal: { label: 'ABNORMAL', color: '#B45309' },
-  critical_high: { label: 'CRITICAL', color: '#991B1B' },
-  critical_low: { label: 'CRITICAL', color: '#1E3A8A' },
+  // The direction is in the word, not only the colour: on a black-and-white
+  // printer a critical 7.0 and a critical 2.0 printed identically.
+  critical_high: { label: 'CRIT HIGH', color: '#991B1B' },
+  critical_low: { label: 'CRIT LOW', color: '#1E3A8A' },
   unranged: { label: '', color: C.faint },
 }
 
@@ -42,17 +35,13 @@ export interface ReportAnalyte {
   analyte_id: string; name: string; short_name: string | null
   unit_ucum: string | null; decimals: number; value_type: string; display_order: number
   value_num: number | null; value_text: string | null
-  ref_low: number | null; ref_high: number | null; flag: string
+  ref_low: number | null; ref_high: number | null
+  /** The normal of a graded or written line — "Negative", "0–5" (0298). */
+  normal_text?: string | null
+  flag: string
 }
 
-const ABNORMAL_FLAGS = new Set(['high', 'low', 'abnormal', 'critical_high', 'critical_low'])
-
-function analyteRange(a: ReportAnalyte): string {
-  if (a.ref_low != null && a.ref_high != null) return `${a.ref_low} – ${a.ref_high}`
-  if (a.ref_high != null) return `< ${a.ref_high}`
-  if (a.ref_low != null) return `> ${a.ref_low}`
-  return ''
-}
+const ABNORMAL_FLAGS = OUT_OF_RANGE
 
 
 export function LabReportPdf({ order, patient, profile, logo, analytes = [], verifiedBy = null }: {
@@ -62,6 +51,7 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
   const hospital = profile?.name || 'Hospital'
   const ref = order.accession_no ?? shortRef('LAB', order.id)
   const items = order.items ?? []
+  const collectedAt = firstCollected(order.samples)
 
   // Tests whose results live as analytes. Their lab_order_items row carries no
   // value — the twenty numbers of a CBC are in lab_result_analytes — so it must
@@ -69,7 +59,8 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
   const analyteTestIds = new Set(analytes.map((a) => a.test_id))
   const singles = items.filter((i) => !analyteTestIds.has(i.test_id))
 
-  const abnormal = singles.filter((i) => i.flag === 'high' || i.flag === 'low').length
+  // Critical and abnormal single tests count too — this counted only high/low.
+  const abnormal = singles.filter((i) => ABNORMAL_FLAGS.has(i.flag)).length
     + analytes.filter((a) => ABNORMAL_FLAGS.has(a.flag)).length
 
   // Counted across BOTH kinds, which it was not.
@@ -131,6 +122,8 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
         ['Referred by', order.orderer?.full_name],
         ['Ordered', fmtDateTime(order.ordered_at)],
         ['Priority', order.priority === 'stat' ? 'STAT (urgent)' : 'Routine'],
+        // When the sample was drawn — a report states it (ISO 15189 §7.4.1.6).
+        ['Sample collected', collectedAt ? fmtDateTime(collectedAt) : null],
       ]} />
 
       {[...departments.entries()].map(([dept, panels]) => (
@@ -161,14 +154,14 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
               { label: 'Investigation', flex: 1 },
               { label: 'Result', width: 80, align: 'right' },
               { label: 'Unit', width: 60 },
-              { label: 'Reference range', width: 120 },
-              { label: 'Flag', width: 50, align: 'center' },
+              { label: 'Reference range', width: 106 },
+              { label: 'Flag', width: 64, align: 'center' },
             ]}
             rows={rows.map((a): Array<string | TableCell> => {
               const value = a.value_text ?? (a.value_num != null ? String(a.value_num) : '—')
               const f = FLAG[a.flag] ?? FLAG.pending
               const out = ABNORMAL_FLAGS.has(a.flag)
-              const range = analyteRange(a)
+              const range = analyteNormal(a) ?? ''
               return [
                 { text: a.short_name ?? a.name, bold: false, note: null },
                 { text: value, bold: out, color: out ? f.color : C.ink },
@@ -198,18 +191,21 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
               { label: 'Investigation', flex: 1 },
               { label: 'Result', width: 80, align: 'right' },
               { label: 'Unit', width: 60 },
-              { label: 'Reference range', width: 120 },
-              { label: 'Flag', width: 50, align: 'center' },
+              { label: 'Reference range', width: 106 },
+              { label: 'Flag', width: 64, align: 'center' },
             ]}
             rows={rows.map((it): Array<string | TableCell> => {
               const result = it.result_value != null ? String(it.result_value) : it.result_text || '—'
               const f = FLAG[it.flag] ?? FLAG.pending
-              const out = it.flag === 'high' || it.flag === 'low'
+              // Critical and abnormal highlighted too — this was high/low only,
+              // so a critical potassium printed in plain black.
+              const out = ABNORMAL_FLAGS.has(it.flag)
               return [
                 { text: it.test?.name ?? 'Test', bold: true, note: it.test?.code ?? null },
                 { text: result, bold: out, color: out ? f.color : C.ink },
-                it.unit ?? it.test?.unit ?? '—',
-                { text: refRange(it), color: C.muted },
+                // No unit beside a worded answer ("Non-reactive mmol/L").
+                it.result_value == null && it.result_text ? '' : (it.unit ?? it.test?.unit ?? '—'),
+                { text: itemNormal(it) ?? '—', color: C.muted },
                 { text: f.label, bold: out, color: f.color },
               ]
             })}

@@ -116,7 +116,7 @@ export async function getSetupProgress(): Promise<SetupProgress> {
     {
       key: 'lab', show: hasModule('lab'),
       title: 'Set up your lab test catalog',
-      description: 'Add the lab tests you offer, with sample types and prices.',
+      description: 'Add the tests you offer from Uyirly’s master list with your prices, check their normal ranges, and group them into packages. The catalog shows the steps.',
       href: '/lab',
       done: labTests > 0,
     },

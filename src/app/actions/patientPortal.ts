@@ -10,6 +10,7 @@ import {
 } from '@/lib/patientAuth'
 import { istToday, istDayStartISO, istDayEndISO, istAddDays, istWeekday } from '@/lib/istDate'
 import { DOCTOR_FILTER } from '@/lib/doctors'
+import { analyteNormal, itemNormal } from '@/lib/lab/reportRange'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -314,14 +315,11 @@ interface PortalAnalyte {
   name: string; short_name: string | null
   unit_ucum: string | null; decimals: number | null
   value_num: number | null; value_text: string | null
-  ref_low: number | null; ref_high: number | null; flag: string
+  ref_low: number | null; ref_high: number | null; normal_text?: string | null; flag: string
 }
 
 function portalAnalyteRow(a: PortalAnalyte) {
-  const reference = a.ref_low != null && a.ref_high != null ? `${a.ref_low} – ${a.ref_high}`
-    : a.ref_high != null ? `< ${a.ref_high}`
-    : a.ref_low != null ? `> ${a.ref_low}`
-    : null
+  const reference = analyteNormal(a)
   return {
     // Named for the measurement, prefixed by the panel it came out of, so a
     // patient reading "Haemoglobin" knows which report it belongs to.
@@ -348,7 +346,7 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
     // that was still being worked on — a half-entered panel, or an unverified
     // one — which is neither finished nor anybody's intention to publish.
     svc.from('lab_orders')
-      .select('id, status, ordered_at, reported_at, items:lab_order_items(test_id, result_value, result_text, unit, flag, test:lab_tests_catalog(name, unit, reference_range))')
+      .select('id, status, ordered_at, reported_at, items:lab_order_items(test_id, result_value, result_text, unit, flag, ref_low, ref_high, ref_text, test:lab_tests_catalog(name, unit, reference_range, ref_low, ref_high))')
       .eq('patient_id', patientId).eq('status', 'reported').order('ordered_at', { ascending: false }),
     svc.from('radiology_orders')
       .select('id, status, ordered_at, reported_at, report, image_url, test:radiology_catalog(name)')
@@ -412,12 +410,17 @@ export async function getPatientHospitalRecords(patientId: string): Promise<Pati
       const singles = ((l.items ?? []) as Array<Record<string, unknown>>)
         .filter((it) => !panelTestIds.has(it.test_id as string))
         .map((it) => {
-          const t = it.test as { name?: string; unit?: string | null; reference_range?: string | null } | null
+          const t = it.test as { name?: string; unit?: string | null; reference_range?: string | null; ref_low?: number | null; ref_high?: number | null } | null
           return {
             test: t?.name ?? 'Test',
             result: (it.result_text as string | null) ?? (it.result_value != null ? String(it.result_value) : null),
-            unit: (it.unit as string | null) ?? (t?.unit ?? null),
-            reference: t?.reference_range ?? null,
+            // No unit beside a worded answer.
+            unit: it.result_value == null && it.result_text ? null : ((it.unit as string | null) ?? (t?.unit ?? null)),
+            // The range the result was judged by — as the printed report.
+            reference: itemNormal({
+              ref_low: it.ref_low as number | null, ref_high: it.ref_high as number | null,
+              ref_text: it.ref_text as string | null, test: t,
+            }),
             flag: it.flag as string,
           }
         })
@@ -485,7 +488,7 @@ export async function getPortalLabReport(orderId: string): Promise<{
   if (!owned) return null
   const [{ data: order }, tenantProfile, patient] = await Promise.all([
     svc.from('lab_orders')
-      .select('*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*))')
+      .select('*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name), items:lab_order_items(*, test:lab_tests_catalog(*)), samples:lab_samples(collected_at)')
       .eq('id', orderId).maybeSingle(),
     portalTenantProfile(svc, owned.owner.tenantId),
     portalPatientDemographics(svc, owned.patientId),

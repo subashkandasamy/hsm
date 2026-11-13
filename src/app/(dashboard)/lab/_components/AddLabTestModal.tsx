@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef, Fragment } from 'react'
-import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
-import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster, getPanelMeasurements, setMeasurementOptional } from '@/app/actions/lab'
+import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
+import PackagesTab from './PackagesTab'
+import MeasurementRangesTable from './MeasurementRanges'
 
 interface Props { open: boolean; onClose: () => void }
 
@@ -47,7 +49,7 @@ function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
   }, {})
 }
 
-type Tab = 'catalog' | 'master' | 'custom'
+type Tab = 'catalog' | 'master' | 'custom' | 'packages'
 
 export default function AddLabTestModal({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('catalog')
@@ -60,33 +62,12 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   const [catQuery, setCatQuery]     = useState('')
   const [catExpanded, setCatExpanded] = useState<Set<string>>(new Set())
   const [editId, setEditId]         = useState<string | null>(null)
-  // Which panel is expanded to show what it measures, and the cached list.
+  // Which test is open to show its measurements, their normal ranges and the
+  // optional switch (MeasurementRanges.tsx loads and saves those itself).
   const [openPanel, setOpenPanel] = useState<string | null>(null)
-  const [panelRows, setPanelRows] = useState<Record<string, Array<{ analyte_id: string; code: string; name: string; short_name: string | null; unit_ucum: string | null; optional: boolean }>>>({})
-  const [optionalBusy, setOptionalBusy] = useState<string | null>(null)
-  const [optionalErr, setOptionalErr] = useState<string | null>(null)
-
-  // Optional (0277): left off the report when blank, and not counted as
-  // missing — for measurements this hospital's analyzer cannot produce.
-  async function toggleOptional(t: LabTestCatalog, analyteId: string, optional: boolean) {
-    setOptionalBusy(analyteId); setOptionalErr(null)
-    const res = await setMeasurementOptional(t.id, analyteId, optional)
-    setOptionalBusy(null)
-    if (!res.success) { setOptionalErr(res.error); return }
-    setPanelRows((p) => ({
-      ...p,
-      [t.id]: (p[t.id] ?? []).map((a) => a.analyte_id === analyteId ? { ...a, optional } : a),
-    }))
-  }
-
-  async function togglePanel(t: LabTestCatalog) {
+  function togglePanel(t: LabTestCatalog) {
     if (!t.lab_master_id) return
-    if (openPanel === t.id) { setOpenPanel(null); return }
-    setOpenPanel(t.id)
-    if (!panelRows[t.id]) {
-      const rows = await getPanelMeasurements(t.lab_master_id, t.id)
-      setPanelRows((p) => ({ ...p, [t.id]: rows }))
-    }
+    setOpenPanel(openPanel === t.id ? null : t.id)
   }
   const [editForm, setEditForm]     = useState<TestForm>(BLANK)
   const [editErr, setEditErr]       = useState('')
@@ -265,6 +246,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
     { key: 'catalog', label: `My Catalog (${tests.length})`, icon: <FlaskConical className="w-3.5 h-3.5" /> },
     { key: 'master',  label: 'Add from Master',              icon: <Globe className="w-3.5 h-3.5" /> },
     { key: 'custom',  label: 'Custom Test',                  icon: <Plus className="w-3.5 h-3.5" /> },
+    { key: 'packages', label: 'Packages',                    icon: <Package className="w-3.5 h-3.5" /> },
   ]
 
   const inp = 'w-full px-3 py-2 rounded-xl text-sm border'
@@ -273,10 +255,10 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="Lab Test Catalog" maxWidth="72rem">
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b" style={{ borderColor: '#E2E8F0' }}>
+      <div className="flex gap-1 mb-5 border-b overflow-x-auto" style={{ borderColor: '#E2E8F0' }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg -mb-px"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg -mb-px whitespace-nowrap flex-shrink-0"
             style={tab === t.key
               ? { color: '#0D9488', borderBottom: '2px solid #0D9488', background: '#F0FDFA' }
               : { color: '#64748B', borderBottom: '2px solid transparent', background: 'transparent', cursor: 'pointer' }}>
@@ -290,6 +272,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
       ══════════════════════════════════════════════════════════════════════ */}
       {tab === 'catalog' && (
         <>
+          <SetupGuide openByDefault={!loading && tests.length === 0} onGo={setTab} />
           <div className="relative mb-4">
             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: '#94A3B8' }} />
             <input value={catQuery} onChange={e => setCatQuery(e.target.value)}
@@ -362,14 +345,12 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                                       several of them vary by sex and age. The single range on the
                                       catalogue row is the old one and no longer what results are
                                       judged against, so showing it would contradict the report. */}
-                                  {(t.analyte_count ?? 0) > 1 ? (
+                                  {(t.analyte_count ?? 0) >= 1 ? (
                                     <button onClick={() => togglePanel(t)}
                                       className="underline underline-offset-2"
                                       style={{ color: '#0D9488', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}>
-                                      {t.analyte_count} measurements {openPanel === t.id ? '▾' : '▸'}
+                                      {(t.analyte_count ?? 0) > 1 ? `${t.analyte_count} measurements` : 'Normal range'} {openPanel === t.id ? '▾' : '▸'}
                                     </button>
-                                  ) : (t.analyte_count ?? 0) === 1 ? (
-                                    <span style={{ color: '#94A3B8' }}>1 measurement</span>
                                   ) : (t.reference_range ?? (t.ref_low != null || t.ref_high != null)) ? (
                                     <span>{t.reference_range ?? `${t.ref_low ?? '?'} – ${t.ref_high ?? '?'}`}</span>
                                   ) : null}
@@ -395,41 +376,15 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                             </div>
                             {openPanel === t.id && (
                               <div className="px-3 pb-3 pt-1" style={{ background: '#F8FAFC' }}>
-                                <p className="text-xs mb-1.5" style={{ color: '#94A3B8' }}>
-                                  What this panel reports — these are measurements, not tests you can
-                                  order on their own. Tap one to make it <strong>optional</strong>: when
-                                  it has no value it is left off the report and the test can still be
-                                  verified as complete (for example, eosinophils on a 3-part analyzer).
-                                </p>
-                                {optionalErr && (
-                                  <p className="text-xs mb-1.5" style={{ color: '#B91C1C' }}>{optionalErr}</p>
-                                )}
-                                {panelRows[t.id]
-                                  ? (
-                                    <div className="flex flex-wrap gap-1">
-                                      {panelRows[t.id].map((a) => (
-                                        <button key={a.code} type="button"
-                                          onClick={() => toggleOptional(t, a.analyte_id, !a.optional)}
-                                          disabled={optionalBusy === a.analyte_id}
-                                          title={a.optional ? 'Optional — tap to make it required' : 'Required — tap to make it optional'}
-                                          className="text-xs px-1.5 py-0.5 rounded"
-                                          style={a.optional
-                                            ? { background: '#F8FAFC', color: '#94A3B8', border: '1px dashed #CBD5E1', cursor: 'pointer' }
-                                            : { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                                          {a.short_name ?? a.name}
-                                          {a.unit_ucum && <span style={{ color: '#94A3B8' }}> {a.unit_ucum}</span>}
-                                          {a.optional && <span style={{ color: '#94A3B8' }}> · optional</span>}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )
-                                  : <p className="text-xs" style={{ color: '#94A3B8' }}>Loading…</p>}
+                                <MeasurementRangesTable testId={t.id} />
                               </div>
                             )}
                             {editId === t.id && (
                               <div className="px-3 pb-3" style={{ background: '#F8FAFC' }}>
                                 <TestForm form={editForm} err={editErr} saving={editSaving} accent="#0D9488"
                                   title={`Editing: ${t.name}`} saveLabel="Save Changes"
+                                  measurements={t.analyte_count ?? 0}
+                                  onShowMeasurements={() => { setEditId(null); setOpenPanel(t.id) }}
                                   onSet={(f, v) => setEditForm(p => ({ ...p, [f]: v }))}
                                   onSave={submitEdit} onCancel={() => setEditId(null)} />
                               </div>
@@ -565,6 +520,8 @@ export default function AddLabTestModal({ open, onClose }: Props) {
       {/* ══════════════════════════════════════════════════════════════════════
           CUSTOM TEST TAB
       ══════════════════════════════════════════════════════════════════════ */}
+      {tab === 'packages' && <PackagesTab />}
+
       {tab === 'custom' && (
         <>
           <p className="text-xs mb-4" style={{ color: '#64748B' }}>
@@ -580,16 +537,74 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   )
 }
 
+// ─── How to set up a lab ──────────────────────────────────────────────────────
+
+/**
+ * The order a new hospital sets its lab up in, said once, where the work is
+ * done. Open by itself while the catalog is empty; a line to tap after that.
+ */
+function SetupGuide({ openByDefault, onGo }: { openByDefault: boolean; onGo: (t: Tab) => void }) {
+  const [open, setOpen] = useState<boolean | null>(null)
+  const shown = open ?? openByDefault
+  const go = (t: Tab, label: string) => (
+    <button type="button" onClick={() => onGo(t)} className="font-semibold underline underline-offset-2"
+      style={{ color: '#0D9488', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>{label}</button>
+  )
+  const steps: Array<{ title: string; body: React.ReactNode }> = [
+    { title: 'Add the tests you offer',
+      body: <>In {go('master', 'Add from Master')}, open a group, type your price beside each test and press Add — or type one price
+        for the group and press Activate All, then change any price here later. A line that only ever comes inside a bigger
+        test (A/G Ratio inside LFT) can be marked &ldquo;Part of a panel only&rdquo;: no price, never ordered by itself.</> },
+    { title: 'Add anything Uyirly does not have',
+      body: <>{go('custom', 'Custom Test')}: name, sample, unit, normal range and price.</> },
+    { title: 'Check every normal range',
+      body: <>Here in My Catalog, tap the &ldquo;measurements&rdquo; link under a test — a CBC has 28. Each line shows its normal
+        and where it came from. Edit range to use your lab&apos;s own; Use Uyirly standard to go back. Mark a line Optional
+        if your analyzer cannot produce it.</> },
+    { title: 'Group tests into packages',
+      body: <>{go('packages', 'Packages')} → New package: pick the tests (and scans), set one price. The bill shows each test,
+        with the package price shared across them.</> },
+    { title: 'Connect your analyzers',
+      body: <>In <a href="/settings/devices" className="font-semibold underline underline-offset-2" style={{ color: '#0D9488' }}>Settings → Devices</a>,
+        install the connector on the lab computer. Each analyzer appears by itself the first time it sends a result. Check
+        its measurements, then switch it on — until then its results are held, not written onto patients.</> },
+  ]
+  return (
+    <div className="rounded-xl mb-4" style={{ border: '1px solid #CCFBF1', background: '#F0FDFA' }}>
+      <button type="button" onClick={() => setOpen(!shown)} aria-expanded={shown}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold"
+        style={{ color: '#0F766E', background: 'none', border: 'none', cursor: 'pointer' }}>
+        {shown ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        How to set up your lab — 5 steps
+      </button>
+      {shown && (
+        <ol className="px-3 pb-3 space-y-2">
+          {steps.map((st, i) => (
+            <li key={st.title} className="flex gap-2.5 text-xs" style={{ color: '#334155' }}>
+              <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-semibold"
+                style={{ background: '#fff', color: '#0F766E', border: '1px solid #99F6E4' }}>{i + 1}</span>
+              <span className="pt-0.5"><strong style={{ color: '#0F172A' }}>{st.title}.</strong> {st.body}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
 // ─── Shared edit form ─────────────────────────────────────────────────────────
 
 interface FormProps {
   form: TestForm; err: string; saving: boolean
   accent: string; title: string; saveLabel: string
+  /** How many measurement lines the test reports (0 for a hospital's own test). */
+  measurements?: number
+  onShowMeasurements?: () => void
   onSet: (f: string, v: string | boolean) => void
   onSave: () => void; onCancel: () => void
 }
 
-function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, onCancel }: FormProps) {
+function TestForm({ form, err, saving, accent, title, saveLabel, measurements = 0, onShowMeasurements, onSet, onSave, onCancel }: FormProps) {
   const inp = 'w-full px-3 py-2 rounded-lg text-sm border'
   const bdr = { borderColor: '#E2E8F0', color: '#0F172A', background: '#fff' }
 
@@ -619,33 +634,67 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
         </datalist>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
-          <Select value={form.sample_type} onChange={e => onSet('sample_type', e.target.value)}>
-            <option value="">—</option>
-            {SAMPLE_TYPES.map(s => <option key={s} value={s.toLowerCase()}>{s}</option>)}
-          </Select>
+      {/* A test with measurement lines (CBC, Urine Routine, even Fasting Blood
+          Sugar) is judged line by line, each with its own normal range. The
+          single unit/range below would be ignored for it, and showed "70 to
+          110" as if that were the CBC's range — so it is not offered. */}
+      {measurements > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
+            <Select value={form.sample_type} onChange={e => onSet('sample_type', e.target.value)}>
+              <option value="">—</option>
+              {SAMPLE_TYPES.map(s => <option key={s} value={s.toLowerCase()}>{s}</option>)}
+            </Select>
+          </div>
+          <div className="sm:col-span-2 rounded-lg px-3 py-2 text-xs" style={{ background: '#F0FDFA', border: '1px solid #99F6E4', color: '#0F172A' }}>
+            {measurements > 1
+              ? <>This test reports <strong>{measurements} measurements</strong>, each with its own unit and normal range.</>
+              : <>This test reports <strong>one measurement</strong> with its own unit and normal range.</>}
+            {onShowMeasurements && (
+              <button type="button" onClick={onShowMeasurements} className="block mt-1 underline underline-offset-2 font-semibold"
+                style={{ color: '#0D9488', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                See or change {measurements > 1 ? 'them' : 'it'}
+              </button>
+            )}
+          </div>
         </div>
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Unit</label>
-          <input value={form.unit} onChange={e => onSet('unit', e.target.value)} className={inp} style={bdr} placeholder="mg/dL" />
-        </div>
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Ref Low</label>
-          <input type="number" step="any" value={form.ref_low} onChange={e => onSet('ref_low', e.target.value)} className={inp} style={bdr} placeholder="70" />
-        </div>
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Ref High</label>
-          <input type="number" step="any" value={form.ref_high} onChange={e => onSet('ref_high', e.target.value)} className={inp} style={bdr} placeholder="110" />
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Sample</label>
+              <Select value={form.sample_type} onChange={e => onSet('sample_type', e.target.value)}>
+                <option value="">—</option>
+                {SAMPLE_TYPES.map(s => <option key={s} value={s.toLowerCase()}>{s}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Unit</label>
+              <input value={form.unit} onChange={e => onSet('unit', e.target.value)} className={inp} style={bdr} placeholder="e.g. mg/dL" />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Normal low</label>
+              <input type="number" step="any" value={form.ref_low} onChange={e => onSet('ref_low', e.target.value)} className={inp} style={bdr} placeholder="e.g. 70" />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Normal high</label>
+              <input type="number" step="any" value={form.ref_high} onChange={e => onSet('ref_high', e.target.value)} className={inp} style={bdr} placeholder="e.g. 110" />
+            </div>
+          </div>
+          <p className="text-xs -mt-1" style={{ color: '#94A3B8' }}>
+            A result above the high or below the low is flagged. Leave one empty for a one-sided range.
+          </p>
+        </>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {measurements > 0 ? <div className="hidden sm:block" /> : (
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Reference Range (report display)</label>
-          <input value={form.reference_range} onChange={e => onSet('reference_range', e.target.value)} className={inp} style={bdr} placeholder="70–110 mg/dL" />
+          <label className="text-xs font-medium block mb-1" style={{ color: '#64748B' }}>Normal range as printed (optional)</label>
+          <input value={form.reference_range} onChange={e => onSet('reference_range', e.target.value)} className={inp} style={bdr} placeholder="e.g. Negative, or 70–110 mg/dL" />
         </div>
+        )}
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: form.package_only ? '#94A3B8' : accent }}>
             Price (₹){form.package_only ? '' : ' *'}
@@ -672,9 +721,9 @@ function TestForm({ form, err, saving, accent, title, saveLabel, onSet, onSave, 
         <span>
           <span className="font-medium" style={{ color: '#0F172A' }}>Part of a panel only</span>
           <span className="block mt-0.5" style={{ color: '#64748B' }}>
-            A measurement inside a report, like A/G Ratio or MCV. It still appears
-            when results are entered — it just cannot be ordered or billed on its own,
-            so it needs no price.
+            For a line that only ever comes inside a bigger test, like A/G Ratio inside LFT.
+            It is hidden from ordering and never billed, so it needs no price. The bigger
+            test still reports it — that test carries its own measurement lines.
           </span>
         </span>
       </label>

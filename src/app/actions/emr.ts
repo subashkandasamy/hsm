@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { TimelineEvent, DiagnosisSummary } from '@/lib/types'
+import { OUT_OF_RANGE } from '@/lib/lab/reportRange'
 
 export async function getPatientTimeline(
   patientId: string,
@@ -162,7 +163,8 @@ export async function getPatientTimeline(
       const t = i.test as Record<string, unknown> | null
       return t?.name ?? 'Test'
     }).join(', ')
-    const hasAbnormal = items.some((i) => i.flag === 'high' || i.flag === 'low')
+    // Critical and abnormal count too — a critical potassium read "within range".
+    const hasAbnormal = items.some((i) => OUT_OF_RANGE.has(i.flag as string))
     events.push({
       id: row.id as string,
       type: 'lab_order',

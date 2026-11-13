@@ -544,11 +544,38 @@ export async function setAnalyzerStatus(id: string, status: string): Promise<Sim
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.from('lab_analyzers').update({ status }).eq('id', id)
+  const { data: updated, error } = await supabase.from('lab_analyzers')
+    .update({ status }).eq('id', id).select('id, tenant_id').maybeSingle()
   if (error) return { success: false, error: error.message }
+  if (!updated) return { success: false, error: 'That analyzer is no longer here' }
 
-  await logAudit(actor.id, 'update', 'lab_analyzer', id, { status })
+  // Results it sent while it was off were held (processMessage), not lost.
+  // Switching it on lets them through, oldest first, exactly as if they had
+  // just arrived — same barcode match, same code map, same flags.
+  let released = 0
+  if (status === 'live') {
+    const { data: held } = await supabase.from('analyzer_messages')
+      .select('id, connector_id, raw_message, source')
+      .eq('analyzer_id', id).eq('status', 'held')
+      .order('received_at').limit(500)
+    if (held?.length) {
+      const svc = createServiceClient()
+      for (const m of held) {
+        const outcome = await processMessage(svc, {
+          tenantId: updated.tenant_id as string,
+          connectorId: (m.connector_id as string | null) ?? null,
+          messageId: m.id as string,
+          raw: m.raw_message as string,
+          source: (m.source as string | null) ?? null,
+        })
+        if (outcome.status === 'matched') released++
+      }
+    }
+  }
+
+  await logAudit(actor.id, 'update', 'lab_analyzer', id, { status, released_held_results: released })
   revalidatePath('/settings/devices')
+  if (released) revalidatePath('/lab')
   return { success: true }
 }
 

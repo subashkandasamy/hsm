@@ -52,6 +52,7 @@
     "verify:unbounded-reads": "tsx scripts/verify-unbounded-reads.ts",
     "verify:min-qty": "tsx scripts/verify-min-qty.ts",
     "verify:swiftehr-mapping": "tsx scripts/verify-swiftehr-mapping.ts",
+    "verify:package-price": "tsx scripts/verify-package-price.ts",
     "verify:gst-composition": "tsx scripts/verify-gst-composition.ts",
     "e2e": "tsx e2e/run.ts",
     "e2e:accounts": "tsx e2e/setup/accounts.ts",

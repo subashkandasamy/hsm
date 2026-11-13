@@ -28,11 +28,17 @@ const STATUS_MAP: Record<string, string> = {
   verified: 'info', reported: 'success', cancelled: 'cancelled',
 }
 
-const FLAG_COLORS: Record<string, { bg: string; color: string }> = {
-  pending: { bg: '#F1F5F9', color: '#64748B' },
-  normal:  { bg: '#DCFCE7', color: '#15803D' },
-  high:    { bg: '#FEE2E2', color: '#DC2626' },
-  low:     { bg: '#DBEAFE', color: '#1D4ED8' },
+// Every flag a test can carry — a critical result showed as a grey
+// "CRITICAL_HIGH" chip, the same grey as one with nothing wrong.
+const FLAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  pending:       { bg: '#F1F5F9', color: '#64748B', label: 'PENDING' },
+  unranged:      { bg: '#F1F5F9', color: '#64748B', label: 'ENTERED' },
+  normal:        { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
+  high:          { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
+  low:           { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
+  abnormal:      { bg: '#FEF3C7', color: '#B45309', label: 'ABNORMAL' },
+  critical_high: { bg: '#991B1B', color: '#fff',    label: 'CRIT HIGH' },
+  critical_low:  { bg: '#1E3A8A', color: '#fff',    label: 'CRIT LOW' },
 }
 
 interface Props {
@@ -256,6 +262,12 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                     </span>
                     <StatusBadge status={STATUS_MAP[order.status] ?? 'pending'}
                       label={order.status.replace('_', ' ')} />
+                    {order.package_order?.name_snapshot && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4' }}>
+                        Package: {order.package_order.name_snapshot}
+                      </span>
+                    )}
                   </div>
                   {/* Tests */}
                   <div className="flex flex-wrap gap-1.5 mt-2">
@@ -267,7 +279,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                         {item.flag !== 'pending' && (
                           <span className="px-1.5 py-0 rounded font-semibold text-xs"
                             style={{ background: FLAG_COLORS[item.flag]?.bg ?? '#F1F5F9', color: FLAG_COLORS[item.flag]?.color ?? '#64748B' }}>
-                            {item.flag.toUpperCase()}
+                            {FLAG_COLORS[item.flag]?.label ?? item.flag.toUpperCase()}
                           </span>
                         )}
                       </span>

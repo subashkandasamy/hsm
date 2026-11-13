@@ -420,6 +420,10 @@ export interface AnalyteFormRow {
   display_order: number
   value_type: AnalyteValueType
   allowed_values: string[] | null
+  /** Which of allowed_values count as normal — what the database flags by (0298). */
+  normal_values: string[] | null
+  /** The normal for a written line, e.g. "0–5" pus cells (0298). */
+  normal_text: string | null
   ref_low: number | null
   ref_high: number | null
   crit_low: number | null
@@ -434,6 +438,8 @@ export type LabOrderStatus = 'ordered' | 'collected' | 'processing' | 'verified'
 export interface LabOrderItem {
   id: string; lab_order_id: string; test_id: string; price_snapshot: number
   result_value: number | null; result_text: string | null; unit: string | null; flag: LabFlag
+  /** The range the result was judged by, kept with it (0298). Null on results from before. */
+  ref_low?: number | null; ref_high?: number | null; ref_text?: string | null
   test?: Pick<LabTestCatalog, 'id' | 'name' | 'code' | 'unit' | 'ref_low' | 'ref_high' | 'reference_range' | 'sample_type'>
 }
 
@@ -453,9 +459,14 @@ export interface LabOrder {
   items?: LabOrderItem[]
   /** The tubes, in draw order. barcode is exactly what the label's bars encode
    *  and what a technician types into an analyzer. */
-  samples?: Array<{ tube_no: number; barcode: string; tube_type: string; tube: { label: string } | null }>
+  samples?: Array<{ tube_no: number; barcode: string; tube_type: string; tube: { label: string } | null
+    /** When the tube was drawn (set on "collect sample"). */
+    collected_at?: string | null }>
   patient?: Pick<Patient, 'id' | 'full_name' | 'uhid'>
   orderer?: Pick<Profile, 'id' | 'full_name'>
+  /** Set when the order came from a test package (0296). */
+  package_order_id?: string | null
+  package_order?: Pick<PackageOrder, 'id' | 'name_snapshot'> | null
 }
 
 // ---- Phase 3: Radiology ----
@@ -467,6 +478,42 @@ export interface RadiologyMaster {
 export interface RadiologyCatalog {
   id: string; name: string; modality: string | null; body_part: string; price: number; is_active: boolean
   radiology_master_id?: string | null
+}
+
+// ── Test packages (0296) ─────────────────────────────────────────────────────
+
+/** Several lab tests and/or scans sold together at one price, e.g. a health check-up. */
+export interface TestPackage {
+  id: string
+  name: string
+  price: number
+  is_active: boolean
+  items: TestPackageItem[]
+  /** What the tests cost bought one by one, at today's prices. */
+  separate_total: number
+  /** Tests that are switched off or hidden now — the package cannot be ordered until fixed. */
+  problems: string[]
+}
+
+export interface TestPackageItem {
+  kind: 'lab' | 'scan'
+  /** lab_tests_catalog.id or radiology_catalog.id */
+  test_id: string
+  name: string
+  price: number
+  applies_to: 'all' | 'female' | 'male'
+  /** Still switched on and orderable today. */
+  available: boolean
+}
+
+/** A package as it was ordered for one patient. */
+export interface PackageOrder {
+  id: string
+  package_id: string
+  name_snapshot: string
+  price_snapshot: number
+  status: 'ordered' | 'cancelled'
+  ordered_at: string
 }
 
 export type RadiologyOrderStatus = 'ordered' | 'performed' | 'verified' | 'reported' | 'cancelled'

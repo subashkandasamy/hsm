@@ -37,8 +37,11 @@ export default function SampleQueue({
   // Two different problems used to share one heading. A message whose codes
   // are unknown had already found its patient, so "Attach to a patient" did
   // nothing and the hospital had no way to tell why.
-  const noPatient = messages.filter((m) => m.status !== 'unmapped')
+  const noPatient = messages.filter((m) => m.status !== 'unmapped' && m.status !== 'held')
   const noCodes = messages.filter((m) => m.status === 'unmapped')
+  // From an analyzer nobody has switched on yet. Nothing to fix here — switch
+  // the machine on above and these go through by themselves.
+  const held = messages.filter((m) => m.status === 'held')
   const countOf = (list: UnmatchedMessage[]) =>
     list.reduce((n, m) => n + (m.result_count || 0), 0)
 
@@ -164,6 +167,42 @@ export default function SampleQueue({
           </div>
         ))}
       </div>
+      )}
+
+      {held.length > 0 && (
+        <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid #E2E8F0', background: '#F8FAFC' }}>
+          <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid #E2E8F0' }}>
+            <FileQuestion className="w-4 h-4 flex-shrink-0" style={{ color: '#475569' }} />
+            <p className="text-sm font-semibold" style={{ color: '#334155' }}>
+              {countOf(held)} result{countOf(held) === 1 ? '' : 's'} waiting for an analyzer to be switched on
+            </p>
+          </div>
+          <div className="px-4 py-2.5" style={{ background: '#fff', borderBottom: '1px solid #F1F5F9' }}>
+            <p className="text-xs" style={{ color: '#64748B' }}>
+              An analyzer that is new or paused does not write onto patients. Check its measurements above,
+              then switch it on — these results then go through by themselves.
+            </p>
+          </div>
+          {held.map((m) => (
+            <div key={m.id} className="px-4 py-3" style={{ background: '#fff', borderTop: '1px solid #F1F5F9' }}>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-sm font-mono font-semibold" style={{ color: '#0F172A' }}>
+                  {m.sample_barcode ?? 'No barcode sent'}
+                </span>
+                <span className="text-xs" style={{ color: '#94A3B8' }}>
+                  {m.result_count} measurement{m.result_count === 1 ? '' : 's'} · {m.analyzer_label}
+                </span>
+                <div className="flex gap-1.5 ml-auto">
+                  <button onClick={() => ignore(m)} disabled={isPending} title="Not a patient sample — discard"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {noCodes.length > 0 && (

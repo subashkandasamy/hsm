@@ -8,7 +8,8 @@ import SendToPatientButton from '@/components/ui/SendToPatientButton'
 import { sendReportNotification } from '@/app/actions/notifications'
 import { getLabReportAnalytes } from '@/app/actions/lab'
 import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
-import type { LabOrder, LabOrderItem } from '@/lib/types'
+import type { LabOrder } from '@/lib/types'
+import { analyteNormal, itemNormal, firstCollected, OUT_OF_RANGE as ABNORMAL } from '@/lib/lab/reportRange'
 
 /**
  * Every flag the two result tables can carry, not only the four a single-value
@@ -20,29 +21,12 @@ const FLAG_COLORS: Record<string, { bg: string; color: string; label: string }> 
   normal:        { bg: '#DCFCE7', color: '#15803D', label: 'NORMAL' },
   high:          { bg: '#FEE2E2', color: '#DC2626', label: 'HIGH' },
   low:           { bg: '#DBEAFE', color: '#1D4ED8', label: 'LOW' },
-  critical_high: { bg: '#991B1B', color: '#fff',    label: 'CRITICAL' },
-  critical_low:  { bg: '#1E3A8A', color: '#fff',    label: 'CRITICAL' },
+  critical_high: { bg: '#991B1B', color: '#fff',    label: 'CRIT HIGH' },
+  critical_low:  { bg: '#1E3A8A', color: '#fff',    label: 'CRIT LOW' },
   abnormal:      { bg: '#FEE2E2', color: '#DC2626', label: 'ABNORMAL' },
   unranged:      { bg: '#F1F5F9', color: '#64748B', label: '—' },
 }
 
-const ABNORMAL = new Set(['high', 'low', 'abnormal', 'critical_high', 'critical_low'])
-
-function analyteRange(a: ReportAnalyte): string {
-  if (a.ref_low != null && a.ref_high != null) return `${a.ref_low} – ${a.ref_high}`
-  if (a.ref_high != null) return `< ${a.ref_high}`
-  if (a.ref_low != null) return `> ${a.ref_low}`
-  return '—'
-}
-
-function refRange(item: LabOrderItem): string {
-  const t = item.test
-  if (t?.reference_range) return t.reference_range
-  if (t?.ref_low != null && t?.ref_high != null) return `${t.ref_low} – ${t.ref_high}`
-  if (t?.ref_high != null) return `< ${t.ref_high}`
-  if (t?.ref_low != null) return `> ${t.ref_low}`
-  return '—'
-}
 
 interface Props {
   order: LabOrder
@@ -99,6 +83,12 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
           <Meta label="UHID" value={order.patient?.uhid ?? '—'} mono />
           <Meta label="Ordered By" value={order.orderer?.full_name ?? '—'} />
           <div className="flex items-baseline gap-2">
+            <span className="text-xs uppercase tracking-wide" style={{ color: '#94A3B8', minWidth: '4.5rem' }}>Collected</span>
+            <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>
+              {firstCollected(order.samples) ? <DateText date={firstCollected(order.samples)!} /> : '—'}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-2">
             <span className="text-xs uppercase tracking-wide" style={{ color: '#94A3B8', minWidth: '4.5rem' }}>Reported</span>
             <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>
               {order.reported_at ? <DateText date={order.reported_at} /> : '—'}
@@ -152,7 +142,7 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
                           {value}
                         </td>
                         <td style={{ ...td, color: '#64748B' }}>{a.unit_ucum ?? '—'}</td>
-                        <td style={{ ...td, color: '#64748B' }}>{analyteRange(a)}</td>
+                        <td style={{ ...td, color: '#64748B' }}>{analyteNormal(a) ?? '—'}</td>
                         <td style={{ ...td, textAlign: 'center' }}>
                           <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: fc.bg, color: fc.color }}>
                             {fc.label}
@@ -173,8 +163,8 @@ export default function LabReportModal({ order, canEdit, onClose, onEdit }: Prop
                     <td style={{ ...td, textAlign: 'right', fontWeight: abnormal ? 800 : 600, color: abnormal ? fc.color : '#0F172A' }}>
                       {resultDisplay}
                     </td>
-                    <td style={{ ...td, color: '#64748B' }}>{item.unit ?? item.test?.unit ?? '—'}</td>
-                    <td style={{ ...td, color: '#64748B' }}>{refRange(item)}</td>
+                    <td style={{ ...td, color: '#64748B' }}>{item.result_value == null && item.result_text ? '' : (item.unit ?? item.test?.unit ?? '—')}</td>
+                    <td style={{ ...td, color: '#64748B' }}>{itemNormal(item) ?? '—'}</td>
                     <td style={{ ...td, textAlign: 'center' }}>
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: fc.bg, color: fc.color }}>
                         {fc.label}
