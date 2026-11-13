@@ -8,7 +8,7 @@ import { getCollectionSummary, SERVICE_BILLS_ONLY } from '@/lib/billing/collecti
 import { collectedBySource } from '@/lib/billing/collectedBySource'
 import { CASH_LIMIT } from '@/lib/billing/cashLimit'
 import { istDate, istToday, istAddDays, istDayBoundsISO, istDayStartISO, istDayEndISO } from '@/lib/istDate'
-import type { DayEndSheet, DayEndSourceLine, DayEndAccountLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, CashBreach } from '@/lib/types'
+import type { DayEndSheet, DayEndSourceLine, DayEndAccountLine, SalesRegister, SalesRegisterRow, LedgerMapping, OwnerDay, OwnerPeriod, CashBreach } from '@/lib/types'
 import { getMovementsInRange } from '@/app/actions/cashRegister'
 import { buildTallyXml, saleTotal, type TallySale, type TallyReceipt } from '@/lib/accounting/tally'
 import { pageAll } from '@/lib/supabase/pageAll'
@@ -47,6 +47,19 @@ export async function getDayEndSheet(date: string): Promise<DayEndSheet> {
 
   const supabase = await createClient()
   const { from, to } = istDayBoundsISO(date)
+  return sheetForRange(supabase, actor.tenant_id, from, to, date)
+}
+
+/**
+ * The day-end sheet for any window — a day, a month, a year. One calculation,
+ * so the Day, Month and Year views can never disagree about what "collected"
+ * or "billed" means. `outstanding.today` is "raised in this window".
+ */
+async function sheetForRange(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string, from: string, to: string, date: string,
+): Promise<DayEndSheet> {
+  const actor = { tenant_id: tenantId }
 
   // Paged: an unbounded read is cut at 1,000 rows without an error, and "every
   // unpaid bill" passes that at any hospital that has been running a while —
@@ -807,6 +820,104 @@ export async function getOwnerDay(date: string): Promise<OwnerDay> {
     })),
     beds: { total: totalBeds, occupied, percent: totalBeds ? Math.round((occupied / totalBeds) * 100) : 0 },
     attention,
+  }
+}
+
+/**
+ * The window a Month or Year view covers: the calendar period, cut at today
+ * while it is still running (13 Nov → 1–13 Nov), and the comparison window of
+ * the same length before it — the same days of the previous month, the same
+ * part of last year — so a half-finished month is never set against a full one.
+ */
+function periodWindow(kind: 'month' | 'year', value: string, today: string):
+  { from: string; to: string; compareFrom: string; compareTo: string } | { error: string } {
+  const lastOfMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)  // m: 1-12
+  const min = (a: string, b: string) => (a < b ? a : b)
+  if (kind === 'month') {
+    const m = /^(\d{4})-(\d{2})$/.exec(value)
+    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) return { error: 'Choose a month' }
+    const y = Number(m[1]), mo = Number(m[2])
+    const from = `${value}-01`
+    if (from > today) return { error: 'That month has not started yet' }
+    const to = min(lastOfMonth(y, mo), today)
+    const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000)
+    const py = mo === 1 ? y - 1 : y, pm = mo === 1 ? 12 : mo - 1
+    const compareFrom = `${py}-${String(pm).padStart(2, '0')}-01`
+    return { from, to, compareFrom, compareTo: min(istAddDays(compareFrom, days), lastOfMonth(py, pm)) }
+  }
+  if (!/^\d{4}$/.test(value)) return { error: 'Choose a year' }
+  const y = Number(value)
+  const from = `${y}-01-01`
+  if (from > today) return { error: 'That year has not started yet' }
+  const to = min(`${y}-12-31`, today)
+  // The same day last year; 29 Feb falls back to 28 Feb.
+  const md = to.slice(5)
+  const compareTo = md === '02-29' ? `${y - 1}-02-28` : `${y - 1}-${md}`
+  return { from, to, compareFrom: `${y - 1}-01-01`, compareTo }
+}
+
+/** The owner's dashboard for a calendar month or year (to today while it runs). */
+export async function getOwnerPeriod(kind: 'month' | 'year', value: string): Promise<OwnerPeriod> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'dashboard:read')
+  const today = istToday()
+  const w = periodWindow(kind, value, today)
+  if ('error' in w) throw new Error(w.error)
+
+  const supabase = await createClient()
+  const rd = getReadClient()
+  const from = istDayStartISO(w.from), to = istDayBoundsISO(w.to).to
+  const cFrom = istDayStartISO(w.compareFrom), cTo = istDayBoundsISO(w.compareTo).to
+
+  const [sheet, trendRes, counts, prevCounts, prevCollection, prevBills, attention, tenant] = await Promise.all([
+    sheetForRange(supabase, actor.tenant_id, from, to, w.to),
+    // Same source as the Day view's 30-day line (a materialized view: service
+    // client, tenant filtered by hand). A year is at most 366 rows.
+    rd.from('mv_daily_revenue_by_tenant')
+      .select('day, total_amount')
+      .eq('tenant_id', actor.tenant_id)
+      .gte('day', w.from).lte('day', w.to)
+      .order('day').limit(400),
+    countsFor(supabase, actor.tenant_id, from, to),
+    countsFor(supabase, actor.tenant_id, cFrom, cTo),
+    getCollectionSummary(supabase, actor.tenant_id, cFrom, cTo),
+    pageAll<{ total: number }>((f, t) => supabase.from('bills')
+      .select('total').gte('created_at', cFrom).lt('created_at', cTo)
+      .neq('status', 'cancelled').or(SERVICE_BILLS_ONLY)
+      .order('id').range(f, t)),
+    attentionFor(supabase, rd, actor.tenant_id, today),
+    supabase.from('tenants').select('created_at').eq('id', actor.tenant_id).maybeSingle(),
+  ])
+  if (trendRes.error) throw new Error(`Could not read the trend: ${trendRes.error.message}`)
+
+  // Every day (month) or month (year) of the window, quiet ones as zero.
+  const byDay = new Map((trendRes.data ?? []).map((r) => [r.day as string, Number(r.total_amount)]))
+  const trend: OwnerPeriod['trend'] = []
+  if (kind === 'month') {
+    for (let d = w.from; d <= w.to; d = istAddDays(d, 1)) trend.push({ key: d, amount: byDay.get(d) ?? 0 })
+  } else {
+    const lastMonth = Number(w.to.slice(5, 7))
+    for (let m = 1; m <= lastMonth; m++) {
+      const key = `${value}-${String(m).padStart(2, '0')}`
+      let sum = 0
+      for (const [d, v] of byDay) if (d.startsWith(key)) sum += v
+      trend.push({ key, amount: Math.round(sum) })
+    }
+  }
+
+  const prevBilled = Math.round(prevBills.reduce((t, b) => t + Number(b.total ?? 0), 0) * 100) / 100
+  const createdYear = tenant.data?.created_at ? Number(istDate(tenant.data.created_at as string).slice(0, 4)) : Number(today.slice(0, 4))
+
+  return {
+    kind, value, from: w.from, to: w.to,
+    compare: { from: w.compareFrom, to: w.compareTo },
+    collected: { ...sheet.collected, previous: prevCollection.total },
+    billed: { ...sheet.billed, previous: prevBilled },
+    outstanding: { fromPeriod: sheet.outstanding.today, allNow: sheet.outstanding.total, bills: sheet.outstanding.bills },
+    trend,
+    activity: (Object.keys(counts) as Array<keyof DayCounts>).map((k) => ({ key: k, count: counts[k], previous: prevCounts[k] })),
+    attention,
+    firstYear: Math.min(createdYear, Number(today.slice(0, 4))),
   }
 }
 

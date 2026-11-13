@@ -1956,6 +1956,28 @@ export interface OwnerDay {
   attention: { staleBills: number; staleAmount: number; lowStock: number }
 }
 
+/** The owner's dashboard for a calendar month or year — to today while it is still running. */
+export interface OwnerPeriod {
+  kind: 'month' | 'year'
+  /** '2026-11' or '2026'. */
+  value: string
+  /** IST dates, both included. `to` is today while the period is still running. */
+  from: string
+  to: string
+  /** The same number of days in the previous month / the same part of last year. */
+  compare: { from: string; to: string }
+  collected: DayEndSheet['collected'] & { previous: number }
+  billed: DayEndSheet['billed'] & { previous: number }
+  /** Unpaid on bills raised in this period, and everything unpaid today. */
+  outstanding: { fromPeriod: number; allNow: number; bills: number }
+  /** Net collections per day (month) or per month (year), empty days as zero. */
+  trend: Array<{ key: string; amount: number }>
+  activity: Array<{ key: string; count: number; previous: number }>
+  attention: OwnerDay['attention']
+  /** The first year the hospital has records for — the year picker starts there. */
+  firstYear: number
+}
+
 export interface CashBreach {
   /** IST day the cash was taken. */
   date: string
