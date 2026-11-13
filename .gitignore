@@ -55,3 +55,7 @@ public/guides/*.raw.png
 
 # E2E suite: run output (screenshots, PDFs, reports)
 /e2e/results/
+
+# SwiftEHR migration: extracted hospital data (patient records) never goes in git
+/migration/swiftehr/raw/
+/migration/swiftehr/*.json
