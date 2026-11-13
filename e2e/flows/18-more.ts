@@ -38,9 +38,12 @@ export default {
     // ── Form F: a pregnant woman's ultrasound ──
     const priya = cast(r).priya
     await withRole('receptionist', async ({ page }) => {
-      const res = await registerPatient(page, priya); let uhid = res.uhid
-      if (res.ok && !uhid) uhid = (await findPatient(page, priya.phone)).uhid
-      if (res.ok) r.setPatient('priya', { ...priya, uhid })
+      // A refused registration (re-run: already registered) has no UHID of its own —
+      // the one on the page then belongs to someone else.
+      const res = await registerPatient(page, priya); let uhid = res.ok ? res.uhid : undefined
+      // On a re-run she is already registered — find her by phone.
+      if (!uhid) uhid = (await findPatient(page, priya.phone)).uhid
+      if (uhid) r.setPatient('priya', { ...priya, uhid })
       const at = minutesFromNow(20); at.setMinutes(Math.ceil(at.getMinutes() / 5) * 5, 0, 0)
       await bookAppointment(page, { full_name: priya.full_name, uhid: uhid! }, account('doctor').name, at, 'Antenatal visit, 10 weeks', 'General Medicine')
       await go(page, '/appointments'); await page.locator('tr').filter({ hasText: priya.full_name }).first().getByRole('button', { name: 'Check In' }).click().catch(() => {}); await wait(page, 2500)

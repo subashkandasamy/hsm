@@ -83,7 +83,8 @@ export default {
     await withRole('receptionist', async ({ page }) => {
       await go(page, '/billing/estimates'); await page.getByRole('button', { name: 'New Estimate' }).click(); await wait(page, 1500)
       await page.getByPlaceholder(/Search existing patient/).fill(rm.full_name); await page.getByRole('button', { name: 'Search' }).click(); await wait(page, 2000)
-      await page.getByText(rm.full_name).first().click(); await wait(page, 800)
+      // In the dialog — an earlier estimate lists the same name behind it.
+      await page.getByRole('dialog').getByText(rm.full_name).locator('visible=true').first().click(); await wait(page, 800)
       await chooseIn(lab(page, 'Room type').locator('xpath=..').locator('select'), /Semi/); await lab(page, 'Days').locator('xpath=..').locator('input').fill('1')
       await page.getByRole('button', { name: 'Add', exact: true }).first().click(); await wait(page, 500)
       await chooseIn(lab(page, 'Surgery / package').locator('xpath=..').locator('select'), /Cataract/)

@@ -36,7 +36,8 @@ async function setReceptionistInventory(on: boolean) {
 export default {
   name: 'hr-admin', title: '17 HR and admin',
   async run(r: Run) {
-    const temp = { name: `E2E Temp Nurse ${r.tag}`, email: `e2e.temp.${r.tag.toLowerCase()}@example.com` }
+    // A fresh email each attempt — a re-run of this flow must not meet its own account.
+    const temp = { name: `E2E Temp Nurse ${r.tag}`, email: `e2e.temp.${r.tag.toLowerCase()}.${Date.now().toString(36)}@example.com` }
     await withRole('admin', async ({ page }) => {
       const A = 'admin'
       await go(page, '/staff'); await page.getByRole('button', { name: 'Add Staff', exact: true }).first().click(); await wait(page, 1000)
