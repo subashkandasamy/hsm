@@ -184,7 +184,7 @@ function monthName(ym: string): string {
 
 /** This period against the same stretch before it — the same number of days. */
 function VsPrevious({ now, prev, label, isMoney }: { now: number; prev: number; label: string; isMoney?: boolean }) {
-  if (!prev) return <span style={{ fontSize: '11px', color: '#CBD5E1' }}>{label}: {isMoney ? money(0) : 0}</span>
+  if (!prev) return <span style={{ fontSize: '11px', color: '#94A3B8' }}>{label}: {isMoney ? money(0) : 0}</span>
   const pct = Math.round(((now - prev) / prev) * 100)
   const flat = Math.abs(pct) < 10
   const Icon = flat ? Minus : now > prev ? TrendingUp : TrendingDown
@@ -193,7 +193,7 @@ function VsPrevious({ now, prev, label, isMoney }: { now: number; prev: number; 
     <span className="inline-flex items-center gap-1 flex-wrap" style={{ fontSize: '11px', color: colour }}>
       <Icon className="w-3 h-3" />
       {flat ? 'about the same' : `${pct > 0 ? '+' : ''}${pct}%`}
-      <span style={{ color: '#CBD5E1' }}>· {label}: {isMoney ? money(prev) : prev}</span>
+      <span style={{ color: '#94A3B8' }}>· {label}: {isMoney ? money(prev) : prev}</span>
     </span>
   )
 }
@@ -247,13 +247,13 @@ function PeriodView({ p, onDownload }: { p: OwnerPeriod; onDownload: (type: 'pat
           <VsPrevious now={p.collected.total} prev={p.collected.previous} label={cmp} isMoney />
         </Headline>
         <Headline label="BILLED" value={money(p.billed.total)} tint="#2563EB">
-          <span className="block" style={{ fontSize: '11px', color: '#CBD5E1' }}>
+          <span className="block" style={{ fontSize: '11px', color: '#94A3B8' }}>
             on {p.billed.bills} bill{p.billed.bills === 1 ? '' : 's'}
           </span>
           <VsPrevious now={p.billed.total} prev={p.billed.previous} label={cmp} isMoney />
         </Headline>
         <Headline label="YET TO COLLECT" value={money(p.outstanding.fromPeriod)} tint="#B45309">
-          <span style={{ fontSize: '11px', color: '#CBD5E1' }}>
+          <span style={{ fontSize: '11px', color: '#94A3B8' }}>
             on bills raised in this {p.kind} · {money(p.outstanding.allNow)} owed in all today
           </span>
         </Headline>
@@ -307,6 +307,9 @@ function PeriodView({ p, onDownload }: { p: OwnerPeriod; onDownload: (type: 'pat
     </>
   )
 }
+
+/** The date / month / year box: a fixed width beside the switch, its height. */
+const PICKER: React.CSSProperties = { width: '11.5rem', height: '44px', minHeight: '44px', flexShrink: 0 }
 
 export default function OwnerDashboard({ today, initial }: { today: string; initial: OwnerDay }) {
   const [date, setDate] = useState(today)
@@ -379,28 +382,29 @@ export default function OwnerDashboard({ today, initial }: { today: string; init
             ? `${view === 'month' ? monthName(period.value) : period.value} — ${rangeLabel(period.from, period.to)}${period.to === today ? ' (so far)' : ''}`
             : view === 'month' ? monthName(month) : year}
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
-            {busy && <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#94A3B8' }} />}
-            <div role="tablist" aria-label="Period" className="flex rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+          // One row: the switch and its picker side by side, the same height.
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {busy && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#94A3B8' }} />}
+            <div role="tablist" aria-label="Period" className="flex flex-shrink-0 rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', background: '#fff' }}>
               {(['day', 'month', 'year'] as const).map((v) => (
                 <button key={v} role="tab" aria-selected={view === v} onClick={() => switchView(v)}
-                  className="px-3 py-2 text-sm font-medium"
+                  className="px-4 text-sm font-medium"
                   style={view === v
-                    ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer', minHeight: '40px' }
-                    : { background: '#fff', color: '#475569', border: 'none', cursor: 'pointer', minHeight: '40px' }}>
+                    ? { background: '#0D9488', color: '#fff', border: 'none', cursor: 'pointer', height: '42px' }
+                    : { background: '#fff', color: '#475569', border: 'none', cursor: 'pointer', height: '42px' }}>
                   {v === 'day' ? 'Day' : v === 'month' ? 'Month' : 'Year'}
                 </button>
               ))}
             </div>
-            {view === 'day' && <Input type="date" value={date} max={today} onChange={(e) => load(e.target.value)} />}
+            {view === 'day' && <Input type="date" aria-label="Day" value={date} max={today} onChange={(e) => load(e.target.value)} style={PICKER} />}
             {view === 'month' && (
-              <Input type="month" aria-label="Month" value={month} max={today.slice(0, 7)}
+              <Input type="month" aria-label="Month" value={month} max={today.slice(0, 7)} style={PICKER}
                 onChange={(e) => { if (!e.target.value) return; setMonth(e.target.value); void loadPeriod('month', e.target.value) }} />
             )}
             {view === 'year' && (
               <select aria-label="Year" value={year}
                 onChange={(e) => { setYear(e.target.value); void loadPeriod('year', e.target.value) }}
-                className="px-3 py-2 rounded-xl text-sm" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A', minHeight: '40px' }}>
+                className="px-3 rounded-xl text-sm" style={{ ...PICKER, width: '7rem', border: '1px solid #E2E8F0', background: '#fff', color: '#0F172A', cursor: 'pointer' }}>
                 {Array.from({ length: Number(today.slice(0, 4)) - firstYear + 1 }, (_, i) => String(Number(today.slice(0, 4)) - i))
                   .map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
