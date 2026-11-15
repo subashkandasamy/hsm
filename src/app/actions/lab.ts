@@ -13,6 +13,7 @@ import { LabOrderSchema, LabTestCatalogSchema, LabResultItemSchema } from '@/lib
 import type { LabOrder, LabTestCatalog, LabTestMaster, LabOrderItem, LabFlag, AnalyteFormRow } from '@/lib/types'
 import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { inChunks } from '@/lib/supabase/inChunks'
 import { checkPlausible } from '@/lib/labPlausible'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -38,6 +39,50 @@ export async function listLabMaster(): Promise<LabTestMaster[]> {
   return (data ?? []) as LabTestMaster[]
 }
 
+/** The hospital's copy of a master test, at the hospital's price. */
+function catalogRowFromMaster(master: Record<string, unknown>, tenantId: string, price: number) {
+  return {
+    id:              crypto.randomUUID(),
+    tenant_id:       tenantId,
+    lab_master_id:   master.id as string,
+    name:            master.name as string,
+    code:            (master.code as string | null) ?? null,
+    category:        (master.category as string | null) ?? 'General',
+    // The clinical grouping a doctor orders by, and the discipline that runs
+    // it, are different facts and both have to come across.
+    department:      (master.department as string | null) ?? null,
+    // Which container it is drawn into. Added in 0183 and backfilled there,
+    // but never copied here — so anything activated since has been arriving
+    // with no tube type, which ensure_lab_samples reads as 'other'. That puts
+    // a serum test in the wrong tube and out of NABL's draw order.
+    tube_type:       (master.tube_type as string | null) ?? null,
+    sample_type:     (master.sample_type as string | null) ?? null,
+    unit:            (master.unit as string | null) ?? null,
+    ref_low:         (master.ref_low as number | null) ?? null,
+    ref_high:        (master.ref_high as number | null) ?? null,
+    reference_range: (master.reference_range as string | null) ?? null,
+    // Whether a test is a panel component is true of the test, not of one
+    // hospital, so it comes down with the clinical detail.
+    package_only:    master.package_only === true,
+    price,
+    is_active:       true,
+  }
+}
+
+/** A refusal the person adding the test can act on, not a constraint name. */
+function activationError(e: { code?: string; message: string }, code: string | null): string {
+  if (e.code === '23505' && /code/.test(e.message) && code) return `Code ${code} is already used by another test in your catalogue`
+  return e.message
+}
+
+/**
+ * A panel component is activated at 0 deliberately — it is not for sale.
+ * Everything else must carry a price or it bills as a zero.
+ */
+function priceProblem(master: Record<string, unknown>, price: number): string | null {
+  return master.package_only !== true && !(price > 0) ? 'Enter a price greater than 0' : null
+}
+
 export async function activateFromMaster(
   masterTestId: string,
   price: number
@@ -60,43 +105,69 @@ export async function activateFromMaster(
     .from('lab_tests_master').select('*').eq('id', masterTestId).single()
   if (!master) return { success: false, error: 'Master test not found' }
 
-  // A panel component is activated at 0 deliberately — it is not for sale.
-  // Everything else must carry a price or it bills as a zero.
-  const isComponent = (master as Record<string, unknown>).package_only === true
-  if (!isComponent && !(price > 0)) return { success: false, error: 'Enter a price greater than 0' }
+  const bad = priceProblem(master, price)
+  if (bad) return { success: false, error: bad }
 
-  const id = crypto.randomUUID()
-  const { error } = await supabase.from('lab_tests_catalog').insert({
-    id,
-    tenant_id:       actor.tenant_id,
-    lab_master_id:   masterTestId,
-    name:            master.name,
-    code:            master.code ?? null,
-    category:        (master as Record<string, unknown>).category as string ?? 'General',
-    // The clinical grouping a doctor orders by, and the discipline that runs
-    // it, are different facts and both have to come across.
-    department:      (master as Record<string, unknown>).department as string ?? null,
-    // Which container it is drawn into. Added in 0183 and backfilled there,
-    // but never copied here — so anything activated since has been arriving
-    // with no tube type, which ensure_lab_samples reads as 'other'. That puts
-    // a serum test in the wrong tube and out of NABL's draw order.
-    tube_type:       (master as Record<string, unknown>).tube_type as string ?? null,
-    sample_type:     master.sample_type ?? null,
-    unit:            master.unit ?? null,
-    ref_low:         master.ref_low ?? null,
-    ref_high:        master.ref_high ?? null,
-    reference_range: master.reference_range ?? null,
-    // Whether a test is a panel component is true of the test, not of one
-    // hospital, so it comes down with the clinical detail.
-    package_only:    (master as Record<string, unknown>).package_only === true,
-    price,
-    is_active:       true,
-  })
-  if (error) return { success: false, error: error.message }
+  const row = catalogRowFromMaster(master, actor.tenant_id, price)
+  const { error } = await supabase.from('lab_tests_catalog').insert(row)
+  if (error) return { success: false, error: activationError(error, row.code) }
 
-  await logAudit(actor.id, 'activate', 'lab_test', id, { master_id: masterTestId, price })
-  const { data: test } = await supabase.from('lab_tests_catalog').select('*').eq('id', id).single()
+  await logAudit(actor.id, 'activate', 'lab_test', row.id, { master_id: masterTestId, price })
+  const { data: test } = await supabase.from('lab_tests_catalog').select('*').eq('id', row.id).single()
   return { success: true, test: test as LabTestCatalog }
+}
+
+/**
+ * "Activate All" for one group: every test in one call, so a forty-test group
+ * is one round trip instead of forty, and every test that could not be added
+ * comes back by name with the reason — the screen keeps those on the list.
+ */
+export async function activateGroupFromMaster(
+  items: Array<{ id: string; price: number }>
+): Promise<{ success: true; added: string[]; failed: Array<{ id: string; error: string }> } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+  if (!items.length) return { success: true, added: [], failed: [] }
+  if (items.length > 500) return { success: false, error: 'Too many tests at once' }
+  const supabase = await createClient()
+  const ids = items.map((i) => i.id)
+
+  const [{ data: have, error: e1 }, { data: masters, error: e2 }] = await Promise.all([
+    inChunks<{ lab_master_id: string }>(ids, (slice) => supabase.from('lab_tests_catalog').select('lab_master_id').eq('tenant_id', actor.tenant_id).in('lab_master_id', slice)),
+    inChunks<Record<string, unknown>>(ids, (slice) => supabase.from('lab_tests_master').select('*').in('id', slice)),
+  ])
+  if (e1 || e2) return { success: false, error: (e1 ?? e2)! }
+  const already = new Set((have ?? []).map((r) => r.lab_master_id as string))
+  const byId = new Map((masters ?? []).map((m) => [m.id as string, m as Record<string, unknown>]))
+
+  const failed: Array<{ id: string; error: string }> = []
+  const rows: ReturnType<typeof catalogRowFromMaster>[] = []
+  for (const it of items) {
+    const m = byId.get(it.id)
+    if (!m) { failed.push({ id: it.id, error: 'Master test not found' }); continue }
+    if (already.has(it.id)) { failed.push({ id: it.id, error: 'This test is already in your catalog' }); continue }
+    const bad = priceProblem(m, it.price)
+    if (bad) { failed.push({ id: it.id, error: bad }); continue }
+    rows.push(catalogRowFromMaster(m, actor.tenant_id, it.price))
+  }
+
+  // All at once; if one row is refused, the batch is, so add the rest one by
+  // one to find which — and why.
+  let added = rows
+  if (rows.length) {
+    const { error } = await supabase.from('lab_tests_catalog').insert(rows)
+    if (error) {
+      added = []
+      for (const row of rows) {
+        const { error: e } = await supabase.from('lab_tests_catalog').insert(row)
+        if (e) failed.push({ id: row.lab_master_id, error: activationError(e, row.code) })
+        else added.push(row)
+      }
+    }
+  }
+  await Promise.all(added.map((row) => logAudit(actor.id, 'activate', 'lab_test', row.id, { master_id: row.lab_master_id, price: row.price })))
+  return { success: true, added: added.map((r) => r.lab_master_id), failed }
 }
 
 // ---- Catalog ----
@@ -116,8 +187,9 @@ async function withAnalyteCounts(
 ): Promise<LabTestCatalog[]> {
   const masterIds = [...new Set(tests.map((t) => t.lab_master_id).filter(Boolean))] as string[]
   if (!masterIds.length) return tests
-  const { data } = await supabase
-    .from('lab_test_analytes').select('lab_master_id, analyte_id').in('lab_master_id', masterIds)
+  const { data } = await inChunks(masterIds, (slice) => supabase
+    .from('lab_test_analytes').select('lab_master_id, analyte_id').in('lab_master_id', slice)
+    .is('retired_at', null))   // lines in force now (0302)
   const byMaster = new Map<string, string[]>()
   for (const r of data ?? []) {
     const k = r.lab_master_id as string
@@ -160,6 +232,28 @@ export async function updateLabTest(
   if (error) return { success: false, error: error.message }
   await logAudit(actor.id, 'update', 'lab_test', id, input)
   return { success: true }
+}
+
+/**
+ * Switch several of the hospital's tests on or off in one call — the
+ * catalogue's "Enable All" / "Disable All". Returns the ones that changed, so
+ * the screen never shows a test as switched that was not.
+ */
+export async function setLabTestsActive(
+  ids: string[], active: boolean
+): Promise<{ success: true; changed: string[] } | { success: false; error: string }> {
+  await requireWriteAccess()
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+  if (!ids.length) return { success: true, changed: [] }
+  if (ids.length > 1000) return { success: false, error: 'Too many tests at once' }
+  const supabase = await createClient()
+  const { data, error } = await inChunks<{ id: string }>(ids, (slice) => supabase.from('lab_tests_catalog')
+    .update({ is_active: active }).eq('tenant_id', actor.tenant_id).in('id', slice).select('id'))
+  if (error) return { success: false, error }
+  const changed = (data ?? []).map((r) => r.id as string)
+  await Promise.all(changed.map((id) => logAudit(actor.id, 'update', 'lab_test', id, { is_active: active })))
+  return { success: true, changed }
 }
 
 export async function createLabTest(
@@ -852,6 +946,7 @@ export async function getPanelMeasurements(labMasterId: string, testId?: string)
     .from('lab_test_analytes')
     .select('display_order, analyte:lab_analytes(id, code, name, short_name, unit_ucum)')
     .eq('lab_master_id', labMasterId)
+    .is('retired_at', null)
     .order('display_order')
   let optional = new Set<string>()
   if (testId) {
@@ -889,7 +984,7 @@ export async function setMeasurementOptional(
     .select('id, name, lab_master_id').eq('id', testId).eq('tenant_id', actor.tenant_id).maybeSingle()
   if (!test?.lab_master_id) return { success: false, error: 'That test is not in your catalogue' }
   const { data: part } = await svc.from('lab_test_analytes')
-    .select('analyte_id').eq('lab_master_id', test.lab_master_id).eq('analyte_id', analyteId).maybeSingle()
+    .select('analyte_id').eq('lab_master_id', test.lab_master_id).eq('analyte_id', analyteId).is('retired_at', null).maybeSingle()
   if (!part) return { success: false, error: 'That measurement is not part of this test' }
 
   const { error } = optional

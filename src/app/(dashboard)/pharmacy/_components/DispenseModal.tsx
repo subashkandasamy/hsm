@@ -52,26 +52,42 @@ function parseDurationDays(duration: string | null): number {
   return 1
 }
 
-// Try to find a drug + matching brand label for a prescription drug name (brand or generic)
-function findAutoMatch(drugName: string, drugs: Drug[]): { drug: Drug; label: string } | null {
+// Try to find a drug + matching brand label for a prescription drug name (brand or generic).
+//
+// The catalogue usually holds several entries for one name — "Paracetamol"
+// 500 mg and 650 mg, say — and only some are on the shelf. Taking the first
+// one opened the pack window on "Insufficient Stock" while 441 tablets of
+// Dolo 650 (paracetamol 650 mg) sat in stock. So among the matches of the best
+// kind, the one in stock and in the prescribed strength wins; an exact name
+// still always beats a partial one, so a combination product never wins over
+// the plain medicine.
+function findAutoMatch(drugName: string, drugs: Drug[], dosage?: string | null): { drug: Drug; label: string } | null {
   const name = drugName.toLowerCase().trim()
-  // Exact brand alias match
+  const squash = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/\s+/g, '')
+  const wantStrength = squash(dosage?.match(/[\d.]+\s*(mg|mcg|g|ml|iu)\b/i)?.[0])
+  const cands: Array<{ drug: Drug; label: string; kind: number }> = []
   for (const d of drugs) {
-    const brand = (d.brand_aliases ?? []).find(b => b.toLowerCase() === name)
-    if (brand) return { drug: d, label: brand }
+    const brands = d.brand_aliases ?? []
+    const exactBrand = brands.find((b) => b.toLowerCase() === name)
+    if (exactBrand) { cands.push({ drug: d, label: exactBrand, kind: 0 }); continue }
+    if (d.name.toLowerCase() === name) { cands.push({ drug: d, label: d.name, kind: 0 }); continue }
+    const partBrand = brands.find((b) => b.toLowerCase().includes(name) || name.includes(b.toLowerCase()))
+    if (partBrand) { cands.push({ drug: d, label: partBrand, kind: 1 }); continue }
+    if (d.name.toLowerCase().includes(name) || name.includes(d.name.toLowerCase())) cands.push({ drug: d, label: d.name, kind: 1 })
   }
-  // Exact generic name match
-  const exact = drugs.find(d => d.name.toLowerCase() === name)
-  if (exact) return { drug: exact, label: exact.name }
-  // Partial brand match
-  for (const d of drugs) {
-    const brand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(name) || name.includes(b.toLowerCase()))
-    if (brand) return { drug: d, label: brand }
-  }
-  // Partial generic match
-  const partial = drugs.find(d => d.name.toLowerCase().includes(name) || name.includes(d.name.toLowerCase()))
-  if (partial) return { drug: partial, label: partial.name }
-  return null
+  if (!cands.length) return null
+  const best = Math.min(...cands.map((c) => c.kind))
+  const pool = cands.filter((c) => c.kind === best)
+  const score = (c: { drug: Drug }) => [
+    (c.drug.stock_qty ?? 0) > 0 ? 0 : 1,
+    wantStrength && squash(c.drug.strength) === wantStrength ? 0 : 1,
+    -(c.drug.stock_qty ?? 0),
+  ]
+  pool.sort((a, b) => { const x = score(a), y = score(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] })
+  const pick = pool[0]
+  // Name the strength when the label is a bare generic, so "Paracetamol 650mg" is what the pharmacist sees.
+  const label = pick.label === pick.drug.name && pick.drug.strength ? `${pick.drug.name} ${pick.drug.strength}` : pick.label
+  return { drug: pick.drug, label }
 }
 
 export default function DispenseModal({ open, prescription, onClose, onSuccess }: Props) {
@@ -99,11 +115,11 @@ export default function DispenseModal({ open, prescription, onClose, onSuccess }
     let active = true
     searchDrugs(prescription.drug_name, 20).then(res => {
       if (!active) return
-      const m = findAutoMatch(prescription.drug_name, res)
+      const m = findAutoMatch(prescription.drug_name, res, prescription.dosage)
       if (m) { setSelectedDrug(m.drug); setDrugSearch(m.label) }
     }).catch(() => {})
     return () => { active = false }
-  }, [prescription.drug_name])
+  }, [prescription.drug_name, prescription.dosage])
 
   const loadFefo = useCallback(async (drugId: string, q: number) => {
     if (!drugId || q < 1) { setFefo(null); return }

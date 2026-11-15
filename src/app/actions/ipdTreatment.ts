@@ -14,6 +14,7 @@ import { istToday } from '@/lib/istDate'
 import { doseOverMaxError } from '@/lib/dosing/evaluate'
 import { checkIpdOrderSafety } from '@/app/actions/rxSafety'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { inChunks } from '@/lib/supabase/inChunks'
 import { requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
 import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
 import { planSosDose, writeSosDose, resolveChecker, pharmacyDispensed } from '@/lib/sosDose'
@@ -1055,8 +1056,8 @@ export async function listLabCatalogForIpd(): Promise<LabTestCatalog[]> {
   // see it is twenty measurements, not guess from the name.
   const masterIds = [...new Set(tests.map((t) => t.lab_master_id).filter(Boolean))] as string[]
   if (!masterIds.length) return tests
-  const { data: links } = await supabase
-    .from('lab_test_analytes').select('lab_master_id').in('lab_master_id', masterIds)
+  const { data: links } = await inChunks<{ lab_master_id: string }>(masterIds, (slice) => supabase
+    .from('lab_test_analytes').select('lab_master_id').in('lab_master_id', slice).is('retired_at', null))
   const counts = new Map<string, number>()
   for (const r of links ?? []) {
     const k = r.lab_master_id as string

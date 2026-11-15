@@ -1257,7 +1257,7 @@ function StockView({ stock, canManage, onRefresh }: {
                     {/* H1 and X carry a legal register duty — worth seeing before it is handed over. */}
                     {(drug.schedule === 'H1' || drug.schedule === 'X') && (
                       <span className="text-xs px-1.5 py-0.5 rounded-md font-semibold"
-                        title="Every supply is written to the Schedule H1 register"
+                        title={`Every supply is written to the Schedule ${drug.schedule} register`}
                         style={{ background: '#FEE2E2', color: '#B91C1C' }}>Schedule {drug.schedule}</span>
                     )}
                     {out && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F1F5F9', color: '#64748B' }}>Out of stock</span>}
@@ -1399,7 +1399,7 @@ function StockView({ stock, canManage, onRefresh }: {
                   </div>
                 ) : drug.schedule ? (
                   <p className="text-xs" style={{ color: '#94A3B8' }}>
-                    Schedule {drug.schedule} — set by the national catalogue for every hospital.
+                    {isDrugSchedule(drug.schedule) ? <>Schedule {drug.schedule}</> : drug.schedule === 'OTC' ? <>Over the counter — no schedule</> : <>{drug.schedule}</>} — set by the national catalogue for every hospital.
                   </p>
                 ) : null}
 

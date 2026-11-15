@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { Plus, Search, Pencil, Globe, FlaskConical, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
-import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster } from '@/app/actions/lab'
+import { createLabTest, updateLabTest, listAllLabCatalog, listLabMaster, activateFromMaster, activateGroupFromMaster, setLabTestsActive } from '@/app/actions/lab'
 import type { LabTestCatalog, LabTestMaster } from '@/lib/types'
 import PackagesTab from './PackagesTab'
 import MeasurementRangesTable from './MeasurementRanges'
@@ -73,6 +73,9 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   const [editErr, setEditErr]       = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [toggling, setToggling]     = useState<string | null>(null)
+  const [togglingGroup, setTogglingGroup] = useState<string | null>(null)
+  // A switch that did not save says so, instead of showing the new state anyway.
+  const [catError, setCatError]     = useState('')
 
   // ── Master tab ───────────────────────────────────────────────────────────────
   const [masterTests, setMasterTests]     = useState<LabTestMaster[]>([])
@@ -160,16 +163,23 @@ export default function AddLabTestModal({ open, onClose }: Props) {
   }
 
   async function toggleActive(t: LabTestCatalog) {
-    setToggling(t.id)
-    await updateLabTest(t.id, { is_active: !t.is_active })
-    setTests(prev => prev.map(item => item.id === t.id ? { ...item, is_active: !t.is_active } : item))
+    setToggling(t.id); setCatError('')
+    const res = await updateLabTest(t.id, { is_active: !t.is_active })
     setToggling(null)
+    if (!res.success) { setCatError(`${t.name} was not switched ${t.is_active ? 'off' : 'on'}: ${res.error}`); return }
+    setTests(prev => prev.map(item => item.id === t.id ? { ...item, is_active: !t.is_active } : item))
   }
 
   async function toggleGroupActive(cat: string, makeActive: boolean) {
-    const group = catalogGroups[cat] ?? []
-    await Promise.all(group.map(t => updateLabTest(t.id, { is_active: makeActive })))
-    setTests(prev => prev.map(t => t.category === cat ? { ...t, is_active: makeActive } : t))
+    // The group as shown — a search narrows it — and only the tests that need changing.
+    const ids = (catalogGroups[cat] ?? []).filter(t => t.is_active !== makeActive).map(t => t.id)
+    setTogglingGroup(cat); setCatError('')
+    const res = await setLabTestsActive(ids, makeActive)
+    setTogglingGroup(null)
+    if (!res.success) { setCatError(`${cat} was not switched ${makeActive ? 'on' : 'off'}: ${res.error}`); return }
+    const changed = new Set(res.changed)
+    setTests(prev => prev.map(t => changed.has(t.id) ? { ...t, is_active: makeActive } : t))
+    if (changed.size < ids.length) setCatError(`${ids.length - changed.size} of the ${cat} tests could not be switched ${makeActive ? 'on' : 'off'}.`)
   }
 
   // ── Master helpers ───────────────────────────────────────────────────────────
@@ -215,15 +225,27 @@ export default function AddLabTestModal({ open, onClose }: Props) {
     setMasterErrors(prev => { const n = { ...prev }; delete n[`group_${cat}`]; return n })
     setActivatingGroup(cat)
 
-    await Promise.allSettled(
-      group.map(m => {
-        const individualPrice = priceInputs[m.id] ? parseFloat(priceInputs[m.id]) : groupPrice
-        return activateFromMaster(m.id, isNaN(individualPrice) ? groupPrice : individualPrice)
-      })
-    )
-    setMasterTests(prev => prev.filter(m => m.category !== cat))
+    const res = await activateGroupFromMaster(group.map(m => {
+      const individualPrice = priceInputs[m.id] ? parseFloat(priceInputs[m.id]) : groupPrice
+      return { id: m.id, price: isNaN(individualPrice) ? groupPrice : individualPrice }
+    }))
     setActivatingGroup(null)
-    catalogFetched.current = false  // so switching to My Catalog tab reloads it
+    if (!res.success) {
+      setMasterErrors(prev => ({ ...prev, [`group_${cat}`]: res.error })); return
+    }
+    // Only what was added leaves the list. A test that was refused stays,
+    // with the reason under it, so a group never looks done when it is not.
+    const added = new Set(res.added)
+    setMasterTests(prev => prev.filter(m => !added.has(m.id)))
+    if (res.failed.length) {
+      setMasterErrors(prev => {
+        const n = { ...prev, [`group_${cat}`]: `${res.failed.length} not added — see below` }
+        for (const f of res.failed) n[f.id] = f.error
+        return n
+      })
+      setMasterExpanded(prev => new Set(prev).add(cat))
+    }
+    if (added.size) catalogFetched.current = false  // so switching to My Catalog tab reloads it
   }
 
   // ── Custom ───────────────────────────────────────────────────────────────────
@@ -279,6 +301,7 @@ export default function AddLabTestModal({ open, onClose }: Props) {
               placeholder="Search by name or code…"
               className={`${inp} pl-9`} style={bdr} />
           </div>
+          {catError && <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{catError}</p>}
 
           {loading ? (
             <p className="text-sm text-center py-10" style={{ color: '#94A3B8' }}>Loading catalog…</p>
@@ -310,11 +333,12 @@ export default function AddLabTestModal({ open, onClose }: Props) {
                       </button>
                       <button
                         onClick={() => toggleGroupActive(cat, !allActive)}
+                        disabled={togglingGroup === cat}
                         className="px-3 py-1 rounded-lg text-xs font-semibold"
                         style={allActive
                           ? { background: '#FEF3C7', color: '#92400E', border: 'none', cursor: 'pointer' }
                           : { background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }}>
-                        {allActive ? 'Disable All' : 'Enable All'}
+                        {togglingGroup === cat ? 'Saving…' : allActive ? 'Disable All' : 'Enable All'}
                       </button>
                     </div>
 

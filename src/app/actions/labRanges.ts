@@ -65,7 +65,7 @@ export async function getMeasurementRanges(testId: string): Promise<MeasurementR
 
   const { data: links } = await supabase.from('lab_test_analytes')
     .select('display_order, analyte:lab_analytes(id, code, name, short_name, unit_ucum, value_type, normal_values, is_active)')
-    .eq('lab_master_id', test.lab_master_id).order('display_order').limit(200)
+    .eq('lab_master_id', test.lab_master_id).is('retired_at', null).order('display_order').limit(200)
   type A = { id: string; code: string; name: string; short_name: string | null; unit_ucum: string | null; value_type: string; normal_values: string[] | null; is_active: boolean }
   const analytes = ((links ?? []) as unknown as Array<{ analyte: A | null }>)
     .map((l) => l.analyte).filter((a): a is A => !!a && a.is_active)

@@ -360,6 +360,8 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
       setDone({ created: res.created, merged: res.merged, units: res.units, receiptId: res.receiptId })
       setLines([newLine()])
       setHeader((h) => ({ ...h, invoiceNo: '', invoiceTotal: '' }))
+      // "Recent" comes with the page — reload it so the invoice just received shows there.
+      router.refresh()
     })
   }
 
