@@ -8,6 +8,13 @@ import { ms } from './env'
 
 // ── Front desk ─────────────────────────────────────────────────────────────
 
+/** Waits (up to `max` ms) for a dialog or form to close after its save button
+ *  was pressed. A slow save must not read as a refused one; a refused save
+ *  stays open and costs the full wait. Returns true when it closed. */
+export async function closes(l: Locator, max = 15000): Promise<boolean> {
+  return l.waitFor({ state: 'hidden', timeout: ms(max) }).then(() => true).catch(() => false)
+}
+
 export const regForm = (page: Page) => page.getByRole('heading', { name: 'Register New Patient' }).locator('xpath=ancestor::*[.//button[normalize-space()="Cancel"]][1]')
 
 export async function openRegister(page: Page) {
@@ -73,8 +80,8 @@ export async function bookAppointment(page: Page, p: { full_name: string; uhid: 
   if (dept) await chooseIn(apptForm(page).locator('select').nth(1), dept, 'department').catch(() => {})
   await apptForm(page).locator('input[type=date]').fill(ymd(at)); await apptForm(page).locator('input[type=time]').fill(hm(at))
   await page.locator('#reason').fill(reason)
-  await apptForm(page).getByRole('button').filter({ hasText: /^Book/ }).last().click(); await wait(page, 3000)
-  const open = await apptForm(page).isVisible().catch(() => false)
+  await apptForm(page).getByRole('button').filter({ hasText: /^Book/ }).last().click(); await wait(page, 1500)
+  const open = !(await closes(apptForm(page).first(), 12000))
   return open ? (await apptForm(page).innerText().catch(() => '')).replace(/\s+/g, ' ') : ''
 }
 
@@ -98,7 +105,9 @@ export async function recordPayment(page: Page, amount: string, method: 'Cash' |
   await payDialog(page).locator('input[type=number]').fill(amount)
   if (method !== 'Cash') await payDialog(page).locator('select').first().selectOption({ label: method })
   if (ref) await payDialog(page).locator('input[type=text]').last().fill(ref).catch(() => {})
-  await payDialog(page).getByRole('button', { name: 'Record', exact: true }).click(); await wait(page, 3000)
+  await payDialog(page).getByRole('button', { name: 'Record', exact: true }).click(); await wait(page, 1500)
+  // The bill reloads after the window closes.
+  if (await closes(payDialog(page).first(), 20000)) await page.getByText(/Balance Due ₹0\.00/).first().waitFor({ timeout: ms(8000) }).catch(() => {})
   return text(page)
 }
 
@@ -153,12 +162,18 @@ export async function openTreatment(page: Page, ipd: string) {
 export const orderForm = (page: Page) => page.locator('div').filter({ has: page.getByRole('button', { name: 'Add Order', exact: true }) }).filter({ has: page.getByPlaceholder('e.g. dilute in 100ml NS, infuse over 30 min') }).last()
 
 async function openOrderForm(page: Page) {
-  if (await page.getByRole('button', { name: 'Add Order', exact: true }).isVisible().catch(() => false)) return
-  await page.getByRole('button', { name: 'New Order' }).first().click(); await wait(page, 900)
-  if (!(await page.getByRole('button', { name: 'Add Order', exact: true }).isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: /^Medications \/ IV/ }).first().click(); await wait(page, 900)
-    if (!(await page.getByRole('button', { name: 'Add Order', exact: true }).isVisible().catch(() => false))) { await page.getByRole('button', { name: 'New Order' }).first().click(); await wait(page, 900) }
-  }
+  // Wait for the form rather than a fixed pause: on a slow machine a second
+  // "New Order" press before it opened would close it again.
+  const add = page.getByRole('button', { name: 'Add Order', exact: true }).first()
+  const shows = (max: number) => add.waitFor({ state: 'visible', timeout: ms(max) }).then(() => true).catch(() => false)
+  if (await add.isVisible().catch(() => false)) return
+  await page.getByRole('button', { name: 'New Order' }).first().click()
+  if (await shows(8000)) return
+  // The Medications / IV section was closed: open it, then the form if it is not open yet.
+  await page.getByRole('button', { name: /^Medications \/ IV/ }).first().click()
+  if (await shows(5000)) return
+  await page.getByRole('button', { name: 'New Order' }).first().click()
+  await shows(8000)
 }
 
 export interface MedOrder { search: string; pick?: RegExp; dose: string; unit: string; route: string; freq: string; days?: string; notes?: string }
@@ -178,8 +193,8 @@ export async function orderMed(page: Page, o: MedOrder): Promise<{ added: boolea
   await sel.nth(0).selectOption(o.unit); await sel.nth(1).selectOption(o.route); await sel.nth(2).selectOption(o.freq)
   if (o.days) { const b = form.getByRole('button', { name: o.days, exact: true }); if (await b.count()) await b.click() }
   if (o.notes) await form.getByPlaceholder('e.g. dilute in 100ml NS, infuse over 30 min').fill(o.notes)
-  await form.getByRole('button', { name: 'Add Order', exact: true }).click(); await wait(page, 3500)
-  const still = await page.getByRole('button', { name: 'Add Order', exact: true }).isVisible().catch(() => false)
+  await form.getByRole('button', { name: 'Add Order', exact: true }).click(); await wait(page, 1500)
+  const still = !(await closes(page.getByRole('button', { name: 'Add Order', exact: true }).first(), 15000))
   const message = still ? ((await form.innerText().catch(() => '')).replace(/\s+/g, ' ').match(/[^.]*(allerg|interact|warning|required|must|error|not|dose|tablet|route)[^.]*/i)?.[0] ?? '') : ''
   if (still) await form.getByRole('button', { name: 'Cancel', exact: true }).click().catch(() => {})
   return { added: !still, picked, message }
@@ -194,8 +209,8 @@ export async function orderIv(page: Page, o: IvOrder): Promise<boolean> {
   if (o.added) await form.getByPlaceholder('e.g. KCl 20 mEq').fill(o.added)
   await chooseIn(sel.nth(1), o.freq, 'frequency'); await wait(page, 400)
   if (o.days) { const b = form.getByRole('button', { name: o.days, exact: true }); if (await b.count()) await b.click() }
-  await form.getByRole('button', { name: 'Add Order', exact: true }).click(); await wait(page, 3500)
-  return !(await page.getByRole('button', { name: 'Add Order', exact: true }).isVisible().catch(() => false))
+  await form.getByRole('button', { name: 'Add Order', exact: true }).click(); await wait(page, 1500)
+  return closes(page.getByRole('button', { name: 'Add Order', exact: true }).first(), 15000)
 }
 
 /** The drug-chart card whose text starts with `start`. */

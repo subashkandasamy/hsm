@@ -19,6 +19,7 @@ import discharge from './15-discharge'
 import billing from './16-billing'
 import hrAdmin from './17-hr-admin'
 import more from './18-more'
+import labCatalog from './19-lab-catalog'
 import type { Flow } from '../lib/run'
 
-export const FLOWS: Flow[] = [cleanup, login, access, frontDesk, opd, ipd, pharmacy, nursing, ot, advance, lab, radiology, emergency, icu, bloodBank, discharge, billing, hrAdmin, more]
+export const FLOWS: Flow[] = [cleanup, login, access, frontDesk, opd, ipd, pharmacy, nursing, ot, advance, lab, radiology, emergency, icu, bloodBank, discharge, billing, hrAdmin, more, labCatalog]

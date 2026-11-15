@@ -87,7 +87,7 @@ export default {
       await page.getByRole('button', { name: 'Order Lab Tests' }).click(); await wait(page, 1500)
       const dlg = page.getByRole('heading', { name: 'Order Lab Tests' }).locator('xpath=ancestor::*[.//button[starts-with(normalize-space(),"Order ")]][1]')
       for (const n of ['Complete Blood Count (CBC)', 'Liver Function Test (LFT)', 'Urine Routine & Microscopy (R&M)', 'Random Blood Sugar']) await dlg.getByText(n, { exact: true }).click().catch(() => {})
-      await dlg.getByRole('button', { name: /^Order \d+ Tests?/ }).click(); await wait(page, 3500)
+      await dlg.getByRole('button', { name: /^Order \d+ tests?/i }).click(); await wait(page, 3500)
       await page.getByRole('button', { name: 'Order Imaging' }).click(); await wait(page, 1500)
       const ix = page.getByRole('heading', { name: /Order Imaging/ }).last().locator('xpath=ancestor::*[.//button[starts-with(normalize-space(),"Order")]][1]')
       await ix.getByText(/Chest X-Ray/i).first().click(); await wait(page, 500)
@@ -127,7 +127,7 @@ export default {
       await page.getByRole('button', { name: 'Order Lab Tests' }).click(); await wait(page, 1500)
       const dl2 = page.getByRole('heading', { name: 'Order Lab Tests' }).locator('xpath=ancestor::*[.//button[starts-with(normalize-space(),"Order ")]][1]')
       for (const n of ['Complete Blood Count (CBC)', 'Urine Routine & Microscopy (R&M)']) await dl2.getByText(n, { exact: true }).click().catch(() => {})
-      await dl2.getByRole('button', { name: /^Order \d+ Tests?/ }).click(); await wait(page, 3000)
+      await dl2.getByRole('button', { name: /^Order \d+ tests?/i }).click(); await wait(page, 3000)
 
       // Admit from the consultation
       await page.getByRole('button', { name: 'Admit to IPD', exact: true }).click(); await admitDialog(page).waitFor()
