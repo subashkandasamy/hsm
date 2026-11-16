@@ -1258,6 +1258,10 @@ export interface InsuranceReceivables {
 export interface Supplier {
   id: string; name: string; contact_person: string | null; phone: string | null
   email: string | null; created_at: string
+  /** 15-character GSTIN (0306). */
+  gstin?: string | null
+  drug_licence_no?: string | null
+  address?: string | null
 }
 
 export interface InventoryItem {

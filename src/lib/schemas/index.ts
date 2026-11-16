@@ -1123,6 +1123,11 @@ export const SupplierSchema = z.object({
   contact_person: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+  gstin: z.string().trim().toUpperCase()
+    .regex(/^[0-9]{2}[A-Z0-9]{13}$/, 'GSTIN is 15 characters, starting with the 2-digit state code')
+    .nullable().optional().or(z.literal('').transform(() => null)),
+  drug_licence_no: z.string().trim().max(200).nullable().optional(),
+  address: z.string().trim().max(500).nullable().optional(),
 })
 export const InventoryItemSchema = z.object({
   name: z.string().min(1, 'Item name required').max(200),

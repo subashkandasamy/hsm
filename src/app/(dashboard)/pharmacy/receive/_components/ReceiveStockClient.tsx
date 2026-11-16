@@ -84,9 +84,11 @@ interface Props {
   prefill: PrefillLine[]
   lastSupplier: string | null
   recent: StockReceiptSummary[]
+  /** The hospital's supplier list (Inventory → Suppliers), offered as the name is typed. */
+  suppliers?: string[]
 }
 
-export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier, recent }: Props) {
+export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier, recent, suppliers = [] }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -442,7 +444,11 @@ export default function ReceiveStockClient({ initialDrug, prefill, lastSupplier,
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <label className="block">
             <span className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>Supplier</span>
-            <input value={header.supplier} onChange={(e) => setHeader((h) => ({ ...h, supplier: e.target.value }))} placeholder="e.g. Apex Pharma Distributors" style={input} />
+            <input value={header.supplier} onChange={(e) => setHeader((h) => ({ ...h, supplier: e.target.value }))} placeholder="e.g. Apex Pharma Distributors" style={input}
+              list="receive-supplier-list" autoComplete="off" />
+            <datalist id="receive-supplier-list">
+              {suppliers.map((n) => <option key={n} value={n} />)}
+            </datalist>
           </label>
           <label className="block">
             <span className="block text-xs font-medium mb-1" style={{ color: '#475569' }}>Invoice no.</span>

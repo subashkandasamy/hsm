@@ -22,6 +22,9 @@ export default function SupplierFormModal({ open, onClose, onSuccess, supplier }
     contact_person: supplier?.contact_person ?? '',
     phone: supplier?.phone ?? '',
     email: supplier?.email ?? '',
+    gstin: supplier?.gstin ?? '',
+    drug_licence_no: supplier?.drug_licence_no ?? '',
+    address: supplier?.address ?? '',
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,6 +42,9 @@ export default function SupplierFormModal({ open, onClose, onSuccess, supplier }
       contact_person: form.contact_person.trim() || null,
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
+      gstin: form.gstin.trim().toUpperCase() || null,
+      drug_licence_no: form.drug_licence_no.trim() || null,
+      address: form.address.trim() || null,
     }
     const res = isEdit
       ? await updateSupplier(supplier!.id, payload)
@@ -89,6 +95,17 @@ export default function SupplierFormModal({ open, onClose, onSuccess, supplier }
             <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="supplier@example.com" />
           </FormField>
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="GSTIN">
+            <Input value={form.gstin} onChange={(e) => set('gstin', e.target.value.toUpperCase())} placeholder="33AAUFA6293R1ZH" maxLength={15} />
+          </FormField>
+          <FormField label="Drug Licence No.">
+            <Input value={form.drug_licence_no} onChange={(e) => set('drug_licence_no', e.target.value)} placeholder="TN/KRR/20B/123" />
+          </FormField>
+        </div>
+        <FormField label="Address">
+          <Input value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Street, area, city, PIN" />
+        </FormField>
       </form>
     </Modal>
   )

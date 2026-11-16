@@ -253,7 +253,7 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
       {tab === 'suppliers' && (
         <DataTable
           data={suppliers as unknown as Record<string, unknown>[]}
-          searchKeys={['name', 'contact_person']}
+          searchKeys={['name', 'contact_person', 'gstin']}
           searchPlaceholder="Search suppliers…"
           emptyTitle="No suppliers"
           emptyDescription="Add suppliers to attach them to purchase orders"
@@ -266,6 +266,11 @@ export default function InventoryClient({ initialItems, initialSuppliers, initia
                   <div>
                     <p className="font-medium text-sm" style={{ color: '#0F172A' }}>{s.name}</p>
                     {s.contact_person && <p className="text-xs" style={{ color: '#94A3B8' }}>{s.contact_person}</p>}
+                    {(s.gstin || s.drug_licence_no) && (
+                      <p className="text-xs font-mono" style={{ color: '#94A3B8' }}>
+                        {[s.gstin && `GSTIN ${s.gstin}`, s.drug_licence_no && `DL ${s.drug_licence_no}`].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
                 )
               },
