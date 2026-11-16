@@ -266,6 +266,12 @@ export default function AdmissionDetail({
                     {adm.ip_no}
                   </span>
                 )}
+                {adm.legacy_ip_no && (
+                  <span className="font-mono text-xs px-2 py-0.5 rounded-lg" title="IP number in the previous software"
+                    style={{ background: '#F1F5F9', color: '#475569' }}>
+                    Old IP {adm.legacy_ip_no}
+                  </span>
+                )}
                 <StatusBadge
                   status={adm.status === 'admitted' ? 'active' : adm.status === 'discharged' ? 'success' : 'pending'}
                   label={adm.status}

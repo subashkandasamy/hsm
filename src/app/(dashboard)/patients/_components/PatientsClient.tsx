@@ -142,6 +142,7 @@ export default function PatientsClient({ initialPatients }: Props) {
                       <div className="flex items-center gap-2 mt-1 text-xs flex-wrap" style={{ color: '#64748B' }}>
                         <span className="font-mono px-2 py-0.5 rounded-lg"
                           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                        {p.legacy_uhid && <span className="font-mono" title="Number in the previous software">Old {p.legacy_uhid}</span>}
                         {p.gender && <span className="capitalize">{p.gender}</span>}
                         {p.dob && <span>{computeAge(p.dob)}</span>}
                         {p.phone && <span>{p.phone}</span>}
@@ -190,6 +191,11 @@ export default function PatientsClient({ initialPatients }: Props) {
                       <td className="px-4 py-3.5">
                         <span className="font-mono text-xs px-2 py-0.5 rounded-lg"
                           style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488' }}>{p.uhid}</span>
+                        {p.legacy_uhid && (
+                          <div className="font-mono text-xs mt-1" style={{ color: '#64748B' }} title="Number in the previous software">
+                            Old {p.legacy_uhid}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 font-medium" style={{ color: '#0F172A' }}>{p.full_name}</td>
                       <td className="px-4 py-3.5" style={{ color: '#475569' }}>{computeAge(p.dob)}</td>

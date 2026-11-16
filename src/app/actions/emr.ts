@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile } from '@/lib/server-utils'
 import type { TimelineEvent, DiagnosisSummary } from '@/lib/types'
 import { OUT_OF_RANGE } from '@/lib/lab/reportRange'
+import { inChunks } from '@/lib/supabase/inChunks'
 
 export async function getPatientTimeline(
   patientId: string,
@@ -25,7 +26,7 @@ export async function getPatientTimeline(
     // OPD visits
     want('opd_visit') ? supabase
       .from('visits')
-      .select('id, visit_date, diagnosis, icd_code, complaint, status, prescriptions:prescriptions(id)')
+      .select('id, visit_date, diagnosis, icd_code, complaint, status')
       .eq('patient_id', patientId)
       .eq('type', 'opd')
       .order('visit_date', { ascending: false })
@@ -102,10 +103,22 @@ export async function getPatientTimeline(
 
   const events: TimelineEvent[] = []
 
+  // Prescriptions are counted on their own. Visits are stored split by month,
+  // so the database holds no link from prescriptions to them, and embedding
+  // `prescriptions(id)` in the visit query failed — the error went unread and
+  // the timeline showed no OPD visit at all, for any patient.
+  const opdIds = (opdVisits.data ?? []).map((v) => (v as { id: string }).id)
+  const rxPerVisit = new Map<string, number>()
+  if (opdIds.length) {
+    const { data: rx } = await inChunks(opdIds, (slice) =>
+      supabase.from('prescriptions').select('visit_id').in('visit_id', slice))
+    for (const r of rx) rxPerVisit.set(r.visit_id as string, (rxPerVisit.get(r.visit_id as string) ?? 0) + 1)
+  }
+
   // OPD visits
   for (const v of (opdVisits.data ?? [])) {
     const row = v as Record<string, unknown>
-    const rxCount = Array.isArray(row.prescriptions) ? row.prescriptions.length : 0
+    const rxCount = rxPerVisit.get(row.id as string) ?? 0
     events.push({
       id: row.id as string,
       type: 'opd_visit',

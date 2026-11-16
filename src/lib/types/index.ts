@@ -122,6 +122,8 @@ export interface Patient {
   emergency_contact_name: string | null; emergency_contact_phone: string | null
   notify_whatsapp_consent: boolean; notify_sms_consent: boolean
   aadhaar_no?: string | null
+  /** Number in the hospital's previous software (e.g. DRKMCH-123); null if registered in Uyirly. */
+  legacy_uhid?: string | null
   // Form F field 5 (W/o, D/o, S/o) and the address parts a PC&PNDT
   // Appropriate Authority reads specifically.
   relation_type?: 'husband' | 'wife' | 'father' | 'mother' | null
@@ -213,6 +215,8 @@ export interface Admission {
   direct_ot: boolean
   reason: string | null; admitted_at: string; discharged_at: string | null
   ip_no?: string
+  /** IP number in the hospital's previous software (e.g. FAC-18-45); null if admitted in Uyirly. */
+  legacy_ip_no?: string | null
   status: AdmissionStatus; discharge_summary: string | null
   /** How the patient left; null on discharges before 0280. */
   discharge_type?: import('@/lib/dischargeType').DischargeType | null

@@ -154,10 +154,24 @@ export async function searchPatients(query: string): Promise<Patient[]> {
     .from('patients')
     .select('*')
     .or(
-      `full_name.ilike.%${q}%,phone.ilike.%${q}%,uhid.ilike.%${q}%`
+      `full_name.ilike.%${q}%,phone.ilike.%${q}%,uhid.ilike.%${q}%,legacy_uhid.ilike.%${q}%`
     )
     .order('full_name')
     .limit(100)
+
+  // A number typed in full goes first. "DRKMCH-1" also contains DRKMCH-10,
+  // -100 and -1000, and the one asked for could fall outside the 100 above.
+  if (/^[A-Za-z0-9/-]+$/.test(q)) {
+    const { data: exact } = await supabase
+      .from('patients')
+      .select('*')
+      .or(`uhid.ilike.${q},legacy_uhid.ilike.${q}`)
+      .limit(5)
+    if (exact?.length) {
+      const first = new Set(exact.map((p) => p.id as string))
+      return [...exact, ...(data ?? []).filter((p) => !first.has(p.id as string))] as Patient[]
+    }
+  }
   return (data ?? []) as Patient[]
 }
 

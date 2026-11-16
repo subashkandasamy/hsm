@@ -184,6 +184,12 @@ export default function PatientProfile({
                   style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.15)' }}>
                   {patient.uhid}
                 </span>
+                {patient.legacy_uhid && (
+                  <span className="font-mono text-xs px-2.5 py-1 rounded-lg" title="Number in the previous software"
+                    style={{ background: '#F1F5F9', color: '#475569' }}>
+                    Old no. {patient.legacy_uhid}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-4 mt-1.5 flex-wrap text-sm" style={{ color: '#475569' }}>
                 {patient.dob && <span>{computeAge(patient.dob)}</span>}
@@ -727,6 +733,7 @@ function InfoTab({ patient }: { patient: Patient }) {
   const fields: { label: string; value: string | null }[] = [
     { label: 'Full Name', value: patient.full_name },
     { label: 'UHID', value: patient.uhid },
+    ...(patient.legacy_uhid ? [{ label: 'Old number (previous software)', value: patient.legacy_uhid }] : []),
     { label: 'Date of Birth', value: patient.dob },
     { label: 'Gender', value: patient.gender },
     { label: 'Phone', value: patient.phone },
