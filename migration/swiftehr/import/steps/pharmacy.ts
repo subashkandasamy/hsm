@@ -53,7 +53,7 @@ export async function plan(t: Tenant) {
   }
 
   const out: Bill[] = []
-  const c = { op: 0, ip: 0, header: 0, pending: 0, openStay: 0, duplicate: 0, withVisit: 0, discounted: 0, refunds: 0, refundTotal: 0, returnedWhole: 0, returnedPart: 0, noPatient: 0 }
+  const c = { op: 0, ip: 0, header: 0, pending: 0, openStay: 0, duplicate: 0, withVisit: 0, discounted: 0, refunds: 0, refundTotal: 0, returnedWhole: 0, returnedPart: 0, noPatient: 0, settled: 0, settledAmount: 0 }
   const seen = new Set<string>()
 
   const mkLines = (k: string, lines: any[], at: string, source: string) => lines.map((l: any, i: number) => {
@@ -184,10 +184,17 @@ export async function plan(t: Tenant) {
   let mismatch = 0
   const mismatches: string[] = []
   for (const b of out) {
+    // Owner's decision (16 Nov): what SwiftEHR left unpaid is marked paid, as
+    // cash collected on the bill's own day.
+    const owed = round2(Number(b.row.total) - b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
+    if (b.row.status !== 'cancelled' && owed > 0.004) {
+      b.pays.push(pay(`phsettle:${b.key}`, owed, 'cash', 'Settled outside SwiftEHR (marked paid at import)', b.at))
+      c.settled++; c.settledAmount += owed
+    }
     const paid = round2(b.pays.reduce((s, p) => s + Number(p.row.amount), 0)), total = Number(b.row.total)
     b.row.paid = paid
     if (b.row.status === 'cancelled') continue
-    b.row.status = total <= 0 && Number(b.row.discount) > 0 ? 'paid' : paid <= 0 ? 'unpaid' : paid >= total ? 'paid' : 'partial'
+    b.row.status = paid >= total ? 'paid' : paid <= 0 ? 'unpaid' : 'partial'
     if (Math.abs(paid - total) > 1 && paid > 0) { mismatch++; if (mismatches.length < 6) mismatches.push(`${b.row.bill_no}: total ₹${total} paid ₹${paid}`) }
   }
   return { out, c, tagged, stillTwice, mismatch, mismatches }

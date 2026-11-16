@@ -61,7 +61,7 @@ export async function plan(t: Tenant) {
   const patients = await loggedIds(t, 'patients'), visits = await loggedIds(t, 'visits'), admissions = await loggedIds(t, 'admissions')
   if (!patients.size || !visits.size || !admissions.size) throw new Error('Run the patients, opd and admissions steps first.')
   const out: Bill[] = []
-  const c = { op: 0, lab: 0, scan: 0, stay: 0, cancelled: 0, duplicate: 0, openStay: 0, empty: 0, zeroReceipts: 0, splitReceipts: 0, multiModeUnsplit: 0, noPatient: 0, mismatch: 0 }
+  const c = { op: 0, lab: 0, scan: 0, stay: 0, cancelled: 0, duplicate: 0, openStay: 0, empty: 0, zeroReceipts: 0, splitReceipts: 0, multiModeUnsplit: 0, noPatient: 0, mismatch: 0, settled: 0, settledAmount: 0 }
   const mismatches: string[] = []
   const seenBill = new Set<string>()
 
@@ -174,11 +174,18 @@ export async function plan(t: Tenant) {
     const discount = Math.min(Number(b.row.discount), subtotal)
     const pre = subtotal - discount
     const total = Math.round(pre)
+    // Owner's decision (16 Nov): what SwiftEHR left unpaid is marked paid, as
+    // cash collected on the bill's own day, so it is not carried as a due.
+    const owed = round2(total - b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
+    if (b.row.status !== 'cancelled' && owed > 0.004) {
+      b.pays.push(pay(`settle:${b.key}`, owed, 'cash', 'Settled outside SwiftEHR (marked paid at import)', String(b.row.created_at)))
+      c.settled++; c.settledAmount += owed
+    }
     const paid = round2(b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
-    const waived = total <= 0 && discount > 0
     Object.assign(b.row, {
       subtotal, discount, total, round_off: round2(total - pre), paid,
-      status: b.row.status === 'cancelled' ? 'cancelled' : waived ? 'paid' : paid <= 0 ? 'unpaid' : paid >= total ? 'paid' : 'partial',
+      // Nothing left to pay is paid (a free or fully discounted bill included).
+      status: b.row.status === 'cancelled' ? 'cancelled' : paid >= total ? 'paid' : paid <= 0 ? 'unpaid' : 'partial',
     })
     if (b.row.status !== 'cancelled' && b.numbered && Math.abs(paid - total) > 1) {
       c.mismatch++
