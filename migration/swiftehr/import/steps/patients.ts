@@ -13,7 +13,7 @@
  * The old number (DRKMCH-123) goes into legacy_uhid and is searchable.
  * WhatsApp/SMS consent is off: nobody agreed to messages from Uyirly.
  */
-import { db, migrationApplied, loadItems, ymd, hms, istStamp, fakeName, fakePhone, fakeStreet, logThenInsert, undoStep, all, type Tenant, type Planned } from '../lib'
+import { db, migrationApplied, loadItems, ymd, hms, istStamp, fakeName, fakePhone, fakeStreet, logThenInsert, undoStep, rewindCounter, all, type Tenant, type Planned } from '../lib'
 
 const STEP = 'patients'
 
@@ -158,4 +158,5 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
 
 export async function undo(t: Tenant): Promise<void> {
   await undoStep(t, STEP, ['patients'])
+  await rewindCounter(t, { counter: 'uhid_counter', valueCol: 'last_val', table: 'patients', numberCol: 'uhid', pattern: /-UH-(\d{4})-(\d+)$/ })
 }

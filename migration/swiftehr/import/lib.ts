@@ -234,3 +234,32 @@ export async function undoStep(t: Tenant, step: string, tables: string[]): Promi
     console.log(`  undone ${table}: ${logged.length} rows`)
   }
 }
+
+/**
+ * After an undo: each year's number counter goes back to the highest number
+ * still in use in that hospital (the year's row is removed when none is), so
+ * the next number follows on instead of leaving a gap the size of the import.
+ */
+export async function rewindCounter(t: Tenant, o: {
+  counter: string; valueCol: string; table: string; numberCol: string; pattern: RegExp
+}): Promise<void> {
+  const rows = await all<Record<string, unknown>>((f, to) => db().from(o.table).select(o.numberCol)
+    .eq('tenant_id', t.id).order('id').range(f, to) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>)
+  const max = new Map<number, number>()
+  for (const r of rows) {
+    const m = String(r[o.numberCol] ?? '').match(o.pattern)
+    if (m) max.set(Number(m[1]), Math.max(max.get(Number(m[1])) ?? 0, Number(m[2])))
+  }
+  const { data: counters, error } = await db().from(o.counter).select(`year, ${o.valueCol}`).eq('tenant_id', t.id)
+  if (error) throw new Error(`${o.counter} read failed: ${error.message}`)
+  for (const c of (counters ?? []) as unknown as Record<string, number>[]) {
+    const want = max.get(c.year) ?? 0
+    if (want === Number(c[o.valueCol])) continue
+    const q = db().from(o.counter)
+    const { error: we } = want === 0
+      ? await q.delete().eq('tenant_id', t.id).eq('year', c.year)
+      : await q.update({ [o.valueCol]: want }).eq('tenant_id', t.id).eq('year', c.year)
+    if (we) throw new Error(`${o.counter} ${c.year} failed: ${we.message}`)
+    console.log(`  ${o.counter} ${c.year}: ${c[o.valueCol]} → ${want === 0 ? '(removed)' : want}`)
+  }
+}

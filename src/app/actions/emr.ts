@@ -151,13 +151,14 @@ export async function getPatientTimeline(
   // Admissions
   for (const a of (admissions.data ?? [])) {
     const row = a as Record<string, unknown>
-    const ward = (row.ward as Record<string, unknown> | null)?.name ?? '—'
-    const bed = (row.bed as Record<string, unknown> | null)?.bed_no ?? '—'
+    const ward = (row.ward as Record<string, unknown> | null)?.name as string | undefined
+    const bed = (row.bed as Record<string, unknown> | null)?.bed_no as string | undefined
     events.push({
       id: row.id as string,
       type: 'admission',
       date: row.admitted_at as string,
-      title: `IPD Admission — ${ward} / Bed ${bed}`,
+      // A stay with no bed (straight to OT, or brought over from the previous software) has nothing to show here.
+      title: ward || bed ? `IPD Admission — ${ward ?? '—'} / Bed ${bed ?? '—'}` : 'IPD Admission',
       summary: [
         row.reason ? `Reason: ${row.reason}` : null,
         row.discharged_at ? `Discharged: ${new Date(row.discharged_at as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : 'Currently admitted',
