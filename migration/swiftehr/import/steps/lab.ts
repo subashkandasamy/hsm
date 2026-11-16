@@ -21,7 +21,7 @@
  *  - Tests never resulted in SwiftEHR (ECG, X-ray, sugar strips …) are not
  *    lab orders; they come in on the old bills (owner's decision).
  */
-import { db, all, loadItems, ymd, hms, istStamp, scrubText, loggedIds, doctorFor, logThenInsert, undoStep, chunks, type Tenant, type Planned } from '../lib'
+import { db, all, loadItems, ymd, hms, istStamp, scrubText, loggedIds, doctorFor, logThenInsert, undoStep, rewindDailyCounter, type Tenant, type Planned } from '../lib'
 import { key, NOT_LAB, TEST_TO_KMCH, MISSING_AT_KMCH, LINE_TO_ANALYTE, LINE_OVERRIDES, CONVERT, RANGE_FROM, SPLIT_BY_ANALYTE, SPLIT_BY_LINE, HEALTH_CHECKS, JUNK_UNIT } from '../lab-map'
 
 const STEP = 'lab'
@@ -307,6 +307,7 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   console.log(`catalogue tests added (switched off): ${rc.inserted} new, ${rc.existing} already there`)
   const testIds = await loggedIds(t, 'lab_tests_catalog')
   for (const i of [...items, ...results]) if (String(i.row.test_id).startsWith('labtest:')) i.row.test_id = testIds.get(String(i.row.test_id))
+  orders.sort((a, b) => new Date(String(a.row.ordered_at)).getTime() - new Date(String(b.row.ordered_at)).getTime()) // accession numbers in time order
   const ro = await logThenInsert(t, STEP, 'lab_orders', orders, undefined, 100)
   console.log(`lab orders written: ${ro.inserted} new, ${ro.existing} already there`)
   const orderIds = await loggedIds(t, 'lab_orders')
@@ -317,30 +318,8 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   console.log(`panel values written: ${rr.inserted} new, ${rr.existing} already there`)
 }
 
-/** After an undo, each day's accession counter goes back to the highest number still in use. */
-async function rewindAccessions(t: Tenant): Promise<void> {
-  const rows = await all<{ accession_no: string | null }>((f, to) => db().from('lab_orders').select('accession_no').eq('tenant_id', t.id).order('id').range(f, to))
-  const max = new Map<string, number>()
-  for (const r of rows) {
-    const m = String(r.accession_no ?? '').match(/^(\d{2})(\d{2})(\d{2})(\d{4})$/)
-    if (m) { const d = `20${m[1]}-${m[2]}-${m[3]}`; max.set(d, Math.max(max.get(d) ?? 0, Number(m[4]))) }
-  }
-  const seq = await all<{ day: string; last_no: number }>((f, to) => db().from('lab_accession_seq').select('day, last_no').eq('tenant_id', t.id).order('day').range(f, to))
-  let changed = 0
-  for (const part of chunks(seq.filter((s) => (max.get(s.day) ?? 0) !== s.last_no), 50)) {
-    for (const s of part) {
-      const want = max.get(s.day) ?? 0
-      const q = db().from('lab_accession_seq')
-      const { error } = want === 0 ? await q.delete().eq('tenant_id', t.id).eq('day', s.day) : await q.update({ last_no: want }).eq('tenant_id', t.id).eq('day', s.day)
-      if (error) throw new Error(`lab_accession_seq ${s.day} failed: ${error.message}`)
-      changed++
-    }
-  }
-  console.log(`  lab_accession_seq: ${changed} days wound back`)
-}
-
 export async function undo(t: Tenant): Promise<void> {
   // The orders first would leave lines pointing nowhere; results and lines go first.
   await undoStep(t, STEP, ['lab_result_analytes', 'lab_order_items', 'lab_orders', 'lab_tests_catalog'])
-  await rewindAccessions(t)
+  await rewindDailyCounter(t, { table: 'lab_orders', seqTable: 'lab_accession_seq', prefix: '' })
 }

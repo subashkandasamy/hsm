@@ -263,3 +263,30 @@ export async function rewindCounter(t: Tenant, o: {
     console.log(`  ${o.counter} ${c.year}: ${c[o.valueCol]} → ${want === 0 ? '(removed)' : want}`)
   }
 }
+
+/**
+ * After an undo: each day's accession counter (lab YYMMDDNNNN, radiology
+ * R + YYMMDDNNNN) goes back to the highest number still in use that day.
+ */
+export async function rewindDailyCounter(t: Tenant, o: { table: string; seqTable: string; prefix: string }): Promise<void> {
+  const rows = await all<{ accession_no: string | null }>((f, to) => db().from(o.table).select('accession_no')
+    .eq('tenant_id', t.id).order('id').range(f, to) as unknown as PromiseLike<{ data: { accession_no: string | null }[] | null; error: { message: string } | null }>)
+  const re = new RegExp(`^${o.prefix}(\\d{2})(\\d{2})(\\d{2})(\\d{4})$`)
+  const max = new Map<string, number>()
+  for (const r of rows) {
+    const m = String(r.accession_no ?? '').match(re)
+    if (m) { const d = `20${m[1]}-${m[2]}-${m[3]}`; max.set(d, Math.max(max.get(d) ?? 0, Number(m[4]))) }
+  }
+  const seq = await all<{ day: string; last_no: number }>((f, to) => db().from(o.seqTable).select('day, last_no')
+    .eq('tenant_id', t.id).order('day').range(f, to) as unknown as PromiseLike<{ data: { day: string; last_no: number }[] | null; error: { message: string } | null }>)
+  let changed = 0
+  for (const s of seq) {
+    const want = max.get(s.day) ?? 0
+    if (want === s.last_no) continue
+    const q = db().from(o.seqTable)
+    const { error } = want === 0 ? await q.delete().eq('tenant_id', t.id).eq('day', s.day) : await q.update({ last_no: want }).eq('tenant_id', t.id).eq('day', s.day)
+    if (error) throw new Error(`${o.seqTable} ${s.day} failed: ${error.message}`)
+    changed++
+  }
+  console.log(`  ${o.seqTable}: ${changed} days wound back`)
+}
