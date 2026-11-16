@@ -88,8 +88,16 @@ const IDENTITY: Record<string, (x: any) => string | null> = {
  * in the place of its first. The hospital lists (masters) are the newest only.
  */
 export function loadItems<T = any>(kind: string): T[] {
+  // Full-copy files in name order, then top-ups in the order they were saved
+  // (a second top-up from the same day gets a time suffix that sorts by name
+  // before the first one's files).
+  const saved = (f: string) => fs.statSync(path.join(RAW, f)).mtimeMs
   const files = fs.readdirSync(RAW).filter((f) => f.startsWith(`swiftehr-${kind}-`) && f.endsWith('.json'))
-    .sort((a, b) => (a.includes('-since-') === b.includes('-since-') ? a.localeCompare(b) : a.includes('-since-') ? 1 : -1))
+    .sort((a, b) => {
+      const ta = a.includes('-since-'), tb = b.includes('-since-')
+      if (ta !== tb) return ta ? 1 : -1
+      return ta ? saved(a) - saved(b) || a.localeCompare(b) : a.localeCompare(b)
+    })
   if (!files.length) throw new Error(`no ${kind} files in ${RAW}`)
   const items = files.flatMap((f) => (JSON.parse(fs.readFileSync(path.join(RAW, f), 'utf8')).items ?? []) as T[])
   if (kind === 'masters') return items.slice(-1)
