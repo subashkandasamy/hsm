@@ -2,6 +2,7 @@
  * Runs extract.js from this computer in a Chrome window of its own.
  *
  *   npx tsx migration/swiftehr/run.ts [all|patients|trial]
+ *   npx tsx migration/swiftehr/run.ts since 2026-11-13     top-up: only what changed from that day
  *
  * A Chrome window opens on SwiftEHR. The person signs in THERE, by hand — this
  * script never sees, types or stores a password. Once signed in, it starts the
@@ -18,7 +19,10 @@ import { chromium } from 'playwright-core'
 
 // all | patients | trial — or the name of one part to copy on its own (e.g. pharmacy)
 const MODE = process.argv[2] || 'all'
-const ONLY = ['all', 'patients', 'trial'].includes(MODE) ? null : MODE
+// since <YYYY-MM-DD>: a top-up of what changed from that day (files named …-since-YYYYMMDD-NNN.json).
+const SINCE = MODE === 'since' ? process.argv[3] : null
+if (MODE === 'since' && !/^\d{4}-\d{2}-\d{2}$/.test(SINCE ?? '')) { console.error('usage: run.ts since YYYY-MM-DD'); process.exit(1) }
+const ONLY = ['all', 'patients', 'trial', 'since'].includes(MODE) ? null : MODE
 // redo-patients: put the patients part back in front of a saved full copy
 // (patients already in raw/ files are skipped, so only the missing ones run).
 const REDO_PATIENTS = process.argv.includes('redo-patients')
@@ -64,6 +68,16 @@ async function main() {
     }
     return [...ids]
   }
+  // Patients still admitted in the newest saved copy of each patient (full or
+  // top-up files): a top-up fetches them again to bring their stay up to date.
+  const stillAdmitted = () => {
+    const latest = new Map<number, unknown[]>()
+    for (const f of fs.readdirSync(DIR).filter((n) => /^swiftehr-patients-.*\.json$/.test(n)).sort()) {
+      try { for (const it of JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')).items) if (it?.patient?.patientId) latest.set(it.patient.patientId, it.visits ?? []) } catch { log('could not read', f) }
+    }
+    return [...latest].filter(([, visits]) => (visits as { visit?: { visitType?: string }; bill?: { lines?: { patientDischarged?: boolean } } }[])
+      .some((v) => String(v?.visit?.visitType).toUpperCase() === 'IP' && v?.bill?.lines?.patientDischarged !== true)).map(([id]) => id)
+  }
   // [patientId, admissionId] of every admission in the saved patient files.
   const savedAdmissions = () => {
     const out: number[][] = []
@@ -80,13 +94,28 @@ async function main() {
   let lastPanel = ''
   let lastLog = 0
   for (;;) {
+    try {
+      if (await step()) return
+    } catch (e) {
+      // SwiftEHR reloads its own page now and then (and right after sign-in);
+      // anything asked of the page at that moment fails. Wait and go again —
+      // the copy carries on from its saved position.
+      if (/Execution context was destroyed|navigation|Target page|frame was detached/i.test(String((e as Error)?.message))) {
+        log('SwiftEHR reloaded the page — carrying on in a moment'); await wait(5000); continue
+      }
+      throw e
+    }
+  }
+  // One pass of the loop; true when the copy has finished or stopped.
+  async function step(): Promise<boolean> {
     if (!(await signedIn())) {
       if (Date.now() - lastLog > 60000) { log('waiting — sign in to SwiftEHR in the Chrome window'); lastLog = Date.now() }
       await wait(3000)
-      continue
+      return false
     }
     const running = await page.evaluate(`!!document.getElementById('uyirly-extract')`).catch(() => false)
     if (!running) {
+      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})   // let SwiftEHR finish loading first
       log('signed in — starting the copy (' + MODE + ')')
       if (!redoDone) {
         await page.evaluate(`(() => { const k = 'uyirly-extract-v1'; const s = JSON.parse(localStorage.getItem(k) || 'null'); if (!s) return;
@@ -98,9 +127,15 @@ async function main() {
       await page.evaluate((x) => { (window as unknown as { UYIRLY_SKIP: number[] }).UYIRLY_SKIP = x }, ids)
       log(`skipping ${ids.length} patients already saved`)
       if (ONLY) await page.evaluate((x) => { (window as unknown as { UYIRLY_ONLY: string }).UYIRLY_ONLY = x }, ONLY)
-      const adm = savedAdmissions()
-      await page.evaluate((x) => { (window as unknown as { UYIRLY_ADMISSIONS: number[][] }).UYIRLY_ADMISSIONS = x }, adm)
-      log(`${adm.length} admissions known from saved patient files`)
+      if (SINCE) {
+        const also = stillAdmitted()
+        await page.evaluate(([d, a]) => { const w = window as unknown as { UYIRLY_SINCE: string; UYIRLY_ALSO: number[] }; w.UYIRLY_SINCE = d as string; w.UYIRLY_ALSO = a as number[] }, [SINCE, also] as const)
+        log(`top-up since ${SINCE}; ${also.length} patients were still admitted at the last copy`)
+      } else {
+        const adm = savedAdmissions()
+        await page.evaluate((x) => { (window as unknown as { UYIRLY_ADMISSIONS: number[][] }).UYIRLY_ADMISSIONS = x }, adm)
+        log(`${adm.length} admissions known from saved patient files`)
+      }
       await page.addScriptTag({ content: SCRIPT })
       await wait(1500)
       const choose = page.getByRole('button', { name: BUTTON || 'no-button' })
@@ -111,9 +146,10 @@ async function main() {
       if (Date.now() - lastLog > 60000 || /Done ✓|Stopped:|done ✓/.test(panel)) { log(panel); lastLog = Date.now() }
       lastPanel = panel
     }
-    if (/Done ✓|done ✓/.test(panel)) { log('finished'); await wait(15000); await ctx.close(); return }
-    if (/Stopped:/.test(panel)) { log('stopped — see the message above'); await wait(5000); return }
+    if (/Done ✓|done ✓/.test(panel)) { log('finished'); await wait(15000); await ctx.close(); return true }
+    if (/Stopped:/.test(panel)) { log('stopped — see the message above'); await wait(5000); return true }
     await wait(5000)
+    return false
   }
 }
 main().catch((e) => { log('runner error:', e?.message || e); process.exit(1) })

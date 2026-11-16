@@ -19,12 +19,22 @@
  *   - 3 requests at a time with a short gap, so the hospital's screens stay fast
  * The files hold patient data. Keep them on this computer and move them into
  * hms/migration/swiftehr/raw/ (git-ignored). Never email or upload them.
+ *
+ * TOP-UP (window.UYIRLY_SINCE = 'YYYY-MM-DD', set by run.ts since <date>):
+ * only what changed from that day — bills, pharmacy and appointments of those
+ * days, then the full record of every patient who had anything in them (a
+ * bill, an appointment, an admission or discharge), was registered then, or
+ * was still admitted at the last copy (window.UYIRLY_ALSO), then those
+ * patients' inpatient pharmacy. Files are named swiftehr-<part>-since-
+ * YYYYMMDD-<NNN>.json, so a full copy is never overwritten.
  */
 (async () => {
   if (window.__uyirlyX) { window.__uyirlyX.show(); return }
 
   const API = 'https://app.swiftehr.com:9090/swiftehr-v2/'
-  const STATE_KEY = 'uyirly-extract-v1'
+  const SINCE = /^\d{4}-\d{2}-\d{2}$/.test(String(window.UYIRLY_SINCE || '')) ? String(window.UYIRLY_SINCE) : null
+  if (window.UYIRLY_SINCE && !SINCE) throw new Error('UYIRLY_SINCE must be YYYY-MM-DD')
+  const STATE_KEY = SINCE ? `uyirly-extract-since-${SINCE}` : 'uyirly-extract-v1'
   const VERSION = 2
   const PARALLEL = 3
   const GAP_MS = 120
@@ -68,7 +78,10 @@
   // State: which parts are done, which part is under way and where in it.
   // A state saved by the first version (parts by number) is read too; its
   // patients part counts as NOT done if no patient was copied.
-  const ORDER = ['masters', 'patients', 'bills', 'appointments', 'purchases', 'checks']
+  // A top-up reads the day lists first: they say which patients to fetch.
+  const ORDER = SINCE
+    ? ['masters', 'bills', 'pharmacy', 'appointments', 'patients', 'ippharmacy']
+    : ['masters', 'patients', 'bills', 'appointments', 'purchases', 'checks']
   const loadState = () => {
     try {
       const s = JSON.parse(localStorage.getItem(STATE_KEY) || 'null')
@@ -80,6 +93,10 @@
     return null
   }
   let st = loadState() || { v: VERSION, current: null, unit: 0, done: [], only: null, parts: {}, stats: { requests: 0, errors: {}, counts: {} }, startedAt: new Date().toISOString() }
+  // Top-up: patients seen in the day lists, and their admissions (ids only).
+  st.wanted = st.wanted || []
+  st.sinceAdmissions = st.sinceAdmissions || []
+  const want = (id) => { if (SINCE && typeof id === 'number' && !st.wanted.includes(id)) st.wanted.push(id) }
   const resuming = !!loadState()
   const saveState = () => { if (TRIAL) return; try { localStorage.setItem(STATE_KEY, JSON.stringify(st)) } catch { /* full */ } }
 
@@ -185,7 +202,7 @@
     const blob = new Blob([head.slice(0, -1), ',"items":[', buf.join(','), ']}'], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `swiftehr-${TRIAL ? 'trial-' : ''}${name}-${String(n).padStart(3, '0')}.json`
+    a.download = `swiftehr-${TRIAL ? 'trial-' : ''}${name}-${SINCE ? `since-${SINCE.replace(/-/g, '')}-` : ''}${String(n).padStart(3, '0')}.json`
     document.body.appendChild(a); a.click(); a.remove()
     setTimeout(() => URL.revokeObjectURL(a.href), 60000)
     buf = []; bufBytes = 0
@@ -202,7 +219,17 @@
     m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/); if (m) return new Date(+m[3], +m[2] - 1, +m[1])
     return null
   }
+  // A top-up: from the given day to today, one range per month.
+  const sinceRanges = () => {
+    const out = []; const [y, m, d0] = SINCE.split('-').map(Number); const now = new Date()
+    for (let d = new Date(y, m - 1, d0); d <= now; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      out.push({ key: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`, from: ymd(d), to: ymd(end) })
+    }
+    return out
+  }
   const months = () => {
+    if (SINCE) return sinceRanges()
     const out = []; const [y0, m0] = START_MONTH.split('-').map(Number); const now = new Date()
     for (let d = new Date(y0, m0 - 1, 1); d <= now; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
       const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
@@ -299,6 +326,7 @@
     const visits = []
     for (const v of listOf(history)) {
       const t = String(v.visitType || '').toUpperCase()
+      if (t === 'IP' && SINCE && v.visitId && !st.sinceAdmissions.some(([, a]) => a === v.visitId)) st.sinceAdmissions.push([p, v.visitId])
       if (t === 'IP') visits.push(await ipVisit(p, v))
       else if (t === 'OP') visits.push(await opVisit(p, v))
       else visits.push({ visit: v, note: 'unknown visit type' })
@@ -363,6 +391,26 @@
     if (rows.__total && unique.length < rows.__total - 5) throw new Error(`patient list incomplete: ${unique.length} of ${rows.__total} — stopped, so nothing is skipped`)
     // Patients already in saved files (the runner passes their ids) are left out.
     const skip = new Set(window.UYIRLY_SKIP || [])
+    if (SINCE) {
+      // A top-up: registered from that day (or never copied), seen in that
+      // window's bills / appointments, admitted or discharged then, or still
+      // admitted at the last copy.
+      const byCode = new Map(unique.map((r) => [String(r.patientCode), r.patientId]))
+      const today = ymd(new Date())
+      for (const [type, path] of [['admitted', 'reports/get-AdmittedPatientReport'], ['discharged', 'reports/get-DischaredPatientReport']]) {
+        const rep = await post(path, { fromDate: `${SINCE} 00:00:00`, endDate: `${today} 23:59:59`, locationId: LOC, type })
+        for (const x of listOf(rep?.dataArr ?? rep?.content ?? rep)) want(byCode.get(String(x?.patientCode)))
+      }
+      for (const id of window.UYIRLY_ALSO || []) want(id)
+      const regFrom = parseDay(SINCE)
+      const wanted = new Set(st.wanted)
+      patientsSorted = unique.filter((r) => wanted.has(r.patientId) || !skip.has(r.patientId)
+        || ((parseDay(r.patientRegDate) || parseDay(r.regDate)) && (parseDay(r.patientRegDate) || parseDay(r.regDate)) >= regFrom))
+        .sort((a, b) => a.patientId - b.patientId)
+      st.stats.counts.patientList = unique.length
+      st.stats.counts.patientsInTopUp = patientsSorted.length
+      return patientsSorted
+    }
     patientsSorted = unique.filter((r) => !skip.has(r.patientId)).sort((a, b) => a.patientId - b.patientId)
     st.stats.counts.patientList = unique.length
     st.stats.counts.patientListTotal = rows.__total
@@ -384,7 +432,7 @@
     for (const r of [...a, ...b]) {
       const id = r.billId ?? JSON.stringify(r)
       if (seen.has(id)) continue
-      seen.add(id); rows.push(r)
+      seen.add(id); rows.push(r); want(r.patientId)
     }
     const details = await Promise.all(rows.map((r) => billDetail(type, r)))
     for (const d of details) add(d)
@@ -457,9 +505,9 @@
       // "ip pharmacy" list gives one total per stay. The runner passes the
       // admissions already copied (window.UYIRLY_ADMISSIONS: [patientId, admissionId]).
       name: 'ippharmacy',
-      units: async () => Math.ceil((window.UYIRLY_ADMISSIONS || []).length / 20),
+      units: async () => Math.ceil((SINCE ? st.sinceAdmissions : window.UYIRLY_ADMISSIONS || []).length / 20),
       run: async (u) => {
-        const batch = (window.UYIRLY_ADMISSIONS || []).slice(u * 20, u * 20 + 20)
+        const batch = (SINCE ? st.sinceAdmissions : window.UYIRLY_ADMISSIONS || []).slice(u * 20, u * 20 + 20)
         const out = await Promise.all(batch.map(async ([patientId, admissionId]) => {
           const list = await get('ip-prescriptionByStatus', { admissionId })
           const bills = await Promise.all(listOf(list).map(async (r) => ({
@@ -475,7 +523,7 @@
           }
         }))
         for (const o of out) add(o)
-        const total = (window.UYIRLY_ADMISSIONS || []).length
+        const total = (SINCE ? st.sinceAdmissions : window.UYIRLY_ADMISSIONS || []).length
         return `Inpatient pharmacy — admissions ${Math.min((u + 1) * 20, total)} of ${total}`
       },
     },
@@ -492,7 +540,7 @@
         const b = await pageAll(page(['SCHEDULED', 'RE-SCHEDULED', 'CANCELLED', 'COMPLETED', 'CHECKED IN', 'CHECKED-IN']))
         const ids = new Set()
         const rows = [...a, ...b].filter((r) => { const k = r.appointmentId ?? JSON.stringify(r); if (ids.has(k)) return false; ids.add(k); return true })
-        for (const r of rows) add({ appointment: r })
+        for (const r of rows) { add({ appointment: r }); want(r.patientId) }
         count('appointments', rows.length)
         return `Appointments ${m.key}: ${rows.length}`
       },
@@ -533,7 +581,10 @@
   ]
 
   // ── Start: trial or full (a saved full copy just carries on) ───────────
-  if (!resuming && window.UYIRLY_ONLY) {
+  if (!resuming && SINCE) {
+    title.textContent = `Uyirly — copying SwiftEHR data since ${SINCE.split('-').reverse().join('-')} (read-only)`
+    say('Top-up: only what changed since that day', '')
+  } else if (!resuming && window.UYIRLY_ONLY) {
     st.only = String(window.UYIRLY_ONLY)
     if (!phases.some((p) => p.name === st.only)) throw new Error(`no part called ${st.only}`)
     say(`Copying only: ${st.only}`, '')
@@ -558,12 +609,12 @@
   const t0 = Date.now(); const r0 = st.stats.requests
   const rate = () => { const s = (Date.now() - t0) / 1000; return s > 5 ? ((st.stats.requests - r0) / s).toFixed(1) : '…' }
   try {
-    const todo = phases.filter((p) => (!st.only || p.name === st.only) && !st.done.includes(p.name))
-      .sort((a, b) => (b.name === st.current) - (a.name === st.current))
+    const todo = phases.filter((p) => (!st.only || p.name === st.only) && !st.done.includes(p.name) && (!SINCE || ORDER.includes(p.name)))
+      .sort((a, b) => (b.name === st.current) - (a.name === st.current) || (SINCE ? ORDER.indexOf(a.name) - ORDER.indexOf(b.name) : 0))
     for (let i = 0; i < todo.length; i++) {
       const ph = todo[i]
       if (st.current !== ph.name) { st.current = ph.name; st.unit = 0 }
-      if (ph.name === 'patients' && window.UYIRLY_SKIP) st.unit = 0   // resume by saved ids, not by position
+      if (ph.name === 'patients' && window.UYIRLY_SKIP && !SINCE) st.unit = 0   // resume by saved ids, not by position
       const total = await ph.units()
       let from = st.unit
       const ph0 = Date.now(); const u0 = st.unit

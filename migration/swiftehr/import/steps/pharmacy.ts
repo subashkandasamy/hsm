@@ -29,6 +29,8 @@
 import { loadItems, ymd, hms, istStamp, loggedIds, logThenInsert, undoStep, all, db, type Tenant, type Planned } from '../lib'
 
 const STEP = 'pharmacy'
+/** The owner's "mark it as paid" (16 Nov 2026) covers dues from before the first copy only. */
+const SETTLE_BEFORE = '2026-11-13'
 const clean = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v != null ? String(v) : '') || null
 const num = (v: unknown) => Number(v ?? 0) || 0
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -53,7 +55,7 @@ export async function plan(t: Tenant) {
   }
 
   const out: Bill[] = []
-  const c = { op: 0, ip: 0, header: 0, pending: 0, openStay: 0, duplicate: 0, withVisit: 0, discounted: 0, refunds: 0, refundTotal: 0, returnedWhole: 0, returnedPart: 0, noPatient: 0, settled: 0, settledAmount: 0 }
+  const c = { op: 0, ip: 0, header: 0, pending: 0, openStay: 0, duplicate: 0, withVisit: 0, discounted: 0, refunds: 0, refundTotal: 0, returnedWhole: 0, returnedPart: 0, noPatient: 0, settled: 0, settledAmount: 0, unpaidRecent: 0, unpaidRecentAmount: 0 }
   const seen = new Set<string>()
 
   const mkLines = (k: string, lines: any[], at: string, source: string) => lines.map((l: any, i: number) => {
@@ -187,10 +189,11 @@ export async function plan(t: Tenant) {
     // Owner's decision (16 Nov): what SwiftEHR left unpaid is marked paid, as
     // cash collected on the bill's own day.
     const owed = round2(Number(b.row.total) - b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
-    if (b.row.status !== 'cancelled' && owed > 0.004) {
+    // Only the dues the owner decided on (before the first copy, 13 Nov 2026).
+    if (b.row.status !== 'cancelled' && owed > 0.004 && b.day < SETTLE_BEFORE) {
       b.pays.push(pay(`phsettle:${b.key}`, owed, 'cash', 'Settled outside SwiftEHR (marked paid at import)', b.at))
       c.settled++; c.settledAmount += owed
-    }
+    } else if (b.row.status !== 'cancelled' && owed > 0.004) { c.unpaidRecent++; c.unpaidRecentAmount += owed }
     const paid = round2(b.pays.reduce((s, p) => s + Number(p.row.amount), 0)), total = Number(b.row.total)
     b.row.paid = paid
     if (b.row.status === 'cancelled') continue
@@ -223,6 +226,14 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   if (mismatch) console.log(`  PAID ≠ TOTAL (${mismatch}):`, mismatches)
   if (!write) { console.log('dry run — nothing written. Add --write to write.'); return }
   if (stillTwice) throw new Error('Some pharmacy bill numbers are still used twice.')
+  // A pharmacy bill already imported is never added to (see the bills step).
+  const before = await loggedIds(t, 'bills')
+  const childKeys = new Set([...(await loggedIds(t, 'bill_items')).keys(), ...(await loggedIds(t, 'payments')).keys()])
+  const changed = out.filter((b) => before.has(b.key) && [...b.items, ...b.pays].some((x) => !childKeys.has(x.key)))
+  if (changed.length) console.log(`  ALREADY-IMPORTED PHARMACY BILLS CHANGED IN SWIFTEHR SINCE (not touched): ${changed.length}`, changed.slice(0, 10).map((b) => b.row.bill_no))
+  for (const b of out.filter((x) => before.has(x.key))) { b.items = []; b.pays = [] }
+  items.length = 0; items.push(...out.flatMap((b) => b.items))
+  pays.length = 0; pays.push(...out.flatMap((b) => b.pays))
   const rb = await logThenInsert(t, STEP, 'bills', out.map((b) => ({ key: b.key, row: b.row })), undefined, 200)
   console.log(`pharmacy bills written: ${rb.inserted} new, ${rb.existing} already there`)
   const ids = await loggedIds(t, 'bills')

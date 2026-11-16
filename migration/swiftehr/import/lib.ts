@@ -15,7 +15,8 @@ import crypto from 'crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export const SOURCE = 'swiftehr'
-export const RAW = path.join(__dirname, '..', 'raw')
+/** The export files. SWIFTEHR_RAW points it at another folder (a test copy). */
+export const RAW = process.env.SWIFTEHR_RAW || path.join(__dirname, '..', 'raw')
 const ROOT = path.join(__dirname, '..', '..', '..')
 
 // ── Command line ────────────────────────────────────────────────────────────
@@ -71,11 +72,38 @@ export function chunks<T>(xs: T[], n: number): T[][] {
 }
 
 // ── The export files ────────────────────────────────────────────────────────
-/** All items of every part-file whose name starts with `swiftehr-<kind>-`. */
+/** What makes two items the same record, per part (a top-up copies some records again). */
+const IDENTITY: Record<string, (x: any) => string | null> = {
+  patients: (x) => (x?.patient?.patientId != null ? String(x.patient.patientId) : null),
+  bills: (x) => (x?.bill?.billId ? `${x.type}:${x.bill.billId}` : null),
+  pharmacy: (x) => (x?.bill?.billId ? String(x.bill.billId) : null),
+  ippharmacy: (x) => (x?.admissionId != null ? String(x.admissionId) : null),
+  appointments: (x) => (x?.appointment?.appointmentId != null ? String(x.appointment.appointmentId) : null),
+  purchases: (x) => (x?.grn?.grnId != null ? String(x.grn.grnId) : null),
+}
+/**
+ * All items of every part-file whose name starts with `swiftehr-<kind>-`.
+ * Files are read oldest first (a full copy, then top-ups named
+ * …-since-YYYYMMDD-…), and a record copied again keeps only its newest copy,
+ * in the place of its first. The hospital lists (masters) are the newest only.
+ */
 export function loadItems<T = any>(kind: string): T[] {
-  const files = fs.readdirSync(RAW).filter((f) => f.startsWith(`swiftehr-${kind}-`) && f.endsWith('.json')).sort()
+  const files = fs.readdirSync(RAW).filter((f) => f.startsWith(`swiftehr-${kind}-`) && f.endsWith('.json'))
+    .sort((a, b) => (a.includes('-since-') === b.includes('-since-') ? a.localeCompare(b) : a.includes('-since-') ? 1 : -1))
   if (!files.length) throw new Error(`no ${kind} files in ${RAW}`)
-  return files.flatMap((f) => (JSON.parse(fs.readFileSync(path.join(RAW, f), 'utf8')).items ?? []) as T[])
+  const items = files.flatMap((f) => (JSON.parse(fs.readFileSync(path.join(RAW, f), 'utf8')).items ?? []) as T[])
+  if (kind === 'masters') return items.slice(-1)
+  const id = IDENTITY[kind]
+  if (!id) return items
+  const at = new Map<string, number>()
+  const out: T[] = []
+  for (const it of items) {
+    const k = id(it)
+    if (k === null) { out.push(it); continue }
+    if (at.has(k)) out[at.get(k)!] = it
+    else { at.set(k, out.length); out.push(it) }
+  }
+  return out
 }
 
 // ── Dates (SwiftEHR writes DD-MM-YYYY and 12-hour times, all IST) ───────────

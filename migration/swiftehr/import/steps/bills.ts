@@ -29,6 +29,8 @@ import { db, loadItems, ymd, hms, istStamp, loggedIds, logThenInsert, undoStep, 
 import { key, NOT_LAB } from '../lab-map'
 
 const STEP = 'bills'
+/** The owner's "mark it as paid" (16 Nov 2026) covers dues from before the first copy only. */
+const SETTLE_BEFORE = '2026-11-13'
 const clean = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v != null ? String(v) : '') || null
 const num = (v: unknown) => Number(v ?? 0) || 0
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -61,7 +63,7 @@ export async function plan(t: Tenant) {
   const patients = await loggedIds(t, 'patients'), visits = await loggedIds(t, 'visits'), admissions = await loggedIds(t, 'admissions')
   if (!patients.size || !visits.size || !admissions.size) throw new Error('Run the patients, opd and admissions steps first.')
   const out: Bill[] = []
-  const c = { op: 0, lab: 0, scan: 0, stay: 0, cancelled: 0, duplicate: 0, openStay: 0, empty: 0, zeroReceipts: 0, splitReceipts: 0, multiModeUnsplit: 0, noPatient: 0, mismatch: 0, settled: 0, settledAmount: 0 }
+  const c = { op: 0, lab: 0, scan: 0, stay: 0, cancelled: 0, duplicate: 0, openStay: 0, empty: 0, zeroReceipts: 0, splitReceipts: 0, multiModeUnsplit: 0, noPatient: 0, mismatch: 0, settled: 0, settledAmount: 0, unpaidRecent: 0, unpaidRecentAmount: 0 }
   const mismatches: string[] = []
   const seenBill = new Set<string>()
 
@@ -177,10 +179,12 @@ export async function plan(t: Tenant) {
     // Owner's decision (16 Nov): what SwiftEHR left unpaid is marked paid, as
     // cash collected on the bill's own day, so it is not carried as a due.
     const owed = round2(total - b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
-    if (b.row.status !== 'cancelled' && owed > 0.004) {
+    // Only the dues the owner decided on: bills from before the first copy
+    // (13 Nov 2026). A later bill still unpaid is a real due — left unpaid.
+    if (b.row.status !== 'cancelled' && owed > 0.004 && String(b.row.billing_date) < SETTLE_BEFORE) {
       b.pays.push(pay(`settle:${b.key}`, owed, 'cash', 'Settled outside SwiftEHR (marked paid at import)', String(b.row.created_at)))
       c.settled++; c.settledAmount += owed
-    }
+    } else if (b.row.status !== 'cancelled' && owed > 0.004) { c.unpaidRecent++; c.unpaidRecentAmount += owed }
     const paid = round2(b.pays.reduce((s, p) => s + Number(p.row.amount), 0))
     Object.assign(b.row, {
       subtotal, discount, total, round_off: round2(total - pre), paid,
@@ -239,6 +243,19 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   if (!write) { console.log('dry run — nothing written. Add --write to write.'); return }
   if (stillTwice) throw new Error('Some bill numbers are still used twice.')
 
+  // A bill already imported is never added to: if SwiftEHR changed it since
+  // (a later payment, a line added), it is listed here for a person to decide,
+  // so an old due marked paid can never be paid a second time.
+  const before = await loggedIds(t, 'bills')
+  const childKeys = new Set([...(await loggedIds(t, 'bill_items')).keys(), ...(await loggedIds(t, 'payments')).keys(),
+    ...(await loggedIds(t, 'admission_advances')).keys(), ...(await loggedIds(t, 'admission_advance_refunds')).keys()])
+  const changed = out.filter((b) => before.has(b.key) && [...b.items, ...b.pays, ...b.advances, ...b.refunds].some((x) => !childKeys.has(x.key)))
+  if (changed.length) console.log(`  ALREADY-IMPORTED BILLS CHANGED IN SWIFTEHR SINCE (not touched): ${changed.length}`, changed.slice(0, 10).map((b) => b.row.bill_no))
+  for (const b of out.filter((x) => before.has(x.key))) { b.items = []; b.pays = []; b.advances = []; b.refunds = [] }
+  items.length = 0; items.push(...out.flatMap((b) => b.items))
+  pays.length = 0; pays.push(...out.flatMap((b) => b.pays))
+  advs.length = 0; advs.push(...out.flatMap((b) => b.advances))
+  refs.length = 0; refs.push(...out.flatMap((b) => b.refunds))
   const rb = await logThenInsert(t, STEP, 'bills', out.map((b) => ({ key: b.key, row: b.row })), undefined, 200)
   console.log(`bills written: ${rb.inserted} new, ${rb.existing} already there`)
   const ids = await loggedIds(t, 'bills')
