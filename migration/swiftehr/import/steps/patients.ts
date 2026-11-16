@@ -12,10 +12,32 @@
  *
  * The old number (DRKMCH-123) goes into legacy_uhid and is searchable.
  * WhatsApp/SMS consent is off: nobody agreed to messages from Uyirly.
+ *
+ * Already registered in Uyirly (both systems in use for a while): a SwiftEHR
+ * patient with the same phone AND a matching name (same first name, or a
+ * shared name of 3+ letters with ages within 2 years) is LINKED to that
+ * patient — no second record; their old number is added to it. Phone alone is
+ * never enough: SwiftEHR has whole families on one number. Two possible
+ * matches are listed for a person and a new record is made. An undo never
+ * deletes a linked patient; it only takes the old number off again.
  */
-import { db, migrationApplied, loadItems, ymd, hms, istStamp, fakeName, fakePhone, fakeStreet, logThenInsert, undoStep, rewindCounter, all, type Tenant, type Planned } from '../lib'
+import { db, migrationApplied, loadItems, ymd, hms, istStamp, fakeName, fakePhone, fakeStreet, logThenInsert, undoStep, rewindCounter, all, loggedIds, SOURCE, type Tenant, type Planned } from '../lib'
 
 const STEP = 'patients'
+const LINKED = 'patients-linked'
+
+/** Name words of 3+ letters, upper-cased. */
+const words = (s: unknown) => String(s ?? '').toUpperCase().split(/[^A-Z]+/).filter((w) => w.length >= 3)
+const yearsApart = (a: unknown, b: unknown) => (a && b ? Math.abs(new Date(String(a)).getTime() - new Date(String(b)).getTime()) / (365.25 * 864e5) : null)
+/** Same person? Called only for patients who already share a phone number. */
+export function samePerson(a: { full_name: unknown; dob: unknown }, b: { full_name: unknown; dob: unknown }): boolean {
+  const wa = words(a.full_name), wb = words(b.full_name)
+  if (!wa.length || !wb.length) return false
+  const apart = yearsApart(a.dob, b.dob)
+  if (apart !== null && apart > 2) return false
+  if (wa[0] === wb[0]) return true                          // same first name, ages compatible or unknown
+  return apart !== null && wa.some((w) => wb.includes(w))   // a shared name only counts with ages known
+}
 
 type SwiftPatient = Record<string, any>
 type Item = { patient: SwiftPatient; detail: SwiftPatient | null }
@@ -113,9 +135,9 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   // Nothing of ours may clash with a patient the hospital already has.
   if (!(await migrationApplied())) throw new Error('Migration 0304 is not applied yet (supabase db push).')
   const ours = new Set((await all<{ row_id: string }>((f, to) => db().from('import_log').select('row_id')
-    .eq('tenant_id', t.id).eq('table_name', 'patients').range(f, to))).map((r) => r.row_id))
-  const existing = await all<{ id: string; uhid: string; legacy_uhid: string | null }>((f, to) => db().from('patients')
-    .select('id, uhid, legacy_uhid').eq('tenant_id', t.id).range(f, to))
+    .eq('tenant_id', t.id).eq('table_name', 'patients').order('source_key').range(f, to))).map((r) => r.row_id))
+  const existing = await all<{ id: string; uhid: string; legacy_uhid: string | null; full_name: string; phone: string | null; dob: string | null }>((f, to) => db().from('patients')
+    .select('id, uhid, legacy_uhid, full_name, phone, dob').eq('tenant_id', t.id).order('id').range(f, to))
   const theirs = existing.filter((p) => !ours.has(p.id))
   const theirUhids = new Set(theirs.map((p) => p.uhid))
   const clashes = planned.filter((p) => p.row.uhid && theirUhids.has(p.row.uhid as string))
@@ -123,6 +145,26 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
   console.log(`hospital already has ${theirs.length} patients of its own; ${ours.size} imported earlier`)
   if (clashes.length) throw new Error(`UHID clash with existing patients: ${clashes.slice(0, 5).map((c) => c.row.uhid).join(', ')}`)
   if (legacyClash.length) throw new Error(`${legacyClash.length} existing patients already carry an old number — import ran another way before?`)
+
+  // The same person registered in Uyirly already → link, don't duplicate.
+  const imported = await loggedIds(t, 'patients')
+  const byPhone = new Map<string, typeof theirs>()
+  for (const e of theirs) {
+    const ph = String(e.phone ?? '').replace(/\D/g, '').slice(-10)
+    if (ph.length === 10) byPhone.set(ph, [...(byPhone.get(ph) ?? []), e])
+  }
+  const linked: { key: string; id: string; code: string; uhid: string }[] = []
+  const ambiguous: string[] = []
+  const toWrite = planned.filter((p) => {
+    if (imported.has(p.key)) return true
+    const ph = String(p.row.phone ?? '').replace(/\D/g, '').slice(-10)
+    const cands = (byPhone.get(ph) ?? []).filter((e) => samePerson(e, { full_name: p.row.full_name, dob: p.row.dob }))
+    if (cands.length === 1) { linked.push({ key: p.key, id: cands[0].id, code: String(p.row.legacy_uhid), uhid: cands[0].uhid }); return false }
+    if (cands.length > 1) ambiguous.push(`${p.row.legacy_uhid} could be ${cands.map((x) => x.uhid).join(' or ')}`)
+    return true
+  })
+  console.log(`already registered in Uyirly — linked, not created: ${linked.length}`, linked.slice(0, 10).map((l) => `${l.code} → ${l.uhid}`))
+  if (ambiguous.length) console.log(`  MORE THAN ONE POSSIBLE MATCH (a new record is made; check by hand): ${ambiguous.length}`, ambiguous.slice(0, 10))
 
   for (const y of Object.keys(perYear).sort()) {
     const ofYear = planned.filter((p) => String(p.row.created_at).startsWith(y))
@@ -137,7 +179,15 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
     `estimated dob: ${planned.filter((p) => p.row.dob_estimated).length}`)
   if (!write) { console.log('dry run — nothing written. Add --write to write.'); return }
 
-  const res = await logThenInsert(t, STEP, 'patients', planned, async (row) => {
+  for (const l of linked) {
+    const { error: le } = await db().from('import_log').upsert({ tenant_id: t.id, source: SOURCE, table_name: 'patients', source_key: l.key, row_id: l.id, step: LINKED },
+      { onConflict: 'tenant_id,source,table_name,source_key', ignoreDuplicates: true })
+    if (le) throw new Error(`import_log write failed: ${le.message}`)
+    const { error } = await db().from('patients').update({ legacy_uhid: l.code }).eq('tenant_id', t.id).eq('id', l.id).is('legacy_uhid', null)
+    if (error) throw new Error(`linking ${l.code} failed: ${error.message}`)
+  }
+  if (linked.length) console.log(`linked: ${linked.length}`)
+  const res = await logThenInsert(t, STEP, 'patients', toWrite, async (row) => {
     if (row.uhid) return
     const { data, error } = await db().rpc('get_next_uhid_for', { p_tenant_id: t.id })
     if (error || !data) throw new Error(`could not draw a UHID: ${error?.message}`)
@@ -157,6 +207,14 @@ export async function run(t: Tenant, write: boolean): Promise<void> {
 }
 
 export async function undo(t: Tenant): Promise<void> {
+  // Linked patients were the hospital's own: only their old number comes off.
+  const links = await all<{ source_key: string; row_id: string }>((f, to) => db().from('import_log').select('source_key, row_id')
+    .eq('tenant_id', t.id).eq('source', SOURCE).eq('step', LINKED).order('source_key').range(f, to))
+  for (const l of links) {
+    await db().from('patients').update({ legacy_uhid: null }).eq('tenant_id', t.id).eq('id', l.row_id)
+    await db().from('import_log').delete().eq('tenant_id', t.id).eq('source', SOURCE).eq('table_name', 'patients').eq('source_key', l.source_key)
+  }
+  if (links.length) console.log(`  unlinked ${links.length} patients the hospital had registered itself`)
   await undoStep(t, STEP, ['patients'])
   await rewindCounter(t, { counter: 'uhid_counter', valueCol: 'last_val', table: 'patients', numberCol: 'uhid', pattern: /-UH-(\d{4})-(\d+)$/ })
 }
