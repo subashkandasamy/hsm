@@ -6,7 +6,7 @@
  *   npx tsx migration/swiftehr/import/index.ts <step> --tenant demo --undo     removes everything that step wrote
  *
  * KMCH (--tenant karur) also needs --kmch-approved to write or undo.
- * Steps, in order: patients, opd, admissions, lab, labopt, scans, bills, pharmacy
+ * Steps, in order: patients, opd, admissions, lab, labopt, scans, bills, pharmacy, suppliers, history
  */
 import { parseArgs, resolveTenant } from './lib'
 import * as patients from './steps/patients'
@@ -17,8 +17,10 @@ import * as labopt from './steps/labopt'
 import * as scans from './steps/scans'
 import * as bills from './steps/bills'
 import * as pharmacy from './steps/pharmacy'
+import * as suppliers from './steps/suppliers'
+import * as history from './steps/history'
 
-const STEPS: Record<string, { run: typeof patients.run; undo: typeof patients.undo }> = { patients, opd, admissions, lab, labopt, scans, bills, pharmacy }
+const STEPS: Record<string, { run: typeof patients.run; undo: typeof patients.undo }> = { patients, opd, admissions, lab, labopt, scans, bills, pharmacy, suppliers, history }
 
 async function main() {
   const a = parseArgs(process.argv.slice(2))
