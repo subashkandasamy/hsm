@@ -460,6 +460,8 @@ export interface LabOrder {
   verified_by?: string | null; verified_at?: string | null
   sample_label_printed_at?: string | null
   accession_no?: string
+  /** Request number in the hospital's previous software (e.g. FAC-18-2000); imported orders only. */
+  legacy_request_no?: string | null
   items?: LabOrderItem[]
   /** The tubes, in draw order. barcode is exactly what the label's bars encode
    *  and what a technician types into an analyzer. */

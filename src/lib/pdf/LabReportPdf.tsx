@@ -124,6 +124,8 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
         ['Priority', order.priority === 'stat' ? 'STAT (urgent)' : 'Routine'],
         // When the sample was drawn — a report states it (ISO 15189 §7.4.1.6).
         ['Sample collected', collectedAt ? fmtDateTime(collectedAt) : null],
+        // A report brought over from the previous software keeps the number printed on its paper copy.
+        ...(order.legacy_request_no ? [['Old lab no.', order.legacy_request_no] as [string, string]] : []),
       ]} />
 
       {[...departments.entries()].map(([dept, panels]) => (

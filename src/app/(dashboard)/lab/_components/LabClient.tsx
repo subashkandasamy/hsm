@@ -288,6 +288,7 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
                   <TubeBarcodes samples={order.samples} />
                   <p className="text-xs mt-1.5" style={{ color: '#94A3B8' }}>
                     {order.accession_no && <span className="font-mono" style={{ color: '#64748B' }}>#{order.accession_no} · </span>}
+                    {order.legacy_request_no && <span className="font-mono" style={{ color: '#64748B' }}>Old no. {order.legacy_request_no} · </span>}
                     {order.orderer?.full_name} · <DateText date={order.ordered_at} />
                   </p>
                   {actionError?.id === order.id && (

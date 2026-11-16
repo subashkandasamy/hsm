@@ -162,12 +162,24 @@ export async function searchPatients(query: string): Promise<Patient[]> {
   // A number typed in full goes first. "DRKMCH-1" also contains DRKMCH-10,
   // -100 and -1000, and the one asked for could fall outside the 100 above.
   if (/^[A-Za-z0-9/-]+$/.test(q)) {
-    const { data: exact } = await supabase
+    const { data: byNumber } = await supabase
       .from('patients')
       .select('*')
       .or(`uhid.ilike.${q},legacy_uhid.ilike.${q}`)
       .limit(5)
-    if (exact?.length) {
+    // The previous software's IP and lab numbers (FAC-18-45) are on the paper
+    // files patients bring; both series share one prefix, so both are looked up.
+    const [{ data: stays }, { data: labs }] = await Promise.all([
+      supabase.from('admissions').select('patient_id').ilike('legacy_ip_no', q).limit(5),
+      supabase.from('lab_orders').select('patient_id').ilike('legacy_request_no', q).limit(5),
+    ])
+    const viaOld = [...new Set([...(stays ?? []), ...(labs ?? [])].map((r) => r.patient_id as string))]
+      .filter((id) => !(byNumber ?? []).some((p) => p.id === id))
+    const { data: oldOwners } = viaOld.length
+      ? await supabase.from('patients').select('*').in('id', viaOld)
+      : { data: [] as Patient[] }
+    const exact = [...(byNumber ?? []), ...(oldOwners ?? [])]
+    if (exact.length) {
       const first = new Set(exact.map((p) => p.id as string))
       return [...exact, ...(data ?? []).filter((p) => !first.has(p.id as string))] as Patient[]
     }
