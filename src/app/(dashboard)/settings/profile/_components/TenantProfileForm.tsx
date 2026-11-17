@@ -5,6 +5,7 @@ import { upsertTenantProfile, uploadTenantLogo, setTenantCode } from '@/app/acti
 import type { TenantProfile } from '@/lib/types'
 import GlassCard from '@/components/ui/GlassCard'
 import { isValidVpa } from '@/lib/upi'
+import { LETTERHEAD_BOTTOM_MM, LETTERHEAD_DOCS, LETTERHEAD_TOP_MM } from '@/lib/pdf/letterhead'
 
 // Client-side mirror of SQL tenant_doc_prefix() / server computePrefix().
 function previewPrefix(code: string, slug: string): string {
@@ -124,6 +125,17 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
     initialProfile?.pharmacy_default_gst_rate != null ? String(initialProfile.pharmacy_default_gst_rate) : '12'
   )
 
+  // Printing on the hospital's own letterhead paper (0307). Plain-paper
+  // documents are stored, so every one is on letterhead unless unticked.
+  const [lhOn, setLhOn] = useState(!!initialProfile?.letterhead_paper)
+  const [lhTop, setLhTop] = useState(String(initialProfile?.letterhead_top_mm ?? LETTERHEAD_TOP_MM.default))
+  const [lhBottom, setLhBottom] = useState(String(initialProfile?.letterhead_bottom_mm ?? LETTERHEAD_BOTTOM_MM.default))
+  const [lhPlain, setLhPlain] = useState<string[]>(initialProfile?.letterhead_plain_docs ?? [])
+  const mmErr = (v: string, r: { min: number; max: number }) =>
+    /^\d{1,3}$/.test(v.trim()) && Number(v) >= r.min && Number(v) <= r.max ? null : `A whole number from ${r.min} to ${r.max}`
+  const lhTopErr = mmErr(lhTop, LETTERHEAD_TOP_MM)
+  const lhBottomErr = mmErr(lhBottom, LETTERHEAD_BOTTOM_MM)
+
   // Shown as you type, and mirrors the CHECK in migration 0233 so the form and
   // the database cannot disagree about what a UPI id looks like.
   const vpaBad = (values.upi_vpa ?? '').trim() !== '' && !isValidVpa(values.upi_vpa)
@@ -134,6 +146,7 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
   }
 
   async function handleSave() {
+    if (lhOn && (lhTopErr || lhBottomErr)) { setSaveMsg({ ok: false, text: 'Fix the letterhead space before saving.' }); return }
     setSaving(true)
     setSaveMsg(null)
     const textInput = Object.fromEntries(
@@ -145,6 +158,11 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
       gst_composition: gstMode === 'composition',
       gst_state_code: gstStateCode.trim() || null,
       pharmacy_default_gst_rate: pharmacyRate.trim() ? Number(pharmacyRate) : 12,
+      letterhead_paper: lhOn,
+      // Kept as typed when the switch is off, unless unusable.
+      letterhead_top_mm: lhTopErr ? LETTERHEAD_TOP_MM.default : Number(lhTop),
+      letterhead_bottom_mm: lhBottomErr ? LETTERHEAD_BOTTOM_MM.default : Number(lhBottom),
+      letterhead_plain_docs: lhPlain,
     } as Parameters<typeof upsertTenantProfile>[0]
     const res = await upsertTenantProfile(input)
     setSaving(false)
@@ -418,6 +436,83 @@ export default function TenantProfileForm({ initialProfile, initialCode }: {
                 onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }} />
               <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Fallback rate for medicines (each drug can override later).</p>
+            </div>
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Letterhead paper */}
+      <GlassCard className="p-6">
+        <p className="text-sm font-semibold mb-1" style={{ color: '#0F172A' }}>Printing on letterhead paper</p>
+        <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+          Bills, reports and other A4 documents print your hospital&rsquo;s name, address and logo at the top. If your
+          printers are loaded with paper that already has your letterhead on it, switch this on: the top of every page
+          is left blank for it, and the patient&rsquo;s details start below.
+        </p>
+
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '12px 14px', borderRadius: '12px',
+          border: `1px solid ${lhOn ? '#0D9488' : '#E2E8F0'}`, background: lhOn ? 'rgba(13,148,136,0.05)' : 'rgba(255,255,255,0.6)',
+        }}>
+          <input type="checkbox" checked={lhOn} onChange={(e) => { setLhOn(e.target.checked); setSaveMsg(null) }}
+            style={{ width: '16px', height: '16px', marginTop: '2px', accentColor: '#0D9488', cursor: 'pointer' }} />
+          <span>
+            <span className="text-sm font-medium block" style={{ color: '#0F172A' }}>We print on our own letterhead paper</span>
+            <span className="text-xs block mt-0.5" style={{ color: '#64748B' }}>Every page, on the documents ticked below.</span>
+          </span>
+        </label>
+
+        {lhOn && (
+          <div style={{ marginTop: '16px', display: 'grid', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+              {([
+                { label: 'Blank space at the top (mm)', value: lhTop, set: setLhTop, err: lhTopErr,
+                  hint: 'From the top edge of the paper to just below your printed header.' },
+                { label: 'Blank space at the bottom (mm)', value: lhBottom, set: setLhBottom, err: lhBottomErr,
+                  hint: 'For paper with a printed footer. 0 if there is none.' },
+              ]).map((f) => (
+                <div key={f.label}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#475569' }}>{f.label}</label>
+                  <input type="number" inputMode="numeric" min={0} step={1} value={f.value}
+                    onChange={(e) => { f.set(e.target.value); setSaveMsg(null) }}
+                    className="w-full px-3 py-2.5 rounded-xl text-sm"
+                    style={{ background: 'rgba(255,255,255,0.8)', border: `1px solid ${f.err ? '#FCA5A5' : '#E2E8F0'}`, color: '#0F172A', outline: 'none' }} />
+                  <p className="text-xs mt-1" style={{ color: f.err ? '#DC2626' : '#94A3B8' }}>{f.err ?? f.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <a href={`/print/letterhead-test/pdf?top=${encodeURIComponent(lhTop)}&bottom=${encodeURIComponent(lhBottom)}`}
+                target="_blank" rel="noopener noreferrer"
+                aria-disabled={!!(lhTopErr || lhBottomErr)}
+                onClick={(e) => { if (lhTopErr || lhBottomErr) e.preventDefault() }}
+                className="px-4 py-2 rounded-xl text-sm font-medium"
+                style={{ background: 'rgba(13,148,136,0.08)', color: '#0D9488', border: '1px solid rgba(13,148,136,0.25)', textDecoration: 'none', opacity: lhTopErr || lhBottomErr ? 0.5 : 1 }}>
+                Print a test page
+              </a>
+              <span className="text-xs" style={{ color: '#64748B' }}>
+                Print it on your letterhead paper: the shaded band should cover your printed header exactly.
+              </span>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium mb-2" style={{ color: '#475569' }}>Documents printed on letterhead</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '6px 16px' }}>
+                {LETTERHEAD_DOCS.map((d) => (
+                  <label key={d.key} className="flex items-center gap-2 text-sm" style={{ color: '#0F172A', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!lhPlain.includes(d.key)}
+                      onChange={(e) => { setLhPlain((prev) => e.target.checked ? prev.filter((k) => k !== d.key) : [...prev, d.key]); setSaveMsg(null) }}
+                      style={{ width: '15px', height: '15px', accentColor: '#0D9488', cursor: 'pointer' }} />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
+                Unticked documents keep printing your hospital header on plain paper. Not affected: ID cards, wristbands
+                and labels (their own label paper), PC&amp;PNDT returns (government format), and the drug chart, OT list
+                and ICU chart, which print sideways.
+              </p>
             </div>
           </div>
         )}

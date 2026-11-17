@@ -6,6 +6,7 @@ import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand, WriteIn,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 
 export const TRIAGE_LABEL: Record<number, string> = { 1: 'Resuscitation', 2: 'Emergent', 3: 'Urgent', 4: 'Less urgent', 5: 'Non-urgent' }
 
@@ -28,6 +29,7 @@ export interface EmergencyRecordData {
  */
 export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRecordData; profile: TenantProfile | null; logo: LogoImage }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'emergency')
   const { ec, patient: p, visit: v } = data
   const ref = shortRef('ER', ec.id)
   const title = ec.status === 'referred' ? 'EMERGENCY REFERRAL NOTE'
@@ -79,9 +81,9 @@ export function EmergencyRecordPdf({ data, profile, logo }: { data: EmergencyRec
   const treatment = (ev?.treatment ?? []).filter((t) => t.item?.trim())
 
   return (
-    <A4 title={`${title} ${p.full_name}`}>
-      <PageChrome hospital={hospital} identity={`${p.full_name} · UHID ${p.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`${title} ${p.full_name}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${p.full_name} · UHID ${p.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand title={title} subtitle={`Triage ${ec.triage_level} — ${TRIAGE_LABEL[ec.triage_level] ?? ''}`}
         numberLabel="ER Ref" number={ref} date={`Arrived ${fmtDateTime(ec.arrived_at)}`} />
       <InfoGrid items={[

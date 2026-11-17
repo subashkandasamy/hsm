@@ -5,6 +5,7 @@ import {
   A4, DataTable, InfoGrid, Letterhead, PageChrome, SectionTitle, TextBlock, TitleBand, WriteIn,
   ageSex, fmtDate, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 
 const TEAM_ROLE: Record<string, string> = {
   surgeon: 'Surgeon', assistant: 'Assistant surgeon', anaesthetist: 'Anaesthetist', scrub_nurse: 'Scrub nurse', other: 'Other',
@@ -38,6 +39,7 @@ function Field({ label, value, lines = 1 }: { label: string; value?: string | nu
  */
 export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: OtSchedule; extra: OtRecordExtra; profile: TenantProfile | null; logo: LogoImage }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'operation')
   const ref = shortRef('OT', o.id)
   const p = extra.patient
   const ward = o.admission?.direct_ot ? 'Direct to OT' : [o.admission?.ward?.name, o.admission?.bed?.bed_no].filter(Boolean).join(' / ') || null
@@ -56,9 +58,9 @@ export function OtRecordPdf({ schedule: o, extra, profile, logo }: { schedule: O
   const span = (a?: string | null, b?: string | null) => (a || b ? `${a ? time(a) : '—'}  –  ${b ? time(b) : '—'}` : null)
 
   return (
-    <A4 title={`Operation record ${p.full_name}`}>
-      <PageChrome hospital={hospital} identity={`${p.full_name} · UHID ${p.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Operation record ${p.full_name}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${p.full_name} · UHID ${p.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title={o.status === 'cancelled' ? 'OPERATION RECORD (CANCELLED)' : 'OPERATION RECORD'}
         subtitle={o.procedure_name}

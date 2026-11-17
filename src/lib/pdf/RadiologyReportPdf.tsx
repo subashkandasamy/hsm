@@ -4,6 +4,7 @@ import {
   A4, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import type { ReportPatient } from './LabReportPdf'
 
 export function RadiologyReportPdf({ order, patient, profile, logo, image, attachmentIsPdf }: {
@@ -11,13 +12,14 @@ export function RadiologyReportPdf({ order, patient, profile, logo, image, attac
   image: LogoImage; attachmentIsPdf: boolean
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'radiology')
   const ref = shortRef('RAD', order.id)
   const modality = order.test?.modality?.toUpperCase()
 
   return (
-    <A4 title={`Radiology report ${patient.full_name} ${ref}`}>
-      <PageChrome hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Radiology report ${patient.full_name} ${ref}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title="RADIOLOGY REPORT"
         subtitle={[order.test?.name, modality].filter(Boolean).join(' · ') || null}

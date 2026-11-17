@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Text, View } from '@react-pdf/renderer'
 import type { LabOrder, LabOrderItem, TenantProfile } from '@/lib/types'
 import { analyteNormal, itemNormal, firstCollected, OUT_OF_RANGE } from '@/lib/lab/reportRange'
@@ -5,6 +6,7 @@ import {
   A4, DataTable, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TitleBand,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage, type TableCell,
 } from './parts'
+import { letterheadFor } from './letterhead'
 
 export interface ReportPatient {
   full_name: string; uhid: string
@@ -49,6 +51,7 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
   analytes?: ReportAnalyte[]; verifiedBy?: string | null
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'lab')
   const ref = order.accession_no ?? shortRef('LAB', order.id)
   const items = order.items ?? []
   const collectedAt = firstCollected(order.samples)
@@ -104,9 +107,9 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
   const showDepartmentHeadings = departments.size > 1
 
   return (
-    <A4 title={`Lab report ${patient.full_name} ${ref}`}>
-      <PageChrome hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Lab report ${patient.full_name} ${ref}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title={pending > 0 ? 'LABORATORY REPORT — INTERIM' : 'LABORATORY REPORT'}
         subtitle={pending > 0
@@ -129,9 +132,9 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
       ]} />
 
       {[...departments.entries()].map(([dept, panels]) => (
-        <View key={dept}>
+        <Fragment key={dept}>
           {showDepartmentHeadings && (
-            <View wrap={false}>
+            <View wrap={false} minPresenceAhead={70}>
               <Text style={{ fontSize: 8, letterSpacing: 1.1, marginTop: 14, marginBottom: 2,
                              color: '#64748B', fontFamily: 'Helvetica-Bold' }}>
                 {`DEPARTMENT OF ${dept.toUpperCase()}`}
@@ -139,8 +142,10 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
             </View>
           )}
           {[...panels.entries()].map(([testId, rows]) => (
-        <View key={testId}>
-          <View wrap={false}>
+        <Fragment key={testId}>
+          {/* The test's heading moves with its column titles and first result. */}
+          <DataTable
+            lead={<>
             <SectionTitle>{rows[0].test_name}</SectionTitle>
             {rows[0].referred_to && (
               // A laboratory may not present another laboratory's work as its
@@ -150,8 +155,7 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
                   rows[0].referred_nabl ? ` · NABL ${rows[0].referred_nabl}` : ''}`}
               </Text>
             )}
-          </View>
-          <DataTable
+            </>}
             columns={[
               { label: 'Investigation', flex: 1 },
               { label: 'Result', width: 80, align: 'right' },
@@ -178,17 +182,15 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
             })}
             empty="No results."
           />
-        </View>
+        </Fragment>
           ))}
-        </View>
+        </Fragment>
       ))}
 
       {[...groups.entries()].map(([sample, rows]) => (
-        <View key={sample}>
-          <View wrap={false}>
-            <SectionTitle>{groups.size > 1 || sample !== 'General' ? `Sample: ${sample}` : 'Results'}</SectionTitle>
-          </View>
+        <Fragment key={sample}>
           <DataTable
+            lead={<SectionTitle>{groups.size > 1 || sample !== 'General' ? `Sample: ${sample}` : 'Results'}</SectionTitle>}
             columns={[
               { label: 'Investigation', flex: 1 },
               { label: 'Result', width: 80, align: 'right' },
@@ -213,7 +215,7 @@ export function LabReportPdf({ order, patient, profile, logo, analytes = [], ver
             })}
             empty="No tests on this order."
           />
-        </View>
+        </Fragment>
       ))}
 
       <View wrap={false} style={{ marginTop: 14 }}>

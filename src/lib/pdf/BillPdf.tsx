@@ -6,6 +6,7 @@ import {
   A4, AmountInWords, ChargesTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   ageSex, fmtDate, money, s, C, type ChargeSection, type LogoImage, type TotalLine,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { realPhone } from '@/lib/patientPhone'
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -21,6 +22,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; profile: TenantProfile | null; creditNotes: CreditNote[]; logo: LogoImage }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'bill')
   const items = (bill.items ?? []).filter(Boolean)
 
   // Sections by source, in first-seen order.
@@ -69,9 +71,9 @@ export function BillPdf({ bill, profile, creditNotes, logo }: { bill: Bill; prof
   const gst = taxed ? summarizeBillGst(items.map((i) => ({ amount: Number(i.amount), gst_rate: Number(i.gst_rate ?? 0), tax_inclusive: !!i.tax_inclusive })), Number(bill.discount ?? 0)) : null
 
   return (
-    <A4 title={`${title} ${bill.bill_no}`}>
-      <PageChrome hospital={hospital} identity={`${bill.patient?.full_name ?? ''} · UHID ${bill.patient?.uhid ?? ''}`} docRef={bill.bill_no} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`${title} ${bill.bill_no}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${bill.patient?.full_name ?? ''} · UHID ${bill.patient?.uhid ?? ''}`} docRef={bill.bill_no} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand title={title} subtitle={sectionNames || null} numberLabel="Bill No" number={bill.bill_no} date={fmtDate(bill.billing_date ?? bill.created_at)} />
       <InfoGrid items={[
         ['Patient', bill.patient?.full_name],

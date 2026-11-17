@@ -4,6 +4,7 @@ import { getOpdCombinedBillData } from '@/app/actions/billing'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
 import { SummaryBillPdf } from '@/lib/pdf/SummaryBillPdf'
 import { loadLogo, pdfResponse } from '@/lib/pdf/parts'
+import { asFileCopy, isDownload } from '@/lib/pdf/letterhead'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,6 +18,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ visi
   const url = new URL(request.url)
   const detailed = url.searchParams.get('detail') === '1'
   const logo = await loadLogo(profile?.logo_url)
-  const buffer = await renderToBuffer(createElement(SummaryBillPdf, { data, profile, detailed, logo }) as Parameters<typeof renderToBuffer>[0])
+  const buffer = await renderToBuffer(createElement(SummaryBillPdf, { data, profile: isDownload(request) ? asFileCopy(profile) : profile, detailed, logo }) as Parameters<typeof renderToBuffer>[0])
   return pdfResponse(buffer, `${data.combinedBillNo}${detailed ? '-detailed' : ''}.pdf`, url.searchParams.get('download') === '1')
 }

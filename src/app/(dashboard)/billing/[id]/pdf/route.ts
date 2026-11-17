@@ -5,6 +5,7 @@ import { listCreditNotes } from '@/app/actions/refunds'
 import { getTenantProfile } from '@/app/actions/tenantProfile'
 import { BillPdf } from '@/lib/pdf/BillPdf'
 import { loadLogo, pdfResponse } from '@/lib/pdf/parts'
+import { asFileCopy, isDownload } from '@/lib/pdf/letterhead'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const [bill, profile, creditNotes] = await Promise.all([getBill(id), getTenantProfile(), listCreditNotes(id)])
   if (!bill) return new Response('Bill not found', { status: 404 })
   const logo = await loadLogo(profile?.logo_url)
-  const buffer = await renderToBuffer(createElement(BillPdf, { bill, profile, creditNotes, logo }) as Parameters<typeof renderToBuffer>[0])
+  const buffer = await renderToBuffer(createElement(BillPdf, { bill, profile: isDownload(request) ? asFileCopy(profile) : profile, creditNotes, logo }) as Parameters<typeof renderToBuffer>[0])
   const download = new URL(request.url).searchParams.get('download') === '1'
   return pdfResponse(buffer, `${bill.bill_no}.pdf`, download)
 }

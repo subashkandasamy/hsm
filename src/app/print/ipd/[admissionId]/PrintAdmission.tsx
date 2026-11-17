@@ -8,6 +8,7 @@ import type {
   LabOrder, RadiologyOrder, TenantProfile,
 } from '@/lib/types'
 import { realPhone } from '@/lib/patientPhone'
+import { letterheadFor } from '@/lib/pdf/letterhead'
 
 interface Props {
   admission: Admission
@@ -76,7 +77,6 @@ function HospitalHeader({
   adm: Admission
   p: TenantProfile | null
 }) {
-  const patient = adm.patient
   const hospName = p?.name || 'Hospital'
   const addrParts = [
     p?.address_line1, p?.address_line2,
@@ -121,34 +121,38 @@ function HospitalHeader({
               <p style={{ fontSize: '9px', color: '#94A3B8', margin: '2px 0 0', letterSpacing: '0.3px' }}>{legalParts.join('  |  ')}</p>
             )}
           </div>
-          <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '90px' }}>
-            <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0 }}>Admitted</p>
-            <p style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', margin: '2px 0 0' }}>{fmtDate(adm.admitted_at)}</p>
-            {adm.discharged_at && (
-              <>
-                <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: '4px 0 0' }}>{dischargeTypeLabel(adm.discharge_type)}</p>
-                <p style={{ fontSize: '11px', fontWeight: 700, color: '#15803D', margin: '2px 0 0' }}>{fmtDate(adm.discharged_at)}</p>
-              </>
-            )}
-            <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px', margin: '4px 0 0' }}>UHID</p>
-            <p style={{ fontSize: '11px', fontWeight: 700, color: '#0F172A', fontFamily: 'monospace', margin: '2px 0 0' }}>{patient?.uhid ?? '—'}</p>
-          </div>
+          {/* Balances the logo so the name stays centred; the patient's
+              UHID and dates are in the details below, not up here. */}
+          {p?.logo_url && <div style={{ width: '90px', flexShrink: 0 }} />}
         </div>
       </div>
 
       {/* Type banner */}
-      <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '4px 0', textAlign: 'center' }}>
-        <span style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>
-          Inpatient Admission Record
-        </span>
-      </div>
+      <TypeBanner adm={adm} />
     </>
+  )
+}
+
+/** The record's title, and the patient — repeated on every printed page. */
+function TypeBanner({ adm }: { adm: Admission }) {
+  const who = [adm.patient?.full_name, adm.patient?.uhid].filter(Boolean).join('  ·  ')
+  return (
+    <div style={{ background: '#F0FDF9', borderBottom: '1px solid #CCFBF1', padding: '4px 14px', display: 'flex', alignItems: 'center' }}>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '3px', color: '#0F766E', textTransform: 'uppercase' }}>
+        Inpatient Admission Record
+      </span>
+      <span style={{ flex: 1, textAlign: 'right', fontSize: '9px', color: '#475569' }}>{who}</span>
+    </div>
   )
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function PrintAdmission({ admission: adm, notes, orders, schedule, labOrders, radOrders, tenantProfile: p }: Props) {
+  // On the hospital's own letterhead paper: every page leaves the printed
+  // header (and footer) blank, and Uyirly prints no header of its own.
+  const paper = letterheadFor(p, 'admission')
   useEffect(() => {
     const t = setTimeout(() => window.print(), 400)
     return () => clearTimeout(t)
@@ -176,6 +180,10 @@ export default function PrintAdmission({ admission: adm, notes, orders, schedule
   const label = (text: string) => (
     <p style={{ fontSize: '9px', color: '#94A3B8', textTransform: 'uppercase' as const, letterSpacing: '0.6px', margin: '0 0 2px' }}>{text}</p>
   )
+  /** One box of the details grid; a right-hand rule unless it ends the row. */
+  const cell = (ruleRight: boolean): React.CSSProperties => ({
+    padding: '8px 14px', borderTop: '1px solid #E2E8F0', borderRight: ruleRight ? '1px solid #E2E8F0' : undefined,
+  })
   const value = (text: string | null | undefined, fallback = '—') => (
     <p style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{text || fallback}</p>
   )
@@ -183,7 +191,7 @@ export default function PrintAdmission({ admission: adm, notes, orders, schedule
   return (
     <>
       <style>{`
-        @page { size: A4 portrait; margin: 10mm; }
+        @page { size: A4 portrait; margin: ${paper ? `${paper.topMm}mm 10mm ${Math.max(10, paper.bottomMm)}mm` : '10mm'}; }
         @media print {
           html, body { margin: 0; padding: 0; background: #fff; }
           .screen-only { display: none !important; }
@@ -222,7 +230,7 @@ export default function PrintAdmission({ admission: adm, notes, orders, schedule
         <thead>
           <tr>
             <th style={{ padding: 0, textAlign: 'left', fontWeight: 'normal', verticalAlign: 'top' }}>
-              <HospitalHeader adm={adm} p={p} />
+              {paper ? <TypeBanner adm={adm} /> : <HospitalHeader adm={adm} p={p} />}
             </th>
           </tr>
         </thead>
@@ -244,55 +252,62 @@ export default function PrintAdmission({ admission: adm, notes, orders, schedule
           <tr>
             <td style={{ padding: 0, verticalAlign: 'top' }}>
 
-              {/* ── Patient / admission info grid ── */}
+              {/* ── Patient / admission details ── */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid #E2E8F0' }}>
-                {/* Row 1: Name + Doctor */}
-                <div style={{ padding: '10px 14px', borderRight: '1px solid #E2E8F0', gridColumn: 'span 2' }}>
+                <div style={{ ...cell(true), gridColumn: 'span 2', borderTop: 'none' }}>
                   {label('Patient Name')}
                   <p style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', margin: 0 }}>{patient?.full_name ?? '—'}</p>
                 </div>
-                <div style={{ padding: '10px 14px' }}>
+                <div style={{ ...cell(false), borderTop: 'none' }}>
                   {label('Attending Doctor')}
                   {value(adm.doctor?.full_name)}
                 </div>
 
-                {/* Row 2: Ward/Bed | Status | Phone */}
-                <div style={{ padding: '8px 14px', borderRight: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
+                <div style={cell(true)}>
+                  {label('UHID')}
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', fontFamily: 'monospace', margin: 0 }}>{patient?.uhid ?? '—'}</p>
+                </div>
+                <div style={cell(true)}>
+                  {label('IP No')}
+                  {value([adm.ip_no, adm.legacy_ip_no && `old ${adm.legacy_ip_no}`].filter(Boolean).join(' · '))}
+                </div>
+                <div style={cell(false)}>
+                  {label('Age / Sex')}
+                  {value([patient?.dob ? computeAge(patient.dob) : null, patient?.gender ? patient.gender[0].toUpperCase() + patient.gender.slice(1) : null].filter(Boolean).join(' / '))}
+                </div>
+
+                <div style={cell(true)}>
+                  {label('Admitted')}
+                  {value(fmtDateTime(adm.admitted_at))}
+                </div>
+                <div style={cell(true)}>
+                  {label(adm.discharged_at ? dischargeTypeLabel(adm.discharge_type) : 'Status')}
+                  {adm.discharged_at
+                    ? <p style={{ fontSize: '12px', fontWeight: 700, color: '#15803D', margin: 0 }}>{fmtDateTime(adm.discharged_at)}</p>
+                    : <p style={{ fontSize: '12px', fontWeight: 700, color: '#0D9488', margin: 0, textTransform: 'capitalize' }}>{adm.status}</p>}
+                </div>
+                <div style={cell(false)}>
                   {label('Ward / Bed')}
                   {value(`${adm.ward?.name ?? '—'} — ${adm.bed?.bed_no ?? '—'}`)}
                 </div>
-                <div style={{ padding: '8px 14px', borderRight: '1px solid #E2E8F0', borderTop: '1px solid #E2E8F0' }}>
-                  {label('Status')}
-                  <p style={{ fontSize: '12px', fontWeight: 700, color: adm.status === 'admitted' ? '#0D9488' : '#15803D', margin: 0, textTransform: 'capitalize' }}>{adm.status}</p>
-                </div>
-                <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0' }}>
+
+                <div style={cell(true)}>
                   {label('Phone')}
                   {value(realPhone(patient?.phone))}
                 </div>
+                <div style={cell(true)}>
+                  {label('Blood Group')}
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: patient?.blood_group ? '#DC2626' : '#0F172A', margin: 0 }}>{patient?.blood_group || '—'}</p>
+                </div>
+                <div style={cell(false)}>
+                  {label('Allergies')}
+                  {patient?.allergies
+                    ? <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', margin: 0, background: '#FFFBEB', padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>⚠ {patient.allergies}</p>
+                    : value(null)}
+                </div>
 
-                {/* Row 3: Blood group + Allergies */}
-                {(patient?.blood_group || patient?.allergies) && (
-                  <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', gridColumn: 'span 3', display: 'flex', gap: '24px', alignItems: 'center' }}>
-                    {patient?.blood_group && (
-                      <div>
-                        {label('Blood Group')}
-                        <p style={{ fontSize: '13px', fontWeight: 700, color: '#DC2626', margin: 0 }}>{patient.blood_group}</p>
-                      </div>
-                    )}
-                    {patient?.allergies && (
-                      <div>
-                        {label('Allergies')}
-                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', margin: 0, background: '#FFFBEB', padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>
-                          ⚠ {patient.allergies}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Row 4: Reason for admission */}
                 {adm.reason && (
-                  <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', gridColumn: 'span 3' }}>
+                  <div style={{ ...cell(false), gridColumn: 'span 3' }}>
                     {label('Reason for Admission')}
                     <p style={{ fontSize: '12px', color: '#0F172A', margin: 0, lineHeight: 1.5 }}>{adm.reason}</p>
                   </div>

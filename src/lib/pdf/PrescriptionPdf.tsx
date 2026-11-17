@@ -10,6 +10,7 @@ import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand,
   ageSex, fmtDate, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { realPhone } from '@/lib/patientPhone'
 
 export interface RxPatient {
@@ -34,6 +35,7 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
   followUp?: { date: string | null; reason: string | null } | null
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'prescription')
   const ref = shortRef('OP', visit.id)
   const v = visit.vitals ?? {}
   const cd = visit.clinical_data as Record<string, unknown> | null
@@ -42,9 +44,9 @@ export function PrescriptionPdf({ visit, patient, prescriptions, allergies, temp
   const hasConsult = !!(visit.complaint || visit.diagnosis || visit.icd_code)
 
   return (
-    <A4 title={`Prescription ${patient.full_name}`}>
-      <PageChrome hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Prescription ${patient.full_name}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${patient.full_name} · UHID ${patient.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title="OUT-PATIENT PRESCRIPTION"
         subtitle={`${TEMPLATE_LABEL[template] ?? 'General'} consultation`}

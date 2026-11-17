@@ -2,8 +2,9 @@ import { Document, Page, Text, View } from '@react-pdf/renderer'
 import type { TenantProfile } from '@/lib/types'
 import {
   DataTable, InfoGrid, Letterhead, PageChrome, SectionTitle, TextBlock, TitleBand, WriteIn,
-  fmtDate, fmtDateTime, registerPdfFonts, s, C, type LogoImage,
+  fmtDate, fmtDateTime, letterheadPadding, registerPdfFonts, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { INJURY_GRADES, DISPOSALS, INTIMATION_METHODS } from '@/lib/mlc'
 import type { PoliceIntimation } from '@/app/actions/mlc'
 
@@ -182,6 +183,7 @@ function RegisterBody({
   logo: LogoImage
   copy: (typeof COPIES)[number]
 }) {
+  const paper = letterheadFor(profile, 'mlc')
   return (
     <>
       {/*
@@ -190,10 +192,10 @@ function RegisterBody({
         the three copies it belongs to is a loose sheet — which is the whole
         problem marking them was meant to solve.
       */}
-      <PageChrome hospital={hospital}
+      <PageChrome paper={paper} hospital={hospital}
         identity={`${copy.tag} copy  ·  ${data.patient_name ?? '—'}  ·  ${data.ar_no}`}
         docRef={data.ar_no} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <CopyBand tag={copy.tag} to={copy.to} />
       <TitleBand
         title="ACCIDENT REGISTER — MEDICO-LEGAL CASE"
@@ -320,7 +322,7 @@ export function AccidentRegisterPdf({ data, labels, intimations, profile, logo }
   return (
     <Document title={`Accident Register ${data.ar_no}`} author="Uyirly" creator="Uyirly">
       {COPIES.map((copy) => (
-        <Page key={copy.tag} size="A4" style={s.page} wrap>
+        <Page key={copy.tag} size="A4" style={[s.page, letterheadPadding(letterheadFor(profile, 'mlc'))]} wrap>
           <RegisterBody data={data} labels={labels} intimations={intimations}
             hospital={hospital} profile={profile} logo={logo} copy={copy} />
         </Page>
@@ -350,12 +352,13 @@ export function PoliceIntimationPdf({ data, labels, intimation, profile, logo }:
 }) {
   registerPdfFonts()
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'mlc')
   return (
     <Document title={`Police intimation ${data.ar_no}`} author="Uyirly" creator="Uyirly">
-      <Page size="A4" style={s.page} wrap>
-        <PageChrome hospital={hospital}
+      <Page size="A4" style={[s.page, letterheadPadding(paper)]} wrap>
+        <PageChrome paper={paper} hospital={hospital}
           identity={`${data.patient_name ?? '—'}  ·  ${data.ar_no}`} docRef={data.ar_no} />
-        <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+        <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
         <TitleBand
           title="INTIMATION OF A MEDICO-LEGAL CASE TO THE POLICE"
           subtitle="Under section 397 of the Bharatiya Nagarik Suraksha Sanhita, 2023"

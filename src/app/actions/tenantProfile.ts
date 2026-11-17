@@ -6,6 +6,7 @@ import { getActorProfile } from '@/lib/server-utils'
 import { requirePermission } from '@/lib/rbac'
 import { logAudit } from '@/lib/audit'
 import type { TenantProfile } from '@/lib/types'
+import { LETTERHEAD_BOTTOM_MM, LETTERHEAD_DOCS, LETTERHEAD_TOP_MM } from '@/lib/pdf/letterhead'
 
 export async function getTenantProfile(): Promise<TenantProfile | null> {
   const actor = await getActorProfile()
@@ -26,9 +27,21 @@ export async function upsertTenantProfile(
   const actor = await getActorProfile()
   await requirePermission(actor.role, 'settings:write')
 
+  // Letterhead paper (0307): whole mm within what an A4 sheet allows, and only
+  // document keys this version knows about.
+  const wholeMm = (v: unknown, r: { min: number; max: number }) => Number.isInteger(v) && (v as number) >= r.min && (v as number) <= r.max
+  if (input.letterhead_top_mm !== undefined && !wholeMm(input.letterhead_top_mm, LETTERHEAD_TOP_MM))
+    return { success: false, error: `Top space must be a whole number of mm from ${LETTERHEAD_TOP_MM.min} to ${LETTERHEAD_TOP_MM.max}` }
+  if (input.letterhead_bottom_mm !== undefined && !wholeMm(input.letterhead_bottom_mm, LETTERHEAD_BOTTOM_MM))
+    return { success: false, error: `Bottom space must be a whole number of mm from ${LETTERHEAD_BOTTOM_MM.min} to ${LETTERHEAD_BOTTOM_MM.max}` }
+  const known = new Set<string>(LETTERHEAD_DOCS.map((d) => d.key))
+  const row = input.letterhead_plain_docs
+    ? { ...input, letterhead_plain_docs: input.letterhead_plain_docs.filter((k) => known.has(k)) }
+    : input
+
   const supabase = await createClient()
   const { error } = await supabase.from('tenant_profiles').upsert(
-    { ...input, tenant_id: actor.tenant_id, updated_at: new Date().toISOString() },
+    { ...row, tenant_id: actor.tenant_id, updated_at: new Date().toISOString() },
     { onConflict: 'tenant_id' }
   )
   if (error) return { success: false, error: error.message }

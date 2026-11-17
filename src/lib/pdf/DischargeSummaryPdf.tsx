@@ -8,6 +8,7 @@ import {
   A4, DataTable, FactRow, InfoGrid, Letterhead, PageChrome, SectionTitle, Signatures, TextBlock, TitleBand,
   ageSex, fmtDateTime, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { realPhone } from '@/lib/patientPhone'
 
 type DischargeAdmission = Admission & {
@@ -24,6 +25,7 @@ export function DischargeSummaryPdf({ admission: adm, allergies, profile, logo, 
   labour?: LabourContext | null
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'discharge')
   const p = adm.patient
   const discharged = !!adm.discharged_at
   const ref = adm.ip_no ?? shortRef('IP', adm.id)
@@ -35,9 +37,9 @@ export function DischargeSummaryPdf({ admission: adm, allergies, profile, logo, 
     : p?.allergies || null
 
   return (
-    <A4 title={`${died ? 'Death summary' : 'Discharge summary'} ${p?.full_name ?? ''}`}>
-      <PageChrome hospital={hospital} identity={`${p?.full_name ?? ''} · UHID ${p?.uhid ?? ''}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`${died ? 'Death summary' : 'Discharge summary'} ${p?.full_name ?? ''}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${p?.full_name ?? ''} · UHID ${p?.uhid ?? ''}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title={discharged ? dischargeDocumentTitle(type) : 'DISCHARGE SUMMARY (DRAFT)'}
         subtitle={discharged ? null : 'Patient is still admitted — this is not the final summary'}

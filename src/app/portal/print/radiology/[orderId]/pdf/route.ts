@@ -5,6 +5,7 @@ import { RadiologyReportPdf } from '@/lib/pdf/RadiologyReportPdf'
 import { loadImage, loadLogo, shortRef } from '@/lib/pdf/parts'
 import { fileSafe, renderPdfResponse } from '@/lib/pdf/render'
 import type { RadiologyOrder, TenantProfile } from '@/lib/types'
+import { asFileCopy } from '@/lib/pdf/letterhead'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const data = await getPortalRadiologyReport(orderId)
   if (!data) return new Response('Report not found', { status: 404 })
   const order = data.order as RadiologyOrder
-  const profile = data.tenantProfile as TenantProfile | null
+  // The patient's own copy, on a phone or their printer: always the full header.
+  const profile = asFileCopy(data.tenantProfile as TenantProfile | null)
   const patient = (data.patient ?? { full_name: order.patient?.full_name ?? '—', uhid: order.patient?.uhid ?? '—' }) as ReportPatient
   const [logo, image] = await Promise.all([
     loadLogo(profile?.logo_url),

@@ -10,6 +10,7 @@ import path from 'path'
 import { Document, Font, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
 import type { ReactNode } from 'react'
 import type { TenantProfile } from '@/lib/types'
+import type { Paper } from '@/lib/pdf/letterhead'
 
 // ── Fonts ─────────────────────────────────────────────────────────────────────
 // Noto Sans (SIL Open Font License) — the built-in PDF fonts have no ₹ glyph.
@@ -132,7 +133,9 @@ export function loadLogo(url: string | null | undefined): Promise<LogoImage> {
 }
 
 // ── Letterhead ────────────────────────────────────────────────────────────────
-export function Letterhead({ profile, fallbackName, logo }: { profile: TenantProfile | null; fallbackName: string; logo: LogoImage }) {
+export function Letterhead({ profile, fallbackName, logo, paper }: { profile: TenantProfile | null; fallbackName: string; logo: LogoImage; paper?: Paper | null }) {
+  // On the hospital's own letterhead paper the header is already printed.
+  if (paper) return null
   const p = profile
   const address = [p?.address_line1, p?.address_line2, [p?.city, p?.state].filter(Boolean).join(', '), p?.pincode].filter(Boolean).join(', ')
   const contact = [p?.phone1 && `Ph: ${p.phone1}`, p?.phone2, p?.email, p?.website].filter(Boolean).join('  ·  ')
@@ -183,20 +186,22 @@ export function InfoGrid({ items }: { items: Array<[string, string | null | unde
 }
 
 /** Running header (page 2+) and footer with page numbers — fixed on every page. */
-export function PageChrome({ hospital, identity, docRef, landscape }: { hospital: string; identity: string; docRef: string; landscape?: boolean }) {
+export function PageChrome({ hospital, identity, docRef, landscape, paper }: { hospital: string; identity: string; docRef: string; landscape?: boolean; paper?: Paper | null }) {
   return (
     <>
-      <View fixed style={{ position: 'absolute', top: 12, left: 32, right: 32 }} render={({ pageNumber }) => (
+      {/* On letterhead paper the strip sits below the printed header and leaves
+          the hospital's name to it; the patient still identifies every page. */}
+      <View fixed style={{ position: 'absolute', top: paper ? paper.top + 6 : 12, left: 32, right: 32 }} render={({ pageNumber }) => (
         pageNumber > 1 ? (
           <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: C.hair, paddingBottom: 2 }}>
-            <Text style={[s.small, { flex: 1 }]}>{hospital}  ·  {identity}</Text>
+            <Text style={[s.small, { flex: 1 }]}>{paper ? identity : `${hospital}  ·  ${identity}`}</Text>
             <Text style={s.small}>{docRef}</Text>
           </View>
         ) : null
       )} />
       {/* Anchored with `top`, not `bottom`: react-pdf misplaces bottom-anchored fixed
           elements on pages whose content overflows. A4 is 841.89pt tall. */}
-      <View fixed style={{ position: 'absolute', top: (landscape ? 595.28 : 841.89) - 36, left: 32, right: 32, flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: C.hair, paddingTop: 4 }}>
+      <View fixed style={{ position: 'absolute', top: (landscape ? 595.28 : 841.89) - 36 - (paper?.bottom ?? 0), left: 32, right: 32, flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: C.hair, paddingTop: 4 }}>
         <Text style={[s.small, { flex: 1 }]}>Computer-generated document  ·  {docRef}  ·  Powered by Uyirly</Text>
         <Text style={s.small} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
       </View>
@@ -348,8 +353,10 @@ export function Signatures({ hospital, left = 'Patient / Attendant', right }: { 
 // ── Clinical document blocks ─────────────────────────────────────────────────
 /** Section heading bar. Kept with the start of its content by the caller's wrap={false} block. */
 export function SectionTitle({ children, tone = 'muted' }: { children: string; tone?: 'muted' | 'accent' }) {
+  // Never the last thing on a page: it moves over unless the start of its
+  // section fits under it (works where the title follows other content).
   return (
-    <View style={{ backgroundColor: tone === 'accent' ? C.accentFill : C.fill, paddingVertical: 3, paddingHorizontal: 6, marginTop: 10 }}>
+    <View minPresenceAhead={40} style={{ backgroundColor: tone === 'accent' ? C.accentFill : C.fill, paddingVertical: 3, paddingHorizontal: 6, marginTop: 10 }}>
       <Text style={{ fontSize: 8, fontWeight: 700, color: tone === 'accent' ? C.accent : C.muted, letterSpacing: 0.8 }}>{children.toUpperCase()}</Text>
     </View>
   )
@@ -399,36 +406,56 @@ export interface TableColumn { label: string; width?: number; flex?: number; ali
 export interface TableCell { text: string; bold?: boolean; color?: string; note?: string | null }
 
 /** Plain data table: header row + rows that never split across pages. */
-export function DataTable({ columns, rows, empty = 'Nothing recorded' }: { columns: TableColumn[]; rows: Array<Array<string | TableCell>>; empty?: string }) {
+export function DataTable({ columns, rows, empty = 'Nothing recorded', lead }: {
+  columns: TableColumn[]; rows: Array<Array<string | TableCell>>; empty?: string
+  /** A heading drawn above the table that must stay with it (a section title). */
+  lead?: ReactNode
+}) {
   const colStyle = (c: TableColumn) => ({ ...(c.width ? { width: c.width } : { flex: c.flex ?? 1 }), textAlign: c.align ?? 'left', paddingRight: 6 } as const)
+  const rowView = (row: Array<string | TableCell>, i: number) => (
+    <View key={i} wrap={false} style={{ flexDirection: 'row', paddingVertical: 3.5, paddingHorizontal: 6, borderBottomWidth: 0.5, borderBottomColor: C.hair }}>
+      {row.map((cell, j) => {
+        const c = typeof cell === 'string' ? { text: cell } : cell
+        return (
+          <View key={j} style={colStyle(columns[j])}>
+            <Text style={{ fontWeight: c.bold ? 700 : 400, color: c.color ?? C.text, textAlign: columns[j].align ?? 'left' }}>{c.text}</Text>
+            {c.note ? <Text style={[s.small, { textAlign: columns[j].align ?? 'left' }]}>{c.note}</Text> : null}
+          </View>
+        )
+      })}
+    </View>
+  )
+  // A fragment, not a box: the heading and column titles become siblings of
+  // whatever comes before the table, and only then does "keep with next"
+  // (minPresenceAhead) apply — the library never moves the first item of a box.
+  // Gluing them into one unbreakable box instead made it squeeze the box into
+  // the foot of the page, rows overlapping.
   return (
-    <View>
-      <View wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: C.rule, paddingVertical: 3, paddingHorizontal: 6 }}>
+    <>
+      {lead ? <View wrap={false} minPresenceAhead={44}>{lead}</View> : null}
+      <View wrap={false} minPresenceAhead={22} style={{ flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: C.rule, paddingVertical: 3, paddingHorizontal: 6 }}>
         {columns.map((c) => <Text key={c.label} style={[s.label, colStyle(c)]}>{c.label}</Text>)}
       </View>
       {rows.length === 0 ? <Text style={{ paddingHorizontal: 6, paddingVertical: 4, color: C.faint }}>{empty}</Text> : null}
-      {rows.map((row, i) => (
-        <View key={i} wrap={false} style={{ flexDirection: 'row', paddingVertical: 3.5, paddingHorizontal: 6, borderBottomWidth: 0.5, borderBottomColor: C.hair }}>
-          {row.map((cell, j) => {
-            const c = typeof cell === 'string' ? { text: cell } : cell
-            return (
-              <View key={j} style={colStyle(columns[j])}>
-                <Text style={{ fontWeight: c.bold ? 700 : 400, color: c.color ?? C.text, textAlign: columns[j].align ?? 'left' }}>{c.text}</Text>
-                {c.note ? <Text style={[s.small, { textAlign: columns[j].align ?? 'left' }]}>{c.note}</Text> : null}
-              </View>
-            )
-          })}
-        </View>
-      ))}
-    </View>
+      {rows.map((row, i) => rowView(row, i))}
+    </>
   )
 }
 
-export function A4({ title, children, landscape }: { title: string; children: ReactNode; landscape?: boolean }) {
+/**
+ * The page's padding on letterhead paper: the blank space kept for what is
+ * printed there, and below it room for the running strip (page 2+) and the
+ * footer. Every page — the hospital loads letterhead for all of them.
+ */
+export function letterheadPadding(paper?: Paper | null) {
+  return paper ? { paddingTop: paper.top + 22, paddingBottom: paper.bottom + 46 } : {}
+}
+
+export function A4({ title, children, landscape, paper }: { title: string; children: ReactNode; landscape?: boolean; paper?: Paper | null }) {
   registerPdfFonts()
   return (
     <Document title={title} author="Uyirly" creator="Uyirly">
-      <Page size="A4" orientation={landscape ? 'landscape' : 'portrait'} style={s.page} wrap>
+      <Page size="A4" orientation={landscape ? 'landscape' : 'portrait'} style={[s.page, letterheadPadding(paper)]} wrap>
         {children}
       </Page>
     </Document>

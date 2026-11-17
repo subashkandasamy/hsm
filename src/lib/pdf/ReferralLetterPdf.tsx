@@ -4,6 +4,7 @@ import {
   A4, InfoGrid, Letterhead, PageChrome, SectionTitle, TextBlock, TitleBand,
   fmtDate, fmtDateTime, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 
 /**
  * The referral letter.
@@ -72,6 +73,7 @@ export function ReferralLetterPdf({ data, profile, logo }: {
   logo: LogoImage
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'referral')
   const who = [
     data.patient_age != null ? `${data.patient_age} years` : null,
     data.patient_sex ? SEX[data.patient_sex] ?? data.patient_sex : null,
@@ -88,10 +90,10 @@ export function ReferralLetterPdf({ data, profile, logo }: {
     && new Date(data.updated_at).getTime() > new Date(data.first_printed_at).getTime())
 
   return (
-    <A4 title={`Referral letter ${data.patient_name ?? ''}`}>
-      <PageChrome hospital={hospital}
+    <A4 paper={paper} title={`Referral letter ${data.patient_name ?? ''}`}>
+      <PageChrome paper={paper} hospital={hospital}
         identity={`${data.patient_name ?? '—'}  ·  ${data.ref_no}`} docRef={data.ref_no} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand title="REFERRAL LETTER" numberLabel="Ref No" number={data.ref_no}
         date={fmtDate(data.referred_at) ?? ''} />
 

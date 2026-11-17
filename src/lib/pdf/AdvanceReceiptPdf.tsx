@@ -4,19 +4,21 @@ import {
   A4, AmountInWords, DataTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   SectionTitle, fmtDate, fmtDateTime, money, shortRef, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { realPhone } from '@/lib/patientPhone'
 
 const METHOD: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque' }
 
 export function AdvanceReceiptPdf({ data, profile, logo }: { data: AdvanceReceiptData; profile: TenantProfile | null; logo: LogoImage }) {
   const hospital = profile?.name || data.tenantName
+  const paper = letterheadFor(profile, 'receipt')
   const ref = data.admission.ip_no ?? shortRef('IP', data.admission.id)
   const last = data.payments[data.payments.length - 1]
 
   return (
-    <A4 title={`Advance receipt ${data.patient.full_name}`}>
-      <PageChrome hospital={hospital} identity={`${data.patient.full_name} · UHID ${data.patient.uhid}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Advance receipt ${data.patient.full_name}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${data.patient.full_name} · UHID ${data.patient.uhid}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title="ADVANCE PAYMENT RECEIPT"
         subtitle={`${data.payments.length} deposit${data.payments.length === 1 ? '' : 's'} against this admission`}

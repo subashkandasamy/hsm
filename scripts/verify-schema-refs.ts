@@ -114,6 +114,21 @@ function chainAfter(text: string, start: number): string {
   return out.join('\n')
 }
 
+/**
+ * The table a filter's column belongs to. `.order('brand_name', { referencedTable:
+ * 'drug_brands' })` sorts an embedded table, not the one in `.from(...)`; read
+ * as the outer table's column it is a false alarm. A referenced name that is a
+ * table is checked against that table; an alias (`items`, `master.drug_brands`
+ * resolves to its last part) that is not one is skipped — not sure, not reported.
+ */
+function columnsFor(src: string, after: number, table: string): { table: string; cols: Set<string> } | null {
+  const ref = src.slice(after).match(/^\s*,\s*\{\s*(?:referencedTable|foreignTable)\s*:\s*'([a-z_][a-z0-9_.]*)'/)
+  if (!ref) return { table, cols: tables.get(table)! }
+  const name = ref[1].split('.').pop()!
+  const cols = tables.get(name)
+  return cols ? { table: name, cols } : null
+}
+
 let failed = 0
 const checked = { files: 0, refs: 0 }
 
@@ -138,8 +153,10 @@ for (const file of walk(path.join(ROOT, 'src'))) {
     if (!cols) continue                     // view, RPC or unknown — not our business
     const chain = chainAfter(text, m.index! + m[0].length)
     for (const f of chain.matchAll(FILTERS)) {
+      const target = columnsFor(chain, (f.index ?? 0) + f[0].length, table)
+      if (!target) continue
       checked.refs++
-      if (!cols.has(f[1])) report(file, lineAt(m.index! + (f.index ?? 0)), table, f[1], cols)
+      if (!target.cols.has(f[1])) report(file, lineAt(m.index! + (f.index ?? 0)), target.table, f[1], target.cols)
     }
   }
 
@@ -164,8 +181,10 @@ for (const file of walk(path.join(ROOT, 'src'))) {
     const scope = stop > 0 ? after.slice(0, stop) : after
     const uses = new RegExp(String.raw`\b${varName}\s*(?:=\s*${varName}\s*)?\.(?:eq|neq|gt|gte|lt|lte|like|ilike|order|is)\(\s*'([a-z_][a-z0-9_]*)'`, 'g')
     for (const u of scope.matchAll(uses)) {
+      const target = columnsFor(scope, (u.index ?? 0) + u[0].length, table)
+      if (!target) continue
       checked.refs++
-      if (!cols.has(u[1])) report(file, lineAt(d.index! + d[0].length + (u.index ?? 0)), table, u[1], cols)
+      if (!target.cols.has(u[1])) report(file, lineAt(d.index! + d[0].length + (u.index ?? 0)), target.table, u[1], target.cols)
     }
   }
 }

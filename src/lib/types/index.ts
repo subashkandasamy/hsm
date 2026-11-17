@@ -35,6 +35,11 @@ export interface TenantProfile {
   gst_composition?: boolean
   gst_state_code?: string | null
   pharmacy_default_gst_rate?: number
+  // Printing on the hospital's own letterhead paper (0307, lib/pdf/letterhead).
+  letterhead_paper?: boolean
+  letterhead_top_mm?: number
+  letterhead_bottom_mm?: number
+  letterhead_plain_docs?: string[]
   updated_at: string
 }
 
@@ -235,7 +240,8 @@ export interface Admission {
   source_emergency_case_id?: string | null
   is_critical_care?: boolean; on_ventilator?: boolean
   code_status?: string | null; isolation?: string | null
-  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'>
+  /** dob, gender and dob_estimated are loaded by getAdmission (one stay), not the lists. */
+  patient?: Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone' | 'blood_group' | 'allergies'> & Partial<Pick<Patient, 'dob' | 'gender' | 'dob_estimated'>>
   doctor?: Pick<Profile, 'id' | 'full_name'>
   ward?: Pick<Ward, 'id' | 'name'> | null
   bed?: Pick<Bed, 'id' | 'bed_no'> | null

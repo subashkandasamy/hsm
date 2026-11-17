@@ -4,11 +4,13 @@ import {
   A4, InfoGrid, Letterhead, PageChrome, TextBlock, TitleBand,
   fmtDate, fmtDateTime, shortRef, s, C, type LogoImage,
 } from './parts'
+import { letterheadFor } from './letterhead'
 
 export function DeclarationPdf({ admission: adm, declaration, text, profile, logo }: {
   admission: Admission; declaration: IpdDeclaration | null; text: string; profile: TenantProfile | null; logo: LogoImage
 }) {
   const hospital = profile?.name || 'Hospital'
+  const paper = letterheadFor(profile, 'consent')
   const p = adm.patient
   const ref = adm.ip_no ?? shortRef('IP', adm.id)
   const signed = declaration?.status === 'signed'
@@ -17,9 +19,9 @@ export function DeclarationPdf({ admission: adm, declaration, text, profile, log
     ? declaration.signature_data : null
 
   return (
-    <A4 title={`Consent ${p?.full_name ?? ''}`}>
-      <PageChrome hospital={hospital} identity={`${p?.full_name ?? ''} · UHID ${p?.uhid ?? ''}`} docRef={ref} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`Consent ${p?.full_name ?? ''}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${p?.full_name ?? ''} · UHID ${p?.uhid ?? ''}`} docRef={ref} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title="DECLARATION & CONSENT"
         subtitle="Admission, treatment and financial responsibility"

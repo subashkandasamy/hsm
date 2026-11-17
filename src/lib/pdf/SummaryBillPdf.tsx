@@ -6,6 +6,7 @@ import {
   A4, AmountInWords, ChargesTable, InfoGrid, Letterhead, PageChrome, Signatures, TitleBand, TotalsBox,
   ageSex, fmtDate, fmtDateRange, fmtDateTime, money, s, C, type ChargeRow, type ChargeSection, type LogoImage, type TotalLine,
 } from './parts'
+import { letterheadFor } from './letterhead'
 import { realPhone } from '@/lib/patientPhone'
 
 /**
@@ -49,6 +50,7 @@ function daysBetween(from: string, to: string | null): number {
 
 export function SummaryBillPdf({ data, profile, detailed, logo }: { data: CombinedBillData; profile: TenantProfile | null; detailed: boolean; logo: LogoImage }) {
   const hospital = profile?.name || data.tenantName
+  const paper = letterheadFor(profile, 'bill')
   const enc = data.encounter
   const kind = data.kind ?? 'patient'
 
@@ -107,9 +109,9 @@ export function SummaryBillPdf({ data, profile, detailed, logo }: { data: Combin
   if (data.patient.address) info.push(['Address', data.patient.address])
 
   return (
-    <A4 title={`${title} ${data.combinedBillNo}`}>
-      <PageChrome hospital={hospital} identity={`${data.patient.full_name} · UHID ${data.patient.uhid}`} docRef={data.combinedBillNo} />
-      <Letterhead profile={profile} fallbackName={hospital} logo={logo} />
+    <A4 paper={paper} title={`${title} ${data.combinedBillNo}`}>
+      <PageChrome paper={paper} hospital={hospital} identity={`${data.patient.full_name} · UHID ${data.patient.uhid}`} docRef={data.combinedBillNo} />
+      <Letterhead paper={paper} profile={profile} fallbackName={hospital} logo={logo} />
       <TitleBand
         title={title}
         subtitle={detailed ? 'Detailed statement — every charge line' : 'Identical daily charges are combined; ask for the detailed statement for each day'}
