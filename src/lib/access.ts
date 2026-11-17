@@ -36,7 +36,8 @@ export const ACCESS_GROUPS = [
   {
     key: 'lab',
     label: 'Lab work',
-    description: 'Collect samples and enter results. Signing a report stays with the lab staff and doctors.',
+    // lab:process also opens Settings → Analyzers (routeAccess.ts), so the description says so.
+    description: 'Collect samples, enter results, and clear the Analyzers page (unknown machine codes, stuck results). Signing a report stays with the lab staff and doctors.',
     permissions: ['lab:read', 'lab:process', 'barcode:print:sample'],
   },
   {
