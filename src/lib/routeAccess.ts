@@ -42,6 +42,10 @@ export const ROUTE_RULES: RouteRule[] = [
   { prefix: '/billing',                    anyOf: ['billing:read'] },
   { prefix: '/accounts',                   anyOf: ['billing:read'] },
   { prefix: '/billing/discount-approvals', anyOf: ['billing:manage'] },
+  // Whoever takes payments (billing:write), as the menu entry and the table's
+  // RLS (0308) say — not a doctor, who can view bills but not take money. Without
+  // a rule it matched '/billing/[id]', which a doctor or nurse opens.
+  { prefix: '/billing/expenses',           anyOf: ['billing:write'] },
   // One bill, or one patient's combined bill, also opens for whoever can see
   // that patient — their profile's Bills tab lists exactly these.
   { prefix: '/billing/[id]',               anyOf: ['billing:read', 'patients:read'] },
@@ -67,7 +71,7 @@ export const ROUTE_RULES: RouteRule[] = [
 ]
 
 /** Billing sub-pages that are not a single bill's id. */
-const BILLING_PAGES = new Set(['estimates', 'cash-book', 'discount-approvals', 'combined', 'advance-receipt'])
+const BILLING_PAGES = new Set(['estimates', 'cash-book', 'discount-approvals', 'combined', 'advance-receipt', 'expenses'])
 
 /** The rule for an address, or null when any signed-in member of staff may open it. */
 export function ruleFor(pathname: string): RouteRule | null {

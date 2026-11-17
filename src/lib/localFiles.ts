@@ -5,9 +5,9 @@ import { chooseFileRoute, type ConnectorReach } from '@/lib/radiology/viewerRout
 /**
  * Uploaded files kept on the hospital's own computer (0275).
  *
- * Three kinds move there when an admin has switched it on for a computer:
- * patient-profile documents, IPD declaration uploads and radiology report
- * images. The upload itself is unchanged — it goes to the cloud — and the file
+ * Four kinds move there when an admin has switched it on for a computer:
+ * patient-profile documents, IPD declaration uploads, radiology report
+ * images and expense bills (0308). The upload itself is unchanged — it goes to the cloud — and the file
  * is noted here. The computer collects it on its next heartbeat, confirms it
  * holds an identical copy, and only then is the cloud copy deleted
  * (/api/device/files). Until then everything below answers "cloud", and the
@@ -17,7 +17,7 @@ import { chooseFileRoute, type ConnectorReach } from '@/lib/radiology/viewerRout
  * server-only.
  */
 
-export type LocalFileKind = 'patient_document' | 'ipd_declaration' | 'radiology_image'
+export type LocalFileKind = 'patient_document' | 'ipd_declaration' | 'radiology_image' | 'expense_bill'
 export type LocalBucket = 'documents' | 'radiology'
 
 /** What a viewer link to a kept file signs. Distinct from a study id, so a

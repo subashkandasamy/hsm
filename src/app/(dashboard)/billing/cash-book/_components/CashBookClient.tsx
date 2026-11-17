@@ -28,17 +28,18 @@ function bucketKey(method: string) {
   return null
 }
 function summarize(movs: CashMovement[]): CashSummary {
-  const s: CashSummary = { cash: 0, card: 0, upi: 0, bank: 0, insurance: 0, refunds: 0, net: 0, count: movs.length }
+  const s: CashSummary = { cash: 0, card: 0, upi: 0, bank: 0, insurance: 0, refunds: 0, expenses: 0, net: 0, count: movs.length }
   for (const m of movs) {
     const k = bucketKey(m.method) as keyof CashSummary | null
     if (k && k in s) (s[k] as number) += m.amount
     if (m.kind === 'refund') s.refunds += Math.abs(m.amount)
+    if (m.kind === 'expense') s.expenses += Math.abs(m.amount)
   }
   s.net = s.cash + s.card + s.upi + s.bank + s.insurance
   return s
 }
 const METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank', insurance: 'Insurance' }
-const KIND_LABEL: Record<string, string> = { payment: 'Bill Payment', advance: 'Advance', refund: 'Refund' }
+const KIND_LABEL: Record<string, string> = { payment: 'Bill Payment', advance: 'Advance', refund: 'Refund', expense: 'Expense' }
 
 interface Props {
   today: string
@@ -106,7 +107,10 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
     // tiles did not add up on a day the TPA paid (found by the e2e cash-book check).
     { label: 'Insurance', value: shownSummary.insurance, color: '#0891B2' },
     { label: 'Refunds Out', value: shownSummary.refunds, color: '#F59E0B' },
-    { label: 'Net Collected', value: shownSummary.net, color: '#0F172A' },
+    // Expenses come out of the method they were paid by, like refunds, so the
+    // tiles above still add up to Net; collected before expenses is Net + this.
+    { label: 'Expenses Out', value: shownSummary.expenses, color: '#DC2626' },
+    { label: 'Net After Expenses', value: shownSummary.net, color: '#0F172A' },
   ]
 
   return (
@@ -150,7 +154,7 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
             {loadingDay && <Loader2 className="w-4 h-4 animate-spin mb-2" style={{ color: '#94A3B8' }} />}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {summaryCards.map((c) => (
               <GlassCard key={c.label} className="p-3">
                 <p className="text-xs" style={{ color: '#94A3B8' }}>{c.label}</p>
@@ -189,12 +193,13 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
           <GlassCard className="p-0 overflow-hidden">
             <p className="text-xs font-semibold uppercase tracking-wide px-4 py-2.5" style={{ color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>Movements ({visibleMovements.length})</p>
             {visibleMovements.length === 0 ? (
-              <p className="text-sm text-center py-8" style={{ color: '#94A3B8' }}>No collections on this day</p>
+              <p className="text-sm text-center py-8" style={{ color: '#94A3B8' }}>No collections or expenses on this day</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead><tr style={{ color: '#94A3B8' }}>
-                    {['Time', 'Type', 'Patient', 'Reference', 'Method', 'Cashier', 'Amount'].map((h, i) => (
+                    {/* An expense row: "Patient / paid to" holds who was paid, Reference its category. */}
+                    {['Time', 'Type', 'Patient / paid to', 'Reference', 'Method', 'Cashier', 'Amount'].map((h, i) => (
                       <th key={h} style={{ padding: '8px 14px', textAlign: i === 6 ? 'right' : 'left', fontSize: '11px', fontWeight: 600 }}>{h}</th>
                     ))}
                   </tr></thead>
@@ -204,7 +209,7 @@ export default function CashBookClient({ today, initialDayBook, initialShift, in
                         <td style={{ padding: '8px 14px', color: '#94A3B8', whiteSpace: 'nowrap' }}>{new Date(m.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={{ padding: '8px 14px', color: '#64748B' }}>{KIND_LABEL[m.kind]}</td>
                         <td style={{ padding: '8px 14px', color: '#0F172A' }}>{m.patientName}</td>
-                        <td style={{ padding: '8px 14px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>{m.reference}</td>
+                        <td style={{ padding: '8px 14px', color: '#94A3B8', fontFamily: m.kind === 'expense' ? undefined : 'monospace', fontSize: '12px' }}>{m.reference}</td>
                         <td style={{ padding: '8px 14px', color: '#64748B' }}>{METHOD_LABEL[m.method] ?? m.method}</td>
                         <td style={{ padding: '8px 14px', color: '#64748B' }}>{m.cashierName}</td>
                         <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, color: m.amount < 0 ? '#DC2626' : '#0F172A' }}>{fmt(m.amount)}</td>

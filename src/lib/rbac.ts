@@ -206,6 +206,8 @@ export const NAV_CONFIG: NavGroup[] = [
       { label: 'Billing',    href: '/billing',    icon: 'Receipt',    requiredPermission: 'billing:read' },
       { label: 'Estimates',  href: '/billing/estimates', icon: 'FileText', requiredPermission: 'billing:read' },
       { label: 'Cash Book',  href: '/billing/cash-book', icon: 'BookOpen',  requiredPermission: 'billing:read' },
+      // Comes with billing access (0308): whoever takes money in can record money paid out.
+      { label: 'Expenses',   href: '/billing/expenses', icon: 'Wallet',     requiredPermission: 'billing:write' },
       { label: 'Accounts',   href: '/accounts',   icon: 'Calculator', requiredPermission: 'billing:read' },
       { label: 'Discount Approvals', href: '/billing/discount-approvals', icon: 'Percent', requiredPermission: 'billing:manage' },
       { label: 'Insurance',  href: '/insurance',  icon: 'ShieldPlus', requiredPermission: 'insurance:read', moduleKey: 'insurance' },

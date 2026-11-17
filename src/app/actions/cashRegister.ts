@@ -20,10 +20,15 @@ function bucketKey(method: string): 'cash' | 'card' | 'upi' | 'bank' | 'insuranc
   return null
 }
 
-/** Fetches all money movements (bill payments, advances, refunds) in a window. */
+/**
+ * Fetches all money movements (bill payments, advances, refunds) in a window.
+ * `withExpenses` adds what was paid out on expenses (0308) — for the Cash Book
+ * and the shift, whose cash must match the drawer; never for the Accounts
+ * register or Tally, which are income.
+ */
 async function fetchMovements(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  opts: { from: string; to: string; cashierId?: string | null },
+  opts: { from: string; to: string; cashierId?: string | null; withExpenses?: boolean },
 ): Promise<CashMovement[]> {
   const { from, to, cashierId } = opts
   const movements: CashMovement[] = []
@@ -121,16 +126,43 @@ async function fetchMovements(
     })
   }
 
+  // 5. Expenses paid out (money out — negative), by who recorded them and when.
+  // A cancelled expense never left the drawer.
+  if (opts.withExpenses) {
+    let eq = supabase
+      .from('expenses')
+      .select('id, amount, method, category, paid_to, created_at, created_by, recorder:profiles!expenses_created_by_fkey(full_name)')
+      .gte('created_at', from).lt('created_at', to)
+      .is('cancelled_at', null)
+    if (cashierId) eq = eq.eq('created_by', cashierId)
+    const { data: exps } = await eq
+    for (const e of exps ?? []) {
+      const recorder = e.recorder as unknown as { full_name: string } | null
+      movements.push({
+        id: e.id as string,
+        time: e.created_at as string,
+        kind: 'expense',
+        reference: e.category as string,
+        patientName: (e.paid_to as string | null) || '—',
+        method: e.method as string,
+        cashierId: (e.created_by as string | null) ?? null,
+        cashierName: recorder?.full_name ?? 'Unknown',
+        amount: -(Number(e.amount)),
+      })
+    }
+  }
+
   movements.sort((x, y) => x.time.localeCompare(y.time))
   return movements
 }
 
 function summarize(movs: CashMovement[]): CashSummary {
-  const s: CashSummary = { cash: 0, card: 0, upi: 0, bank: 0, insurance: 0, refunds: 0, net: 0, count: movs.length }
+  const s: CashSummary = { cash: 0, card: 0, upi: 0, bank: 0, insurance: 0, refunds: 0, expenses: 0, net: 0, count: movs.length }
   for (const m of movs) {
     const k = bucketKey(m.method)
     if (k) s[k] += m.amount
     if (m.kind === 'refund') s.refunds += Math.abs(m.amount)
+    if (m.kind === 'expense') s.expenses += Math.abs(m.amount)
   }
   s.net = s.cash + s.card + s.upi + s.bank + s.insurance
   return s
@@ -165,7 +197,7 @@ export async function getDayBook(params: { date: string; cashierId?: string | nu
   await requirePermission(actor.role, 'billing:read')
   const supabase = await createClient()
   const { from, to } = dayBounds(params.date)
-  const movements = await fetchMovements(supabase, { from, to, cashierId: params.cashierId ?? null })
+  const movements = await fetchMovements(supabase, { from, to, cashierId: params.cashierId ?? null, withExpenses: true })
 
   const byCashier = new Map<string, { name: string; cash: number; card: number; upi: number; bank: number; total: number }>()
   for (const m of movements) {
@@ -207,7 +239,8 @@ export async function getShiftSummary(): Promise<ShiftSummary> {
   const fromTime = (last?.to_time as string | null) ?? startOfToday
   const toTime = now.toISOString()
 
-  const movements = await fetchMovements(supabase, { from: fromTime, to: toTime, cashierId: actor.id })
+  // Cash paid out on expenses this shift came out of the drawer too.
+  const movements = await fetchMovements(supabase, { from: fromTime, to: toTime, cashierId: actor.id, withExpenses: true })
   const s = summarize(movements)
   return {
     fromTime,

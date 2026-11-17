@@ -862,18 +862,20 @@ export interface ChargePreviewLine {
 export interface CashMovement {
   id: string
   time: string
-  kind: 'payment' | 'advance' | 'refund'
+  /** 'expense': money the hospital paid out (0308) — Cash Book and shift only, never the income register. */
+  kind: 'payment' | 'advance' | 'refund' | 'expense'
   reference: string
   patientName: string
   method: string
   cashierId: string | null
   cashierName: string
-  amount: number   // signed — refunds are negative (money out)
+  amount: number   // signed — refunds and expenses are negative (money out)
 }
 
 export interface CashSummary {
   cash: number; card: number; upi: number; bank: number; insurance: number
-  refunds: number  // total paid out (positive)
+  refunds: number  // total refunded (positive)
+  expenses: number // total spent on expenses (positive)
   net: number
   count: number
 }

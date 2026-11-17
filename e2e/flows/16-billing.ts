@@ -202,11 +202,11 @@ export default {
       await go(page, '/billing/cash-book'); const cb = await text(page)
       // A tile can be negative ("-₹50.00": more refunded than taken that way today).
       const n = (re: RegExp) => { const m = cb.match(new RegExp(re.source.replace('₹', '(-?)₹'))); return m ? Number(m[2].replace(/,/g, '')) * (m[1] ? -1 : 1) : 0 }
-      const cash = n(/Cash ₹([\d,]+\.\d\d)/), card = n(/Card ₹([\d,]+\.\d\d)/), upi = n(/UPI ₹([\d,]+\.\d\d)/), bank = n(/Bank ₹([\d,]+\.\d\d)/), ins = n(/Insurance ₹([\d,]+\.\d\d)/), out = n(/Refunds Out ₹([\d,]+\.\d\d)/), net = n(/Net Collected ₹([\d,]+\.\d\d)/)
+      const cash = n(/Cash ₹([\d,]+\.\d\d)/), card = n(/Card ₹([\d,]+\.\d\d)/), upi = n(/UPI ₹([\d,]+\.\d\d)/), bank = n(/Bank ₹([\d,]+\.\d\d)/), ins = n(/Insurance ₹([\d,]+\.\d\d)/), out = n(/Refunds Out ₹([\d,]+\.\d\d)/), exp = n(/Expenses Out ₹([\d,]+\.\d\d)/), net = n(/Net After Expenses ₹([\d,]+\.\d\d)/)
       r.check({ id: 'BL-50', role: A, screen: '/billing/cash-book', title: 'Cash book: cash + card + UPI + bank + insurance = net collected (each already net of its refunds)', ok: Math.abs(cash + card + upi + bank + ins - net) < 1, detail: `${cash}+${card}+${upi}+${bank}+${ins} vs ${net} (refunds out ${out})` })
       await go(page, '/accounts'); const ac = await text(page)
       const col = Number((ac.match(/COLLECTED ₹([\d,]+\.\d\d)/)?.[1] ?? '0').replace(/,/g, ''))
-      r.check({ id: 'BL-51', role: A, screen: '/accounts', title: 'Day-end "collected" matches the cash book', ok: Math.abs(col - (cash + card + upi + bank)) < 1 || Math.abs(col - net) < 1, detail: `accounts ${col} · cash book ${net}` })
+      r.check({ id: 'BL-51', role: A, screen: '/accounts', title: 'Day-end "collected" matches the cash book (expenses added back: Accounts is income)', ok: Math.abs(col - (cash + card + upi + bank + exp)) < 1 || Math.abs(col - (net + exp)) < 1, detail: `accounts ${col} · cash book ${net} + expenses ${exp}` })
       await openBill(page, r.patient('murugan').full_name, /Radiology/)
       await page.getByRole('button', { name: 'Refund' }).click(); await wait(page, 1500)
       const amt = page.locator('label', { hasText: /^Refund amount/ }).locator('xpath=..').locator('input').first()
