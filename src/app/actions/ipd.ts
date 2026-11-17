@@ -732,7 +732,7 @@ export async function getAdmission(id: string): Promise<Admission | null> {
     .from('admissions')
     .select(`
       *,
-      patient:patients(id, full_name, uhid, phone, blood_group, allergies, dob, gender),
+      patient:patients(id, full_name, uhid, phone, blood_group, allergies, dob, dob_estimated, gender),
       doctor:profiles!admissions_admitting_doctor_id_fkey(id, full_name),
       ward:wards(id, name),
       bed:beds(id, bed_no)

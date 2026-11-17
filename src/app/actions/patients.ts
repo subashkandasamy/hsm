@@ -8,6 +8,7 @@ import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientL
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { PatientCreateSchema, PatientUpdateSchema } from '@/lib/schemas'
 import { istToday } from '@/lib/istDate'
+import { estimatedDob } from '@/lib/patientAge'
 import { pageWindow, searchTerm, isNameSearch, type Paged } from '@/lib/paging'
 import type { Patient } from '@/lib/types'
 
@@ -30,15 +31,11 @@ export async function createPatient(
 
   const data = parsed.data
 
-  // An age given at the counter becomes a date of birth a year wide, flagged so
-  // nothing later reads it as an exact birthday.
-  let dob = data.dob || null
-  let dobEstimated = data.dob_estimated ?? false
-  if (!dob && data.age_years != null) {
-    const [y, m, d] = istToday().split('-').map(Number)
-    dob = `${y - data.age_years}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    dobEstimated = true
-  }
+  // An age given at the counter becomes an estimated date of birth (today, that
+  // many years and months back), flagged so nothing shows it as a real birthday.
+  const typedAge = !data.dob && (data.age_years != null || data.age_months != null)
+  const dob = typedAge ? estimatedDob(data.age_years ?? 0, data.age_months ?? 0, istToday()) : (data.dob || null)
+  const dobEstimated = typedAge
 
   // Aadhaar is mandatory unless the front desk explicitly registers without it
   // (emergency / patient didn't carry it).
@@ -124,11 +121,27 @@ export async function updatePatient(
   const parsed = PatientUpdateSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
+  // Age and months are not columns: they become an estimated date of birth. A
+  // date typed in is the real one, so it is no longer an estimate. Neither sent:
+  // the date of birth is left as it is.
+  const { age_years, age_months, ...fields } = parsed.data
+  delete fields.no_aadhaar      // a registration-only switch
+  delete fields.dob_estimated   // decided here, not by the form
+  const update: Record<string, unknown> = { ...fields }
+  if (age_years != null || age_months != null) {
+    if ((age_years ?? 0) < 2 && age_months == null) return { success: false, error: 'For a child under 2, enter the months too (or the date of birth)' }
+    update.dob = estimatedDob(age_years ?? 0, age_months ?? 0, istToday())
+    update.dob_estimated = true
+  } else if ('dob' in fields) {
+    if (!fields.dob) return { success: false, error: 'Enter the date of birth, or the age in years' }
+    update.dob_estimated = false
+  }
+
   const supabase = await createClient()
-  const { error } = await supabase.from('patients').update(parsed.data).eq('id', id)
+  const { error } = await supabase.from('patients').update(update).eq('id', id)
   if (error) return { success: false, error: error.message }
 
-  await logAudit(actor.id, 'update', 'patient', id, parsed.data as Record<string, unknown>)
+  await logAudit(actor.id, 'update', 'patient', id, update)
   return { success: true }
 }
 

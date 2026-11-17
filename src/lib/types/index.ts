@@ -117,6 +117,8 @@ export interface AuditLog {
 
 export interface Patient {
   id: string; uhid: string; full_name: string; dob: string | null
+  /** The date of birth was worked out from an age — never show it as a real birthday. */
+  dob_estimated?: boolean | null
   gender: 'male' | 'female' | 'other' | null; phone: string; email: string | null
   address: string | null; blood_group: string | null; allergies: string | null
   emergency_contact_name: string | null; emergency_contact_phone: string | null

@@ -76,6 +76,8 @@ const PatientFields = z.object({
   // Either an exact date of birth or an age in years satisfies the age rule.
   dob: z.string().nullable().optional(),
   age_years: z.coerce.number().int().min(0, 'Age cannot be negative').max(120, 'Enter an age up to 120').nullable().optional(),
+  /** With age_years, for a child: a baby's age in years alone could be a year out. */
+  age_months: z.coerce.number().int().min(0, 'Months are 0 to 11').max(11, 'Months are 0 to 11').nullable().optional(),
   dob_estimated: z.boolean().optional(),
   gender: z.enum(['male', 'female', 'other'], { message: 'Select the gender' }),
   phone: z.string()
@@ -119,8 +121,11 @@ const PatientFields = z.object({
  * cannot drift — and the rule is added only to the create side, because
  * `.partial()` refuses to run on a schema that already carries a refinement.
  */
-export const PatientCreateSchema = PatientFields.refine((d) => !!d.dob || d.age_years != null, {
+export const PatientCreateSchema = PatientFields.refine((d) => !!d.dob || d.age_years != null || d.age_months != null, {
   message: 'Enter the date of birth, or the age in years',
+  path: ['dob'],
+}).refine((d) => !!d.dob || d.age_months != null || (d.age_years ?? 0) >= 2, {
+  message: 'For a child under 2, enter the months too (or the date of birth)',
   path: ['dob'],
 })
 export const PatientUpdateSchema = PatientFields.partial()

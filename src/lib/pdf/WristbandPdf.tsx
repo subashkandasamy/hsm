@@ -13,7 +13,7 @@ const QR_MM = 19
 
 export interface WristbandData {
   hospital: string
-  patient: { full_name: string; uhid: string; dob: string | null; gender: string | null; blood_group: string | null }
+  patient: { full_name: string; uhid: string; dob: string | null; dob_estimated?: boolean | null; gender: string | null; blood_group: string | null }
   ipNo: string
   admittedAt: string
   ward: string | null
@@ -25,7 +25,8 @@ export interface WristbandData {
 export function WristbandPdf({ data }: { data: WristbandData }) {
   registerPdfFonts()
   const p = data.patient
-  const dob = p.dob ? `DOB ${fmtDate(p.dob)}` : null
+  // An estimated date of birth (worked out from an age) is not printed as one.
+  const dob = p.dob && !p.dob_estimated ? `DOB ${fmtDate(p.dob)}` : null
   const idLine = [dob, ageSex(p.dob, p.gender)].filter(Boolean).join('  ·  ')
   // Never print a cut-off allergy list (a hidden allergy is worse than none shown):
   // if it doesn't fit the band, point staff to the chart instead.

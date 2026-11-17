@@ -27,6 +27,7 @@ import type {
 } from '@/lib/types'
 import { hasPermission } from '@/lib/rbac'
 import { istToday } from '@/lib/istDate'
+import { approxAgeText } from '@/lib/patientAge'
 import { dischargeTypeLabel } from '@/lib/dischargeType'
 
 function computeAge(dob: string | null): string {
@@ -734,7 +735,8 @@ function InfoTab({ patient }: { patient: Patient }) {
     { label: 'Full Name', value: patient.full_name },
     { label: 'UHID', value: patient.uhid },
     ...(patient.legacy_uhid ? [{ label: 'Old number (previous software)', value: patient.legacy_uhid }] : []),
-    { label: 'Date of Birth', value: patient.dob },
+    // An estimated date was worked out from an age — it is not their birthday.
+    { label: 'Date of Birth', value: patient.dob && patient.dob_estimated ? `Not known — ${approxAgeText(patient.dob, istToday())} (from the age given)` : patient.dob },
     { label: 'Gender', value: patient.gender },
     { label: 'Phone', value: patient.phone },
     { label: 'Email', value: patient.email },
@@ -755,7 +757,7 @@ function InfoTab({ patient }: { patient: Patient }) {
               {label}
             </dt>
             <dd className="text-sm" style={{ color: value ? '#0F172A' : '#CBD5E1' }}>
-              {label === 'Date of Birth' && value ? <DateText date={value} /> : (value || '—')}
+              {label === 'Date of Birth' && value && !patient.dob_estimated ? <DateText date={value} /> : (value || '—')}
             </dd>
           </div>
         ))}

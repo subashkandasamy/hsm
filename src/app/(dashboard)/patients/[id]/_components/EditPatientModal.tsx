@@ -9,6 +9,9 @@ import Textarea from '@/components/ui/Textarea'
 import GlassCard from '@/components/ui/GlassCard'
 import { updatePatient } from '@/app/actions/patients'
 import type { Patient } from '@/lib/types'
+import { istToday } from '@/lib/istDate'
+import { dobAgeError } from '@/lib/patientAge'
+import DobAgeFields, { dobAgeFrom, dobAgePayload } from '../../_components/DobAgeFields'
 
 interface Props {
   patient: Patient
@@ -26,7 +29,6 @@ function barePhone(phone: string) {
 export default function EditPatientModal({ patient, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
     full_name:               patient.full_name ?? '',
-    dob:                     patient.dob ?? '',
     gender:                  patient.gender ?? '',
     phone:                   barePhone(patient.phone ?? ''),
     email:                   patient.email ?? '',
@@ -42,6 +44,11 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
     emergency_contact_phone: patient.emergency_contact_phone ?? '',
     aadhaar_no:              patient.aadhaar_no ?? '',
   })
+  // The date of birth or age as first shown; sent only if changed, so saving
+  // other details never turns an estimate into a "real" birthday.
+  const [savedDobAge] = useState(() => dobAgeFrom(patient))
+  const [dobAge, setDobAge] = useState(savedDobAge)
+  const dobAgeChanged = JSON.stringify(dobAge) !== JSON.stringify(savedDobAge)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -60,6 +67,8 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
       newErrors.phone = 'Must be a valid 10-digit mobile number starting with 6–9'
     if (form.aadhaar_no && !/^\d{12}$/.test(form.aadhaar_no))
       newErrors.aadhaar_no = 'Aadhaar must be exactly 12 digits'
+    const ageErr = dobAgeChanged ? dobAgeError(dobAge, istToday()) : null
+    if (ageErr) newErrors.age = ageErr
     if (Object.keys(newErrors).length) { setErrors(newErrors); return }
 
     setLoading(true)
@@ -68,7 +77,7 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
     const result = await updatePatient(patient.id, {
       full_name:               form.full_name,
       phone:                   `+91${form.phone}`,
-      dob:                     form.dob || null,
+      ...(dobAgeChanged ? dobAgePayload(dobAge) : {}),
       gender:                  form.gender || null,
       email:                   form.email || null,
       address:                 form.address || null,
@@ -132,10 +141,10 @@ export default function EditPatientModal({ patient, onClose, onSuccess }: Props)
           </FormField>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <FormField label="Date of Birth" htmlFor="dob">
-            <Input id="dob" type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} />
-          </FormField>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <DobAgeFields value={dobAge} error={errors.age}
+            savedEstimate={patient.dob_estimated && !dobAgeChanged ? patient.dob : null}
+            onChange={(v) => { setDobAge(v); setErrors((e) => { const n = { ...e }; delete n.age; return n }); setError(null) }} />
           <FormField label="Gender" htmlFor="gender">
             <Select id="gender" value={form.gender} onChange={(e) => set('gender', e.target.value)}>
               <option value="">Select…</option>

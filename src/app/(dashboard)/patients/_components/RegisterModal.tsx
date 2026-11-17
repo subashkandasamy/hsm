@@ -8,6 +8,9 @@ import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
 import GlassCard from '@/components/ui/GlassCard'
 import { createPatient } from '@/app/actions/patients'
+import { istToday } from '@/lib/istDate'
+import { dobAgeError } from '@/lib/patientAge'
+import DobAgeFields, { dobAgePayload, type DobAge } from './DobAgeFields'
 import { useMessagingEnabled } from '@/context/MessagingContext'
 import type { Patient } from '@/lib/types'
 import { AlertTriangle, UserCheck } from 'lucide-react'
@@ -19,11 +22,12 @@ interface Props {
 }
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+const NO_DOB_AGE: DobAge = { dob: '', years: '', months: '' }
 
 export default function RegisterModal({ open, onClose, onSuccess }: Props) {
   const messagingEnabled = useMessagingEnabled()
   const [form, setForm] = useState({
-    full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
+    full_name: '', gender: '', phone: '', email: '',
     address: '', state: '', district: '', pincode: '',
     relation_type: '', relation_name: '',
     blood_group: '', allergies: '',
@@ -33,6 +37,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     aadhaar_no: '',
     no_aadhaar: false,
   })
+  const [dobAge, setDobAge] = useState<DobAge>(NO_DOB_AGE)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
@@ -47,16 +52,8 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     setConfirmed(false)
   }
 
-  /** A date of birth gives an exact age; an age gives a date good to the year. */
-  function setDob(value: string) {
-    const years = value ? Math.floor((Date.now() - Date.parse(`${value}T00:00:00`)) / 31_557_600_000) : null
-    setForm((f) => ({ ...f, dob: value, age: years != null && years >= 0 ? String(years) : '' }))
-    setErrors((e) => { const n = { ...e }; delete n.age; return n })
-    setApiError(null); setDuplicate(null); setConfirmed(false)
-  }
-
-  function setAge(value: string) {
-    setForm((f) => ({ ...f, age: value, dob: '' }))
+  function changeDobAge(v: DobAge) {
+    setDobAge(v)
     setErrors((e) => { const n = { ...e }; delete n.age; return n })
     setApiError(null); setDuplicate(null); setConfirmed(false)
   }
@@ -80,9 +77,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     e.preventDefault()
 
     const genderErr = form.gender ? null : 'Select the gender'
-    const ageErr = form.dob || form.age.trim()
-      ? (!form.dob && !/^\d{1,3}$/.test(form.age.trim()) ? 'Enter the age in whole years' : null)
-      : 'Enter the date of birth, or the age in years'
+    const ageErr = dobAgeError(dobAge, istToday())
     const phoneErr = validatePhone(form.phone)
     // Aadhaar mandatory unless the "no Aadhaar (emergency)" box is ticked.
     const aadhaarErr = form.no_aadhaar
@@ -105,8 +100,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     const input: Record<string, unknown> = {
       full_name: form.full_name,
       phone: `+91${form.phone}`,
-      dob: form.dob || null,
-      age_years: !form.dob && form.age.trim() ? Number(form.age.trim()) : null,
+      ...dobAgePayload(dobAge),
       gender: form.gender || null,
       email: form.email || null,
       address: form.address || null,
@@ -139,8 +133,9 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
     }
 
     onSuccess(result.patient)
+    setDobAge(NO_DOB_AGE)
     setForm({
-      full_name: '', dob: '', age: '', gender: '', phone: '', email: '',
+      full_name: '', gender: '', phone: '', email: '',
       address: '', state: '', district: '', pincode: '',
     relation_type: '', relation_name: '',
     blood_group: '', allergies: '',
@@ -224,16 +219,7 @@ export default function RegisterModal({ open, onClose, onSuccess }: Props) {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <FormField label="Date of Birth" htmlFor="dob"
-            hint={!form.dob && form.age.trim() ? 'kept as a year, from the age' : 'exact date, if known'}>
-            <Input id="dob" type="date" max={new Date().toISOString().slice(0, 10)}
-              value={form.dob} onChange={(e) => setDob(e.target.value)} />
-          </FormField>
-          <FormField label="Age (years)" htmlFor="age" required error={errors.age}
-            hint={form.dob ? 'from the date of birth' : undefined}>
-            <Input id="age" type="number" inputMode="numeric" min={0} max={120} placeholder="e.g. 32"
-              value={form.age} onChange={(e) => setAge(e.target.value)} />
-          </FormField>
+          <DobAgeFields value={dobAge} onChange={changeDobAge} error={errors.age} />
           <FormField label="Gender" htmlFor="gender" required error={errors.gender}>
             <Select id="gender" value={form.gender} onChange={(e) => set('gender', e.target.value)}>
               <option value="">Select…</option>

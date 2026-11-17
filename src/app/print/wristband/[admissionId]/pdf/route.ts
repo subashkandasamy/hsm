@@ -14,7 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ admi
   const { admissionId } = await params
   const [adm, profile] = await Promise.all([getAdmission(admissionId), getTenantProfile()])
   if (!adm || !adm.patient) return new Response('Admission not found', { status: 404 })
-  const patient = adm.patient as Pick<Patient, 'full_name' | 'uhid' | 'dob' | 'gender' | 'blood_group' | 'allergies'>
+  const patient = adm.patient as Pick<Patient, 'full_name' | 'uhid' | 'dob' | 'dob_estimated' | 'gender' | 'blood_group' | 'allergies'>
   const recorded = await listAllergies(adm.patient_id)
   // Structured allergy list first; fall back to the free-text field on the patient.
   const allergies = recorded.length ? recorded.map((a) => a.allergen) : patient.allergies?.trim() ? [patient.allergies.trim()] : []
@@ -22,7 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ admi
   return renderPdfResponse(request, createElement(WristbandPdf, {
     data: {
       hospital: profile?.name ?? '',
-      patient: { full_name: patient.full_name, uhid: patient.uhid, dob: patient.dob ?? null, gender: patient.gender ?? null, blood_group: patient.blood_group ?? null },
+      patient: { full_name: patient.full_name, uhid: patient.uhid, dob: patient.dob ?? null, dob_estimated: patient.dob_estimated ?? null, gender: patient.gender ?? null, blood_group: patient.blood_group ?? null },
       ipNo: adm.ip_no ?? '',
       admittedAt: adm.admitted_at,
       ward: adm.ward?.name ?? null,
