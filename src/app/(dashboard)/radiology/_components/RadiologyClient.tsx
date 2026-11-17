@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, RefreshCw, Scan, Settings } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
@@ -10,7 +10,11 @@ import DateText from '@/components/ui/DateText'
 import Money from '@/components/ui/Money'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { markPerformed, verifyRadiologyOrder, listRadiologyOrders, listRadiologyCatalog } from '@/app/actions/radiology'
+import { markPerformed, verifyRadiologyOrder, loadRadiologyList, type RadiologyTab } from '@/app/actions/radiology'
+import Pager from '@/components/ui/Pager'
+import ListSearch from '@/components/ui/ListSearch'
+import { writeListUrl, rememberedSize, rememberSize, useDebounced } from '@/lib/listUrl'
+import { DEFAULT_PAGE_SIZE, type Paged } from '@/lib/paging'
 import { startFormF } from '@/app/actions/pcpndt'
 import type { RadiologyOrder, RadiologyCatalog } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
@@ -33,25 +37,36 @@ const MODALITY_COLORS: Record<string, { bg: string; color: string }> = {
 }
 
 interface Props {
-  pending: RadiologyOrder[]
-  performed: RadiologyOrder[]
-  reported: RadiologyOrder[]
+  initial: Paged<RadiologyOrder>
+  initialTab: RadiologyTab
+  initialQuery: string
+  initialFrom: string
+  initialTo: string
+  counts: Record<RadiologyTab, number>
   catalog: RadiologyCatalog[]
 }
 
-type TabKey = 'pending' | 'performed' | 'reported'
+type TabKey = RadiologyTab
+const LIST = 'radiology'
 
-export default function RadiologyClient({ pending: initP, performed: initPf, reported: initR, catalog: initCatalog }: Props) {
+export default function RadiologyClient({ initial, initialTab, initialQuery, initialFrom, initialTo, counts: initCounts, catalog: initCatalog }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'radiology:order', profile?.granted_permissions)
   const canProcess = !!role && hasPermission(role, 'radiology:process', profile?.granted_permissions)
   const canVerify  = !!role && hasPermission(role, 'radiology:verify', profile?.granted_permissions)
   const isAdmin    = !!role && hasPermission(role, 'radiology:manage', profile?.granted_permissions)
-  const [tab, setTab] = useState<TabKey>('pending')
-  const [pending, setPending] = useState<RadiologyOrder[]>(initP)
-  const [performed, setPerformed] = useState<RadiologyOrder[]>(initPf)
-  const [reported, setReported] = useState<RadiologyOrder[]>(initR)
+  const [tab, setTabState] = useState<TabKey>(initialTab)
+  // One page of the open tab; the other tabs are counted, not loaded.
+  const [rows, setRows] = useState<RadiologyOrder[]>(initial.rows)
+  const [total, setTotal] = useState(initial.total)
+  const [page, setPage] = useState(initial.page)
+  const [size, setSize] = useState(initial.size)
+  const [counts, setCounts] = useState(initCounts)
+  const [query, setQuery] = useState(initialQuery)
+  const debounced = useDebounced(query.trim())
+  const [dateFrom, setDateFrom] = useState(initialFrom)
+  const [dateTo, setDateTo] = useState(initialTo)
   const [catalog, setCatalog] = useState<RadiologyCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -62,17 +77,39 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
   const [viewOrder, setViewOrder] = useState<RadiologyOrder | null>(null)
   const canFormF = !!role && hasPermission(role, 'pcpndt:record', profile?.granted_permissions)
 
-  async function refresh() {
+  // ── Loading a page: the newest request wins; the address follows. ──
+  const view = useRef({ tab: initialTab, q: initialQuery.trim(), from: initialFrom, to: initialTo, page: initial.page, size: initial.size })
+  const ticket = useRef(0)
+  async function load(next: Partial<typeof view.current>, opts: { also?: boolean; counts?: boolean } = {}) {
+    const v = { ...view.current, ...next }
+    view.current = v
+    const mine = ++ticket.current
     setLoading(true)
-    const [p, pf, r, cat] = await Promise.all([
-      listRadiologyOrders({ status: 'ordered' }),
-      listRadiologyOrders({ status: 'performed' }),
-      listRadiologyOrders({ status: 'reported' }),
-      listRadiologyCatalog(),
-    ])
-    setPending(p); setPerformed(pf); setReported(r); setCatalog(cat)
+    const { list: res, counts: cnt, catalog: cat } = await loadRadiologyList(
+      { tab: v.tab, q: v.q, from: v.from, to: v.to, page: v.page, size: v.size },
+      { counts: opts.counts || opts.also, catalog: opts.also },
+    )
+    if (mine !== ticket.current) return   // a newer request has gone out
+    setRows(res.rows); setTotal(res.total); setPage(res.page); setSize(v.size)
+    if (cnt) setCounts(cnt)
+    if (cat) setCatalog(cat)
     setLoading(false)
+    writeListUrl({ tab: v.tab, q: v.q, from: v.from, to: v.to, page: res.page, size: v.size }, { tab: 'pending', page: 1, size: DEFAULT_PAGE_SIZE })
   }
+  // After an action: the same page again, the counts and the catalogue.
+  async function refresh() { await load({}, { also: true }) }
+  function setTab(t: TabKey) { setTabState(t); void load({ tab: t, page: 1 }, { counts: true }) }
+  async function moveTo(t: TabKey) { setTabState(t); await load({ tab: t, page: 1 }, { also: true }) }
+
+  // Rows per page chosen before on this browser, when the address does not say.
+  useEffect(() => {
+    const remembered = rememberedSize(LIST)
+    if (!remembered || remembered === initial.size || new URLSearchParams(window.location.search).get('size')) return
+    const t = setTimeout(() => { void load({ size: remembered, page: 1 }) }, 0)
+    return () => clearTimeout(t)
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // A changed search starts again from page 1.
+  useEffect(() => { if (debounced !== view.current.q) void load({ q: debounced, page: 1 }) }, [debounced])
 
   async function handlePerform(orderId: string) {
     setActionId(orderId)
@@ -83,9 +120,8 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
       setActionId(null)
       return
     }
-    await refresh()
+    await moveTo('performed')
     setActionId(null)
-    setTab('performed')
   }
 
   async function handleRelease(orderId: string) {
@@ -97,18 +133,18 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
       setActionId(null)
       return
     }
-    await refresh()
+    await moveTo('reported')
     setActionId(null)
-    setTab('reported')
   }
 
-  const TABS: { key: TabKey; label: string; data: RadiologyOrder[] }[] = [
-    { key: 'pending', label: 'Pending', data: pending },
-    { key: 'performed', label: 'Performed', data: performed },
-    { key: 'reported', label: 'Reported', data: reported },
+  const TABS: { key: TabKey; label: string; count: number }[] = [
+    { key: 'pending', label: 'Pending', count: counts.pending },
+    { key: 'performed', label: 'Performed', count: counts.performed },
+    { key: 'reported', label: 'Reported', count: counts.reported },
   ]
 
-  const currentList = TABS.find((t) => t.key === tab)?.data ?? []
+  const currentList = rows
+  const filtered = !!(query.trim() || dateFrom || dateTo)
 
   // Group the tab's orders by patient — one card per patient, scans nested.
   const patientGroups = (() => {
@@ -159,23 +195,48 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
       <div className="overflow-x-auto -mx-4 px-4 mb-5">
         <div className="flex gap-1 p-1 rounded-xl w-max"
           style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #E2E8F0' }}>
-          {TABS.map(({ key, label, data }) => (
+          {TABS.map(({ key, label, count }) => (
             <button key={key} onClick={() => setTab(key)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium flex-shrink-0"
               style={tab === key ? { background: '#0D9488', color: '#fff' } : { color: '#64748B', background: 'transparent' }}>
               {label}
               <span className="text-xs px-1.5 py-0.5 rounded-full"
                 style={tab === key ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : { background: '#F1F5F9', color: '#64748B' }}>
-                {data.length}
+                {count.toLocaleString('en-IN')}
               </span>
             </button>
           ))}
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <ListSearch value={query} onChange={setQuery} busy={loading && !!query}
+          placeholder="Patient name, scan name, UHID, old no. or accession" />
+        {tab === 'reported' && (
+          <div className="flex items-center gap-2 text-xs" style={{ color: '#64748B' }}>
+            <label className="flex items-center gap-1">From
+              <input type="date" value={dateFrom} max={dateTo || undefined}
+                onChange={(e) => { setDateFrom(e.target.value); void load({ from: e.target.value, page: 1 }) }}
+                className="rounded-lg px-2 py-1.5 text-sm" style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.9)', color: '#0F172A' }} />
+            </label>
+            <label className="flex items-center gap-1">To
+              <input type="date" value={dateTo} min={dateFrom || undefined}
+                onChange={(e) => { setDateTo(e.target.value); void load({ to: e.target.value, page: 1 }) }}
+                className="rounded-lg px-2 py-1.5 text-sm" style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.9)', color: '#0F172A' }} />
+            </label>
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); void load({ from: '', to: '', page: 1 }) }}
+                className="px-2 py-1 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', cursor: 'pointer' }}>
+                Clear dates
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {patientGroups.length === 0 ? (
         <GlassCard className="p-6">
-          <EmptyState title="No orders" description="Orders will appear here."
+          <EmptyState title={filtered ? 'No scans match' : 'No orders'} description={filtered ? 'Try a different name, number or dates.' : 'Orders will appear here.'}
             icon={<Scan className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
         </GlassCard>
       ) : (
@@ -292,6 +353,12 @@ export default function RadiologyClient({ pending: initP, performed: initPf, rep
             </GlassCard>
           ))}
         </div>
+      )}
+
+      {total > 0 && (
+        <Pager page={page} size={size} total={total} busy={loading}
+          onPage={(p) => { void load({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSize={(n) => { rememberSize(LIST, n); setSize(n); void load({ size: n, page: 1 }) }} />
       )}
 
       <OrderRadiologyModal open={showOrder} onClose={() => setShowOrder(false)} catalog={catalog}

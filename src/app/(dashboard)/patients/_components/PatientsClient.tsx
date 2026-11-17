@@ -1,13 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, Search, ScanBarcode } from 'lucide-react'
+import { UserPlus, ScanBarcode } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import { searchPatients } from '@/app/actions/patients'
+import { listPatientsPage } from '@/app/actions/patients'
+import Pager from '@/components/ui/Pager'
+import ListSearch from '@/components/ui/ListSearch'
+import { writeListUrl, rememberedSize, rememberSize, useDebounced } from '@/lib/listUrl'
+import { DEFAULT_PAGE_SIZE, type Paged } from '@/lib/paging'
 import type { Patient } from '@/lib/types'
 import RegisterModal from './RegisterModal'
 import PatientBarcodeModal from '@/components/barcode/PatientBarcodeModal'
@@ -45,35 +49,54 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[idx]
 }
 
-interface Props { initialPatients: Patient[] }
+interface Props { initial: Paged<Patient>; initialQuery: string }
 
-export default function PatientsClient({ initialPatients }: Props) {
+const LIST = 'patients'
+
+export default function PatientsClient({ initial, initialQuery }: Props) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
-  const [patients, setPatients] = useState<Patient[]>(initialPatients)
-  const [query, setQuery] = useState('')
+  const [patients, setPatients] = useState<Patient[]>(initial.rows)
+  const [total, setTotal] = useState(initial.total)
+  const [page, setPage] = useState(initial.page)
+  const [size, setSize] = useState(initial.size)
+  const [query, setQuery] = useState(initialQuery)
+  const debounced = useDebounced(query.trim())
   const [searching, setSearching] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
   const [newPatient, setNewPatient] = useState<Patient | null>(null)
   const [barcodePatient, setBarcodePatient] = useState<Patient | null>(null)
 
-  const doSearch = useCallback(async (q: string) => {
+  // ── Loading a page: the newest request wins; the address follows. ──
+  const view = useRef({ q: initialQuery.trim(), page: initial.page, size: initial.size })
+  const ticket = useRef(0)
+  async function load(next: Partial<typeof view.current>) {
+    const v = { ...view.current, ...next }
+    view.current = v
+    const mine = ++ticket.current
     setSearching(true)
-    const results = await searchPatients(q)
-    setPatients(results)
+    const res = await listPatientsPage({ q: v.q, page: v.page, size: v.size })
+    if (mine !== ticket.current) return   // a newer request has gone out
+    setPatients(res.rows); setTotal(res.total); setPage(res.page); setSize(v.size)
     setSearching(false)
-  }, [])
+    writeListUrl({ q: v.q, page: res.page, size: v.size }, { page: 1, size: DEFAULT_PAGE_SIZE })
+  }
 
+  // Rows per page chosen before on this browser, when the address does not say.
   useEffect(() => {
-    const t = setTimeout(() => doSearch(query), 300)
+    const remembered = rememberedSize(LIST)
+    if (!remembered || remembered === initial.size || new URLSearchParams(window.location.search).get('size')) return
+    const t = setTimeout(() => { void load({ size: remembered, page: 1 }) }, 0)
     return () => clearTimeout(t)
-  }, [query, doSearch])
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // A changed search starts again from page 1; opening page 3 from the address does not.
+  useEffect(() => { if (debounced !== view.current.q) void load({ q: debounced, page: 1 }) }, [debounced])
 
   return (
     <div>
       <PageHeader
         title="Patients"
-        subtitle={`${patients.length} record${patients.length !== 1 ? 's' : ''}`}
+        subtitle={`${total.toLocaleString('en-IN')} patient${total !== 1 ? 's' : ''}${query.trim() ? ' found' : ''}`}
         action={
           <button
             onClick={() => !isReadOnly && setShowRegister(true)}
@@ -90,23 +113,8 @@ export default function PatientsClient({ initialPatients }: Props) {
         }
       />
 
-      {/* Search */}
-      <div className="mb-4 relative w-full md:max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
-        <input
-          type="search"
-          placeholder="Search by name, phone, or UHID…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm"
-          style={{ minHeight: '44px', background: 'rgba(255,255,255,0.85)', border: '1px solid #E2E8F0', color: '#0F172A', outline: 'none' }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = '#0D9488' }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0' }}
-        />
-        {searching && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#94A3B8' }}>Searching…</span>
-        )}
-      </div>
+      <ListSearch value={query} onChange={setQuery} busy={searching} className="mb-4"
+        placeholder="Name, phone, UHID, old no. (DRKMCH-…), old IP / lab no." />
 
       {patients.length === 0 ? (
         <GlassCard>
@@ -235,11 +243,18 @@ export default function PatientsClient({ initialPatients }: Props) {
         </>
       )}
 
+      {total > 0 && (
+        <Pager page={page} size={size} total={total} busy={searching}
+          onPage={(p) => { void load({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSize={(n) => { rememberSize(LIST, n); setSize(n); void load({ size: n, page: 1 }) }} />
+      )}
+
       <RegisterModal
         open={showRegister}
         onClose={() => setShowRegister(false)}
         onSuccess={(patient) => {
           setPatients((prev) => [patient, ...prev])
+          setTotal((t) => t + 1)
           setShowRegister(false)
           setNewPatient(patient)
         }}

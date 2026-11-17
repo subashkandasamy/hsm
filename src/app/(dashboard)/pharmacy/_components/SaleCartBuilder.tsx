@@ -13,20 +13,22 @@ import {
   finalizeSale, cancelSale, getPharmacySale, fulfillSale, listPharmacySales,
 } from '@/app/actions/pharmacySale'
 import SupplyReasonField from './SupplyReasonField'
+import { useStockBrandMatches } from './useStockBrandMatches'
 import { checkBillStatus, resolveProductCode, rememberProductCode, type ScannedBatch, type ScannedProduct } from '@/app/actions/pharmacy'
 import { useScanListener } from '@/lib/hooks/useScanListener'
+import { findPatientsQuick } from '@/app/actions/patients'
+import { useDebounced } from '@/lib/listUrl'
 import type { DrugWithStock, Patient, PharmacySale } from '@/lib/types'
 
 interface Props {
   drugs: DrugWithStock[]
   initialReadySales: PharmacySale[]
   initialFulfilledSales?: PharmacySale[]
-  allPatients?: Patient[]
   /** false = this hospital hands medicines over before payment; the bill is collected later. */
   payFirst?: boolean
 }
 
-export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfilledSales = [], allPatients = [], payFirst = true }: Props) {
+export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfilledSales = [], payFirst = true }: Props) {
   // Cart builder state
   const [patientQuery, setPatientQuery]       = useState('')
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
@@ -85,16 +87,18 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-filter patients as user types
-  const patientResults = useMemo(() => {
-    const q = patientQuery.trim().toLowerCase()
-    if (!q || selectedPatient) return []
-    return allPatients.filter((p) =>
-      p.full_name.toLowerCase().includes(q) ||
-      p.uhid.toLowerCase().includes(q) ||
-      (p.phone ?? '').includes(q)
-    ).slice(0, 8)
-  }, [patientQuery, allPatients, selectedPatient])
+  // Patients as the user types — searched on the server over every patient
+  // (this list used to hold only the 200 most recently registered).
+  const patientTyped = useDebounced(patientQuery.trim())
+  const [found, setFound] = useState<{ q: string; rows: Patient[] }>({ q: '', rows: [] })
+  const patientAsk = useRef(0)
+  useEffect(() => {
+    const mine = ++patientAsk.current
+    if (!patientTyped || selectedPatient) return
+    findPatientsQuick(patientTyped).then((rows) => { if (mine === patientAsk.current) setFound({ q: patientTyped, rows: rows as Patient[] }) })
+  }, [patientTyped, selectedPatient])
+  // Only the answer to what is in the box now; nothing once a patient is picked.
+  const patientResults = !selectedPatient && patientTyped && found.q === patientTyped ? found.rows : []
 
   const teachMatches = useMemo(() => {
     const q = (teach?.query ?? '').trim().toLowerCase()
@@ -107,14 +111,18 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
     ).slice(0, 8)
   }, [teach, drugs])
 
+  // Any brand in the catalogue, not only the ones on the shelf (asked of the server).
+  const brandHits = useStockBrandMatches(drugQuery, drugs)
   const filteredDrugs = useMemo(() => {
     const q = drugQuery.toLowerCase()
-    return drugs.filter((d) =>
+    const direct = (d: DrugWithStock) =>
       d.name.toLowerCase().includes(q) ||
       (d.generic_name ?? '').toLowerCase().includes(q) ||
+      (d.stocked_brands ?? []).some(b => b.toLowerCase().includes(q)) ||
       (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q))
-    ).slice(0, 15)
-  }, [drugQuery, drugs])
+    // Name and shelf matches first, so a catalogue brand never pushes them off the list.
+    return [...drugs.filter(direct), ...drugs.filter((d) => !direct(d) && brandHits[d.id])].slice(0, 15)
+  }, [drugQuery, drugs, brandHits])
 
   async function startCart() {
     if (!selectedPatient) return
@@ -352,7 +360,7 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
                   <input
                     type="text"
-                    placeholder="Type name, UHID or phone…"
+                    placeholder="Type name, UHID, old no. or phone…"
                     value={patientQuery}
                     onChange={(e) => { setPatientQuery(e.target.value); setSelectedPatient(null) }}
                     className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm"
@@ -545,7 +553,9 @@ export default function SaleCartBuilder({ drugs, initialReadySales, initialFulfi
                         style={{ background: '#fff', border: '1px solid #E2E8F0', maxHeight: '180px', overflowY: 'auto' }}>
                         {filteredDrugs.map((d) => {
                           const q = drugQuery.toLowerCase()
-                          const matchBrand = (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(q))
+                          const matchBrand = (d.stocked_brands ?? []).find(b => b.toLowerCase().includes(q))
+                            ?? (d.brand_aliases ?? []).find(b => b.toLowerCase().includes(q))
+                            ?? brandHits[d.id]
                           return (
                             <li key={d.id}>
                               <button type="button"

@@ -9,9 +9,11 @@ import { getAdmissionFinancials } from '@/app/actions/admissionBilling'
 import { applyAdvanceToStayBills } from '@/lib/billing/applyAdvance'
 import { bedIsIcu, enterIcu, exitIcu } from '@/lib/icuStay'
 import { catchUpDailyCharges } from '@/lib/ipdDailyBilling'
-import { assertTreatmentStarted } from '@/app/actions/ipdDeclaration'
-import type { Admission, IpdProgressNote } from '@/lib/types'
+import { assertTreatmentStarted, listDeclarationsForAdmissions } from '@/app/actions/ipdDeclaration'
+import type { Admission, IpdProgressNote, IpdDeclaration } from '@/lib/types'
 import { istToday, istDayStartISO, istDayEndISO } from '@/lib/istDate'
+import { pageWindow, searchTerm, isNameSearch, type Paged } from '@/lib/paging'
+import { patientIdsByNumber } from '@/lib/supabase/patientSearch'
 import { findOpenWork, cancelTestsNotDone, closeOpenWork, type OpenWork } from '@/lib/closeAdmission'
 import { dischargeSkipsBalanceGate } from '@/lib/dischargeType'
 import { admissionClosedError } from '@/lib/admissionOpen'
@@ -687,6 +689,41 @@ export async function listAdmissions(filters?: {
 
   const { data } = await q.limit(200)
   return (data ?? []) as unknown as Admission[]
+}
+
+export type AdmissionFilter = 'admitted' | 'discharged' | 'all'
+
+/**
+ * One page of the IPD list. A word: the patient's name. A number or code: IP
+ * no., old IP no. (FAC-18-…), or the patient's UHID / old number / phone.
+ */
+export async function listAdmissionsPage(opts: { status?: string; q?: string; page?: number; size?: number } = {}): Promise<Paged<Admission>> {
+  const supabase = await createClient()
+  const status: AdmissionFilter = opts.status === 'discharged' || opts.status === 'all' ? opts.status : 'admitted'
+  const { page, size, from, to } = pageWindow(opts.page, opts.size)
+  const s = searchTerm(opts.q)
+  const byName = isNameSearch(s)
+  let q = supabase.from('admissions').select(`
+      *,
+      patient:patients${byName ? '!inner' : ''}(id, full_name, uhid, phone, blood_group, allergies),
+      doctor:profiles!admissions_admitting_doctor_id_fkey(id, full_name),
+      ward:wards(id, name, daily_rate, room_type:ward_room_types(is_icu)),
+      bed:beds(id, bed_no)
+    `, { count: 'exact' })
+  if (status !== 'all') q = q.eq('status', status)
+  if (byName) q = q.ilike('patient.full_name', `%${s}%`)
+  else if (s) {
+    const ids = await patientIdsByNumber(supabase, s)
+    q = q.or([`ip_no.ilike.%${s}%`, `legacy_ip_no.ilike.%${s}%`, ids.length ? `patient_id.in.(${ids.join(',')})` : ''].filter(Boolean).join(','))
+  }
+  const { data, count } = await q.order('admitted_at', { ascending: false }).order('id').range(from, to)
+  return { rows: (data ?? []) as unknown as Admission[], total: count ?? 0, page, size }
+}
+
+/** The IPD list after a click, with its declarations, in one call (see loadLabList). */
+export async function loadAdmissionsList(opts: { status?: string; q?: string; page?: number; size?: number }): Promise<{ list: Paged<Admission>; declarations: Record<string, IpdDeclaration> }> {
+  const list = await listAdmissionsPage(opts)
+  return { list, declarations: await listDeclarationsForAdmissions(list.rows.map((a) => a.id)) }
 }
 
 export async function getAdmission(id: string): Promise<Admission | null> {

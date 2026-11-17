@@ -15,6 +15,9 @@ import type { ReportAnalyte } from '@/lib/pdf/LabReportPdf'
 import { pageAll } from '@/lib/supabase/pageAll'
 import { inChunks } from '@/lib/supabase/inChunks'
 import { checkPlausible } from '@/lib/labPlausible'
+import { pageWindow, searchTerm, isNameSearch, ymdOrNull, type Paged } from '@/lib/paging'
+import { patientIdsByNumber } from '@/lib/supabase/patientSearch'
+import { istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 type SimpleResult = { success: true } | { success: false; error: string }
 
@@ -783,6 +786,86 @@ export async function getLabOrder(id: string): Promise<LabOrder | null> {
              samples:lab_samples(tube_no, barcode, tube_type, collected_at, tube:lab_tube_types(label))`)
     .eq('id', id).single()
   return data as unknown as LabOrder | null
+}
+
+export type LabTab = 'collect' | 'results' | 'verify' | 'reported'
+const LAB_TAB_STATUSES: Record<LabTab, string[]> = {
+  collect: ['ordered'], results: ['collected', 'processing'], verify: ['verified'], reported: ['reported'],
+}
+// The test's catalogue row trimmed to what the list, result entry, report and
+// label popups read — the whole row was half of what a page sent.
+const LAB_LIST_SELECT = `*, patient:patients(id,full_name,uhid), orderer:profiles!ordered_by(id,full_name),
+             package_order:package_orders(id,name_snapshot),
+             items:lab_order_items(*, test:lab_tests_catalog(id,name,code,category,sample_type,tube_type,unit,ref_low,ref_high,reference_range)),
+             samples:lab_samples(tube_no, barcode, tube_type, collected_at, tube:lab_tube_types(label))`
+
+/**
+ * One page of a Laboratory tab. Search: a name → the patient's name; a number
+ * or code → accession no., old lab no. (FAC-18-…), or the patient's UHID / old
+ * number / phone. Dates (IST days) narrow by when the order was placed.
+ */
+export async function listLabOrdersPage(opts: { tab?: string; q?: string; from?: string; to?: string; page?: number; size?: number } = {}): Promise<Paged<LabOrder>> {
+  const supabase = await createClient()
+  const tab: LabTab = Object.hasOwn(LAB_TAB_STATUSES, opts.tab ?? '') ? (opts.tab as LabTab) : 'collect'
+  const { page, size, from, to } = pageWindow(opts.page, opts.size)
+  const s = searchTerm(opts.q)
+  const byName = isNameSearch(s)
+  // Step 1: which orders are on this page (and how many in all) — ids only.
+  let q = supabase.from('lab_orders')
+    .select(byName ? 'id, ordered_at, patient:patients!inner(full_name)' : 'id, ordered_at', { count: 'exact' })
+    .in('status', LAB_TAB_STATUSES[tab])
+  if (byName) q = q.ilike('patient.full_name', `%${s}%`)
+  else if (s) {
+    const ids = await patientIdsByNumber(supabase, s)
+    q = q.or([`accession_no.ilike.%${s}%`, `legacy_request_no.ilike.%${s}%`, ids.length ? `patient_id.in.(${ids.join(',')})` : ''].filter(Boolean).join(','))
+  }
+  const d1 = ymdOrNull(opts.from), d2 = ymdOrNull(opts.to)
+  if (d1) q = q.gte('ordered_at', istDayStartISO(d1))
+  if (d2) q = q.lte('ordered_at', istDayEndISO(d2))
+  const { data: idRows, count } = await q.order('ordered_at', { ascending: false }).order('id').range(from, to)
+  const ids = (idRows ?? []) as unknown as { id: string; ordered_at: string }[]
+  if (!ids.length) return { rows: [], total: count ?? 0, page, size }
+  // Step 2: those orders in full. Tests are stored by month and are never older
+  // than their order, so telling the database how far back to look lets it skip
+  // the older months instead of searching every one (about twice as fast).
+  const oldest = ids.reduce((m, r) => (r.ordered_at < m ? r.ordered_at : m), ids[0].ordered_at)
+  const since = new Date(new Date(oldest).getTime() - 86_400_000).toISOString()
+  const { data } = await supabase.from('lab_orders').select(LAB_LIST_SELECT)
+    .in('id', ids.map((r) => r.id))
+    .gte('items.created_at', since)
+    .order('ordered_at', { ascending: false }).order('id')
+    .order('tube_no', { referencedTable: 'lab_samples' })
+  return { rows: (data ?? []) as unknown as LabOrder[], total: count ?? 0, page, size }
+}
+
+/**
+ * Everything the Laboratory screen needs after a click, in one call — the
+ * browser sends a screen's server calls one after another, so two calls cost
+ * two round trips. Tab counts only when asked (a page turn or a search does
+ * not change them); the critical list and catalogue only after an action.
+ */
+export async function loadLabList(
+  opts: { tab?: string; q?: string; from?: string; to?: string; page?: number; size?: number },
+  want: { counts?: boolean; extras?: boolean } = {},
+): Promise<{ list: Paged<LabOrder>; counts: Record<LabTab, number> | null; awaiting: string[]; critical: OpenCritical[] | null; catalog: LabTestCatalog[] | null }> {
+  const [list, counts, critical, catalog] = await Promise.all([
+    listLabOrdersPage(opts),
+    want.counts ? countLabTabs() : null,
+    want.extras ? listOpenCriticalResults() : null,
+    want.extras ? listLabCatalog() : null,
+  ])
+  const awaiting = (opts.tab ?? 'collect') === 'collect' ? await labOrdersAwaitingPayment(list.rows.map((o) => o.id)) : []
+  return { list, counts, awaiting, critical, catalog }
+}
+
+/** How many orders wait in each Laboratory tab (counted, not loaded). */
+export async function countLabTabs(): Promise<Record<LabTab, number>> {
+  const supabase = await createClient()
+  const counts = await Promise.all((Object.keys(LAB_TAB_STATUSES) as LabTab[]).map(async (tab) => {
+    const { count } = await supabase.from('lab_orders').select('id', { count: 'exact', head: true }).in('status', LAB_TAB_STATUSES[tab])
+    return [tab, count ?? 0] as const
+  }))
+  return Object.fromEntries(counts) as Record<LabTab, number>
 }
 
 export async function listLabOrders(filters?: {

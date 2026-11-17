@@ -68,6 +68,10 @@ const REVIEWED: Record<string, { n: number; why: string }> = {
   'src/app/actions/referOut.ts::visits':              { n: 1, why: ".limit(1).maybeSingle()" },
   'src/app/actions/ipdTreatment.ts::drug_batches':    { n: 1, why: ".limit(1) on a later line — is the substituted drug still in stock (BUG-018)" },
   'src/app/actions/wards.ts::admissions':             { n: 1, why: "admitted patients' beds only — never more than the hospital has beds (BUG-055)" },
+  'src/app/actions/ipd.ts::admissions':              { n: 1, why: "listAdmissionsPage — one page, .range() on a later statement" },
+  'src/app/actions/lab.ts::lab_orders':               { n: 1, why: "listLabOrdersPage — the orders of one page, .in('id') of at most 100 ids" },
+  'src/app/actions/patients.ts::patients':            { n: 3, why: "patientsPage — one page each: no search, name search, number search (.range() on a later statement)" },
+  'src/lib/supabase/patientSearch.ts::patients':      { n: 1, why: ".limit(cap) — ids for a URL filter, capped on purpose" },
   'src/lib/billing/applyAdvance.ts::bills':           { n: 1, why: "scoped .eq('admission_id') on a later line — one stay's bills (BUG-053)" },
 }
 

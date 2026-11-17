@@ -8,6 +8,7 @@ import { getPatientActiveLocation, patientLocationMessage } from '@/lib/patientL
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { PatientCreateSchema, PatientUpdateSchema } from '@/lib/schemas'
 import { istToday } from '@/lib/istDate'
+import { pageWindow, searchTerm, isNameSearch, type Paged } from '@/lib/paging'
 import type { Patient } from '@/lib/types'
 
 export type CreatePatientResult =
@@ -185,6 +186,64 @@ export async function searchPatients(query: string): Promise<Patient[]> {
     }
   }
   return (data ?? []) as Patient[]
+}
+
+/**
+ * The Patients page, one page at a time. No search: newest first. A name:
+ * matched anywhere in it. A number or code: UHID, old number or phone that
+ * contains it — and a number typed in full (a UHID, DRKMCH-…, an old IP or lab
+ * number like FAC-18-45) comes first, ahead of the 10, 100 and 1000 that also
+ * contain it.
+ */
+export async function listPatientsPage(opts: { q?: string; page?: number; size?: number } = {}): Promise<Paged<Patient>> {
+  return patientsPage('*', opts)
+}
+
+/**
+ * The few patients a counter search box offers (pharmacy sale): the same
+ * search as the Patients page, over every patient, with only the fields shown.
+ */
+export async function findPatientsQuick(q: string): Promise<Pick<Patient, 'id' | 'full_name' | 'uhid' | 'phone'>[]> {
+  if (!searchTerm(q)) return []
+  const { rows } = await patientsPage('id, full_name, uhid, phone', { q, page: 1, size: 25 })
+  return rows.slice(0, 8)
+}
+
+async function patientsPage(cols: string, opts: { q?: string; page?: number; size?: number }): Promise<Paged<Patient>> {
+  const supabase = await createClient()
+  const { page, size, from, to } = pageWindow(opts.page, opts.size)
+  const s = searchTerm(opts.q)
+  if (!s) {
+    const { data, count } = await supabase.from('patients').select(cols as '*', { count: 'exact' })
+      .order('created_at', { ascending: false }).order('id').range(from, to)
+    return { rows: (data ?? []) as Patient[], total: count ?? 0, page, size }
+  }
+  if (isNameSearch(s)) {
+    const { data, count } = await supabase.from('patients').select(cols as '*', { count: 'exact' })
+      .ilike('full_name', `%${s}%`).order('full_name').order('id').range(from, to)
+    return { rows: (data ?? []) as Patient[], total: count ?? 0, page, size }
+  }
+  // A number: whole-number matches first (also through an old IP or lab number).
+  const token = /^[A-Za-z0-9/-]+$/.test(s) ? s : null
+  let exact: Patient[] = []
+  if (token) {
+    const [{ data: byNo }, { data: stays }, { data: labs }] = await Promise.all([
+      supabase.from('patients').select(cols as '*').or(`uhid.ilike.${token},legacy_uhid.ilike.${token}`).limit(5),
+      supabase.from('admissions').select('patient_id').ilike('legacy_ip_no', token).limit(5),
+      supabase.from('lab_orders').select('patient_id').ilike('legacy_request_no', token).limit(5),
+    ])
+    exact = (byNo ?? []) as Patient[]
+    const more = [...new Set([...(stays ?? []), ...(labs ?? [])].map((r) => r.patient_id as string))].filter((id) => !exact.some((p) => p.id === id))
+    if (more.length) exact.push(...((await supabase.from('patients').select(cols as '*').in('id', more)).data ?? []) as Patient[])
+  }
+  let rest = supabase.from('patients').select(cols as '*', { count: 'exact' })
+    .or(`uhid.ilike.%${s}%,legacy_uhid.ilike.%${s}%,phone.ilike.%${s}%`)
+  if (exact.length) rest = rest.not('id', 'in', `(${exact.map((p) => p.id).join(',')})`)
+  // Page 1 holds the whole-number matches (at most 15, a page is 25+), then the
+  // rest; every later page is shifted back by them.
+  const lead = page === 1 ? exact : []
+  const { data, count } = await rest.order('full_name').order('id').range(Math.max(0, from - exact.length), to - exact.length)
+  return { rows: [...lead, ...((data ?? []) as Patient[])], total: exact.length + (count ?? 0), page, size }
 }
 
 export async function listPatients(): Promise<Patient[]> {

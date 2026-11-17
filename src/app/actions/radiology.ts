@@ -18,6 +18,9 @@ import { resolveServiceBill } from '@/lib/cashlessCover'
 import { unpaidAllowed } from '@/lib/payGate'
 import { RadiologyCatalogSchema, RadiologyOrderSchema } from '@/lib/schemas'
 import type { RadiologyOrder, RadiologyCatalog, RadiologyMaster } from '@/lib/types'
+import { pageWindow, searchTerm, isNameSearch, ymdOrNull, type Paged } from '@/lib/paging'
+import { patientIdsByNumber, patientIdsByName } from '@/lib/supabase/patientSearch'
+import { istDayStartISO, istDayEndISO } from '@/lib/istDate'
 
 const IMAGE_BUCKET = 'radiology'
 const SIGNED_URL_EXPIRY = 60 * 60 // 1 hour
@@ -309,6 +312,70 @@ export async function getRadiologyOrder(id: string): Promise<RadiologyOrder | nu
     .select('*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name)')
     .eq('id', id).single()
   return data as unknown as RadiologyOrder | null
+}
+
+export type RadiologyTab = 'pending' | 'performed' | 'reported'
+const RAD_TAB_STATUS: Record<RadiologyTab, string> = { pending: 'ordered', performed: 'performed', reported: 'reported' }
+const RAD_LIST_SELECT = '*, patient:patients(id,full_name,uhid,gender), test:radiology_catalog(*), orderer:profiles!ordered_by(id,full_name), verifier:profiles!verified_by(id,full_name)'
+
+/**
+ * One page of a Radiology tab. A word: the patient's name or the scan's name
+ * ("chest", "usg"). A number or code: accession no., or the patient's UHID /
+ * old number / phone. Dates (IST days) narrow by when the scan was ordered.
+ */
+export async function listRadiologyOrdersPage(opts: { tab?: string; q?: string; from?: string; to?: string; page?: number; size?: number } = {}): Promise<Paged<RadiologyOrder>> {
+  const supabase = await createClient()
+  const tab: RadiologyTab = Object.hasOwn(RAD_TAB_STATUS, opts.tab ?? '') ? (opts.tab as RadiologyTab) : 'pending'
+  const { page, size, from, to } = pageWindow(opts.page, opts.size)
+  const s = searchTerm(opts.q)
+  // The database cannot OR a patient's name with a scan's name across two
+  // joined tables, so a word that names a scan becomes "these scan types, or
+  // these patients"; a word that names none is a plain patient-name match.
+  let scanIds: string[] = []
+  if (s && isNameSearch(s)) {
+    const { data } = await supabase.from('radiology_catalog').select('id').ilike('name', `%${s}%`).limit(100)
+    scanIds = (data ?? []).map((c) => c.id as string)
+  }
+  const byPatientName = !!s && isNameSearch(s) && scanIds.length === 0
+  let q = supabase.from('radiology_orders')
+    .select(byPatientName ? RAD_LIST_SELECT.replace('patient:patients(', 'patient:patients!inner(') : RAD_LIST_SELECT, { count: 'exact' })
+    .eq('status', RAD_TAB_STATUS[tab])
+  if (byPatientName) q = q.ilike('patient.full_name', `%${s}%`)
+  else if (scanIds.length) {
+    const pids = await patientIdsByName(supabase, s)
+    q = q.or([`test_id.in.(${scanIds.join(',')})`, pids.length ? `patient_id.in.(${pids.join(',')})` : ''].filter(Boolean).join(','))
+  } else if (s) {
+    const ids = await patientIdsByNumber(supabase, s)
+    q = q.or([`accession_no.ilike.%${s}%`, ids.length ? `patient_id.in.(${ids.join(',')})` : ''].filter(Boolean).join(','))
+  }
+  const d1 = ymdOrNull(opts.from), d2 = ymdOrNull(opts.to)
+  if (d1) q = q.gte('ordered_at', istDayStartISO(d1))
+  if (d2) q = q.lte('ordered_at', istDayEndISO(d2))
+  const { data, count } = await q.order('ordered_at', { ascending: false }).order('id').range(from, to)
+  return { rows: (data ?? []) as unknown as RadiologyOrder[], total: count ?? 0, page, size }
+}
+
+/** The Radiology screen's list after a click, in one call (see loadLabList). */
+export async function loadRadiologyList(
+  opts: { tab?: string; q?: string; from?: string; to?: string; page?: number; size?: number },
+  want: { counts?: boolean; catalog?: boolean } = {},
+): Promise<{ list: Paged<RadiologyOrder>; counts: Record<RadiologyTab, number> | null; catalog: RadiologyCatalog[] | null }> {
+  const [list, counts, catalog] = await Promise.all([
+    listRadiologyOrdersPage(opts),
+    want.counts ? countRadiologyTabs() : null,
+    want.catalog ? listRadiologyCatalog() : null,
+  ])
+  return { list, counts, catalog }
+}
+
+/** How many scans wait in each Radiology tab (counted, not loaded). */
+export async function countRadiologyTabs(): Promise<Record<RadiologyTab, number>> {
+  const supabase = await createClient()
+  const counts = await Promise.all((Object.keys(RAD_TAB_STATUS) as RadiologyTab[]).map(async (tab) => {
+    const { count } = await supabase.from('radiology_orders').select('id', { count: 'exact', head: true }).eq('status', RAD_TAB_STATUS[tab])
+    return [tab, count ?? 0] as const
+  }))
+  return Object.fromEntries(counts) as Record<RadiologyTab, number>
 }
 
 export async function listRadiologyOrders(filters?: {

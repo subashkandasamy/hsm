@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { dischargeTypeLabel } from '@/lib/dischargeType'
 import { UserPlus, RefreshCw, BedDouble, Stethoscope, ShieldAlert, FileWarning } from 'lucide-react'
@@ -12,9 +12,12 @@ import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
-import { listAdmissions } from '@/app/actions/ipd'
+import { loadAdmissionsList, type AdmissionFilter } from '@/app/actions/ipd'
+import Pager from '@/components/ui/Pager'
+import ListSearch from '@/components/ui/ListSearch'
+import { writeListUrl, rememberedSize, rememberSize, useDebounced } from '@/lib/listUrl'
+import { DEFAULT_PAGE_SIZE, type Paged } from '@/lib/paging'
 import { getWardBoard } from '@/app/actions/wards'
-import { listDeclarationsForAdmissions } from '@/app/actions/ipdDeclaration'
 import AdmitModal from '../../wards/_components/AdmitModal'
 import StartTreatmentModal from './StartTreatmentModal'
 import UploadDeclarationModal from './UploadDeclarationModal'
@@ -26,7 +29,9 @@ function daysAdmitted(admittedAt: string): number {
 }
 
 interface Props {
-  initialAdmissions: Admission[]
+  initial: Paged<Admission>
+  initialStatus: AdmissionFilter
+  initialQuery: string
   initialDeclarations?: Record<string, IpdDeclaration>
   wards: Ward[]
   doctors: { id: string; full_name: string }[]
@@ -35,12 +40,19 @@ interface Props {
   advancePercentage?: number
 }
 
-export default function IpdClient({ initialAdmissions, initialDeclarations = {}, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
+const LIST = 'ipd'
+
+export default function IpdClient({ initial, initialStatus, initialQuery, initialDeclarations = {}, wards, doctors, procedureTariffs = [], generalTariffPrice, advancePercentage = 50 }: Props) {
   const router = useRouter()
   const isReadOnly = useIsReadOnly()
-  const [admissions, setAdmissions] = useState<Admission[]>(initialAdmissions)
+  const [admissions, setAdmissions] = useState<Admission[]>(initial.rows)
   const [declarations, setDeclarations] = useState<Record<string, IpdDeclaration>>(initialDeclarations)
-  const [statusFilter, setStatusFilter] = useState<'admitted' | 'discharged' | 'all'>('admitted')
+  const [statusFilter, setStatusFilter] = useState<AdmissionFilter>(initialStatus)
+  const [total, setTotal] = useState(initial.total)
+  const [page, setPage] = useState(initial.page)
+  const [size, setSize] = useState(initial.size)
+  const [query, setQuery] = useState(initialQuery)
+  const debounced = useDebounced(query.trim())
   const [loading, setLoading] = useState(false)
   const [showAdmit, setShowAdmit] = useState(false)
   const [wardBoard, setWardBoard] = useState<WardWithBeds[]>([])
@@ -54,13 +66,33 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
     getDeterioratingPatients().then(setDeteriorating)
   }, [])
 
-  async function refresh(status: typeof statusFilter) {
+  // ── Loading a page: the newest request wins; the address follows. ──
+  const view = useRef({ status: initialStatus, q: initialQuery.trim(), page: initial.page, size: initial.size })
+  const ticket = useRef(0)
+  async function load(next: Partial<typeof view.current>) {
+    const v = { ...view.current, ...next }
+    view.current = v
+    const mine = ++ticket.current
     setLoading(true)
-    const data = await listAdmissions(status === 'all' ? {} : { status })
-    setAdmissions(data)
-    setDeclarations(await listDeclarationsForAdmissions(data.map((a) => a.id)))
+    const { list: res, declarations: decl } = await loadAdmissionsList({ status: v.status, q: v.q, page: v.page, size: v.size })
+    if (mine !== ticket.current) return   // a newer request has gone out
+    setAdmissions(res.rows); setTotal(res.total); setPage(res.page); setDeclarations(decl); setSize(v.size)
     setLoading(false)
+    writeListUrl({ status: v.status, q: v.q, page: res.page, size: v.size }, { status: 'admitted', page: 1, size: DEFAULT_PAGE_SIZE })
   }
+  async function refresh(status: AdmissionFilter) {
+    await load(status === view.current.status ? {} : { status, page: 1 })
+  }
+
+  // Rows per page chosen before on this browser, when the address does not say.
+  useEffect(() => {
+    const remembered = rememberedSize(LIST)
+    if (!remembered || remembered === initial.size || new URLSearchParams(window.location.search).get('size')) return
+    const t = setTimeout(() => { void load({ size: remembered, page: 1 }) }, 0)
+    return () => clearTimeout(t)
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // A changed search starts again from page 1.
+  useEffect(() => { if (debounced !== view.current.q) void load({ q: debounced, page: 1 }) }, [debounced])
 
   async function openAdmitModal() {
     const board = await getWardBoard()
@@ -180,12 +212,17 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
         </div>
       </div>
 
-      {loading ? (
+      <div className="mb-4">
+        <ListSearch value={query} onChange={setQuery} busy={loading && !!query}
+          placeholder="Patient name, IP no., old IP no., UHID or phone" />
+      </div>
+
+      {loading && admissions.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-sm" style={{ color: '#94A3B8' }}>Loading…</div>
       ) : displayed.length === 0 ? (
         <GlassCard>
           <EmptyState title="No admissions found"
-            description={statusFilter === 'admitted' ? 'Admit a patient to get started.' : 'No records match the filter.'}
+            description={query.trim() ? 'Try a different name or number.' : statusFilter === 'admitted' ? 'Admit a patient to get started.' : 'No records match the filter.'}
             icon={<BedDouble className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
         </GlassCard>
       ) : (
@@ -211,7 +248,7 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-sm leading-tight" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
-                          <p className="font-mono text-xs mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                          <p className="font-mono text-xs mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}{a.ip_no ? ` · ${a.ip_no}` : ''}{a.legacy_ip_no ? ` · old ${a.legacy_ip_no}` : ''}</p>
                         </div>
                         {isAdmitted ? (
                           <span className="flex-shrink-0 px-2.5 py-1 rounded-xl text-xs font-bold"
@@ -289,7 +326,7 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
                       </td>
                       <td className="px-4 py-3.5">
                         <p className="font-semibold" style={{ color: '#0F172A' }}>{a.patient?.full_name ?? '—'}</p>
-                        <p className="text-xs font-mono mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}</p>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: '#94A3B8' }}>{a.patient?.uhid}{a.ip_no ? ` · ${a.ip_no}` : ''}{a.legacy_ip_no ? ` · old ${a.legacy_ip_no}` : ''}</p>
                       </td>
                       <td className="px-4 py-3.5">
                         <p className="font-medium text-sm" style={{ color: '#0F172A' }}>{a.ward?.name ?? '—'}</p>
@@ -338,6 +375,12 @@ export default function IpdClient({ initialAdmissions, initialDeclarations = {},
             </table>
           </GlassCard>
         </>
+      )}
+
+      {total > 0 && (
+        <Pager page={page} size={size} total={total} busy={loading}
+          onPage={(p) => { void load({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSize={(n) => { rememberSize(LIST, n); setSize(n); void load({ size: n, page: 1 }) }} />
       )}
 
       {showAdmit && (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Plus, RefreshCw, FlaskConical, Settings, Printer, IndianRupee } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import GlassCard from '@/components/ui/GlassCard'
@@ -8,7 +8,11 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import DateText from '@/components/ui/DateText'
 import EmptyState from '@/components/ui/EmptyState'
 import SetupNudge from '@/components/ui/SetupNudge'
-import { collectSample, verifyOrder, reportOrder, listLabOrders, listLabCatalog, labOrdersAwaitingPayment, listOpenCriticalResults, type OpenCritical } from '@/app/actions/lab'
+import { collectSample, verifyOrder, reportOrder, loadLabList, type OpenCritical, type LabTab } from '@/app/actions/lab'
+import Pager from '@/components/ui/Pager'
+import ListSearch from '@/components/ui/ListSearch'
+import { writeListUrl, rememberedSize, rememberSize, useDebounced } from '@/lib/listUrl'
+import { DEFAULT_PAGE_SIZE, type Paged } from '@/lib/paging'
 import CriticalResultsBar from './CriticalResultsBar'
 import SilentAnalyzerBar from './SilentAnalyzerBar'
 import type { SilentAnalyzer } from '@/lib/lab/silent'
@@ -42,19 +46,22 @@ const FLAG_COLORS: Record<string, { bg: string; color: string; label: string }> 
 }
 
 interface Props {
-  toCollect: LabOrder[]
-  resultQueue: LabOrder[]
-  verified?: LabOrder[]
-  reported: LabOrder[]
+  initial: Paged<LabOrder>
+  initialTab: LabTab
+  initialQuery: string
+  initialFrom: string
+  initialTo: string
+  counts: Record<LabTab, number>
   awaitingPayment?: string[]
   critical?: OpenCritical[]
   silentAnalyzers?: SilentAnalyzer[]
   catalog: LabTestCatalog[]
 }
 
-type TabKey = 'collect' | 'results' | 'verify' | 'reported'
+type TabKey = LabTab
+const LIST = 'lab'
 
-export default function LabClient({ toCollect: initCollect, resultQueue: initQueue, verified: initVerified, reported: initReported, catalog: initCatalog, awaitingPayment: initAwaiting, critical: initCritical, silentAnalyzers = [] }: Props) {
+export default function LabClient({ initial, initialTab, initialQuery, initialFrom, initialTo, counts: initCounts, catalog: initCatalog, awaitingPayment: initAwaiting, critical: initCritical, silentAnalyzers = [] }: Props) {
   const { profile } = useAuth()
   const role = profile?.role
   const canOrder   = !!role && hasPermission(role, 'lab:order', profile?.granted_permissions)
@@ -63,15 +70,21 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const canPrintSample  = !!role && hasPermission(role, 'barcode:print:sample', profile?.granted_permissions)
   const isAdmin    = !!role && hasPermission(role, 'lab:manage', profile?.granted_permissions)
   const isReadOnly = useIsReadOnly()
-  const [tab, setTab] = useState<TabKey>('collect')
-  const [toCollect, setToCollect] = useState<LabOrder[]>(initCollect)
-  const [resultQueue, setResultQueue] = useState<LabOrder[]>(initQueue)
-  const [verified, setVerified] = useState<LabOrder[]>(initVerified ?? [])
+  const [tab, setTabState] = useState<TabKey>(initialTab)
+  // One page of the open tab; the other tabs are counted, not loaded.
+  const [rows, setRows] = useState<LabOrder[]>(initial.rows)
+  const [total, setTotal] = useState(initial.total)
+  const [page, setPage] = useState(initial.page)
+  const [size, setSize] = useState(initial.size)
+  const [counts, setCounts] = useState(initCounts)
+  const [query, setQuery] = useState(initialQuery)
+  const debounced = useDebounced(query.trim())
+  const [dateFrom, setDateFrom] = useState(initialFrom)
+  const [dateTo, setDateTo] = useState(initialTo)
   // Orders held up by an unpaid outpatient bill. Inpatients and cashless-
   // approved patients are never in here — same rule as collectSample.
   const [awaitingPayment, setAwaitingPayment] = useState<Set<string>>(new Set(initAwaiting ?? []))
   const [critical, setCritical] = useState<OpenCritical[]>(initCritical ?? [])
-  const [reported, setReported] = useState<LabOrder[]>(initReported)
   const [catalog, setCatalog] = useState<LabTestCatalog[]>(initCatalog)
   const [loading, setLoading] = useState(false)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -83,27 +96,43 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   const [viewOrder, setViewOrder] = useState<LabOrder | null>(null)
   const [labelOrder, setLabelOrder] = useState<LabOrder | null>(null)
 
-  const closeAddTest = useCallback(() => { setShowAddTest(false); refresh() }, [])
-
-  async function refresh() {
+  // ── Loading a page: the newest request wins; the address follows. ──
+  const view = useRef({ tab: initialTab, q: initialQuery.trim(), from: initialFrom, to: initialTo, page: initial.page, size: initial.size })
+  const ticket = useRef(0)
+  async function load(next: Partial<typeof view.current>, opts: { also?: boolean; counts?: boolean } = {}) {
+    const v = { ...view.current, ...next }
+    view.current = v
+    const mine = ++ticket.current
     setLoading(true)
-    const [c, col, proc, ver, r, cat] = await Promise.all([
-      listLabOrders({ status: 'ordered' }),
-      listLabOrders({ status: 'collected' }),
-      listLabOrders({ status: 'processing' }),
-      listLabOrders({ status: 'verified' }),
-      listLabOrders({ status: 'reported' }),
-      listLabCatalog(),
-    ])
-    setToCollect(c)
-    setResultQueue([...col, ...proc])
-    setVerified(ver)
-    setReported(r)
-    setAwaitingPayment(new Set(await labOrdersAwaitingPayment(c.map((o) => o.id))))
-    setCritical(await listOpenCriticalResults())
-    setCatalog(cat)
+    const { list: res, counts: cnt, awaiting, critical: crit, catalog: cat } = await loadLabList(
+      { tab: v.tab, q: v.q, from: v.from, to: v.to, page: v.page, size: v.size },
+      { counts: opts.counts || opts.also, extras: opts.also },
+    )
+    if (mine !== ticket.current) return   // a newer request has gone out
+    setRows(res.rows); setTotal(res.total); setPage(res.page); setSize(v.size)
+    if (cnt) setCounts(cnt)
+    setAwaitingPayment(new Set(awaiting))
+    if (crit) setCritical(crit)
+    if (cat) setCatalog(cat)
     setLoading(false)
+    writeListUrl({ tab: v.tab, q: v.q, from: v.from, to: v.to, page: res.page, size: v.size }, { tab: 'collect', page: 1, size: DEFAULT_PAGE_SIZE })
   }
+  // After an action: the same page again, and the counts, critical list and catalogue.
+  async function refresh() { await load({}, { also: true }) }
+  function setTab(t: TabKey) { setTabState(t); void load({ tab: t, page: 1 }, { counts: true }) }
+  // After an action that moves the order on: open the tab it moved to, in one load.
+  async function moveTo(t: TabKey) { setTabState(t); await load({ tab: t, page: 1 }, { also: true }) }
+  const closeAddTest = useCallback(() => { setShowAddTest(false); void refresh() }, [])
+
+  // Rows per page chosen before on this browser, when the address does not say.
+  useEffect(() => {
+    const remembered = rememberedSize(LIST)
+    if (!remembered || remembered === initial.size || new URLSearchParams(window.location.search).get('size')) return
+    const t = setTimeout(() => { void load({ size: remembered, page: 1 }) }, 0)
+    return () => clearTimeout(t)
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // A changed search starts again from page 1.
+  useEffect(() => { if (debounced !== view.current.q) void load({ q: debounced, page: 1 }) }, [debounced])
 
   async function handleCollect(orderId: string) {
     setActionId(orderId)
@@ -114,9 +143,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
       setActionId(null)
       return
     }
-    await refresh()
+    await moveTo('results')
     setActionId(null)
-    setTab('results')
   }
 
   /**
@@ -145,9 +173,8 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
       return
     }
     setPartialAsk(null)
-    await refresh()
+    await moveTo('verify')
     setActionId(null)
-    setTab('verify')
   }
 
   async function handleReport(orderId: string) {
@@ -164,17 +191,13 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
   }
 
   const TABS: { key: TabKey; label: string; count: number }[] = [
-    { key: 'collect', label: 'To Collect', count: toCollect.length },
-    { key: 'results', label: 'Result Entry', count: resultQueue.length },
-    { key: 'verify', label: 'To Release', count: verified.length },
-    { key: 'reported', label: 'Reported', count: reported.length },
+    { key: 'collect', label: 'To Collect', count: counts.collect },
+    { key: 'results', label: 'Result Entry', count: counts.results },
+    { key: 'verify', label: 'To Release', count: counts.verify },
+    { key: 'reported', label: 'Reported', count: counts.reported },
   ]
 
-  const currentList =
-    tab === 'collect' ? toCollect
-    : tab === 'results' ? resultQueue
-    : tab === 'verify' ? verified
-    : reported
+  const currentList = rows
 
   return (
     <div>
@@ -238,10 +261,35 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <ListSearch value={query} onChange={setQuery} busy={loading && !!query}
+          placeholder="Patient name, UHID, old no., accession or old lab no." />
+        {tab === 'reported' && (
+          <div className="flex items-center gap-2 text-xs" style={{ color: '#64748B' }}>
+            <label className="flex items-center gap-1">From
+              <input type="date" value={dateFrom} max={dateTo || undefined}
+                onChange={(e) => { setDateFrom(e.target.value); void load({ from: e.target.value, page: 1 }) }}
+                className="rounded-lg px-2 py-1.5 text-sm" style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.9)', color: '#0F172A' }} />
+            </label>
+            <label className="flex items-center gap-1">To
+              <input type="date" value={dateTo} min={dateFrom || undefined}
+                onChange={(e) => { setDateTo(e.target.value); void load({ to: e.target.value, page: 1 }) }}
+                className="rounded-lg px-2 py-1.5 text-sm" style={{ border: '1px solid #E2E8F0', background: 'rgba(255,255,255,0.9)', color: '#0F172A' }} />
+            </label>
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); void load({ from: '', to: '', page: 1 }) }}
+                className="px-2 py-1 rounded-lg" style={{ border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', cursor: 'pointer' }}>
+                Clear dates
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {currentList.length === 0 ? (
         <GlassCard className="p-6">
-          <EmptyState title="No orders in this queue"
-            description={tab === 'collect' ? 'New orders will appear here.' : 'Orders move here after sample collection.'}
+          <EmptyState title={query.trim() || dateFrom || dateTo ? 'No orders match' : 'No orders in this queue'}
+            description={query.trim() || dateFrom || dateTo ? 'Try a different name, number or dates.' : tab === 'collect' ? 'New orders will appear here.' : 'Orders move here after sample collection.'}
             icon={<FlaskConical className="w-6 h-6" style={{ color: '#94A3B8' }} />} />
         </GlassCard>
       ) : (
@@ -407,6 +455,12 @@ export default function LabClient({ toCollect: initCollect, resultQueue: initQue
             </GlassCard>
           ))}
         </div>
+      )}
+
+      {total > 0 && (
+        <Pager page={page} size={size} total={total} busy={loading}
+          onPage={(p) => { void load({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSize={(n) => { rememberSize(LIST, n); setSize(n); void load({ size: n, page: 1 }) }} />
       )}
 
       <OrderLabModal

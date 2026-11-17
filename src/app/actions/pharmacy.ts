@@ -13,6 +13,7 @@ import type { Drug, DrugBatch, DrugWithStock, Dispense, PrescriptionWithVisit } 
 import { istToday, istAddDays, istDayStartISO, istDayEndISO } from '@/lib/istDate'
 import { cleanDrugName } from '@/lib/pharmacy/invoiceFile'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { inChunks } from '@/lib/supabase/inChunks'
 import { nameMatchScore, SURE, WEAK } from '@/lib/pharmacy/nameMatch'
 import { isDrugSchedule, requiresSupplyReason, cleanSupplyReason, NEEDS_REASON_MESSAGE } from '@/lib/pharmacy/schedule'
 import { scheduleOfDrug } from '@/lib/pharmacy/scheduleOf'
@@ -1101,6 +1102,37 @@ export async function searchDrugs(query: string, limit = 20): Promise<Drug[]> {
   return ranked
 }
 
+/**
+ * Brand search over the whole catalogue for the medicines a pharmacy stocks
+ * (the stock list itself carries only the brands on its shelf — see getStock).
+ * For each of `masterIds` that has a brand containing what was typed, one such
+ * brand, preferring one that starts with it ("Dolo 650" before "Loremdolo").
+ */
+export async function matchStockBrands(query: string, masterIds: string[]): Promise<Record<string, string>> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'pharmacy:read')
+
+  const q = query.replace(/[,()*%_\\]/g, ' ').trim()
+  const ids = [...new Set(masterIds)].filter((id) => UUID.test(id)).slice(0, 5000)
+  if (q.length < 2 || !ids.length) return {}
+
+  const supabase = await createClient()
+  const firstMatch = (pattern: string) => inChunks(ids, (slice) => supabase.from('drug_master')
+    .select('id, drug_brands!inner(brand_name)')
+    .in('id', slice)
+    .ilike('drug_brands.brand_name', pattern)
+    .order('brand_name', { referencedTable: 'drug_brands' }).limit(1, { referencedTable: 'drug_brands' }))
+  const [starts, contains] = await Promise.all([firstMatch(`${q}%`), firstMatch(`%${q}%`)])
+
+  const out: Record<string, string> = {}
+  for (const r of [...starts.data, ...contains.data] as unknown as { id: string; drug_brands: { brand_name: string }[] }[]) {
+    const brand = r.drug_brands?.[0]?.brand_name
+    if (brand && !out[r.id]) out[r.id] = brand
+  }
+  return out
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ---- Stock ----
 
 export async function getStock(): Promise<DrugWithStock[]> {
@@ -1141,20 +1173,44 @@ export async function getStock(): Promise<DrugWithStock[]> {
   const masterBrandData    = new Map<string, BrandDetail[]>()
 
   if (masterIds.length) {
-    const { data: mDrugs } = await supabase.from('drug_master').select('id, name, generic_name, form, strength, unit, schedule').in('id', masterIds)
-    for (const d of (mDrugs ?? [])) { const r = d as unknown as MRow; masterMap.set(r.id, r) }
-
-    const { data: brandRows } = await supabase
-      .from('drug_brands')
-      .select('drug_master_id, brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit')
-      .in('drug_master_id', masterIds)
-    for (const br of (brandRows ?? []) as BrandDetail[]) {
-      const aliases = masterBrandAliases.get(br.drug_master_id) ?? []
-      aliases.push(br.brand_name)
-      masterBrandAliases.set(br.drug_master_id, aliases)
-      const data = masterBrandData.get(br.drug_master_id) ?? []
-      data.push(br)
-      masterBrandData.set(br.drug_master_id, data)
+    // Only the brands that matter here, not every brand of the molecule: the
+    // catalogue rows of the brands this hospital received (their pack and HSN),
+    // and each medicine's first brand by name, for one that has none on its
+    // batches. The whole list was Paracetamol's thousands over and over — 25,344
+    // rows at KMCH, cut off at the 1,000-row reply limit, so brand search missed
+    // most of them anyway. Brand search over the whole catalogue is
+    // matchStockBrands(), asked as the user types.
+    const shelfByMaster = new Map<string, Set<string>>()
+    for (const b of allBatches) {
+      const name = b.brand_name?.trim()
+      if (!b.drug_master_id || !name) continue
+      shelfByMaster.set(b.drug_master_id, (shelfByMaster.get(b.drug_master_id) ?? new Set()).add(name))
+    }
+    const [masterRes, shelfRes] = await Promise.all([
+      inChunks(masterIds, (slice) => supabase.from('drug_master')
+        .select('id, name, generic_name, form, strength, unit, schedule, drug_brands(brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit)')
+        .in('id', slice)
+        .order('brand_name', { referencedTable: 'drug_brands' }).limit(1, { referencedTable: 'drug_brands' })),
+      inChunks([...shelfByMaster.keys()], (slice) => supabase.from('drug_brands')
+        .select('drug_master_id, brand_name, manufacturer, hsn_code, gst_rate, pack_size, pack_unit')
+        .in('drug_master_id', slice)
+        .in('brand_name', [...new Set(slice.flatMap((id) => [...(shelfByMaster.get(id) ?? [])]))]), 50),
+    ])
+    const mDrugs = masterRes.data as unknown as (MRow & { drug_brands: Omit<BrandDetail, 'drug_master_id'>[] | null })[]
+    const shelfRows = shelfRes.data as unknown as BrandDetail[]
+    // Shelf brands first (DrugMeta takes the one on the shelf), then the first brand.
+    for (const br of shelfRows) {
+      masterBrandData.set(br.drug_master_id, [...(masterBrandData.get(br.drug_master_id) ?? []), br])
+    }
+    for (const d of mDrugs) {
+      const { drug_brands: first, ...r } = d
+      masterMap.set(r.id, r)
+      const rows = masterBrandData.get(r.id) ?? []
+      for (const br of first ?? []) {
+        if (!rows.some((x) => x.brand_name === br.brand_name)) rows.push({ drug_master_id: r.id, ...br })
+      }
+      masterBrandData.set(r.id, rows)
+      masterBrandAliases.set(r.id, [...new Set(rows.map((x) => x.brand_name))])
     }
   }
   if (tenantIds.length) {
@@ -1246,7 +1302,6 @@ export type RichBatch = DrugBatch & {
   hsn_code: string | null
   pack_size: number | null
   pack_unit: string | null
-  all_brands: Array<{ brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }>
 }
 
 export interface PharmacyAlerts {
@@ -1256,48 +1311,69 @@ export interface PharmacyAlerts {
 }
 
 export async function getAlerts(): Promise<PharmacyAlerts> {
+  return alertsFor(getStock())
+}
+
+/** The stock list and its alerts, reading the stock once (the Pharmacy page). */
+export async function getStockAndAlerts(): Promise<{ stock: DrugWithStock[]; alerts: PharmacyAlerts }> {
+  const stock = getStock()
+  const [s, alerts] = await Promise.all([stock, alertsFor(stock)])
+  return { stock: s, alerts }
+}
+
+async function alertsFor(stockP: Promise<DrugWithStock[]>): Promise<PharmacyAlerts> {
   const supabase = await createClient()
   const today = istToday()
   const in30 = istAddDays(istToday(), 30)
 
-  const stock = await getStock()
-  const lowStock = stock.filter((d) => d.total_qty <= (d.reorder_level ?? 0))
-
+  // One catalogue brand per medicine, for a batch that records no brand of its
+  // own. This embedded every brand of the molecule into every batch — thousands
+  // of rows for one expiring strip of paracetamol.
   const batchSelect = `
     *,
     master:drug_master(name, generic_name, form, strength, drug_brands(brand_name, manufacturer, hsn_code, pack_size, pack_unit)),
     drug:drugs(name, generic_name, form, strength)
   `
+  const oneBrand = { referencedTable: 'master.drug_brands' }
 
   // Paged for the same reason getStock is: a long-running hospital accumulates
   // expired batches it has not written off, and the 1,001st would vanish from
   // the alert silently — the one place where a missing row is the whole point.
-  const [nearRaw, expiredRaw] = await Promise.all([
+  const [stock, nearRaw, expiredRaw] = await Promise.all([
+    stockP,
     pageAll<Record<string, unknown>>((from, to) => supabase.from('drug_batches').select(batchSelect)
-      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0).order('expiry').order('id').range(from, to)),
+      .gt('expiry', today).lte('expiry', in30).gt('qty_available', 0)
+      .order('brand_name', oneBrand).limit(1, oneBrand)
+      .order('expiry').order('id').range(from, to)),
     pageAll<Record<string, unknown>>((from, to) => supabase.from('drug_batches').select(batchSelect)
-      .lte('expiry', today).gt('qty_available', 0).order('expiry').order('id').range(from, to)),
+      .lte('expiry', today).gt('qty_available', 0)
+      .order('brand_name', oneBrand).limit(1, oneBrand)
+      .order('expiry').order('id').range(from, to)),
   ])
+  const lowStock = stock.filter((d) => d.total_qty <= (d.reorder_level ?? 0))
 
-  type MasterJoin = { name: string; generic_name: string | null; form: string | null; strength: string | null; drug_brands?: Array<{ brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }> }
+  type BrandJoin  = { brand_name: string; manufacturer: string | null; hsn_code: string | null; pack_size: number | null; pack_unit: string | null }
+  type MasterJoin = { name: string; generic_name: string | null; form: string | null; strength: string | null; drug_brands?: BrandJoin[] }
   type DrugJoin   = { name: string; generic_name: string | null; form: string | null; strength: string | null }
 
-  const mapBatch = (b: Record<string, unknown>) => {
+  const mapBatch = (b: Record<string, unknown>): RichBatch => {
+    const batch  = b as unknown as DrugBatch
     const master = b.master as MasterJoin | null
     const drug   = b.drug   as DrugJoin   | null
-    const brands = master?.drug_brands ?? []
+    // The brand on the batch, with its own pack and HSN — another brand's only
+    // when the batch names none (it used to be the catalogue's, always).
+    const brand: Partial<BrandJoin> = batch.brand_name ? batch as Partial<BrandJoin> : master?.drug_brands?.[0] ?? {}
     return {
-      ...(b as unknown as DrugBatch),
+      ...batch,
       drug_name:    master?.name ?? drug?.name ?? '—',
       generic_name: master?.generic_name ?? drug?.generic_name ?? null,
       form:         master?.form ?? drug?.form ?? null,
       strength:     master?.strength ?? drug?.strength ?? null,
-      brand_name:   brands[0]?.brand_name ?? null,
-      manufacturer: brands[0]?.manufacturer ?? null,
-      hsn_code:     brands[0]?.hsn_code ?? null,
-      pack_size:    brands[0]?.pack_size ?? null,
-      pack_unit:    brands[0]?.pack_unit ?? null,
-      all_brands:   brands,
+      brand_name:   brand.brand_name ?? null,
+      manufacturer: brand.manufacturer ?? null,
+      hsn_code:     brand.hsn_code ?? null,
+      pack_size:    brand.pack_size ?? null,
+      pack_unit:    brand.pack_unit ?? null,
     }
   }
 

@@ -14,20 +14,18 @@ import EmptyState from '@/components/ui/EmptyState'
 import DateText from '@/components/ui/DateText'
 import Money from '@/components/ui/Money'
 import {
-  listPendingPrescriptions, getStock, getAlerts,
   generatePharmacyBill, checkBillStatus, dispatchMedicines,
-  dispense as dispenseDrug, listPackedAwaitingDispatch,
+  dispense as dispenseDrug,
   updateBatch, updateDrugReorderLevel, updateDrugCategory, updateDrugSchedule, ensureBatchLabels,
 } from '@/app/actions/pharmacy'
 import { DRUG_SCHEDULES, SCHEDULE_HINT, isDrugSchedule } from '@/lib/pharmacy/schedule'
-import { listIpdPharmacyRequests, dispenseIpdRequest } from '@/app/actions/ipdTreatment'
+import { dispenseIpdRequest } from '@/app/actions/ipdTreatment'
+import { refreshPharmacyBoard } from '@/app/actions/pharmacyBoard'
 import VaccinesView from './VaccinesView'
 import PharmacyReportsView from './PharmacyReportsView'
 import type { VaccineOrder, VaccineSupply } from '@/app/actions/vaccination'
-import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, Patient, IpdPharmacyRequest } from '@/lib/types'
+import type { DrugWithStock, PrescriptionWithVisit, PharmacySale, IpdPharmacyRequest } from '@/lib/types'
 import type { PharmacyAlerts, RichBatch, AwaitingDispatchPatient, DispatchedPatientHistory } from '@/app/actions/pharmacy'
-import { listDispatchedHistory } from '@/app/actions/pharmacy'
-import { listPharmacySales } from '@/app/actions/pharmacySale'
 import { useAuth } from '@/context/AuthContext'
 import { hasPermission } from '@/lib/rbac'
 import Select from '@/components/ui/Select'
@@ -35,6 +33,7 @@ import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
 import SaleCartBuilder from './SaleCartBuilder'
 import SupplyReasonField from './SupplyReasonField'
+import { useStockBrandMatches } from './useStockBrandMatches'
 
 type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts' | 'h1'
 type BillInfo = { billId: string; billNo: string; status: string }
@@ -45,7 +44,6 @@ interface Props {
   initialAlerts: PharmacyAlerts
   initialReadySales: PharmacySale[]
   initialFulfilledSales: PharmacySale[]
-  allPatients: Patient[]
   initialAwaitingDispatch: AwaitingDispatchPatient[]
   initialIpdRequests: IpdPharmacyRequest[]
   initialOpdHistory: DispatchedPatientHistory[]
@@ -57,7 +55,7 @@ interface Props {
 
 export default function PharmacyClient({
   initialPending, initialStock, initialAlerts,
-  initialReadySales, initialFulfilledSales, allPatients, initialAwaitingDispatch,
+  initialReadySales, initialFulfilledSales, initialAwaitingDispatch,
   initialIpdRequests, initialOpdHistory, initialVaccineOrders, initialVaccineStock,
   pharmacyPayFirst = true,
 }: Props) {
@@ -114,10 +112,7 @@ export default function PharmacyClient({
 
   async function refresh() {
     setLoading(true)
-    const [p, s, a, aw, ipd, hist, fulfilled] = await Promise.all([
-      listPendingPrescriptions(), getStock(), getAlerts(), listPackedAwaitingDispatch(),
-      listIpdPharmacyRequests(), listDispatchedHistory(), listPharmacySales({ status: 'fulfilled' }),
-    ])
+    const { pending: p, stock: s, alerts: a, awaiting: aw, ipd, history: hist, fulfilled } = await refreshPharmacyBoard()
     setPending(p); setStock(s); setAlerts(a); setAwaitingDispatch(aw)
     setIpdRequests(ipd); setOpdHistory(hist); setFulfilledSales(fulfilled)
     const billMap = new Map<string, BillInfo>()
@@ -265,7 +260,7 @@ export default function PharmacyClient({
       </div>
 
       {tab === 'cart' && canSale && (
-        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} initialFulfilledSales={fulfilledSales} allPatients={allPatients} payFirst={pharmacyPayFirst} />
+        <SaleCartBuilder drugs={stock} initialReadySales={initialReadySales} initialFulfilledSales={fulfilledSales} payFirst={pharmacyPayFirst} />
       )}
       {tab === 'cart' && !canSale && (
         <p className="text-sm p-4" style={{ color: '#64748B' }}>You don&apos;t have permission to manage sale carts.</p>
@@ -1027,6 +1022,7 @@ function StockView({ stock, canManage, onRefresh }: {
   const [saveErr, setSaveErr] = useState('')
 
   const rows = stock.map(buildRow)
+  const brandHits = useStockBrandMatches(query, stock)
 
   const q = query.trim().toLowerCase()
   const searched = q
@@ -1039,6 +1035,7 @@ function StockView({ stock, canManage, onRefresh }: {
           (d.strength ?? '').toLowerCase().includes(q) ||
           (d.stocked_brands ?? []).some(b => b.toLowerCase().includes(q)) ||
           (d.brand_aliases ?? []).some(b => b.toLowerCase().includes(q)) ||
+          !!brandHits[d.id] ||
           d.batches.some(b =>
             b.batch_no.toLowerCase().includes(q) ||
             (b.storage_location ?? '').toLowerCase().includes(q))
