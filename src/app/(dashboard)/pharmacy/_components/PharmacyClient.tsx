@@ -33,6 +33,9 @@ import { useDrugSearch } from '@/lib/hooks/useDrugSearch'
 import DispenseModal from './DispenseModal'
 import SaleCartBuilder from './SaleCartBuilder'
 import SupplyReasonField from './SupplyReasonField'
+import Pager from '@/components/ui/Pager'
+import { rememberedSize, rememberSize } from '@/lib/listUrl'
+import { DEFAULT_PAGE_SIZE } from '@/lib/paging'
 import { useStockBrandMatches } from './useStockBrandMatches'
 
 type TabKey = 'cart' | 'queue' | 'ipd' | 'vaccines' | 'stock' | 'alerts' | 'h1'
@@ -1006,12 +1009,25 @@ function buildRow(d: DrugWithStock): StockRow {
   }
 }
 
+/** Remembered rows-per-page key for the Stock tab. */
+const STOCK_LIST = 'pharmacy-stock'
+
 function StockView({ stock, canManage, onRefresh }: {
   stock: DrugWithStock[]; canManage: boolean; onRefresh: () => void
 }) {
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<StockFilter>('all')
-  const [sort, setSort] = useState<StockSort>('name')
+  const [query, setQueryState] = useState('')
+  const [filter, setFilterState] = useState<StockFilter>('all')
+  const [sort, setSortState] = useState<StockSort>('name')
+  // Pages are drawn here, not fetched: the sale search, ward queue and reports
+  // need the whole stock list anyway. KMCH stocks ~700 medicines, and drawing
+  // them all made every letter typed in the search redraw the lot. The tab is
+  // only shown after a click, so the remembered size never differs from the
+  // server's first render.
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(() => rememberedSize(STOCK_LIST) ?? DEFAULT_PAGE_SIZE)
+  const setQuery = (v: string) => { setQueryState(v); setPage(1) }
+  const setFilter = (f: StockFilter) => { setFilterState(f); setPage(1) }
+  const setSort = (v: StockSort) => { setSortState(v); setPage(1) }
   const [openId, setOpenId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [reorderDraft, setReorderDraft] = useState('')
@@ -1075,6 +1091,9 @@ function StockView({ stock, canManage, onRefresh }: {
 
   const totalUnits = sorted.reduce((s, r) => s + r.drug.total_qty, 0)
   const totalValue = sorted.reduce((s, r) => s + r.value, 0)
+  // A refresh can leave fewer pages than the one being viewed.
+  const shownPage = Math.min(page, Math.max(1, Math.ceil(sorted.length / size)))
+  const pageRows = sorted.slice((shownPage - 1) * size, shownPage * size)
 
   function openEdit(drug: DrugWithStock) {
     setEditId(drug.id)
@@ -1231,7 +1250,7 @@ function StockView({ stock, canManage, onRefresh }: {
         </GlassCard>
       )}
 
-      {sorted.map(({ drug, title, subtitle, low, out, value, soonestDays, expiringBatches }) => {
+      {pageRows.map(({ drug, title, subtitle, low, out, value, soonestDays, expiringBatches }) => {
         const isEditing = editId === drug.id
         const isOpen = openId === drug.id || isEditing
         const unit = (drug.form ?? drug.unit ?? 'units').toLowerCase()
@@ -1467,6 +1486,12 @@ function StockView({ stock, canManage, onRefresh }: {
           </GlassCard>
         )
       })}
+
+      {sorted.length > 0 && (
+        <Pager page={shownPage} size={size} total={sorted.length}
+          onPage={(p) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSize={(n) => { rememberSize(STOCK_LIST, n); setSize(n); setPage(1) }} />
+      )}
     </div>
   )
 }
