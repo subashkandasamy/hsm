@@ -16,6 +16,9 @@ interface ComboboxProps {
   disabled?: boolean
   className?: string
   style?: React.CSSProperties
+  /** For a <label htmlFor>. */
+  id?: string
+  maxLength?: number
 }
 
 /**
@@ -25,7 +28,7 @@ interface ComboboxProps {
  */
 export default function Combobox({
   value, onChange, options, placeholder = 'Search or type…',
-  allowCustom = true, hasError, disabled, className, style,
+  allowCustom = true, hasError, disabled, className, style, id, maxLength,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -100,6 +103,8 @@ export default function Combobox({
       >
         <input
           ref={inputRef}
+          id={id}
+          maxLength={maxLength}
           type="text"
           disabled={disabled}
           value={shown}
@@ -109,6 +114,8 @@ export default function Combobox({
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); if (allowCustom && query.trim()) pick(query.trim()); else if (filtered[0]) pick(filtered[0]) }
             if (e.key === 'Escape') setOpen(false)
+            // Tabbing on to the next field closes the list (a free-typed value is already kept).
+            if (e.key === 'Tab') setOpen(false)
           }}
           style={{
             flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none',

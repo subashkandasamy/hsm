@@ -7,6 +7,8 @@ import Modal from '@/components/ui/Modal'
 import Money from '@/components/ui/Money'
 import Pager from '@/components/ui/Pager'
 import EmptyState from '@/components/ui/EmptyState'
+import Combobox from '@/components/ui/Combobox'
+import Select from '@/components/ui/Select'
 import {
   addExpense, cancelExpense, getExpenseBillUploadUrl, getExpenseBillUrl, getExpenseReport, listExpenses,
 } from '@/app/actions/expenses'
@@ -17,8 +19,8 @@ import type { Paged } from '@/lib/paging'
 
 const LIST = 'expenses'
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid #E2E8F0',
-  background: 'rgba(255,255,255,0.9)', color: '#0F172A', fontSize: 14, outline: 'none', minHeight: 40,
+  width: '100%', padding: '9px 12px', borderRadius: 12, border: '1px solid #E2E8F0',
+  background: 'rgba(255,255,255,0.9)', color: '#0F172A', fontSize: 14, outline: 'none', minHeight: 44,
 }
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#475569', marginBottom: 6 }
 const dmy = (ymd: string) => {
@@ -182,9 +184,9 @@ function AddExpenseForm({ today, categories, onAdded }: { today: string; categor
         </div>
         <div>
           <label style={labelStyle} htmlFor="ex-category">Category</label>
-          <input id="ex-category" list="ex-categories" placeholder="e.g. Electricity" value={f.category}
-            onChange={(e) => set('category', e.target.value)} style={inputStyle} maxLength={60} />
-          <datalist id="ex-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+          {/* The app's own list, not the browser's (which is unstyled, dark on a dark-mode computer, and drawn off to the side). */}
+          <Combobox id="ex-category" value={f.category} onChange={(v) => set('category', v)} options={categories}
+            placeholder="Choose or type, e.g. Electricity" maxLength={60} />
         </div>
         <div>
           <label style={labelStyle} htmlFor="ex-amount">Amount (₹)</label>
@@ -193,9 +195,9 @@ function AddExpenseForm({ today, categories, onAdded }: { today: string; categor
         </div>
         <div>
           <label style={labelStyle} htmlFor="ex-method">Paid by</label>
-          <select id="ex-method" value={f.method} onChange={(e) => set('method', e.target.value)} style={inputStyle}>
+          <Select id="ex-method" value={f.method} onChange={(e) => set('method', e.target.value)}>
             {EXPENSE_METHODS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label style={labelStyle} htmlFor="ex-paid-to">Paid to</label>
