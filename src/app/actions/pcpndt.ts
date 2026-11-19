@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/rbac'
 import { getActorProfile, requireWriteAccess } from '@/lib/server-utils'
 import { revalidatePath } from 'next/cache'
 import { pageAll } from '@/lib/supabase/pageAll'
+import { isNeverUltrasound } from '@/lib/radiology/modality'
 
 /**
  * Form F — the record the PC&PNDT Act is enforced through.
@@ -442,6 +443,9 @@ export interface ScanBucketRow {
   modality: string | null
   body_part: string | null
   pcpndt_bucket: string | null
+  /** Plainly not ultrasound (X-ray, CT, MRI…). While nobody has placed it, the
+   *  return leaves it out on its own — same rule as pcpndt_auto_bucket(). */
+  never_ultrasound: boolean
 }
 
 /**
@@ -461,7 +465,10 @@ export async function listScanBuckets(): Promise<ScanBucketRow[]> {
     .select('id, name, modality, body_part, pcpndt_bucket')
     .order('modality').order('name')
   if (error) { console.error('[listScanBuckets]', error.message); return [] }
-  return (data ?? []) as ScanBucketRow[]
+  return (data ?? []).map((r) => ({
+    ...r,
+    never_ultrasound: isNeverUltrasound(r.modality as string | null),
+  })) as ScanBucketRow[]
 }
 
 export async function setScanBucket(id: string, bucket: string | null): Promise<SimpleResult> {

@@ -28,6 +28,7 @@
     "verify:rx-match": "tsx scripts/verify-rx-match.ts",
     "verify:pay-gate": "tsx scripts/verify-pay-gate.ts",
     "verify:drug-schedule": "tsx scripts/verify-drug-schedule.ts",
+    "verify:pcpndt-buckets": "tsx scripts/verify-pcpndt-buckets.ts",
     "verify:csv": "tsx scripts/verify-csv.ts",
     "verify:collected-by-source": "tsx scripts/verify-collected-by-source.ts",
     "verify:collection-accounts": "tsx scripts/verify-collection-accounts.ts",

@@ -72,6 +72,29 @@ export function toDicomModality(slug: string | null | undefined): string | null 
 }
 
 /**
+ * Catalogue modalities that are plainly not ultrasound.
+ *
+ * The monthly PC&PNDT scan count covers ultrasound only. A test with one of
+ * these modalities that the hospital has not placed in a column is left out of
+ * it on its own — found at KMCH, where 27 unplaced X-ray tests made the return
+ * warn about "31 scans not placed" for a hospital that does no pregnancy
+ * scanning. Ultrasound, echo and anything unrecognised still have to be placed
+ * by a person, because guessing there would change a statutory count.
+ *
+ * Mirrors pcpndt_auto_bucket() in migration 0309, which the return itself
+ * uses; `npm run verify:pcpndt-buckets` checks the two agree.
+ */
+const NEVER_ULTRASOUND = new Set([
+  'xray', 'ct', 'mri', 'mammography', 'nuclear', 'pet',
+  'angiography', 'interventional', 'fluoroscopy', 'dental', 'dexa',
+])
+
+export function isNeverUltrasound(slug: string | null | undefined): boolean {
+  if (!slug) return false
+  return NEVER_ULTRASOUND.has(canonical(slug))
+}
+
+/**
  * Every code we are prepared to filter on. Built from the tables above rather
  * than written out again, so adding a modality in one place is enough.
  */

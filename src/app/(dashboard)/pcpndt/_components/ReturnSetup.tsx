@@ -81,7 +81,12 @@ export default function ReturnSetup({ scans, drugs }: {
     })
   }
 
-  const unmapped = rows.filter((r) => !r.pcpndt_bucket).length
+  // An X-ray, CT or MRI nobody placed is left out of the return on its own
+  // (pcpndt_auto_bucket), so it is shown as excluded and not counted as
+  // waiting. A column a person chose always wins.
+  const isAuto = (r: ScanBucketRow) => !r.pcpndt_bucket && r.never_ultrasound
+  const columnOf = (r: ScanBucketRow) => r.pcpndt_bucket ?? (r.never_ultrasound ? 'not_ultrasound' : '')
+  const unmapped = rows.filter((r) => !columnOf(r)).length
 
   return (
     <div className="space-y-4">
@@ -110,14 +115,15 @@ export default function ReturnSetup({ scans, drugs }: {
           <div className="grid gap-1.5">
             {rows.map((r) => (
               <div key={r.id} className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg"
-                style={{ background: r.pcpndt_bucket ? '#F8FAFC' : '#FFFBEB', border: '1px solid #E2E8F0' }}>
+                style={{ background: columnOf(r) ? '#F8FAFC' : '#FFFBEB', border: '1px solid #E2E8F0' }}>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate" style={{ color: '#0F172A' }}>{r.name}</p>
                   <p className="text-xs" style={{ color: '#94A3B8' }}>
                     {r.modality ?? 'unspecified'}{r.body_part ? ` · ${r.body_part}` : ''}
+                    {isAuto(r) && ' · left out automatically, not an ultrasound'}
                   </p>
                 </div>
-                <Select value={r.pcpndt_bucket ?? ''} disabled={isPending}
+                <Select value={columnOf(r)} disabled={isPending}
                   onChange={(e) => assign(r.id, e.target.value)}
                   style={{ maxWidth: '16rem' }}>
                   <option value="">— not placed —</option>
