@@ -1,10 +1,10 @@
 'use client'
 
-import { useTransition } from 'react'
-import { Microscope, Play, Pause, AlertCircle } from 'lucide-react'
+import { useState, useTransition } from 'react'
+import { Microscope, Play, Pause, AlertCircle, CheckCircle2 } from 'lucide-react'
 import GlassCard from '@/components/ui/GlassCard'
 import EmptyState from '@/components/ui/EmptyState'
-import { setAnalyzerStatus, type AnalyzerRow } from '@/app/actions/devices'
+import { setAnalyzerStatus, makeUncountedOptional, type AnalyzerRow } from '@/app/actions/devices'
 
 /**
  * The machines themselves.
@@ -25,6 +25,9 @@ export default function AnalyzerSection({
   onChange: () => void
 }) {
   const [isPending, startTransition] = useTransition()
+  // How many lines each "Leave them off" press changed: the offer itself goes
+  // once nothing is left, and the confirmation must outlive it.
+  const [done, setDone] = useState<Record<string, number>>({})
 
   function toggle(a: AnalyzerRow) {
     const next = a.status === 'live' ? 'paused' : 'live'
@@ -84,6 +87,17 @@ export default function AnalyzerSection({
                       </p>
                     )}
 
+                    {live && a.uncounted.length > 0 && (
+                      <UncountedOffer analyzer={a}
+                        onDone={(n) => { setDone((d) => ({ ...d, [a.id]: n })); onChange() }} />
+                    )}
+                    {done[a.id] > 0 && a.uncounted.length === 0 && (
+                      <p className="text-xs mt-2 flex items-center gap-1.5" style={{ color: '#047857' }}>
+                        <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                        Done — {done[a.id]} line{done[a.id] > 1 ? 's are' : ' is'} now left off its reports unless typed.
+                      </p>
+                    )}
+
                     {a.status === 'discovered' && (
                       <p className="text-xs mt-2" style={{ color: '#64748B' }}>
                         Found automatically. Check the measurements below look right, then switch it on.
@@ -108,6 +122,59 @@ export default function AnalyzerSection({
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * A 3-part blood counter never counts eosinophils or basophils, so every
+ * report it fills waits on lines nobody will type (lib/lab/threePart). One
+ * press marks them optional on the tests listed; until then this says why the
+ * reports stay INTERIM. Shown only while something is left to change.
+ */
+function UncountedOffer({ analyzer, onDone }: { analyzer: AnalyzerRow; onDone: (lines: number) => void }) {
+  const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  function apply() {
+    setError(null)
+    startTransition(async () => {
+      const res = await makeUncountedOptional(analyzer.id)
+      if (!res.success) { setError(res.error); return }
+      onDone(res.lines)
+    })
+  }
+
+  return (
+    <div className="mt-3 p-3 rounded-lg" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+      <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+        This machine counts white cells in 3 groups — it cannot count eosinophils or basophils.
+      </p>
+      <p className="text-xs mt-1" style={{ color: '#92400E' }}>
+        These lines will stay empty, so each report waits as INTERIM until somebody types them:
+      </p>
+      <ul className="text-xs mt-1.5 grid gap-0.5" style={{ color: '#78350F' }}>
+        {analyzer.uncounted.map((t) => (
+          <li key={t.testId}>
+            <span className="font-semibold">{t.testName}</span>: {t.lines.map((l) => l.name).join(', ')}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-2 mt-2.5">
+        <button onClick={apply} disabled={isPending}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: '#0D9488', color: '#fff', border: 'none', cursor: isPending ? 'not-allowed' : 'pointer', opacity: isPending ? 0.6 : 1 }}>
+          Leave them off unless typed
+        </button>
+        <span className="text-xs" style={{ color: '#92400E' }}>
+          A count typed from a smear still prints.
+        </span>
+      </div>
+      {error && (
+        <p className="text-xs mt-2 flex items-center gap-1.5" style={{ color: '#B91C1C' }}>
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+        </p>
+      )}
+    </div>
   )
 }
 

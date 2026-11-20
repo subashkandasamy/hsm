@@ -15,6 +15,7 @@ import {
 } from '@/lib/cloudflare/tunnel'
 import { generatePairingCode, PAIRING_TTL_MINUTES } from '@/lib/lab/pairing'
 import { processMessage } from '@/lib/lab/ingest'
+import { findUncountedLines, type UncountedTest } from '@/lib/lab/threePart'
 import { revalidatePath } from 'next/cache'
 
 type SimpleResult = { success: true } | { success: false; error: string }
@@ -57,6 +58,11 @@ export interface AnalyzerRow {
   last_message_at: string | null
   first_seen_at: string
   unknown_codes: number
+  /**
+   * A switched-on 3-part blood counter: the hospital's tests it fills that
+   * still wait on eosinophils or basophils it can never count (lib/lab/threePart).
+   */
+  uncounted: UncountedTest[]
 }
 
 export interface ModalityRow {
@@ -495,9 +501,21 @@ export async function listAnalyzers(): Promise<AnalyzerRow[]> {
     pending.set(key, (pending.get(key) ?? 0) + 1)
   }
 
+  // Only once it is switched on: that is when its counts start reaching reports.
+  const live = (analyzers ?? []).filter((a) => a.status === 'live')
+  const uncounted = new Map<string, UncountedTest[]>()
+  if (live.length) {
+    const actor = await getActorProfile()
+    const svc = createServiceClient()
+    await Promise.all(live.map(async (a) => {
+      uncounted.set(a.id as string, await findUncountedLines(svc, actor.tenant_id, a.id as string))
+    }))
+  }
+
   return (analyzers ?? []).map((a) => ({
     ...a,
     unknown_codes: pending.get(a.id as string) ?? 0,
+    uncounted: uncounted.get(a.id as string) ?? [],
   })) as AnalyzerRow[]
 }
 
@@ -577,6 +595,51 @@ export async function setAnalyzerStatus(id: string, status: string): Promise<Sim
   revalidatePath('/settings/devices')
   if (released) revalidatePath('/lab')
   return { success: true }
+}
+
+/**
+ * Leave eosinophils and basophils off the blood counts a 3-part machine fills.
+ *
+ * The same setting as Lab → Catalogue's "optional" (setMeasurementOptional),
+ * for every line the analyzer's card listed, in one press. What to change is
+ * worked out again here, never taken from the screen. An empty optional line is
+ * left off the report; a value typed from a smear still prints.
+ */
+export async function makeUncountedOptional(
+  analyzerId: string,
+): Promise<{ success: true; lines: number } | { success: false; error: string }> {
+  const actor = await getActorProfile()
+  await requirePermission(actor.role, 'lab:manage')
+  await requireWriteAccess()
+  await requireModule('lab')
+
+  const svc = createServiceClient()
+  const { data: analyzer } = await svc.from('lab_analyzers')
+    .select('id, status').eq('id', analyzerId).eq('tenant_id', actor.tenant_id).maybeSingle()
+  if (!analyzer) return { success: false, error: 'That analyzer is no longer here' }
+  if (analyzer.status !== 'live') return { success: false, error: 'Switch the analyzer on first' }
+
+  const tests = await findUncountedLines(svc, actor.tenant_id, analyzerId)
+  if (!tests.length) return { success: false, error: 'Nothing left to change' }
+
+  const rows = tests.flatMap((t) => t.lines.map((l) => ({
+    tenant_id: actor.tenant_id, test_id: t.testId, analyte_id: l.analyteId, created_by: actor.id,
+  })))
+  const { error } = await svc.from('lab_optional_analytes')
+    .upsert(rows, { onConflict: 'tenant_id,test_id,analyte_id', ignoreDuplicates: true })
+  if (error) return { success: false, error: error.message }
+
+  for (const t of tests) {
+    for (const l of t.lines) {
+      await logAudit(actor.id, 'update', 'lab_test', t.testId, {
+        action: 'measurement optional', analyte_id: l.analyteId, test: t.testName,
+        reason: '3-part blood counter cannot count it', analyzer_id: analyzerId,
+      })
+    }
+  }
+  revalidatePath('/settings/devices')
+  revalidatePath('/lab')
+  return { success: true, lines: rows.length }
 }
 
 // ── Scanners ────────────────────────────────────────────────────────────────
