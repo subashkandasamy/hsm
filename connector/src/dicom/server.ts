@@ -86,19 +86,33 @@ export interface ReceivedStudy {
   }>
 }
 
+/**
+ * The scheduled moment as India sees it, whatever zone this computer is set to.
+ *
+ * These were read off the PC's own clock zone, which is right only while
+ * Windows is set to India. A PC left on another zone hands the console every
+ * booking at the wrong hour — the Windows test runner, on UTC, listed a 10:30
+ * scan at 05:00 — and the console writes that hour into the image.
+ * Shifted by +05:30 and read back as UTC: India has no daylight saving.
+ */
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000
+function inIndia(iso: string | null): Date | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : new Date(d.getTime() + IST_OFFSET_MS)
+}
+
 /** DICOM wants YYYYMMDD, and is unforgiving about it. */
 function toDicomDate(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  const d = inIndia(iso)
+  if (!d) return ''
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 function toDicomTime(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}00`
+  const d = inIndia(iso)
+  if (!d) return ''
+  return `${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}00`
 }
 
 /**

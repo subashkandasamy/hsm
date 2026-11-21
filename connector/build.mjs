@@ -508,6 +508,20 @@ $name    = 'UyirlyLabConnector'
 $destDir = "$env:ProgramFiles\\Uyirly\\Connector"
 $exe     = "$destDir\\uyirly-connector.exe"
 
+# Commands that are allowed to fail, and on a first install usually do: there
+# is no task to stop yet and no firewall rule to delete. Windows PowerShell 5.1
+# - the one install.cmd starts, and the only one most hospital PCs have - turns
+# whatever a program prints on its error stream into a script-stopping error
+# while $ErrorActionPreference is Stop, even when that stream is sent to $null.
+# So a first install on a fresh PC stopped at its first step with "schtasks :
+# ERROR: The system cannot find the file specified" (VR Hospital, 21 Nov 2026).
+# CI ran this under PowerShell 7, which does not do that, and never saw it.
+function Quietly([scriptblock]$command) {
+  $saved = $ErrorActionPreference
+  $ErrorActionPreference = 'SilentlyContinue'
+  try { & $command 2>$null | Out-Null } catch { } finally { $ErrorActionPreference = $saved }
+}
+
 # ── Install or upgrade? ────────────────────────────────────────────────────
 #
 # The answer is on disk. Settings live in ProgramData and the program lives in
@@ -547,7 +561,7 @@ if ($upgrade) {
 # Windows will not let us overwrite a running program, and the connector runs
 # as a scheduled task from boot. Stopping it first is what makes an upgrade an
 # upgrade instead of an "access is denied" and a puzzled engineer.
-schtasks /End /TN $name 2>$null | Out-Null
+Quietly { schtasks /End /TN $name }
 # The task ends asynchronously; a copy started too soon still hits the lock.
 for ($i = 0; $i -lt 20; $i++) {
   if (-not (Get-Process -Name 'uyirly-connector' -ErrorAction SilentlyContinue)) { break }
@@ -611,21 +625,21 @@ if ($NoService) {
 }
 
 # Let the analyzers reach us. Harmless if it already exists.
-netsh advfirewall firewall delete rule name="Uyirly Lab Connector" 2>$null | Out-Null
+Quietly { netsh advfirewall firewall delete rule name="Uyirly Lab Connector" }
 netsh advfirewall firewall add rule name="Uyirly Lab Connector" dir=in action=allow \`
   protocol=TCP localport=5150 profile=any | Out-Null
 Write-Host "Opened port 5150 for analyzers"
 
 # Scanners. Without this a machine simply cannot reach us and the failure is
 # silent at both ends — the console reports a timeout and nothing appears here.
-netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" 2>$null | Out-Null
+Quietly { netsh advfirewall firewall delete rule name="Uyirly Scanners (DICOM)" }
 netsh advfirewall firewall add rule name="Uyirly Scanners (DICOM)" dir=in action=allow \`
   protocol=TCP localport=11112 profile=any | Out-Null
 Write-Host "Opened port 11112 for scanners"
 
 # The scan viewer. Doctors open it from their own desks, so unlike the status
 # page — which stays on this computer only — it has to cross the network.
-netsh advfirewall firewall delete rule name="Uyirly Scan Viewer" 2>$null | Out-Null
+Quietly { netsh advfirewall firewall delete rule name="Uyirly Scan Viewer" }
 netsh advfirewall firewall add rule name="Uyirly Scan Viewer" dir=in action=allow \`
   protocol=TCP localport=5152 profile=any | Out-Null
 Write-Host "Opened port 5152 so doctors can view scans"
@@ -637,10 +651,10 @@ Write-Host "Opened port 5152 so doctors can view scans"
 # 2026: the X-ray PC dozed off mid-afternoon). The screen may still turn off;
 # a laptop on battery keeps its own settings. USB selective suspend off too,
 # or a USB-to-serial cable to an analyzer goes quiet.
-powercfg /change standby-timeout-ac 0 2>$null | Out-Null
-powercfg /change hibernate-timeout-ac 0 2>$null | Out-Null
-powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 2>$null | Out-Null
-powercfg /setactive SCHEME_CURRENT 2>$null | Out-Null
+Quietly { powercfg /change standby-timeout-ac 0 }
+Quietly { powercfg /change hibernate-timeout-ac 0 }
+Quietly { powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 }
+Quietly { powercfg /setactive SCHEME_CURRENT }
 Write-Host "Set this computer to stay awake while plugged in (the screen can still turn off)"
 
 # Start with Windows, as SYSTEM, and restart if it ever stops.

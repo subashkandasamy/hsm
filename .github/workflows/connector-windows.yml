@@ -67,13 +67,22 @@ jobs:
           if ($out -notmatch 'INSIDE the zip') { throw 'install.cmd did not explain the missing files' }
           if ($out -match 'parameter does not exist') { throw 'PowerShell was reached with no install.ps1 beside it' }
 
-      - name: Run install.ps1 the way a hospital would
+      - name: Run install.cmd the way a hospital would
+        # Through install.cmd, so under Windows PowerShell 5.1 as on a hospital
+        # PC. This step used to call install.ps1 from pwsh 7, which forgives
+        # what 5.1 does not: a first install stopping on "schtasks : ERROR: The
+        # system cannot find the file specified" passed here (VR Hospital,
+        # 21 Nov 2026). "< nul" answers the closing "press any key".
         working-directory: connector/dist-exe
         shell: pwsh
         run: |
           ..\test\start-mock.ps1
-          .\install.ps1 -Code 'CITE-ST01' -Server 'http://127.0.0.1:8787'
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          $out = cmd /c "install.cmd -Code CITE-ST01 -Server http://127.0.0.1:8787 < nul" 2>&1 | Out-String
+          $rc = $LASTEXITCODE
+          Write-Host $out
+          if ($out -match 'NativeCommandError') { throw 'the install stopped on a command that is allowed to fail' }
+          if ($out -notmatch 'Done\. The connector is running') { throw 'install.cmd did not reach the end of a first install' }
+          if ($rc -ne 0) { throw "install.cmd exited $rc" }
 
       - name: The install did what it claims
         shell: pwsh
