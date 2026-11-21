@@ -66,6 +66,9 @@ jobs:
           if ($rc -ne 1) { throw "install.cmd exited $rc, expected 1" }
           if ($out -notmatch 'INSIDE the zip') { throw 'install.cmd did not explain the missing files' }
           if ($out -match 'parameter does not exist') { throw 'PowerShell was reached with no install.ps1 beside it' }
+          # install.cmd's exit 1 is the expected answer here, but the step would
+          # otherwise end with it as the last native exit code and fail.
+          exit 0
 
       - name: Run install.cmd the way a hospital would
         # Through install.cmd, so under Windows PowerShell 5.1 as on a hospital
