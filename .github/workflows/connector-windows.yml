@@ -51,6 +51,22 @@ jobs:
         working-directory: connector
         run: node build.mjs --win
 
+      - name: install.cmd opened from inside the zip says so
+        # Double-clicking install.cmd in Explorer's zip view runs it alone from
+        # a temp folder. It must say "extract first" - not reach PowerShell and
+        # have it call a file the person can see "missing" (VR Hospital).
+        shell: pwsh
+        run: |
+          $alone = Join-Path $env:RUNNER_TEMP 'Temp1_uyirly-lab-connector-windows.zip'
+          New-Item -ItemType Directory -Force $alone | Out-Null
+          Copy-Item connector\dist-exe\install.cmd $alone
+          $out = cmd /c "$alone\install.cmd < nul" 2>&1 | Out-String
+          $rc = $LASTEXITCODE
+          Write-Host $out
+          if ($rc -ne 1) { throw "install.cmd exited $rc, expected 1" }
+          if ($out -notmatch 'INSIDE the zip') { throw 'install.cmd did not explain the missing files' }
+          if ($out -match 'parameter does not exist') { throw 'PowerShell was reached with no install.ps1 beside it' }
+
       - name: Run install.ps1 the way a hospital would
         working-directory: connector/dist-exe
         shell: pwsh

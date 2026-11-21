@@ -357,12 +357,28 @@ async function fetchNode(platform, arch) {
  *
  * So this elevates itself, bypasses the policy for its own child process
  * only, and waits for a keypress at the end whether it worked or not.
+ *
+ * It also checks its neighbours before handing over, because PowerShell's own
+ * word for both of the following is "install.ps1 does not exist" — said about
+ * a file the person can see with their own eyes (VR Hospital, Nov 2026):
+ *
+ *   Opened from inside the zip. Explorer shows a zip as an ordinary folder,
+ *   and double-clicking install.cmd in it copies that one file to a temp
+ *   folder and runs it there, alone.
+ *
+ *   Antivirus. It leaves the script listed in the folder but refuses to let
+ *   anything open it — or quarantines it the instant PowerShell does.
+ *   PowerShell's existence check cannot tell "denied" from "absent".
  */
 async function writeCmd() {
   const body = [
     '@echo off',
     'setlocal',
     'title Uyirly Lab Connector - install',
+    '',
+    'rem Before asking for anything: is the rest of the download beside us?',
+    'if not exist "%~dp0install.ps1" goto missing',
+    'if not exist "%~dp0uyirly-connector.exe" goto missing',
     '',
     'rem Administrator, or nothing below works: the firewall rules and the',
     'rem startup task both need it. Re-launch ourselves elevated rather than',
@@ -376,6 +392,11 @@ async function writeCmd() {
     '',
     'cd /d "%~dp0"',
     '',
+    'rem Listed is not the same as readable. Antivirus that dislikes the script',
+    'rem leaves it in the folder but refuses to open it.',
+    'type "%~dp0install.ps1" >nul 2>&1',
+    'if %errorlevel% neq 0 goto blocked',
+    '',
     'rem Windows blocks everything that came out of a downloaded zip until it',
     'rem is unblocked, and the symptom is the script simply not running.',
     'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Recurse | Unblock-File" >nul 2>&1',
@@ -383,9 +404,14 @@ async function writeCmd() {
     'rem -ExecutionPolicy Bypass applies to this one child process only. It',
     'rem changes nothing on the computer and needs no policy to be relaxed.',
     'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*',
+    'set "rc=%errorlevel%"',
+    '',
+    'rem Readable a moment ago and gone now: antivirus took it the instant',
+    'rem PowerShell opened it.',
+    'if not exist "%~dp0install.ps1" goto blocked',
     '',
     'echo.',
-    'if %errorlevel% neq 0 (',
+    'if %rc% neq 0 (',
     '  echo Install did not finish. The message above says why.',
     ') else (',
     '  echo Done.',
@@ -393,6 +419,50 @@ async function writeCmd() {
     'echo.',
     'rem The whole point: the window stays so the result can be read.',
     'pause',
+    'exit /b %rc%',
+    '',
+    'rem No brackets in the messages below, and the path is always quoted, so',
+    'rem a folder name with brackets or an ampersand cannot break them.',
+    ':missing',
+    'echo.',
+    'echo  The other installer files are not next to install.cmd.',
+    'echo.',
+    'echo  It is running from:',
+    'echo    "%~dp0"',
+    'echo.',
+    'echo  This almost always means install.cmd was opened from INSIDE the zip.',
+    'echo  A zip looks like an ordinary folder, but running a file from it',
+    'echo  copies only that one file somewhere temporary and leaves the rest.',
+    'echo.',
+    'echo  To fix it:',
+    'echo    1. Close this window and the zip window.',
+    'echo    2. Right-click the downloaded zip, choose Extract All, then Extract.',
+    'echo    3. In the new folder that opens, double-click install.cmd.',
+    'echo.',
+    'echo  If you did extract it and a file has since vanished, antivirus',
+    'echo  removed it: restore it from the antivirus quarantine, allow the',
+    'echo  folder, and extract the zip again.',
+    'echo.',
+    'pause',
+    'exit /b 1',
+    '',
+    ':blocked',
+    'echo.',
+    'echo  install.ps1 is in the folder, but Windows was not allowed to open it.',
+    'echo.',
+    'echo  That is almost always antivirus - Windows Security, Quick Heal, K7,',
+    'echo  Seqrite or similar. The installer changes the firewall and adds a',
+    'echo  startup task, which some antivirus blocks on sight.',
+    'echo.',
+    'echo  To fix it:',
+    'echo    1. Open the antivirus. If install.ps1 is in its quarantine or',
+    'echo       history, restore it.',
+    'echo    2. Allow this folder, or pause protection for ten minutes:',
+    'echo         "%~dp0"',
+    'echo    3. Double-click install.cmd again.',
+    'echo.',
+    'pause',
+    'exit /b 1',
   ].join('\r\n')
   // CRLF and no BOM: cmd.exe is old and particular about both.
   await fs.writeFile(path.join(OUT, 'install.cmd'), body + '\r\n', 'latin1')
@@ -661,7 +731,10 @@ BEFORE YOU START
   8-character pairing code.
 
 TO INSTALL
-  1. Double-click install.cmd
+  0. Unzip first: right-click the downloaded zip -> Extract All -> Extract.
+     Running install.cmd from inside the zip does not work - Windows only
+     takes that one file out, and it cannot find the rest.
+  1. In the extracted folder, double-click install.cmd
      Choose Yes when Windows asks for administrator permission.
   2. Type the pairing code when asked, then your hospital's web address.
   3. Write down the address it prints, for example  192.168.1.14 : 5150

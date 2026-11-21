@@ -68,8 +68,8 @@ export default function InstallerCard({ release }: { release: ConnectorRelease |
 
             <ol className="mt-4 pl-0" style={{ listStyle: 'none', counterReset: 'step' }}>
               {[
-                'Copy the downloaded file to the computer beside your machines, and unzip it.',
-                'Right-click install.ps1 and choose “Run with PowerShell”. Say yes when Windows asks for permission.',
+                'Copy the downloaded zip to the computer beside your machines. Right-click it, choose “Extract All”, then “Extract” — running anything from inside the zip does not work.',
+                'In the extracted folder, double-click install.cmd. Say yes when Windows asks for permission.',
                 'Add a computer below, then type its pairing code when the installer asks.',
                 'Give the analyzer address below to whoever services your analyzers.',
                 'For a scanner, give your radiology engineer the DICOM address and the AE title instead — same computer, different door.',
