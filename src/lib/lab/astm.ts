@@ -137,6 +137,11 @@ export function parseAstm(raw: string): AstmMessage {
   const d = header ? readDelims(header) : { field: '|', repeat: '\\', component: '^', escape: '&' }
   const parts = (line: string) => line.split(d.field)
   const comps = (v: string | undefined) => (v ?? '').split(d.component)
+  /** Sysmex XQ specimen field: adaptor^position^sample id^M|A|B|C. */
+  const sysmexSpecimen = (v: string | undefined): string | null => {
+    const c = comps(v)
+    return c.length === 4 && /^[MABC]$/.test(c[3].trim()) ? clean(c[2]) : null
+  }
 
   for (const line of lines) {
     const f = parts(line)
@@ -152,7 +157,13 @@ export function parseAstm(raw: string): AstmMessage {
         const named = f.slice(5, 14).map((x) => clean(comps(x)[0]))
           .find((x) => !!x && /[a-z]/i.test(x) && !/^\d{8,14}$/.test(x))
         const model = clean(sender[0]) ?? clean(f[11]) ?? named ?? null
-        const vendor = clean(sender[1])
+        // A Sysmex XQ sends `XQ-320^00-00^11001^^^^12345678`: name, SOFTWARE
+        // VERSION, serial (R320081 rev 1.4, §4.3.3.1). Read as the maker, the
+        // version named the machine "XQ-320^00-00", and its next software
+        // update would have made it a stranger with no mappings. A version is
+        // digits joined by dots or dashes; a maker's name never is.
+        const second = clean(sender[1])
+        const vendor = second && /^\d+(?:[.-]\d+)+$/.test(second) ? null : second
         out.model = model
         out.manufacturer = vendor
         out.fingerprint = [model, vendor].filter(Boolean).join('^') || null
@@ -167,16 +178,34 @@ export function parseAstm(raw: string): AstmMessage {
       case 'O': {
         // The specimen id. Field 2 is the instrument's own number, field 3 the
         // one the laboratory gave it — our tube barcode — so prefer 3.
-        out.sampleId = clean(comps(f[2])[0]) ?? clean(comps(f[3])[0])
+        //
+        // A Sysmex XQ writes it as adaptor^position^SAMPLE ID^how it was read
+        // (M typed, A assigned, B barcode, C host), the id right-aligned in
+        // 22 spaces — `O|1||^^        2611210004^B|`. Its own field table
+        // puts that in O-4 and its worked example in O-3 (R320081 §4.3.3.4,
+        // §5.3.1), so either is read. Taking the first part instead found no
+        // id at all, or the adaptor number "2" — every result unmatched. Only
+        // exactly that shape, four parts ending in M/A/B/C, so no other
+        // instrument's sample id is second-guessed.
+        out.sampleId = sysmexSpecimen(f[2]) ?? sysmexSpecimen(f[3])
+          ?? clean(comps(f[2])[0]) ?? clean(comps(f[3])[0])
         if (!out.sampleId) out.warnings.push('Order record carried no sample id')
         break
       }
       case 'R': {
         // Universal test id is ^^^CODE; some send the code bare.
+        //
+        // A Sysmex XQ puts one more empty part in front and the sampling mode
+        // after: ^^^^WBC^1, and ^^^^WBC^7 for a capillary sample (R320081
+        // §4.3.3.5). Read whole, that was two different codes for one WBC.
         const idComps = comps(f[2])
-        const code = clean(idComps[3]) ?? clean(idComps[0]) ?? clean(f[2])
+        const code = clean(idComps[3]) ?? clean(idComps[4]) ?? clean(idComps[0]) ?? clean(f[2])
+        const sysmexShaped = !clean(idComps[3]) && !!clean(idComps[4])
         const given = clean(f[3])
-        const value = given && NO_VALUE.test(given) ? null : given
+        // The Sysmex masks a value it could not give: "----" for an analysis
+        // error, "++++" for beyond its range (§4.3.3.5 b). "++++" is masked
+        // only in that shape — a urine strip's "++++" is a real grade.
+        const value = given && (NO_VALUE.test(given) || (sysmexShaped && /^\++$/.test(given))) ? null : given
         if (!code) { out.warnings.push('Result with no test code, skipped'); break }
         if (value === null) {
           out.warnings.push(`${code} had no value, skipped`)

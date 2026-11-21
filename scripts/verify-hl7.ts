@@ -331,6 +331,57 @@ console.log('\nLAURA Smart urine strip reader (plain text in STX/ETX) — as cap
   check(blank.sampleId === null && blank.warnings.some((w) => /No sample ID/.test(w)), 'no ID typed → no sample, said plainly', blank)
 }
 
+console.log('\nSysmex XQ-320 (ASTM) — record shapes from Sysmex R320081 rev 1.4, values made up')
+{
+  // §4.3.3.1 header, §4.3.3.4 order (id in O-4), §5.3.1 results, §4.3.3.6 comment.
+  const XQ = [
+    'H|\\^&|||XQ-320^00-00^11001^^^^12345678||||||||E1394-97',
+    'P|1|||100|^Jim^Brown||20010820|M|||||^Dr.1||||||||||||^^^WEST',
+    'C|1||Patient Comment',
+    'O|1||^^          2611210004^B|^^^^WBC\\^^^^RBC\\^^^^HGB\\^^^^PLT\\^^^^NEUT%|||||||N||||||||||||||F',
+    'C|1||Sample Comment',
+    'R|1|^^^^WBC^1^^^W|7.81|10*3/uL||N||||||20261121120000',
+    'R|2|^^^^RBC^1| ---- |10*6/uL||A||||||20261121120000',
+    'R|3|^^^^HGB^1|20.5|g/dL||W||||||20261121120000',
+    'R|4|^^^^PLT^1|++++|10*3/uL||A||||||20261121120000',
+    'R|5|^^^^NEUT%^1|60.1|%||N||||||20261121120000',
+    'R|6|^^^^PLT_Abn_Distribution||||A||||||20261121120000',
+    'R|7|^^^^ACTION_MESSAGE_Delta||||A',
+    'C|1||Auto Validate^12345^^',
+    'L|1|N',
+  ].join('\r')
+  check(detectProtocol(XQ) === 'astm', 'recognised as ASTM', detectProtocol(XQ))
+  const m = parseAstm(XQ)
+  check(m.fingerprint === 'XQ-320' && m.manufacturer === null, 'machine is "XQ-320" — the software version is not its maker', [m.fingerprint, m.manufacturer])
+  check(m.sampleId === '2611210004', 'barcode from the third part of O-4, padding trimmed', m.sampleId)
+  const by = Object.fromEntries(m.results.map((r) => [r.code, r]))
+  check(JSON.stringify(m.results.map((r) => r.code)) === JSON.stringify(['WBC', 'HGB', 'NEUT%']),
+    'codes are WBC, HGB, NEUT% — not "^^^^WBC^1"; masked values and value-less flags dropped', m.results.map((r) => r.code))
+  check(by.WBC?.value === '7.81' && by.WBC?.unit === '10*3/uL' && by.WBC?.abnormalFlag === 'N', 'WBC 7.81 10*3/uL, flag N', by.WBC)
+  check(by.HGB?.abnormalFlag === 'W', 'low-reliability flag W kept', by.HGB)
+  check(!by.RBC && m.warnings.some((w) => /RBC had no value/.test(w)), '"----" (analysis error) is no value', m.warnings)
+  check(!by.PLT && m.warnings.some((w) => /PLT had no value/.test(w)), '"++++" (beyond its range) is no value, never printed', m.warnings)
+
+  const cap = parseAstm('H|\\^&|||XQ-320^00-00^11001^^^^1||||||||E1394-97\rO|1||^^ S7^B|\rR|1|^^^^WBC^7|5.10|10*3/uL||N\rL|1|N')
+  check(cap.results[0]?.code === 'WBC', 'capillary sample (^^^^WBC^7) is the same WBC', cap.results[0]?.code)
+
+  // §5.3.1's worked example puts the id in O-3, after the adaptor number.
+  const o3 = parseAstm('H|\\^&|||XQ-320^00-01^11001^^^^1||||||||E1394-97\rO|1|2^1^     1234567890^B||^^^^WBC|||||||N\rR|1|^^^^WBC^1|7.8|10*3/uL||N\rL|1|N')
+  check(o3.sampleId === '1234567890', 'id in O-3 also read — never the adaptor number "2"', o3.sampleId)
+
+  // QC runs arrive the same way (§4.3.2.3), numbered QC-…, and land unmatched for the Ignore button.
+  const qc = parseAstm('H|\\^&|||XQ-320^00-00^11001^^^^1||||||||E1394-97\rP|1\rO|1||^^    QC-12345678^B|^^^^WBC|||||||Q||||||||||||||F\rR|1|^^^^WBC^1|7.58|10*3/uL||N\rL|1|N')
+  check(qc.sampleId === 'QC-12345678', 'a control run keeps its QC- number (no patient has one)', qc.sampleId)
+
+  // Not Sysmex: nothing moves.
+  const mr = parseAstm('H|\\^&|||BC-5130^Mindray|||||||P|1\rO|1|2609230004||^^^CBC\rR|1|^^^WBC|8.4|10*9/L||N\rL|1')
+  check(mr.fingerprint === 'BC-5130^Mindray' && mr.sampleId === '2609230004' && mr.results[0]?.code === 'WBC', 'Mindray unchanged', [mr.fingerprint, mr.sampleId, mr.results[0]?.code])
+  const urine = parseAstm('H|\\^&|||URS^Vendor\rO|1|U1||^^^UA\rR|1|^^^GLU|++++|||A\rL|1')
+  check(urine.results[0]?.value === '++++', 'a urine strip\'s "++++" is still a grade', urine.results[0])
+  const ver = parseAstm('H|\\^&|||Model9^Acme^1.02\rO|1|X1\rR|1|^^^A|1|\rL|1')
+  check(ver.fingerprint === 'Model9^Acme', 'a real maker in the second part is kept', ver.fingerprint)
+}
+
 console.log('\nNo repeats → codes untouched (H360 unchanged)')
 {
   const m = parseHl7('MSH|^~\\&|H360|ERBA|||2026||ORU^R01|9|P|2.3.1\rOBR|1||S1|CBC\rOBX|1|NM|6690-2^WBC^LN||7|x\rOBX|2|NM|718-7^HGB^LN||12|g/dL')
