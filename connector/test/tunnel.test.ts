@@ -65,6 +65,19 @@ const stubFetch = (async (url: string | URL, init?: RequestInit) => {
   return fetch(url, init)   // the fake's /ready on loopback
 }) as typeof fetch
 
+// The fake is a script started through its #! line, which only Unix can do:
+// Windows starts nothing but a real .exe, so there it fails with ENOENT before
+// the supervisor is tested at all. On the Windows runner these are skipped,
+// not failed - `npm test` on a Mac or Linux still runs them, and a hospital PC
+// starts the real cloudflared.exe, which is a real .exe.
+function withScriptFake(name: string, fn: () => void | Promise<void>): Promise<void> {
+  if (process.platform === 'win32') {
+    console.log(`  skip  ${name}  (Windows cannot start the script stand-in)`)
+    return Promise.resolve()
+  }
+  return test(name, fn)
+}
+
 async function waitFor(pred: () => boolean, ms: number, what: string) {
   const until = Date.now() + ms
   while (Date.now() < until) { if (pred()) return; await new Promise((r) => setTimeout(r, 100)) }
@@ -82,7 +95,7 @@ await test('no cloudflared beside the program → "missing", nothing started', a
   assert.equal(t.state, 'off')
 })
 
-await test('switched on → starts cloudflared, reports up once /ready says 200', async () => {
+await withScriptFake('switched on → starts cloudflared, reports up once /ready says 200', async () => {
   await fs.rm(record, { force: true })
   const t = new TunnelSupervisor(config, { findBinary: () => fake, fetchImpl: stubFetch, metricsPort: 55153 })
   t.setWanted(true)
@@ -124,7 +137,7 @@ await test('Uyirly cannot hand over the token → down, retried later (no crash)
   tunnelReply = { status: 200, body: { enabled: true, token: 'secret-run-token', hostname: 'c-abc.files.test' } }
 })
 
-await test('cloudflared exits on its own → down, then started again', async () => {
+await withScriptFake('cloudflared exits on its own → down, then started again', async () => {
   process.env.FAKE_MODE = 'crash'
   await fs.rm(record, { force: true })
   const t = new TunnelSupervisor(config, { findBinary: () => fake, fetchImpl: stubFetch, metricsPort: 55156 })
